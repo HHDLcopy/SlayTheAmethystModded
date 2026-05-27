@@ -22,6 +22,7 @@ import io.stamethyst.backend.workshop.WorkshopModCardState
 import io.stamethyst.backend.workshop.WorkshopModStateResolver
 import io.stamethyst.backend.workshop.WorkshopResolvedModState
 import io.stamethyst.backend.workshop.WorkshopResolvedModStateKind
+import io.stamethyst.backend.workshop.allLocalJarPaths
 import io.stamethyst.backend.workshop.isActiveDownload
 import io.stamethyst.backend.workshop.isRunningDownload
 import io.stamethyst.config.RuntimePaths
@@ -1520,9 +1521,9 @@ internal class MainModManagementController(
         val importedPatchInfoByPath = ImportedModPatchRegistry.readAll(host)
         val workshopRecords = WorkshopMetadataStore(host).list()
         val workshopRecordsByInstalledPath = workshopRecords
-            .mapNotNull { record ->
-                val absoluteJarPath = resolveWorkshopJarPath(host, record).trim()
-                if (absoluteJarPath.isEmpty()) null else absoluteJarPath to record
+            .flatMap { record ->
+                resolveWorkshopJarPaths(host, record)
+                    .map { absoluteJarPath -> absoluteJarPath to record }
             }
             .toMap()
         val downloadTasksByPublishedFileId = loadDownloadCenterTaskRecords(host)
@@ -1619,8 +1620,8 @@ internal class MainModManagementController(
             }
         return recordsByPublishedFileId.values
             .filter { record ->
-                val absoluteJarPath = resolveWorkshopJarPath(host, record)
-                absoluteJarPath.isBlank() || !installedPaths.contains(absoluteJarPath)
+                val absoluteJarPaths = resolveWorkshopJarPaths(host, record)
+                absoluteJarPaths.isEmpty() || absoluteJarPaths.none(installedPaths::contains)
             }
             .map { record ->
                 record.toWorkshopModItem(
@@ -1742,8 +1743,9 @@ internal class MainModManagementController(
         task: io.stamethyst.backend.workshop.WorkshopDownloadTaskRecord?,
     ): WorkshopModUi {
         val absoluteJarPath = resolveWorkshopJarPath(host, this)
+        val absoluteJarPaths = resolveWorkshopJarPaths(host, this)
         val taskIsActive = task?.status?.isActiveDownload() == true
-        val resolved = if (!representedByInstalledMod && !taskIsActive && shouldShowWorkshopFileMissing(this, absoluteJarPath)) {
+        val resolved = if (!representedByInstalledMod && !taskIsActive && shouldShowWorkshopFileMissing(this, absoluteJarPaths)) {
             WorkshopResolvedModState(
                 kind = WorkshopResolvedModStateKind.FileMissing,
                 statusText = "已下载文件缺失，请重新下载",
@@ -1766,13 +1768,13 @@ internal class MainModManagementController(
         )
     }
 
-    private fun shouldShowWorkshopFileMissing(record: WorkshopInstalledModRecord, absoluteJarPath: String): Boolean {
-        if (absoluteJarPath.isBlank()) return false
+    private fun shouldShowWorkshopFileMissing(record: WorkshopInstalledModRecord, absoluteJarPaths: List<String>): Boolean {
+        if (absoluteJarPaths.isEmpty()) return false
         return when (record.cardState) {
-            WorkshopModCardState.ImportedPatched -> !File(absoluteJarPath).isFile
-            WorkshopModCardState.ImportedUnpatched -> !File(absoluteJarPath).isFile
-            WorkshopModCardState.NonStandardDownloaded -> !File(absoluteJarPath).exists()
-            WorkshopModCardState.TexturePackInstalled -> !File(absoluteJarPath).isDirectory
+            WorkshopModCardState.ImportedPatched -> absoluteJarPaths.any { path -> !File(path).isFile }
+            WorkshopModCardState.ImportedUnpatched -> absoluteJarPaths.any { path -> !File(path).isFile }
+            WorkshopModCardState.NonStandardDownloaded -> absoluteJarPaths.any { path -> !File(path).exists() }
+            WorkshopModCardState.TexturePackInstalled -> absoluteJarPaths.any { path -> !File(path).isDirectory }
             WorkshopModCardState.FileMissing -> true
             else -> false
         }
@@ -1799,6 +1801,14 @@ internal class MainModManagementController(
         val file = File(path)
         return if (file.isAbsolute) path else File(host.filesDir, "workshop/${record.appId}/${record.publishedFileId}/$path").absolutePath
     }
+
+    private fun resolveWorkshopJarPaths(host: Activity, record: WorkshopInstalledModRecord): List<String> =
+        record.allLocalJarPaths()
+            .map { path ->
+                val file = File(path)
+                if (file.isAbsolute) path else File(host.filesDir, "workshop/${record.appId}/${record.publishedFileId}/$path").absolutePath
+            }
+            .distinct()
 
     private fun resolveWorkshopPreviewImagePath(host: Activity, record: WorkshopInstalledModRecord): String {
         val path = record.localPreviewImagePath.trim()
@@ -1834,7 +1844,9 @@ internal class MainModManagementController(
     private fun deleteWorkshopResidue(host: Activity, workshop: WorkshopModUi): Boolean {
         val directory = workshopDirectory(host, workshop)
         val deletedDirectory = if (directory.exists()) directory.deleteRecursively() else false
-        deleteWorkshopTexturePackIfNeeded(workshop.localJarPath)
+        val record = WorkshopMetadataStore(host).findByPublishedFileId(workshop.appId, workshop.publishedFileId)
+        val localPaths = record?.allLocalJarPaths().orEmpty().ifEmpty { listOf(workshop.localJarPath) }
+        localPaths.forEach { path -> deleteWorkshopTexturePackIfNeeded(path) }
         WorkshopDownloadTaskStore(host).removeAndMarkDeleted(workshop.publishedFileId)
         WorkshopMetadataStore(host).remove(workshop.appId, workshop.publishedFileId)
         return deletedDirectory

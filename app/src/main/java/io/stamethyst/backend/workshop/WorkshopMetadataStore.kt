@@ -72,18 +72,24 @@ internal class WorkshopMetadataStore(context: Context) {
         if (normalizedPaths.isEmpty()) return@withStoreLock 0
         val current = loadUnlocked()
         val remaining = current.filterNot { record ->
-            record.localJarPath.normalizedLocalJarPath() in normalizedPaths
+            record.allLocalJarPaths().any { path -> path.normalizedLocalJarPath() in normalizedPaths }
         }
         val removedCount = current.size - remaining.size
         if (removedCount > 0) saveUnlocked(remaining)
         removedCount
     }
 
-    fun markPatched(appId: UInt, publishedFileId: ULong, localJarPath: String, statusText: String) = withStoreLock {
+    fun markPatched(appId: UInt, publishedFileId: ULong, localJarPath: String, statusText: String) =
+        markPatched(appId, publishedFileId, listOf(localJarPath), statusText)
+
+    fun markPatched(appId: UInt, publishedFileId: ULong, localJarPaths: List<String>, statusText: String) = withStoreLock {
+        val normalizedPaths = localJarPaths.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        val primaryPath = normalizedPaths.firstOrNull().orEmpty()
         val records = loadUnlocked().map { record ->
             if (record.appId == appId && record.publishedFileId == publishedFileId) {
                 record.copy(
-                    localJarPath = localJarPath,
+                    localJarPath = primaryPath,
+                    localJarPaths = normalizedPaths,
                     cardState = WorkshopModCardState.ImportedPatched,
                     statusText = statusText,
                     localPreviewImagePath = record.localPreviewImagePath,
@@ -165,7 +171,7 @@ private fun String.normalizedLocalJarPath(): String = trim().replace('\\', '/')
 
 private fun WorkshopInstalledModRecord.restoredImportedState(): WorkshopModCardState {
     if (contentKind == WorkshopInstalledContentKind.TexturePack) return WorkshopModCardState.TexturePackInstalled
-    val path = localJarPath.trim()
+    val path = allLocalJarPaths().firstOrNull().orEmpty()
     if (path.isEmpty()) return WorkshopModCardState.ImportedUnpatched
     val file = File(path)
     return if (file.isAbsolute) {
@@ -180,19 +186,20 @@ private fun WorkshopInstalledModRecord.restoredImportedState(): WorkshopModCardS
 }
 
 private fun WorkshopInstalledModRecord.shouldMarkFileMissing(filesDir: File): Boolean {
-    val path = localJarPath.trim()
-    if (path.isEmpty()) return false
-    val file = if (File(path).isAbsolute) {
-        File(path)
-    } else {
-        File(filesDir, "workshop/$appId/$publishedFileId/$path")
+    val files = allLocalJarPaths().map { path ->
+        if (File(path).isAbsolute) {
+            File(path)
+        } else {
+            File(filesDir, "workshop/$appId/$publishedFileId/$path")
+        }
     }
+    if (files.isEmpty()) return false
     return when (cardState) {
         WorkshopModCardState.ImportedPatched,
-        WorkshopModCardState.ImportedUnpatched -> !file.isFile
-        WorkshopModCardState.NonStandardDownloaded -> !file.exists()
-        WorkshopModCardState.TexturePackInstalled -> !file.isDirectory
-        WorkshopModCardState.UpdateAvailable -> !file.exists()
+        WorkshopModCardState.ImportedUnpatched -> files.any { file -> !file.isFile }
+        WorkshopModCardState.NonStandardDownloaded -> files.any { file -> !file.exists() }
+        WorkshopModCardState.TexturePackInstalled -> files.any { file -> !file.isDirectory }
+        WorkshopModCardState.UpdateAvailable -> files.any { file -> !file.exists() }
         WorkshopModCardState.Downloading,
         WorkshopModCardState.DownloadPaused,
         WorkshopModCardState.DownloadFailed,

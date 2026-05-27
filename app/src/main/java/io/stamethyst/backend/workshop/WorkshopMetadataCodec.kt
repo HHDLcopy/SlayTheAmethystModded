@@ -14,6 +14,7 @@ internal object WorkshopMetadataCodec {
         .put("updatedAtMillis", record.updatedAtMillis)
         .put("installedAtMillis", record.installedAtMillis)
         .put("localJarPath", record.localJarPath)
+        .put("localJarPaths", record.localJarPaths.toStringJsonArray())
         .put("contentKind", record.contentKind.name)
         .put("texturePackPath", record.texturePackPath)
         .put("cardState", record.cardState.name)
@@ -31,6 +32,8 @@ internal object WorkshopMetadataCodec {
         updatedAtMillis = json.optLong("updatedAtMillis"),
         installedAtMillis = json.optLong("installedAtMillis"),
         localJarPath = json.optString("localJarPath"),
+        localJarPaths = json.optJSONArray("localJarPaths")?.toStringList()
+            ?: json.optString("localJarPath").trim().takeIf(String::isNotEmpty)?.let(::listOf).orEmpty(),
         contentKind = json.optString("contentKind").let { raw ->
             runCatching { WorkshopInstalledContentKind.valueOf(raw) }.getOrDefault(WorkshopInstalledContentKind.JarMod)
         },
@@ -42,6 +45,11 @@ internal object WorkshopMetadataCodec {
         localPreviewImagePath = json.optString("localPreviewImagePath"),
         dependencies = json.optJSONArray("dependencies").toWorkshopSummaries(),
     )
+}
+
+internal fun WorkshopInstalledModRecord.allLocalJarPaths(): List<String> {
+    val paths = if (localJarPaths.isNotEmpty()) localJarPaths else listOf(localJarPath)
+    return paths.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
 }
 
 private fun List<WorkshopItemSummary>.toJsonArray(): JSONArray = JSONArray().also { array ->
@@ -60,6 +68,19 @@ private fun List<WorkshopItemSummary>.toJsonArray(): JSONArray = JSONArray().als
                 .put("ratingScore", item.rating?.score ?: 0)
                 .put("ratingMaxScore", item.rating?.maxScore ?: 0)
         )
+    }
+}
+
+private fun List<String>.toStringJsonArray(): JSONArray = JSONArray().also { array ->
+    forEach { value -> array.put(value) }
+}
+
+private fun JSONArray?.toStringList(): List<String> {
+    if (this == null) return emptyList()
+    return buildList {
+        for (index in 0 until length()) {
+            optString(index).trim().takeIf(String::isNotEmpty)?.let(::add)
+        }
     }
 }
 

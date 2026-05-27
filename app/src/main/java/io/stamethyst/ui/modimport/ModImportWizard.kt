@@ -100,13 +100,20 @@ internal fun ModImportHost(
             onExecute = {
                 viewModel.execute(context) {
                     val source = viewModel.uiState.workshopSource
-                    val imported = viewModel.uiState.report?.importedResults?.firstOrNull()
-                    if (source != null && imported?.storagePath != null) {
+                    val importedResults = viewModel.uiState.report?.importedResults.orEmpty()
+                    val importedPaths = importedResults.mapNotNull { it.storagePath?.trim()?.takeIf(String::isNotEmpty) }
+                    if (source != null && importedPaths.isNotEmpty()) {
+                        val importedNames = importedResults.map { it.modName }.filter { it.isNotBlank() }
+                        val statusText = when {
+                            importedNames.isEmpty() -> "已安装 ${importedPaths.size} 个模组"
+                            importedNames.size == 1 -> "已安装 ${importedNames.single()}"
+                            else -> "已安装 ${importedNames.size} 个模组：${importedNames.joinToString("、")}"
+                        }
                         WorkshopMetadataStore(context).markPatched(
                             appId = source.appId,
                             publishedFileId = source.publishedFileId,
-                            localJarPath = imported.storagePath,
-                            statusText = "已安装 ${imported.modName}",
+                            localJarPaths = importedPaths,
+                            statusText = statusText,
                         )
                         cleanWorkshopDownloadedContent(context.filesDir, source)
                     }

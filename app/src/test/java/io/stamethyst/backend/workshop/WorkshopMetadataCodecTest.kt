@@ -57,4 +57,27 @@ class WorkshopMetadataCodecTest {
 
         assertEquals(record, decoded)
     }
+
+    @Test
+    fun roundTripsMultipleInstalledJarPaths() {
+        val record = WorkshopInstalledModRecord(
+            appId = 646570u,
+            publishedFileId = 223344u,
+            title = "Multi jar workshop",
+            description = "",
+            previewUrl = "",
+            versionText = "1710000000000",
+            updatedAtMillis = 1_710_000_000_000L,
+            installedAtMillis = 1_710_000_100_000L,
+            localJarPath = "/mods/First.jar",
+            localJarPaths = listOf("/mods/First.jar", "/mods/Second.jar"),
+            cardState = WorkshopModCardState.ImportedPatched,
+            statusText = "Installed two mods",
+        )
+
+        val decoded = WorkshopMetadataCodec.fromJson(WorkshopMetadataCodec.toJson(record))
+
+        assertEquals(record, decoded)
+        assertEquals(record.localJarPaths, decoded.allLocalJarPaths())
+    }
 }

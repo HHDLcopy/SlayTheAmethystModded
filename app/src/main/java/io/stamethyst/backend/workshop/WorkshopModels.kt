@@ -185,6 +185,7 @@ data class WorkshopInstalledModRecord(
     val updatedAtMillis: Long,
     val installedAtMillis: Long,
     val localJarPath: String,
+    val localJarPaths: List<String> = emptyList(),
     val contentKind: WorkshopInstalledContentKind = WorkshopInstalledContentKind.JarMod,
     val texturePackPath: String = "",
     val cardState: WorkshopModCardState = WorkshopModCardState.ImportedUnpatched,

@@ -58,6 +58,7 @@ import io.stamethyst.backend.workshop.WorkshopDownloadProcessService
 import io.stamethyst.backend.workshop.WorkshopMetadataStore
 import io.stamethyst.backend.workshop.WorkshopModCardState
 import io.stamethyst.backend.workshop.WorkshopService
+import io.stamethyst.backend.workshop.allLocalJarPaths
 import io.stamethyst.backend.workshop.isActiveDownload
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.RuntimePaths
@@ -818,14 +819,23 @@ class MainScreenViewModel : ViewModel() {
 
     fun onPatchWorkshopMod(host: Activity, mod: ModItemUi) {
         val workshop = mod.workshop ?: return
-        val jar = File(workshop.localJarPath)
-        if (!jar.isFile) {
+        val record = WorkshopMetadataStore(host).findByPublishedFileId(workshop.appId, workshop.publishedFileId)
+        val jars = (record?.allLocalJarPaths().orEmpty().ifEmpty { listOf(workshop.localJarPath) })
+            .map { path ->
+                val file = File(path)
+                if (file.isAbsolute) file else File(host.filesDir, "workshop/${workshop.appId}/${workshop.publishedFileId}/$path")
+            }
+            .filter { it.isFile }
+            .distinctBy { it.absolutePath }
+        if (jars.isEmpty()) {
             _effects.tryEmit(Effect.ShowSnackbar(UiText.DynamicString("未找到已下载的工坊 jar 文件")))
             return
         }
-        val uri = androidx.core.content.FileProvider.getUriForFile(host, "${host.packageName}.fileprovider", jar)
+        val uris = jars.map { jar ->
+            androidx.core.content.FileProvider.getUriForFile(host, "${host.packageName}.fileprovider", jar)
+        }
         io.stamethyst.ui.modimport.ModImportRequestBus.requestImport(
-            uris = listOf(uri),
+            uris = uris,
             workshopSource = io.stamethyst.ui.modimport.WorkshopImportSource(
                 appId = workshop.appId,
                 publishedFileId = workshop.publishedFileId,

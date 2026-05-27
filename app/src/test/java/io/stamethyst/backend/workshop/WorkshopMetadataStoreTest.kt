@@ -65,6 +65,30 @@ class WorkshopMetadataStoreTest {
     }
 
     @Test
+    fun removeByLocalJarPathsMatchesAnyInstalledJarPath() {
+        val roots = TestRoots.create("workshop-metadata-store-remove-multi-paths")
+        val store = WorkshopMetadataStore(roots.context)
+        val firstPath = File(roots.rootDir, "optional/First.jar").absolutePath
+        val secondPath = File(roots.rootDir, "optional/Second.jar").absolutePath
+        store.save(
+            listOf(
+                record(title = "Multi Jar Workshop", publishedFileId = 1u, updatedAtMillis = 100L).copy(
+                    localJarPath = firstPath,
+                    localJarPaths = listOf(firstPath, secondPath),
+                ),
+                record(title = "Other Workshop", publishedFileId = 2u, updatedAtMillis = 200L).copy(
+                    localJarPath = File(roots.rootDir, "optional/Other.jar").absolutePath
+                ),
+            )
+        )
+
+        val removedCount = store.removeByLocalJarPaths(listOf(secondPath))
+
+        assertEquals(1, removedCount)
+        assertEquals(listOf("Other Workshop"), store.list().map { it.title })
+    }
+
+    @Test
     fun recoverFinishedTransferRestoresDownloadedJarAsUnpatched() {
         val roots = TestRoots.create("workshop-metadata-store-recover-complete")
         val metadataStore = WorkshopMetadataStore(roots.context)

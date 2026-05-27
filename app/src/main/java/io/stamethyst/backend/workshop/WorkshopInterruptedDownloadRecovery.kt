@@ -22,11 +22,11 @@ internal object WorkshopInterruptedDownloadRecovery {
             return restoreExistingRecordIfPossible(context, metadataStore, taskStore, task, existingRecord)
         }
         if (task.status == WorkshopDownloadTaskStatus.Completed && existingRecord != null) return false
-        val completedArtifact = if (task.hasFinishedFileTransfer()) findDownloadedJar(outputDir) else null
-        if (completedArtifact != null) {
+        val completedArtifacts = if (task.hasFinishedFileTransfer()) findDownloadedJars(outputDir) else emptyList()
+        if (completedArtifacts.isNotEmpty()) {
             metadataStore.upsert(
                 task.details.createRecoveredDownloadedJarRecord(
-                    artifact = completedArtifact,
+                    artifacts = completedArtifacts,
                     existingRecord = existingRecord,
                 )
             )
@@ -46,10 +46,9 @@ internal object WorkshopInterruptedDownloadRecovery {
         if (record == null || record.contentKind != WorkshopInstalledContentKind.JarMod) {
             return false
         }
-        val path = record.localJarPath.trim()
-        if (path.isEmpty()) return false
-        val file = resolveWorkshopJarFile(context, record, path)
-        if (!file.isFile) return false
+        val paths = record.allLocalJarPaths()
+        val files = paths.map { path -> resolveWorkshopJarFile(context, record, path) }
+        if (files.isEmpty() || files.any { file -> !file.isFile }) return false
         when (record.cardState) {
             WorkshopModCardState.ImportedUnpatched -> {
                 taskStore.markCompleted(task.publishedFileId, RECOVERED_PATCH_INTERRUPTED_MESSAGE)
@@ -58,7 +57,7 @@ internal object WorkshopInterruptedDownloadRecovery {
             WorkshopModCardState.Downloading,
             WorkshopModCardState.DownloadPaused,
             WorkshopModCardState.DownloadFailed -> {
-                val restoredState = if (File(path).isAbsolute) {
+                val restoredState = if (paths.all { path -> File(path).isAbsolute }) {
                     if (task.details.summary.updatedAtMillis > record.updatedAtMillis) {
                         WorkshopModCardState.UpdateAvailable
                     } else {
@@ -97,9 +96,9 @@ internal object WorkshopInterruptedDownloadRecovery {
 
     private fun WorkshopInstalledModRecord.hasRestorableInstalledJar(context: Context): Boolean {
         if (contentKind != WorkshopInstalledContentKind.JarMod) return false
-        val path = localJarPath.trim()
-        if (path.isEmpty() || !File(path).isAbsolute) return false
-        return resolveWorkshopJarFile(context, this, path).isFile
+        val paths = allLocalJarPaths()
+        if (paths.isEmpty() || paths.any { path -> !File(path).isAbsolute }) return false
+        return paths.all { path -> resolveWorkshopJarFile(context, this, path).isFile }
     }
 
     private fun WorkshopDownloadTaskRecord.hasFinishedFileTransfer(): Boolean {
@@ -116,23 +115,27 @@ internal object WorkshopInterruptedDownloadRecovery {
     }
 
     private fun WorkshopItemDetails.createRecoveredDownloadedJarRecord(
-        artifact: WorkshopDownloadedArtifact,
+        artifacts: List<WorkshopDownloadedArtifact>,
         existingRecord: WorkshopInstalledModRecord?,
-    ): WorkshopInstalledModRecord = WorkshopInstalledModRecord(
-        appId = summary.appId,
-        publishedFileId = summary.publishedFileId,
-        title = summary.title,
-        description = summary.description,
-        previewUrl = summary.previewUrl,
-        versionText = summary.updatedAtMillis.toString(),
-        updatedAtMillis = summary.updatedAtMillis,
-        installedAtMillis = System.currentTimeMillis(),
-        localJarPath = artifact.relativePath,
-        cardState = WorkshopModCardState.ImportedUnpatched,
-        statusText = RECOVERED_PATCH_INTERRUPTED_MESSAGE,
-        localPreviewImagePath = existingRecord?.localPreviewImagePath.orEmpty(),
-        dependencies = dependencies,
-    )
+    ): WorkshopInstalledModRecord {
+        val relativePaths = artifacts.map { it.relativePath }
+        return WorkshopInstalledModRecord(
+            appId = summary.appId,
+            publishedFileId = summary.publishedFileId,
+            title = summary.title,
+            description = summary.description,
+            previewUrl = summary.previewUrl,
+            versionText = summary.updatedAtMillis.toString(),
+            updatedAtMillis = summary.updatedAtMillis,
+            installedAtMillis = System.currentTimeMillis(),
+            localJarPath = relativePaths.firstOrNull().orEmpty(),
+            localJarPaths = relativePaths,
+            cardState = WorkshopModCardState.ImportedUnpatched,
+            statusText = RECOVERED_PATCH_INTERRUPTED_MESSAGE,
+            localPreviewImagePath = existingRecord?.localPreviewImagePath.orEmpty(),
+            dependencies = dependencies,
+        )
+    }
 
     private fun WorkshopDownloadTaskStore.markCompleted(publishedFileId: ULong, message: String) {
         update(publishedFileId) { task ->
@@ -147,17 +150,19 @@ internal object WorkshopInterruptedDownloadRecovery {
         }
     }
 
-    private fun findDownloadedJar(outputDir: File): WorkshopDownloadedArtifact? {
-        if (!outputDir.isDirectory) return null
-        val jar = outputDir.walkTopDown()
+    private fun findDownloadedJars(outputDir: File): List<WorkshopDownloadedArtifact> {
+        if (!outputDir.isDirectory) return emptyList()
+        return outputDir.walkTopDown()
             .filter { file -> file.isFile && file.extension.equals("jar", ignoreCase = true) && file.length() > 0L }
-            .maxByOrNull { it.length() }
-            ?: return null
-        return WorkshopDownloadedArtifact(
-            relativePath = jar.relativeTo(outputDir).path,
-            sizeBytes = jar.length(),
-            modifiedAtMillis = jar.lastModified(),
-        )
+            .sortedWith(compareBy<File>({ it.relativeTo(outputDir).path.lowercase() }, { it.relativeTo(outputDir).path }))
+            .map { jar ->
+                WorkshopDownloadedArtifact(
+                    relativePath = jar.relativeTo(outputDir).path,
+                    sizeBytes = jar.length(),
+                    modifiedAtMillis = jar.lastModified(),
+                )
+            }
+            .toList()
     }
 
     private fun resolveWorkshopJarFile(context: Context, record: WorkshopInstalledModRecord, path: String): File {

@@ -515,17 +515,19 @@ class WorkshopDownloadProcessService : Service() {
                                 return@collect
                             }
                             val outputDir = File(applicationContext.filesDir, "workshop/${details.summary.appId}/${details.summary.publishedFileId}")
-                            val jarArtifact = findDownloadedJar(outputDir)
+                            val jarArtifacts = findDownloadedJars(outputDir)
                             val message: String
-                            val record = if (jarArtifact != null) {
-                                val downloadedMessage = if (countDownloadedJars(outputDir) > 1) {
-                                    "下载完成，检测到多个 jar，已选择最大文件：${jarArtifact.relativePath}"
+                            val record = if (jarArtifacts.isNotEmpty()) {
+                                val downloadedMessage = if (jarArtifacts.size > 1) {
+                                    "下载完成，检测到 ${jarArtifacts.size} 个 jar"
                                 } else {
                                     "下载完成"
                                 }
                                 val autoImportEnabled = LauncherPreferences.isWorkshopAutoImportEnabled(applicationContext)
                                 val preserveExistingUntilAutoImportFinishes = autoImportEnabled && existingRecord.hasInstalledJar()
-                                var downloadedRecord = service.createInstalledRecord(details, jarArtifact)
+                                val downloadedJarPaths = jarArtifacts.map { it.relativePath }
+                                var downloadedRecord = service.createInstalledRecord(details, jarArtifacts.first())
+                                    .copy(localJarPaths = downloadedJarPaths)
                                 if (!preserveExistingUntilAutoImportFinishes) {
                                     metadataStore.upsert(downloadedRecord)
                                 }
@@ -547,12 +549,12 @@ class WorkshopDownloadProcessService : Service() {
                                     metadataStore.upsert(downloadedRecord)
                                 }
                                 if (autoImportEnabled) {
-                                    val jarFile = File(outputDir, jarArtifact.relativePath)
+                                    val jarFiles = jarArtifacts.map { artifact -> File(outputDir, artifact.relativePath) }
                                     var lastAutoImportProgressMessage = ""
-                                    when (val importResult = WorkshopAutoImporter.importDownloadedJar(
+                                    when (val importResult = WorkshopAutoImporter.importDownloadedJars(
                                         context = applicationContext,
                                         details = details,
-                                        jarFile = jarFile,
+                                        jarFiles = jarFiles,
                                         onProgress = { progress ->
                                             val progressMessage = progress.toDownloadStatusMessage()
                                             taskStore.update(details.summary.publishedFileId) {
@@ -583,11 +585,13 @@ class WorkshopDownloadProcessService : Service() {
                                         },
                                     )) {
                                         is WorkshopAutoImportResult.Imported -> {
-                                            message = "下载完成，已自动导入 ${importResult.modName}"
+                                            val importedSummary = importResult.formatImportedSummary()
+                                            message = "下载完成，已自动导入 $importedSummary"
                                             downloadedRecord.copy(
                                                 localJarPath = importResult.storagePath,
+                                                localJarPaths = importResult.storagePaths,
                                                 cardState = WorkshopModCardState.ImportedPatched,
-                                                statusText = "已安装 ${importResult.modName}",
+                                                statusText = "已安装 $importedSummary",
                                             )
                                         }
                                         is WorkshopAutoImportResult.Failed -> {
@@ -614,7 +618,7 @@ class WorkshopDownloadProcessService : Service() {
                                 NewlyImportedModHighlightStore.mark(applicationContext, record.newlyImportedHighlightKeys())
                             }
                             metadataStore.upsert(record)
-                            if (jarArtifact != null && record.cardState == WorkshopModCardState.ImportedPatched) {
+                            if (jarArtifacts.isNotEmpty() && record.cardState == WorkshopModCardState.ImportedPatched) {
                                 cleanDownloadedContent(outputDir)
                             }
                             taskStore.update(details.summary.publishedFileId) {
@@ -932,15 +936,19 @@ class WorkshopDownloadProcessService : Service() {
         val task = taskStore.find(details.summary.publishedFileId)
         if (task?.status == WorkshopDownloadTaskStatus.Completed) return
         val outputDir = File(applicationContext.filesDir, "workshop/${details.summary.appId}/${details.summary.publishedFileId}")
-        val jarArtifact = findDownloadedJar(outputDir) ?: return
+        val jarArtifacts = findDownloadedJars(outputDir)
+        if (jarArtifacts.isEmpty()) return
         val existingRecord = metadataStore.findByPublishedFileId(
             appId = details.summary.appId,
             publishedFileId = details.summary.publishedFileId,
         )
-        if (existingRecord?.localJarPath?.trim()?.let { path -> File(path).isAbsolute && File(path).isFile } == true) {
+        if (existingRecord?.allLocalJarPaths()?.any { path -> File(path).isAbsolute && File(path).isFile } == true) {
             return
         }
-        metadataStore.upsert(service.createInstalledRecord(details, jarArtifact))
+        metadataStore.upsert(
+            service.createInstalledRecord(details, jarArtifacts.first())
+                .copy(localJarPaths = jarArtifacts.map { it.relativePath })
+        )
         taskStore.update(details.summary.publishedFileId) {
             it.copy(
                 status = WorkshopDownloadTaskStatus.Downloading,
@@ -970,8 +978,8 @@ class WorkshopDownloadProcessService : Service() {
     }
 
     private fun WorkshopInstalledModRecord?.hasInstalledJar(): Boolean {
-        val path = this?.localJarPath?.trim().orEmpty()
-        return path.isNotEmpty() && File(path).isAbsolute && File(path).isFile
+        return this?.allLocalJarPaths().orEmpty()
+            .any { path -> File(path).isAbsolute && File(path).isFile }
     }
 
     private fun WorkshopInstalledModRecord.restoreCandidateForInterruptedUpdate(): WorkshopInstalledModRecord? {
@@ -991,7 +999,7 @@ class WorkshopDownloadProcessService : Service() {
                     cardState = WorkshopModCardState.NonStandardDownloaded,
                     statusText = statusText.ifBlank { "该模组不是标准 jar 格式，请手动处理" },
                 )
-                WorkshopInstalledContentKind.JarMod -> if (localJarPath.isNotBlank()) {
+                WorkshopInstalledContentKind.JarMod -> if (allLocalJarPaths().isNotEmpty()) {
                     copy(
                         cardState = WorkshopModCardState.ImportedPatched,
                         statusText = statusText.ifBlank { "已安装" },
@@ -1020,20 +1028,20 @@ class WorkshopDownloadProcessService : Service() {
         }
     }
 
-    private fun findDownloadedJar(outputDir: File): WorkshopDownloadedArtifact? {
-        val jar = outputDir.walkTopDown()
+    private fun findDownloadedJars(outputDir: File): List<WorkshopDownloadedArtifact> {
+        if (!outputDir.isDirectory) return emptyList()
+        return outputDir.walkTopDown()
             .filter { file -> file.isFile && file.extension.equals("jar", ignoreCase = true) && file.length() > 0L }
-            .maxByOrNull { it.length() }
-            ?: return null
-        return WorkshopDownloadedArtifact(
-            relativePath = jar.relativeTo(outputDir).path,
-            sizeBytes = jar.length(),
-            modifiedAtMillis = jar.lastModified(),
-        )
+            .sortedWith(compareBy<File>({ it.relativeTo(outputDir).path.lowercase() }, { it.relativeTo(outputDir).path }))
+            .map { jar ->
+                WorkshopDownloadedArtifact(
+                    relativePath = jar.relativeTo(outputDir).path,
+                    sizeBytes = jar.length(),
+                    modifiedAtMillis = jar.lastModified(),
+                )
+            }
+            .toList()
     }
-
-    private fun countDownloadedJars(outputDir: File): Int = outputDir.walkTopDown()
-        .count { file -> file.isFile && file.extension.equals("jar", ignoreCase = true) && file.length() > 0L }
 
     private fun buildNotification(message: String): Notification {
         ensureNotificationChannel()
@@ -1167,11 +1175,18 @@ private fun buildInitialDownloadLog(details: WorkshopItemDetails): String = buil
 }.trimEnd()
 
 private fun WorkshopInstalledModRecord.newlyImportedHighlightKeys(): List<String> {
-    return listOf(
-        "workshop:$appId:$publishedFileId",
-        localJarPath,
-        texturePackPath,
-    ).map { it.trim() }.filter { it.isNotEmpty() }
+    return (listOf("workshop:$appId:$publishedFileId") + allLocalJarPaths() + texturePackPath)
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+}
+
+private fun WorkshopAutoImportResult.Imported.formatImportedSummary(): String {
+    val names = modNames
+    return when {
+        names.isEmpty() -> "${storagePaths.size} 个模组"
+        names.size == 1 -> names.single()
+        else -> "${names.size} 个模组：${names.joinToString("、")}"
+    }
 }
 
 private fun WorkshopDownloadState.displayText(): String = when (this) {

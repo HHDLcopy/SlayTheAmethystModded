@@ -136,6 +136,36 @@ class WorkshopAutoImporterTest {
     }
 
     @Test
+    fun importDownloadedJarsImportsEveryJarInBatch() {
+        val roots = TestRoots.create("workshop-multi-jar-auto-import")
+        val firstJar = File(roots.rootDir, "First.jar")
+        val secondJar = File(roots.rootDir, "Second.jar")
+        writeSimpleModJar(firstJar, modId = "firstmod", name = "First Mod")
+        writeSimpleModJar(secondJar, modId = "secondmod", name = "Second Mod")
+        val details = WorkshopItemDetails(
+            summary = WorkshopItemSummary(
+                publishedFileId = 223344uL,
+                appId = 646570u,
+                title = "Multi Jar Workshop",
+                previewUrl = "",
+                description = "",
+            )
+        )
+
+        val result = WorkshopAutoImporter.importDownloadedJars(
+            context = roots.context,
+            details = details,
+            jarFiles = listOf(firstJar, secondJar),
+        )
+
+        assertTrue("Expected imported result, got $result", result is WorkshopAutoImportResult.Imported)
+        val imported = result as WorkshopAutoImportResult.Imported
+        assertEquals(listOf("First Mod", "Second Mod"), imported.modNames)
+        assertEquals(2, imported.storagePaths.size)
+        imported.storagePaths.forEach { path -> assertTrue(File(path).isFile) }
+    }
+
+    @Test
     fun autoImportPatchLogStorePrunesOldestSlotAfterTenLogs() {
         val roots = TestRoots.create("workshop-auto-import-log-slots")
         val created = (0 until WorkshopAutoImportPatchLogStore.MAX_LOG_SLOTS + 1).map { index ->
@@ -201,6 +231,23 @@ class WorkshopAutoImporterTest {
             )
             writeEntry(zipOut, "downfall/spine/boss.json", "{}".toByteArray(Charsets.UTF_8))
             writeEntry(zipOut, "downfall/spine/boss.png", ByteArray(32) { it.toByte() })
+        }
+    }
+
+    private fun writeSimpleModJar(jarFile: File, modId: String, name: String) {
+        ZipOutputStream(jarFile.outputStream()).use { zipOut ->
+            writeEntry(
+                zipOut,
+                "ModTheSpire.json",
+                """
+                {
+                  "modid": "$modId",
+                  "name": "$name",
+                  "version": "1.0.0",
+                  "dependencies": []
+                }
+                """.trimIndent().toByteArray(Charsets.UTF_8)
+            )
         }
     }
 

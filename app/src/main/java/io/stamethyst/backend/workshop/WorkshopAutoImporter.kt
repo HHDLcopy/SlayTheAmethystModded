@@ -25,20 +25,38 @@ internal object WorkshopAutoImporter {
         details: WorkshopItemDetails,
         jarFile: File,
         onProgress: (WorkshopAutoImportProgress) -> Unit = {},
+    ): WorkshopAutoImportResult = importDownloadedJars(
+        context = context,
+        details = details,
+        jarFiles = listOf(jarFile),
+        onProgress = onProgress,
+    )
+
+    fun importDownloadedJars(
+        context: Context,
+        details: WorkshopItemDetails,
+        jarFiles: List<File>,
+        onProgress: (WorkshopAutoImportProgress) -> Unit = {},
     ): WorkshopAutoImportResult {
+        val normalizedJarFiles = jarFiles
+            .map { it.absoluteFile }
+            .distinctBy { it.absolutePath }
         val logFile = runCatching { WorkshopAutoImportPatchLogStore.createLogFile(context) }.getOrNull()
         log(logFile, "自动导入修补开始")
         log(logFile, "workshop.appId=${details.summary.appId}")
         log(logFile, "workshop.publishedFileId=${details.summary.publishedFileId}")
         log(logFile, "workshop.title=${details.summary.title}")
-        log(logFile, "source.jar.path=${jarFile.absolutePath}")
-        log(logFile, "source.jar.exists=${jarFile.isFile}")
-        log(logFile, "source.jar.length=${if (jarFile.isFile) jarFile.length() else 0L}")
+        log(logFile, "source.jar.count=${normalizedJarFiles.size}")
+        normalizedJarFiles.forEachIndexed { index, jarFile ->
+            log(logFile, "source.jar[$index].path=${jarFile.absolutePath}")
+            log(logFile, "source.jar[$index].exists=${jarFile.isFile}")
+            log(logFile, "source.jar[$index].length=${if (jarFile.isFile) jarFile.length() else 0L}")
+        }
         val plan = try {
             log(logFile, "规划阶段开始")
             ModImportPlanner.planLocalFiles(
                 context = context,
-                files = listOf(jarFile),
+                files = normalizedJarFiles,
                 options = ModImportPlanningOptions(
                     includeUserConfigurablePatches = true,
                     deferUserConfigurablePatchInspection = true,
@@ -69,15 +87,31 @@ internal object WorkshopAutoImporter {
                 }
             )
             logReport(logFile, report)
-            val imported = report.importedResults.firstOrNull()
-                ?: run {
-                    log(logFile, "自动导入失败：自动导入未产生已安装模组")
-                    return WorkshopAutoImportResult.Failed("自动导入未产生已安装模组")
+            val importedItems = report.importedResults
+                .mapNotNull { result ->
+                    val storagePath = result.storagePath?.trim().orEmpty()
+                    if (storagePath.isEmpty()) {
+                        null
+                    } else {
+                        WorkshopAutoImportedMod(
+                            modName = result.modName,
+                            storagePath = storagePath,
+                        )
+                    }
                 }
-            log(logFile, "自动导入成功：modName=${imported.modName} storagePath=${imported.storagePath.orEmpty()}")
+            if (importedItems.isEmpty()) {
+                log(logFile, "自动导入失败：自动导入未产生已安装模组")
+                return WorkshopAutoImportResult.Failed("自动导入未产生已安装模组")
+            }
+            val failedCount = report.failedCount + report.blockedCount + report.skippedCount
+            if (failedCount > 0 || importedItems.size < normalizedJarFiles.size) {
+                val message = "自动导入仅成功 ${importedItems.size}/${normalizedJarFiles.size} 个 jar"
+                log(logFile, "自动导入失败：$message")
+                return WorkshopAutoImportResult.Failed(message)
+            }
+            log(logFile, "自动导入成功：items=${importedItems.joinToString { "${it.modName}:${it.storagePath}" }}")
             WorkshopAutoImportResult.Imported(
-                modName = imported.modName,
-                storagePath = imported.storagePath.orEmpty(),
+                mods = importedItems,
             )
         } catch (error: Throwable) {
             log(logFile, "执行阶段失败：${error.summaryForLog()}")
@@ -264,11 +298,24 @@ internal data class WorkshopAutoImportProgress(
     val currentFileName: String,
 )
 
+internal data class WorkshopAutoImportedMod(
+    val modName: String,
+    val storagePath: String,
+)
+
 internal sealed interface WorkshopAutoImportResult {
     data class Imported(
-        val modName: String,
-        val storagePath: String,
-    ) : WorkshopAutoImportResult
+        val mods: List<WorkshopAutoImportedMod>,
+    ) : WorkshopAutoImportResult {
+        val modName: String
+            get() = mods.firstOrNull()?.modName.orEmpty()
+        val storagePath: String
+            get() = mods.firstOrNull()?.storagePath.orEmpty()
+        val modNames: List<String>
+            get() = mods.map { it.modName }.filter { it.isNotBlank() }
+        val storagePaths: List<String>
+            get() = mods.map { it.storagePath }.filter { it.isNotBlank() }
+    }
 
     data class Failed(
         val message: String,

@@ -1618,6 +1618,10 @@
     <string name="settings_render_scale_title">渲染縮放</string>
     <string name="settings_render_scale_desc">數值越高畫面越清晰，越低則越省效能。</string>
     <string name="settings_target_fps_title">FPS 上限</string>
+    <string name="settings_keep_screen_on_timeout_title">熄屏時間</string>
+    <string name="settings_keep_screen_on_timeout_desc">控制遊戲在最後一次 Android 輸入後繼續保持螢幕常亮多久。啟動載入層始終會保持螢幕常亮。</string>
+    <string name="settings_keep_screen_on_timeout_always">始終禁止熄屏</string>
+    <string name="settings_keep_screen_on_timeout_minutes">%1$d 分鐘</string>
     <string name="settings_sustained_performance_enabled">持續效能模式：開啟</string>
     <string name="settings_sustained_performance_disabled">持續效能模式：關閉</string>
     <string name="settings_sustained_performance_desc">僅在裝置支援時生效。開啟後，啟動器會在遊戲位於前臺時請求持續效能模式。它通常更偏向長時間遊玩的穩定性，而不是短時間的更高峰值效能。預設關閉。</string>
@@ -1807,6 +1811,7 @@
     <string name="settings_status_compendium_touch_fix">百科大全看升級版觸控修復：%1$s</string>
     <string name="settings_status_avoid_display_cutout">避開攝像頭開孔：%1$s</string>
     <string name="settings_status_crop_screen_bottom">裁掉螢幕底邊：%1$s</string>
+    <string name="settings_status_keep_screen_on_timeout">熄屏時間：%1$s</string>
     <string name="settings_status_performance_overlay">效能疊層：%1$s</string>
     <string name="settings_status_sustained_performance">持續效能模式：%1$s</string>
     <string name="settings_status_system_game_mode">系統 Game Mode：%1$s</string>

@@ -246,6 +246,9 @@ fun LauncherSettingsGameScreen(
         onRamSaverEnabledChanged = { enabled ->
             viewModel.onRamSaverEnabledChanged(activity, enabled)
         },
+        onKeepScreenOnTimeoutSelected = { timeoutMinutes ->
+            viewModel.onKeepScreenOnTimeoutSelected(activity, timeoutMinutes)
+        },
         onGameplayFontScaleChanged = { value ->
             viewModel.onGameplayFontScaleChanged(activity, value)
         },
@@ -529,6 +532,7 @@ private fun LauncherSettingsScreenPreview() {
             avoidDisplayCutout = false,
             cropScreenBottom = false,
             showGamePerformanceOverlay = false,
+            keepScreenOnTimeoutMinutes = LauncherPreferences.DEFAULT_KEEP_SCREEN_ON_TIMEOUT_MINUTES,
             sustainedPerformanceModeEnabled = true,
             lwjglDebugEnabled = false,
             preloadAllJreLibrariesEnabled = false,
@@ -544,6 +548,7 @@ private fun LauncherSettingsScreenPreview() {
             statusText = "desktop-1.0.jar: OK\nBaseMod.jar: OK\nStSLib.jar: OK\nAmethystRuntimeCompat.jar: OK",
             logPathText = "/example/path/to/logs",
             targetFpsOptions = listOf(24, 30, 60, 120, 240),
+            keepScreenOnTimeoutMinuteOptions = listOf(0, 5, 10, 30, 60),
             updateStatusSummary = "最近检查：2026-03-09 11:20\n远端版本：1.0.6-hotfix1\n结果：发现新版本\n下载源：gh-proxy.com",
         ),
         feedbackSubmissionNotice = FeedbackSubmissionNotice(
@@ -767,6 +772,7 @@ private fun LauncherSettingsGameScreenContent(
     onDisplayCutoutAvoidanceChanged: (Boolean) -> Unit = {},
     onScreenBottomCropChanged: (Boolean) -> Unit = {},
     onRamSaverEnabledChanged: (Boolean) -> Unit = {},
+    onKeepScreenOnTimeoutSelected: (Int) -> Unit = {},
     onGameplayFontScaleChanged: (Float) -> Unit = {},
     onGameplayLargerUiChanged: (Boolean) -> Unit = {},
     onPlayerNameChanged: (String) -> Boolean = { true },
@@ -818,6 +824,7 @@ private fun LauncherSettingsGameScreenContent(
                     onBuiltInSoftKeyboardChanged = onBuiltInSoftKeyboardChanged,
                     onHapticFeedbackChanged = onHapticFeedbackChanged,
                     onAutoSwitchLeftAfterRightClickChanged = onAutoSwitchLeftAfterRightClickChanged,
+                    onKeepScreenOnTimeoutSelected = onKeepScreenOnTimeoutSelected,
                     onGamePerformanceOverlayChanged = onGamePerformanceOverlayChanged,
                 )
             }
@@ -3309,6 +3316,7 @@ private fun SettingsInputSection(
     onBuiltInSoftKeyboardChanged: (Boolean) -> Unit,
     onHapticFeedbackChanged: (Boolean) -> Unit,
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit,
+    onKeepScreenOnTimeoutSelected: (Int) -> Unit,
     onGamePerformanceOverlayChanged: (Boolean) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -3324,6 +3332,7 @@ private fun SettingsInputSection(
             onTouchIndicatorEnabledChanged = onTouchIndicatorEnabledChanged,
             onTouchDoubleClickAsRightClickChanged = onTouchDoubleClickAsRightClickChanged,
             onHapticFeedbackChanged = onHapticFeedbackChanged,
+            onKeepScreenOnTimeoutSelected = onKeepScreenOnTimeoutSelected,
             onGamePerformanceOverlayChanged = onGamePerformanceOverlayChanged,
         )
         HorizontalDivider()
@@ -3352,6 +3361,7 @@ internal fun SettingsInputBasicsSection(
     onTouchIndicatorEnabledChanged: (Boolean) -> Unit,
     onTouchDoubleClickAsRightClickChanged: (Boolean) -> Unit,
     onHapticFeedbackChanged: (Boolean) -> Unit,
+    onKeepScreenOnTimeoutSelected: (Int) -> Unit,
     onGamePerformanceOverlayChanged: (Boolean) -> Unit,
 ) {
     var showPlayerNameDialog by rememberSaveable { mutableStateOf(false) }
@@ -3410,6 +3420,16 @@ internal fun SettingsInputBasicsSection(
         disabledText = stringResource(R.string.settings_haptic_feedback_disabled),
         description = stringResource(R.string.settings_haptic_feedback_desc),
         onCheckedChange = onHapticFeedbackChanged
+    )
+
+    SettingsDropdownField(
+        label = stringResource(R.string.settings_keep_screen_on_timeout_title),
+        valueText = keepScreenOnTimeoutDisplayName(uiState.keepScreenOnTimeoutMinutes),
+        enabled = !uiState.busy,
+        supportingText = stringResource(R.string.settings_keep_screen_on_timeout_desc),
+        options = uiState.keepScreenOnTimeoutMinuteOptions,
+        optionLabel = { timeoutMinutes -> keepScreenOnTimeoutDisplayName(timeoutMinutes) },
+        onOptionSelected = onKeepScreenOnTimeoutSelected
     )
 
 //    SwitchSettingRow(
@@ -4280,6 +4300,15 @@ private fun TouchscreenInputMode.description(): String {
             TouchscreenInputMode.MOBILE -> R.string.settings_touchscreen_mode_mobile_desc
         }
     )
+}
+
+@Composable
+private fun keepScreenOnTimeoutDisplayName(timeoutMinutes: Int): String {
+    return if (timeoutMinutes == LauncherPreferences.KEEP_SCREEN_ON_TIMEOUT_ALWAYS_MINUTES) {
+        stringResource(R.string.settings_keep_screen_on_timeout_always)
+    } else {
+        stringResource(R.string.settings_keep_screen_on_timeout_minutes, timeoutMinutes)
+    }
 }
 
 @Composable

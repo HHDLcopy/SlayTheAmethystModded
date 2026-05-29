@@ -1618,6 +1618,10 @@
     <string name="settings_render_scale_title">渲染缩放</string>
     <string name="settings_render_scale_desc">数值越高画面越清晰，越低则越省性能。</string>
     <string name="settings_target_fps_title">FPS 上限</string>
+    <string name="settings_keep_screen_on_timeout_title">息屏时间</string>
+    <string name="settings_keep_screen_on_timeout_desc">控制游戏在最后一次 Android 输入后继续保持屏幕常亮多久。启动加载层始终会保持屏幕常亮。</string>
+    <string name="settings_keep_screen_on_timeout_always">始终禁止息屏</string>
+    <string name="settings_keep_screen_on_timeout_minutes">%1$d 分钟</string>
     <string name="settings_sustained_performance_enabled">持续性能模式：开启</string>
     <string name="settings_sustained_performance_disabled">持续性能模式：关闭</string>
     <string name="settings_sustained_performance_desc">仅在设备支持时生效。开启后，启动器会在游戏位于前台时请求持续性能模式。它通常更偏向长时间游玩的稳定性，而不是短时间的更高峰值性能。默认关闭。</string>
@@ -1807,6 +1811,7 @@
     <string name="settings_status_compendium_touch_fix">百科大全看升级版触控修复：%1$s</string>
     <string name="settings_status_avoid_display_cutout">避开摄像头开孔：%1$s</string>
     <string name="settings_status_crop_screen_bottom">裁掉屏幕底边：%1$s</string>
+    <string name="settings_status_keep_screen_on_timeout">息屏时间：%1$s</string>
     <string name="settings_status_performance_overlay">性能叠层：%1$s</string>
     <string name="settings_status_sustained_performance">持续性能模式：%1$s</string>
     <string name="settings_status_system_game_mode">系统 Game Mode：%1$s</string>

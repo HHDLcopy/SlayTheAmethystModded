@@ -270,6 +270,8 @@ class SettingsScreenViewModel : ViewModel() {
         val avoidDisplayCutout: Boolean = LauncherPreferences.DEFAULT_AVOID_DISPLAY_CUTOUT,
         val cropScreenBottom: Boolean = LauncherPreferences.DEFAULT_CROP_SCREEN_BOTTOM,
         val ramSaverEnabled: Boolean = LauncherPreferences.DEFAULT_RAM_SAVER_ENABLED,
+        val keepScreenOnTimeoutMinutes: Int =
+            LauncherPreferences.DEFAULT_KEEP_SCREEN_ON_TIMEOUT_MINUTES,
         val showGamePerformanceOverlay: Boolean = LauncherPreferences.DEFAULT_SHOW_GAME_PERFORMANCE_OVERLAY,
         val sustainedPerformanceModeEnabled: Boolean =
             LauncherPreferences.DEFAULT_SUSTAINED_PERFORMANCE_MODE_ENABLED,
@@ -293,6 +295,8 @@ class SettingsScreenViewModel : ViewModel() {
         val statusText: String = "",
         val logPathText: String = "",
         val targetFpsOptions: List<Int> = LauncherPreferences.TARGET_FPS_OPTIONS.toList(),
+        val keepScreenOnTimeoutMinuteOptions: List<Int> =
+            LauncherPreferences.KEEP_SCREEN_ON_TIMEOUT_MINUTE_OPTIONS.toList(),
         val autoCheckUpdatesEnabled: Boolean = LauncherPreferences.DEFAULT_AUTO_CHECK_UPDATES_ENABLED,
         val preferredUpdateMirror: UpdateSource = UpdateSource.DEFAULT_PREFERRED_USER_SOURCE,
         val availableUpdateMirrors: List<UpdateSource> = UpdateMirrorManager.selectableSources(),
@@ -407,12 +411,18 @@ class SettingsScreenViewModel : ViewModel() {
 
     fun bind(
         activity: Activity,
-        targetFpsOptions: IntArray = LauncherPreferences.TARGET_FPS_OPTIONS
+        targetFpsOptions: IntArray = LauncherPreferences.TARGET_FPS_OPTIONS,
+        keepScreenOnTimeoutMinuteOptions: IntArray =
+            LauncherPreferences.KEEP_SCREEN_ON_TIMEOUT_MINUTE_OPTIONS
     ) {
         syncThemeAppearance(activity)
         val options = targetFpsOptions.toList()
         if (uiState.targetFpsOptions != options) {
             uiState = uiState.copy(targetFpsOptions = options)
+        }
+        val keepScreenOnOptions = keepScreenOnTimeoutMinuteOptions.toList()
+        if (uiState.keepScreenOnTimeoutMinuteOptions != keepScreenOnOptions) {
+            uiState = uiState.copy(keepScreenOnTimeoutMinuteOptions = keepScreenOnOptions)
         }
         syncStoredUpdateState(activity)
         runCatching {
@@ -2663,6 +2673,19 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(host)
     }
 
+    fun onKeepScreenOnTimeoutSelected(host: Activity, timeoutMinutes: Int) {
+        if (uiState.busy) {
+            return
+        }
+        val normalizedTimeout = LauncherPreferences.normalizeKeepScreenOnTimeoutMinutes(timeoutMinutes)
+        if (uiState.keepScreenOnTimeoutMinutes == normalizedTimeout) {
+            return
+        }
+        uiState = uiState.copy(keepScreenOnTimeoutMinutes = normalizedTimeout)
+        saveKeepScreenOnTimeoutSelection(host, normalizedTimeout)
+        refreshStatus(host)
+    }
+
     fun onGamePerformanceOverlayChanged(host: Activity, enabled: Boolean) {
         if (uiState.busy) {
             return
@@ -3157,6 +3180,7 @@ class SettingsScreenViewModel : ViewModel() {
             avoidDisplayCutout = input.avoidDisplayCutout,
             cropScreenBottom = input.cropScreenBottom,
             ramSaverEnabled = input.ramSaverEnabled,
+            keepScreenOnTimeoutMinutes = input.keepScreenOnTimeoutMinutes,
             showGamePerformanceOverlay = diagnostics.showGamePerformanceOverlay,
             sustainedPerformanceModeEnabled = diagnostics.sustainedPerformanceModeEnabled,
             systemGameModeDisplayName = host.getString(diagnostics.systemGameMode.displayNameResId),
@@ -3715,6 +3739,10 @@ class SettingsScreenViewModel : ViewModel() {
             toggleStateText(host, input.cropScreenBottom)
         )
         lines += host.getString(
+            R.string.settings_status_keep_screen_on_timeout,
+            keepScreenOnTimeoutLabel(host, input.keepScreenOnTimeoutMinutes)
+        )
+        lines += host.getString(
             R.string.settings_status_performance_overlay,
             toggleStateText(host, diagnostics.showGamePerformanceOverlay)
         )
@@ -4050,6 +4078,14 @@ class SettingsScreenViewModel : ViewModel() {
 
     private fun touchMouseInteractionLabel(host: Activity, mode: TouchMouseInteractionMode): String {
         return host.getString(mode.displayNameResId())
+    }
+
+    private fun keepScreenOnTimeoutLabel(host: Activity, timeoutMinutes: Int): String {
+        return if (timeoutMinutes == LauncherPreferences.KEEP_SCREEN_ON_TIMEOUT_ALWAYS_MINUTES) {
+            host.getString(R.string.settings_keep_screen_on_timeout_always)
+        } else {
+            host.getString(R.string.settings_keep_screen_on_timeout_minutes, timeoutMinutes)
+        }
     }
 
     private fun virtualResolutionModeDisplayName(
@@ -4412,6 +4448,10 @@ class SettingsScreenViewModel : ViewModel() {
 
     private fun saveTargetFpsSelection(host: Activity, targetFps: Int) {
         LauncherPreferences.saveTargetFps(host, targetFps)
+    }
+
+    private fun saveKeepScreenOnTimeoutSelection(host: Activity, timeoutMinutes: Int) {
+        LauncherPreferences.saveKeepScreenOnTimeoutMinutes(host, timeoutMinutes)
     }
 
     private fun saveVirtualResolutionModeSelection(

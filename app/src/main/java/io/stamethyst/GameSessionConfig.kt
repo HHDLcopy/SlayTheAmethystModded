@@ -36,6 +36,7 @@ internal data class GameSessionConfig(
     val avoidDisplayCutout: Boolean,
     val cropScreenBottom: Boolean,
     val sustainedPerformanceModeEnabled: Boolean,
+    val keepScreenOnTimeoutMs: Long?,
     val systemGameMode: AndroidGameModeSnapshot
 ) {
     val renderSurfaceBackend: RenderSurfaceBackend
@@ -94,6 +95,9 @@ internal data class GameSessionConfig(
                 cropScreenBottom = LauncherConfig.isScreenBottomCropEnabled(context),
                 sustainedPerformanceModeEnabled =
                     LauncherConfig.isSustainedPerformanceModeEnabled(context),
+                keepScreenOnTimeoutMs = LauncherConfig.keepScreenOnTimeoutMs(
+                    LauncherConfig.readKeepScreenOnTimeoutMinutes(context)
+                ),
                 systemGameMode = systemGameMode
             )
         }

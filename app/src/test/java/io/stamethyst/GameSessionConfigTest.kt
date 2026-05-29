@@ -68,6 +68,7 @@ class GameSessionConfigTest {
             avoidDisplayCutout = false,
             cropScreenBottom = false,
             sustainedPerformanceModeEnabled = false,
+            keepScreenOnTimeoutMs = null,
             systemGameMode = AndroidGameModeSnapshot(
                 rawMode = 0,
                 displayNameResId = R.string.settings_game_mode_name_unsupported,

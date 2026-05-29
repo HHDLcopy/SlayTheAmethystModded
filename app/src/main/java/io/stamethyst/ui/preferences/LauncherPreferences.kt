@@ -34,6 +34,12 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_TARGET_FPS
     val TARGET_FPS_OPTIONS: IntArray
         get() = LauncherConfig.TARGET_FPS_OPTIONS.copyOf()
+    val DEFAULT_KEEP_SCREEN_ON_TIMEOUT_MINUTES: Int
+        get() = LauncherConfig.DEFAULT_KEEP_SCREEN_ON_TIMEOUT_MINUTES
+    val KEEP_SCREEN_ON_TIMEOUT_ALWAYS_MINUTES: Int
+        get() = LauncherConfig.KEEP_SCREEN_ON_TIMEOUT_ALWAYS_MINUTES
+    val KEEP_SCREEN_ON_TIMEOUT_MINUTE_OPTIONS: IntArray
+        get() = LauncherConfig.KEEP_SCREEN_ON_TIMEOUT_MINUTE_OPTIONS.copyOf()
     val DEFAULT_RENDER_SURFACE_BACKEND: RenderSurfaceBackend
         get() = LauncherConfig.DEFAULT_RENDER_SURFACE_BACKEND
     val DEFAULT_RENDERER_SELECTION_MODE: RendererSelectionMode
@@ -620,6 +626,18 @@ object LauncherPreferences {
 
     fun saveTargetFps(context: Context, targetFps: Int) {
         LauncherConfig.saveTargetFps(context, targetFps)
+    }
+
+    fun normalizeKeepScreenOnTimeoutMinutes(timeoutMinutes: Int): Int {
+        return LauncherConfig.normalizeKeepScreenOnTimeoutMinutes(timeoutMinutes)
+    }
+
+    fun readKeepScreenOnTimeoutMinutes(context: Context): Int {
+        return LauncherConfig.readKeepScreenOnTimeoutMinutes(context)
+    }
+
+    fun saveKeepScreenOnTimeoutMinutes(context: Context, timeoutMinutes: Int) {
+        LauncherConfig.saveKeepScreenOnTimeoutMinutes(context, timeoutMinutes)
     }
 
     fun normalizeJvmHeapMaxMb(heapMaxMb: Int): Int {

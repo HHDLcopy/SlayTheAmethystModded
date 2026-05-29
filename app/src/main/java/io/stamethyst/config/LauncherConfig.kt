@@ -88,6 +88,7 @@ object LauncherConfig {
     private const val PREF_KEY_SHOW_GAME_PERFORMANCE_OVERLAY = "show_game_performance_overlay"
     private const val PREF_KEY_SUSTAINED_PERFORMANCE_MODE_ENABLED =
         "sustained_performance_mode_enabled"
+    private const val PREF_KEY_KEEP_SCREEN_ON_TIMEOUT_MINUTES = "keep_screen_on_timeout_minutes"
     private const val PREF_KEY_TARGET_FPS = "target_fps"
     private const val PREF_KEY_JVM_HEAP_MAX_MB = "jvm_heap_max_mb"
     private const val PREF_KEY_JVM_COMPRESSED_POINTERS_ENABLED = "jvm_compressed_pointers_enabled"
@@ -180,6 +181,15 @@ object LauncherConfig {
     const val DEFAULT_MANUAL_DISMISS_BOOT_OVERLAY = false
     const val DEFAULT_TARGET_FPS = 60
     val TARGET_FPS_OPTIONS = intArrayOf(24, 30, 60, 120, 240)
+    const val KEEP_SCREEN_ON_TIMEOUT_ALWAYS_MINUTES = 0
+    const val DEFAULT_KEEP_SCREEN_ON_TIMEOUT_MINUTES = KEEP_SCREEN_ON_TIMEOUT_ALWAYS_MINUTES
+    val KEEP_SCREEN_ON_TIMEOUT_MINUTE_OPTIONS = intArrayOf(
+        KEEP_SCREEN_ON_TIMEOUT_ALWAYS_MINUTES,
+        5,
+        10,
+        30,
+        60
+    )
     val DEFAULT_RENDER_SURFACE_BACKEND: RenderSurfaceBackend = RenderSurfaceBackend.SURFACE_VIEW
     val DEFAULT_RENDERER_SELECTION_MODE: RendererSelectionMode = RendererSelectionMode.AUTO
     val DEFAULT_MANUAL_RENDERER_BACKEND: RendererBackend =
@@ -745,6 +755,41 @@ object LauncherConfig {
     fun setRamSaverEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_RAM_SAVER_ENABLED, enabled)
+        }
+    }
+
+    fun normalizeKeepScreenOnTimeoutMinutes(timeoutMinutes: Int): Int {
+        return if (KEEP_SCREEN_ON_TIMEOUT_MINUTE_OPTIONS.contains(timeoutMinutes)) {
+            timeoutMinutes
+        } else {
+            DEFAULT_KEEP_SCREEN_ON_TIMEOUT_MINUTES
+        }
+    }
+
+    fun readKeepScreenOnTimeoutMinutes(context: Context): Int {
+        return normalizeKeepScreenOnTimeoutMinutes(
+            prefs(context).getInt(
+                PREF_KEY_KEEP_SCREEN_ON_TIMEOUT_MINUTES,
+                DEFAULT_KEEP_SCREEN_ON_TIMEOUT_MINUTES
+            )
+        )
+    }
+
+    fun saveKeepScreenOnTimeoutMinutes(context: Context, timeoutMinutes: Int) {
+        prefs(context).edit {
+            putInt(
+                PREF_KEY_KEEP_SCREEN_ON_TIMEOUT_MINUTES,
+                normalizeKeepScreenOnTimeoutMinutes(timeoutMinutes)
+            )
+        }
+    }
+
+    fun keepScreenOnTimeoutMs(timeoutMinutes: Int): Long? {
+        val normalized = normalizeKeepScreenOnTimeoutMinutes(timeoutMinutes)
+        return if (normalized == KEEP_SCREEN_ON_TIMEOUT_ALWAYS_MINUTES) {
+            null
+        } else {
+            normalized * 60_000L
         }
     }
 

@@ -8,6 +8,8 @@ import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.WindowManager
@@ -66,8 +68,15 @@ class StsGameActivity : AppCompatActivity() {
     private lateinit var inputHandler: GameInputHandler
     private lateinit var sessionCoordinator: GameSessionCoordinator
     private lateinit var gameAudioController: GameAudioController
+    private val keepScreenOnHandler = Handler(Looper.getMainLooper())
+    private val keepScreenOnIdleRunnable = Runnable {
+        keepScreenOnActive = false
+        updateKeepScreenOnFlag()
+    }
     private var onBackInvokedCallback: OnBackInvokedCallback? = null
     private var bootOverlayKeepScreenOn = false
+    private var keepScreenOnActive = false
+    private var activityForeground = false
     private val launchGuardToken: String = UUID.randomUUID().toString()
     private val launchGuardLock = Any()
     private var launchGuardAcquired = false
@@ -99,7 +108,6 @@ class StsGameActivity : AppCompatActivity() {
         }
         setContentView(R.layout.activity_game)
         setVolumeControlStream(AudioManager.STREAM_MUSIC)
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         sessionConfig = GameSessionConfig.fromActivityIntent(this, intent)
         MemoryDiagnosticsLogger.logEvent(
@@ -155,6 +163,8 @@ class StsGameActivity : AppCompatActivity() {
         gameAudioController.onResume()
         renderSurfaceManager.onForegroundChanged(true)
         sessionCoordinator.onResume()
+        activityForeground = true
+        resetKeepScreenOnIdleTimer()
     }
 
     override fun onPause() {
@@ -169,6 +179,9 @@ class StsGameActivity : AppCompatActivity() {
         sessionCoordinator.onPause()
         renderSurfaceManager.onForegroundChanged(false)
         DisplayPerformanceController.applySustainedPerformanceMode(this, false)
+        activityForeground = false
+        keepScreenOnHandler.removeCallbacks(keepScreenOnIdleRunnable)
+        updateKeepScreenOnFlag()
         super.onPause()
     }
 
@@ -333,6 +346,38 @@ class StsGameActivity : AppCompatActivity() {
             return
         }
         bootOverlayKeepScreenOn = enabled
+        if (enabled) {
+            keepScreenOnActive = true
+        } else {
+            resetKeepScreenOnIdleTimer()
+        }
+        updateKeepScreenOnFlag()
+    }
+
+    private fun resetKeepScreenOnIdleTimer() {
+        if (!::sessionConfig.isInitialized) {
+            return
+        }
+        keepScreenOnHandler.removeCallbacks(keepScreenOnIdleRunnable)
+        if (!activityForeground) {
+            keepScreenOnActive = false
+            updateKeepScreenOnFlag()
+            return
+        }
+        keepScreenOnActive = true
+        val timeoutMs = sessionConfig.keepScreenOnTimeoutMs
+        if (timeoutMs != null && !bootOverlayKeepScreenOn) {
+            keepScreenOnHandler.postDelayed(keepScreenOnIdleRunnable, timeoutMs)
+        }
+        updateKeepScreenOnFlag()
+    }
+
+    private fun updateKeepScreenOnFlag() {
+        if (activityForeground && (bootOverlayKeepScreenOn || keepScreenOnActive)) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
     }
 
     fun requestInGameFileSelection(requestId: String, mimeType: String) {
@@ -391,14 +436,22 @@ class StsGameActivity : AppCompatActivity() {
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        resetKeepScreenOnIdleTimer()
         return inputHandler.handleTouchEvent(event) || super.onTouchEvent(event)
     }
 
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        resetKeepScreenOnIdleTimer()
+        return super.dispatchTouchEvent(event)
+    }
+
     override fun onGenericMotionEvent(event: MotionEvent): Boolean {
+        resetKeepScreenOnIdleTimer()
         return inputHandler.handleGenericMotionEvent(event) || super.onGenericMotionEvent(event)
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        resetKeepScreenOnIdleTimer()
         val keyCode = event.keyCode
         if (keyCode == KeyEvent.KEYCODE_BACK && sessionCoordinator.handleAndroidBackKeyEvent(event)) {
             return true

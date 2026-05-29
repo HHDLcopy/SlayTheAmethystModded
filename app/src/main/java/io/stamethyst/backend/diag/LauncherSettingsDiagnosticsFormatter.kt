@@ -123,6 +123,8 @@ internal object LauncherSettingsDiagnosticsFormatter {
                         "cropScreenBottom" to formatBoolean(
                             LauncherConfig.isScreenBottomCropEnabled(context)
                         ),
+                        "keepScreenOnTimeoutMinutes" to
+                            LauncherConfig.readKeepScreenOnTimeoutMinutes(context).toString(),
                         "showGamePerformanceOverlay" to formatBoolean(
                             LauncherConfig.isGamePerformanceOverlayEnabled(context)
                         ),

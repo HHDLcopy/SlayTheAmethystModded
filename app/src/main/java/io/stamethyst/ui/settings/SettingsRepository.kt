@@ -79,6 +79,7 @@ internal object SettingsRepository {
         val avoidDisplayCutout: Boolean,
         val cropScreenBottom: Boolean,
         val ramSaverEnabled: Boolean,
+        val keepScreenOnTimeoutMinutes: Int,
         val touchscreenEnabled: Boolean,
         val touchIndicatorEnabled: Boolean,
         val fontScale: Float,
@@ -189,6 +190,7 @@ internal object SettingsRepository {
                 avoidDisplayCutout = LauncherPreferences.isDisplayCutoutAvoidanceEnabled(context),
                 cropScreenBottom = LauncherPreferences.isScreenBottomCropEnabled(context),
                 ramSaverEnabled = LauncherPreferences.isRamSaverEnabled(context),
+                keepScreenOnTimeoutMinutes = LauncherPreferences.readKeepScreenOnTimeoutMinutes(context),
                 touchscreenEnabled = GameplaySettingsService.readTouchscreenEnabled(context),
                 touchIndicatorEnabled = GameplaySettingsService.readTouchIndicatorEnabled(context),
                 fontScale = GameplaySettingsService.readFontScale(context),
@@ -329,6 +331,10 @@ internal object SettingsRepository {
         LauncherPreferences.setRamSaverEnabled(
             context,
             LauncherPreferences.DEFAULT_RAM_SAVER_ENABLED
+        )
+        LauncherPreferences.saveKeepScreenOnTimeoutMinutes(
+            context,
+            LauncherPreferences.DEFAULT_KEEP_SCREEN_ON_TIMEOUT_MINUTES
         )
         LauncherPreferences.setGamePerformanceOverlayEnabled(
             context,

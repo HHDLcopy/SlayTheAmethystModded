@@ -104,6 +104,24 @@ class DownfallImportCompatPatcherTest {
     }
 
     @Test
+    fun patchInPlace_upgradesBossRelativePanelToHoverGatedPanel() {
+        val tempDir = Files.createTempDirectory("downfall-import-patcher-boss-panel-hover-upgrade")
+        val jarFile = tempDir.resolve("Downfall.jar").toFile()
+        ZipOutputStream(jarFile.outputStream()).use { zipOut ->
+            writeClassEntry(
+                zipOut = zipOut,
+                entryName = "charbosses/BossMechanicDisplayPanel.class",
+                classBytes = buildBossRelativeNonHoverGatedPanelClassBytes()
+            )
+        }
+
+        val patchResult = DownfallImportCompatPatcher.patchInPlace(jarFile)
+        assertEquals(1, patchResult.patchedClassEntries)
+        assertEquals(1, patchResult.patchedBossMechanicPanelClassEntries)
+        assertTrue(hasBossRelativeMechanicPanelLayout(jarFile))
+    }
+
+    @Test
     fun patchInPlace_normalizesLegacyHexaghostBodyOffsets() {
         val tempDir = Files.createTempDirectory("downfall-import-patcher-legacy-hexa")
         val jarFile = tempDir.resolve("Downfall.jar").toFile()
@@ -505,6 +523,113 @@ class DownfallImportCompatPatcherTest {
         return classWriter.toByteArray()
     }
 
+    private fun buildBossRelativeNonHoverGatedPanelClassBytes(): ByteArray {
+        val classWriter = ClassWriter(ClassWriter.COMPUTE_MAXS or ClassWriter.COMPUTE_FRAMES)
+        classWriter.visit(
+            Opcodes.V1_8,
+            Opcodes.ACC_PUBLIC,
+            "charbosses/BossMechanicDisplayPanel",
+            null,
+            "automaton/EasyInfoDisplayPanel",
+            null
+        )
+        classWriter.visitField(Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, "mechanicDesc", "Ljava/lang/String;", null, null).visitEnd()
+
+        val constructor = classWriter.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null)
+        constructor.visitCode()
+        constructor.visitVarInsn(Opcodes.ALOAD, 0)
+        constructor.visitFieldInsn(Opcodes.GETSTATIC, "com/megacrit/cardcrawl/core/Settings", "WIDTH", "I")
+        constructor.visitInsn(Opcodes.I2F)
+        constructor.visitLdcInsn(BOSS_PANEL_X_RATIO)
+        constructor.visitInsn(Opcodes.FMUL)
+        constructor.visitFieldInsn(Opcodes.GETSTATIC, "com/megacrit/cardcrawl/core/Settings", "HEIGHT", "I")
+        constructor.visitInsn(Opcodes.I2F)
+        constructor.visitLdcInsn(BOSS_PANEL_Y_RATIO)
+        constructor.visitInsn(Opcodes.FMUL)
+        constructor.visitFieldInsn(Opcodes.GETSTATIC, "com/megacrit/cardcrawl/core/Settings", "WIDTH", "I")
+        constructor.visitInsn(Opcodes.I2F)
+        constructor.visitLdcInsn(BOSS_PANEL_WIDTH_RATIO)
+        constructor.visitInsn(Opcodes.FMUL)
+        constructor.visitMethodInsn(
+            Opcodes.INVOKESPECIAL,
+            "automaton/EasyInfoDisplayPanel",
+            "<init>",
+            "(FFF)V",
+            false
+        )
+        constructor.visitInsn(Opcodes.RETURN)
+        constructor.visitMaxs(0, 0)
+        constructor.visitEnd()
+
+        val getDescription = classWriter.visitMethod(Opcodes.ACC_PUBLIC, "getDescription", "()Ljava/lang/String;", null, null)
+        getDescription.visitCode()
+        getDescription.visitFieldInsn(
+            Opcodes.GETSTATIC,
+            "charbosses/bosses/AbstractCharBoss",
+            "boss",
+            "Lcharbosses/bosses/AbstractCharBoss;"
+        )
+        getDescription.visitVarInsn(Opcodes.ASTORE, 1)
+        getDescription.visitVarInsn(Opcodes.ALOAD, 1)
+        getDescription.visitFieldInsn(
+            Opcodes.GETFIELD,
+            "com/megacrit/cardcrawl/core/AbstractCreature",
+            "hb",
+            "Lcom/megacrit/cardcrawl/helpers/Hitbox;"
+        )
+        getDescription.visitVarInsn(Opcodes.ASTORE, 2)
+        getDescription.visitFieldInsn(Opcodes.GETSTATIC, "com/megacrit/cardcrawl/core/Settings", "scale", "F")
+        getDescription.visitLdcInsn(BOSS_PANEL_DYNAMIC_WIDTH)
+        getDescription.visitInsn(Opcodes.FMUL)
+        getDescription.visitVarInsn(Opcodes.FSTORE, 3)
+        getDescription.visitVarInsn(Opcodes.ALOAD, 0)
+        getDescription.visitVarInsn(Opcodes.ALOAD, 2)
+        getDescription.visitFieldInsn(Opcodes.GETFIELD, "com/megacrit/cardcrawl/helpers/Hitbox", "cX", "F")
+        getDescription.visitVarInsn(Opcodes.ALOAD, 2)
+        getDescription.visitFieldInsn(Opcodes.GETFIELD, "com/megacrit/cardcrawl/helpers/Hitbox", "width", "F")
+        getDescription.visitLdcInsn(0.5f)
+        getDescription.visitInsn(Opcodes.FMUL)
+        getDescription.visitInsn(Opcodes.FADD)
+        getDescription.visitLdcInsn(BOSS_PANEL_RIGHT_MARGIN)
+        getDescription.visitFieldInsn(Opcodes.GETSTATIC, "com/megacrit/cardcrawl/core/Settings", "scale", "F")
+        getDescription.visitInsn(Opcodes.FMUL)
+        getDescription.visitInsn(Opcodes.FADD)
+        getDescription.visitFieldInsn(Opcodes.GETSTATIC, "com/megacrit/cardcrawl/core/Settings", "WIDTH", "I")
+        getDescription.visitInsn(Opcodes.I2F)
+        getDescription.visitVarInsn(Opcodes.FLOAD, 3)
+        getDescription.visitInsn(Opcodes.FSUB)
+        getDescription.visitLdcInsn(BOSS_PANEL_SCREEN_PADDING)
+        getDescription.visitFieldInsn(Opcodes.GETSTATIC, "com/megacrit/cardcrawl/core/Settings", "scale", "F")
+        getDescription.visitInsn(Opcodes.FMUL)
+        getDescription.visitInsn(Opcodes.FSUB)
+        getDescription.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Math", "min", "(FF)F", false)
+        getDescription.visitFieldInsn(Opcodes.PUTFIELD, "automaton/EasyInfoDisplayPanel", "x", "F")
+        getDescription.visitVarInsn(Opcodes.ALOAD, 0)
+        getDescription.visitVarInsn(Opcodes.ALOAD, 2)
+        getDescription.visitFieldInsn(Opcodes.GETFIELD, "com/megacrit/cardcrawl/helpers/Hitbox", "cY", "F")
+        getDescription.visitVarInsn(Opcodes.ALOAD, 2)
+        getDescription.visitFieldInsn(Opcodes.GETFIELD, "com/megacrit/cardcrawl/helpers/Hitbox", "height", "F")
+        getDescription.visitLdcInsn(BOSS_PANEL_Y_OFFSET_RATIO)
+        getDescription.visitInsn(Opcodes.FMUL)
+        getDescription.visitInsn(Opcodes.FADD)
+        getDescription.visitFieldInsn(Opcodes.PUTFIELD, "automaton/EasyInfoDisplayPanel", "y", "F")
+        getDescription.visitVarInsn(Opcodes.ALOAD, 0)
+        getDescription.visitVarInsn(Opcodes.FLOAD, 3)
+        getDescription.visitFieldInsn(Opcodes.PUTFIELD, "automaton/EasyInfoDisplayPanel", "width", "F")
+        getDescription.visitFieldInsn(
+            Opcodes.GETSTATIC,
+            "charbosses/BossMechanicDisplayPanel",
+            "mechanicDesc",
+            "Ljava/lang/String;"
+        )
+        getDescription.visitInsn(Opcodes.ARETURN)
+        getDescription.visitMaxs(0, 0)
+        getDescription.visitEnd()
+
+        classWriter.visitEnd()
+        return classWriter.toByteArray()
+    }
+
     private fun hasMerchantRugCenteredDrawX(jarFile: File, entryName: String): Boolean {
         val classBytes = JarFileIoUtils.readJarEntryBytes(jarFile, entryName)
         assertNotNull(classBytes)
@@ -722,6 +847,40 @@ class DownfallImportCompatPatcherTest {
         val hasYOffsetRatio = instructions.any { node ->
             node is LdcInsnNode && node.cst == BOSS_PANEL_Y_OFFSET_RATIO
         }
+        val hasCurrentMapNodeRead = instructions.any { node ->
+            node is FieldInsnNode &&
+                node.opcode == Opcodes.GETSTATIC &&
+                node.owner == "com/megacrit/cardcrawl/dungeons/AbstractDungeon" &&
+                node.name == "currMapNode" &&
+                node.desc == "Lcom/megacrit/cardcrawl/map/MapRoomNode;"
+        }
+        val hasRoomRead = instructions.any { node ->
+            node is FieldInsnNode &&
+                node.opcode == Opcodes.GETFIELD &&
+                node.owner == "com/megacrit/cardcrawl/map/MapRoomNode" &&
+                node.name == "room" &&
+                node.desc == "Lcom/megacrit/cardcrawl/rooms/AbstractRoom;"
+        }
+        val hasRoomMonstersRead = instructions.any { node ->
+            node is FieldInsnNode &&
+                node.opcode == Opcodes.GETFIELD &&
+                node.owner == "com/megacrit/cardcrawl/rooms/AbstractRoom" &&
+                node.name == "monsters" &&
+                node.desc == "Lcom/megacrit/cardcrawl/monsters/MonsterGroup;"
+        }
+        val hasHoveredMonsterRead = instructions.any { node ->
+            node is FieldInsnNode &&
+                node.opcode == Opcodes.GETFIELD &&
+                node.owner == "com/megacrit/cardcrawl/monsters/MonsterGroup" &&
+                node.name == "hoveredMonster" &&
+                node.desc == "Lcom/megacrit/cardcrawl/monsters/AbstractMonster;"
+        }
+        val hasHoverComparison = instructions.any { node ->
+            node.opcode == Opcodes.IF_ACMPNE
+        }
+        val hasNoRenderFallback = instructions.any { node ->
+            node is LdcInsnNode && node.cst == "NORENDER"
+        }
         val hasMathMin = instructions.any { node ->
             node is MethodInsnNode &&
                 node.opcode == Opcodes.INVOKESTATIC &&
@@ -748,6 +907,12 @@ class DownfallImportCompatPatcherTest {
             hasRightMargin &&
             hasScreenPadding &&
             hasYOffsetRatio &&
+            hasCurrentMapNodeRead &&
+            hasRoomRead &&
+            hasRoomMonstersRead &&
+            hasHoveredMonsterRead &&
+            hasHoverComparison &&
+            hasNoRenderFallback &&
             hasMathMin &&
             hasPanelWrites
     }

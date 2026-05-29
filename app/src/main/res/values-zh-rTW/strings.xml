@@ -117,7 +117,7 @@
     <string name="compat_frieren_mod_compat_title">葬送的芙莉蓮模組相容</string>
     <string name="compat_frieren_mod_compat_desc">開啟後，匯入 frierenmod 時會自動修補 FrierenMod/utils/AntiPirateHelper.antiPirate()，移除會讓 Android 啟動卡在 97% 的桌面反盜版彈窗邏輯。關閉後不會修補新匯入的 FrierenMod。</string>
     <string name="compat_downfall_import_compat_title">Downfall 匯入相容補丁</string>
-    <string name="compat_downfall_import_compat_desc">開啟後，匯入 downfall 時會自動修補商人的 drawX 站位，使其改為基於 Settings.WIDTH/xScale 計算，並把 Hexaghost MyBody 渲染裡的 270/256 偏移改為隨 Settings.scale 縮放，同時把 Boss 機制彈窗改為以當前 boss 為參照渲染在其右側，用於修復手機寬屏下的站位、材質偏移和擋住 Boss 的提示框。關閉後不會修補新匯入的 Downfall。</string>
+    <string name="compat_downfall_import_compat_desc">開啟後，匯入 downfall 時會自動修補商人的 drawX 站位，使其改為基於 Settings.WIDTH/xScale 計算，並把 Hexaghost MyBody 渲染裡的 270/256 偏移改為隨 Settings.scale 縮放，同時把 Boss 機制彈窗改為以當前 boss 為參照、只在懸停該 boss 時顯示在其右側，用於修復手機寬屏下的站位、材質偏移和擋住 Boss 的提示框。關閉後不會修補新匯入的 Downfall。</string>
     <string name="compat_vupshion_mod_compat_title">紫音模組相容</string>
     <string name="compat_vupshion_mod_compat_desc">開啟後，匯入 vupshionmod 時會自動修補 VUPShionMod/ui/WebButton，移除其中會攔住主選單背景初始化的 Steam 創意工坊訂閱校驗。關閉後不會修補新匯入的 VUPShionMod。</string>
     <string name="compat_fragment_shader_precision_compat_title">Shader 原始碼相容補丁</string>
@@ -594,7 +594,7 @@
 </string>
     <string name="mod_import_downfall_message_item_detail">  已修補類: %1$d，商人站位類: %2$d，Hexaghost 身體類: %3$d，Boss 機制面板類: %4$d</string>
     <string name="mod_import_downfall_message_rule">
-修補規則：商人 drawX 改為基於 Settings.WIDTH/xScale 計算，Hexaghost MyBody 的位置偏移常量改為隨 Settings.scale 縮放，BossMechanicDisplayPanel 則會根據當前 boss 的 hitbox 動態更新 x/y/width，讓提示框儘量停在 boss 右側。</string>
+修補規則：商人 drawX 改為基於 Settings.WIDTH/xScale 計算，Hexaghost MyBody 的位置偏移常量改為隨 Settings.scale 縮放，BossMechanicDisplayPanel 則會根據當前 boss 的 hitbox 動態更新 x/y/width，並在該 boss 未被懸停時返回 NORENDER。</string>
     <string name="mod_import_vupshion_message_none">本次匯入沒有發現需要修補的紫音模組 Steam 校驗邏輯。</string>
     <string name="mod_import_vupshion_message_intro">以下模組在匯入時已自動修補紫音模組啟動相容邏輯：
 </string>

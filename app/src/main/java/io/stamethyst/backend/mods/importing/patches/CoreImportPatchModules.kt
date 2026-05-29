@@ -324,7 +324,7 @@ internal object FrierenImportPatchModule : ImportPatchModule {
 internal object DownfallImportPatchModule : ImportPatchModule {
     private const val TARGET_MOD_ID = "downfall"
     override val id = "mod.downfall.mobile_layout"
-    override val version = 1
+    override val version = 2
     override val displayNameResId = R.string.mod_import_patch_downfall_title
     override val summaryResId = R.string.mod_import_patch_downfall_summary
     override val category = ImportPatchCategory.ModSpecific

@@ -41,8 +41,13 @@ internal object DownfallImportCompatPatcher {
 
     private const val ABSTRACT_CHAR_BOSS_INTERNAL_NAME = "charbosses/bosses/AbstractCharBoss"
     private const val ABSTRACT_CREATURE_INTERNAL_NAME = "com/megacrit/cardcrawl/core/AbstractCreature"
+    private const val ABSTRACT_DUNGEON_INTERNAL_NAME = "com/megacrit/cardcrawl/dungeons/AbstractDungeon"
+    private const val ABSTRACT_MONSTER_INTERNAL_NAME = "com/megacrit/cardcrawl/monsters/AbstractMonster"
+    private const val ABSTRACT_ROOM_INTERNAL_NAME = "com/megacrit/cardcrawl/rooms/AbstractRoom"
     private const val EASY_INFO_DISPLAY_PANEL_INTERNAL_NAME = "automaton/EasyInfoDisplayPanel"
     private const val EASY_INFO_DISPLAY_PANEL_CTOR_DESC = "(FFF)V"
+    private const val MAP_ROOM_NODE_INTERNAL_NAME = "com/megacrit/cardcrawl/map/MapRoomNode"
+    private const val MONSTER_GROUP_INTERNAL_NAME = "com/megacrit/cardcrawl/monsters/MonsterGroup"
     private const val ABSTRACT_PLAYER_INTERNAL_NAME = "com/megacrit/cardcrawl/characters/AbstractPlayer"
     private const val HITBOX_INTERNAL_NAME = "com/megacrit/cardcrawl/helpers/Hitbox"
     private const val JAVA_MATH_INTERNAL_NAME = "java/lang/Math"
@@ -70,7 +75,12 @@ internal object DownfallImportCompatPatcher {
     private const val LEGACY_MY_BODY_Y_OFFSET_TOO_LOW = 268.0f
     private const val BOSS_MECHANIC_DESC_FIELD_NAME = "mechanicDesc"
     private const val BOSS_FIELD_NAME = "boss"
+    private const val CURR_MAP_NODE_FIELD_NAME = "currMapNode"
+    private const val HOVERED_MONSTER_FIELD_NAME = "hoveredMonster"
     private const val HITBOX_FIELD_NAME = "hb"
+    private const val MONSTERS_FIELD_NAME = "monsters"
+    private const val NO_RENDER_DESCRIPTION = "NORENDER"
+    private const val ROOM_FIELD_NAME = "room"
     private const val PANEL_DYNAMIC_WIDTH = 240.0f
     private const val PANEL_RIGHT_MARGIN = 48.0f
     private const val PANEL_SCREEN_PADDING = 32.0f
@@ -260,8 +270,8 @@ internal object DownfallImportCompatPatcher {
             return false
         }
         replaceMethodInstructions(method, buildBossMechanicPanelDescriptionInstructions(ownerInternalName))
-        method.maxLocals = maxOf(method.maxLocals, 6)
-        method.maxStack = maxOf(method.maxStack, 5)
+        method.maxLocals = maxOf(method.maxLocals, 7)
+        method.maxStack = maxOf(method.maxStack, 6)
         return true
     }
 
@@ -340,6 +350,40 @@ internal object DownfallImportCompatPatcher {
         val hasYOffsetRatio = instructions.any { node ->
             node is LdcInsnNode && isFloatConstant(node.cst, PANEL_Y_OFFSET_RATIO)
         }
+        val hasCurrentMapNodeRead = instructions.any { node ->
+            node is FieldInsnNode &&
+                node.opcode == Opcodes.GETSTATIC &&
+                node.owner == ABSTRACT_DUNGEON_INTERNAL_NAME &&
+                node.name == CURR_MAP_NODE_FIELD_NAME &&
+                node.desc == "L$MAP_ROOM_NODE_INTERNAL_NAME;"
+        }
+        val hasRoomRead = instructions.any { node ->
+            node is FieldInsnNode &&
+                node.opcode == Opcodes.GETFIELD &&
+                node.owner == MAP_ROOM_NODE_INTERNAL_NAME &&
+                node.name == ROOM_FIELD_NAME &&
+                node.desc == "L$ABSTRACT_ROOM_INTERNAL_NAME;"
+        }
+        val hasRoomMonstersRead = instructions.any { node ->
+            node is FieldInsnNode &&
+                node.opcode == Opcodes.GETFIELD &&
+                node.owner == ABSTRACT_ROOM_INTERNAL_NAME &&
+                node.name == MONSTERS_FIELD_NAME &&
+                node.desc == "L$MONSTER_GROUP_INTERNAL_NAME;"
+        }
+        val hasHoveredMonsterRead = instructions.any { node ->
+            node is FieldInsnNode &&
+                node.opcode == Opcodes.GETFIELD &&
+                node.owner == MONSTER_GROUP_INTERNAL_NAME &&
+                node.name == HOVERED_MONSTER_FIELD_NAME &&
+                node.desc == "L$ABSTRACT_MONSTER_INTERNAL_NAME;"
+        }
+        val hasHoverComparison = instructions.any { node ->
+            node.opcode == Opcodes.IF_ACMPNE
+        }
+        val hasNoRenderFallback = instructions.any { node ->
+            node is LdcInsnNode && node.cst == NO_RENDER_DESCRIPTION
+        }
         val hasPanelWrites = setOf("x", "y", "width").all { fieldName ->
             instructions.any { node ->
                 node is FieldInsnNode &&
@@ -356,6 +400,12 @@ internal object DownfallImportCompatPatcher {
             hasScreenPadding &&
             hasDynamicWidth &&
             hasYOffsetRatio &&
+            hasCurrentMapNodeRead &&
+            hasRoomRead &&
+            hasRoomMonstersRead &&
+            hasHoveredMonsterRead &&
+            hasHoverComparison &&
+            hasNoRenderFallback &&
             hasPanelWrites
     }
 
@@ -407,17 +457,37 @@ internal object DownfallImportCompatPatcher {
     }
 
     private fun buildBossMechanicPanelDescriptionInstructions(ownerInternalName: String): InsnList {
-        val skipUpdate = LabelNode()
+        val returnNoRender = LabelNode()
         return InsnList().apply {
             add(FieldInsnNode(Opcodes.GETSTATIC, ABSTRACT_CHAR_BOSS_INTERNAL_NAME, BOSS_FIELD_NAME, "L$ABSTRACT_CHAR_BOSS_INTERNAL_NAME;"))
             add(VarInsnNode(Opcodes.ASTORE, 1))
             add(VarInsnNode(Opcodes.ALOAD, 1))
-            add(JumpInsnNode(Opcodes.IFNULL, skipUpdate))
+            add(JumpInsnNode(Opcodes.IFNULL, returnNoRender))
+
+            add(FieldInsnNode(Opcodes.GETSTATIC, ABSTRACT_DUNGEON_INTERNAL_NAME, CURR_MAP_NODE_FIELD_NAME, "L$MAP_ROOM_NODE_INTERNAL_NAME;"))
+            add(VarInsnNode(Opcodes.ASTORE, 5))
+            add(VarInsnNode(Opcodes.ALOAD, 5))
+            add(JumpInsnNode(Opcodes.IFNULL, returnNoRender))
+            add(VarInsnNode(Opcodes.ALOAD, 5))
+            add(FieldInsnNode(Opcodes.GETFIELD, MAP_ROOM_NODE_INTERNAL_NAME, ROOM_FIELD_NAME, "L$ABSTRACT_ROOM_INTERNAL_NAME;"))
+            add(VarInsnNode(Opcodes.ASTORE, 5))
+            add(VarInsnNode(Opcodes.ALOAD, 5))
+            add(JumpInsnNode(Opcodes.IFNULL, returnNoRender))
+            add(VarInsnNode(Opcodes.ALOAD, 5))
+            add(FieldInsnNode(Opcodes.GETFIELD, ABSTRACT_ROOM_INTERNAL_NAME, MONSTERS_FIELD_NAME, "L$MONSTER_GROUP_INTERNAL_NAME;"))
+            add(VarInsnNode(Opcodes.ASTORE, 6))
+            add(VarInsnNode(Opcodes.ALOAD, 6))
+            add(JumpInsnNode(Opcodes.IFNULL, returnNoRender))
+            add(VarInsnNode(Opcodes.ALOAD, 6))
+            add(FieldInsnNode(Opcodes.GETFIELD, MONSTER_GROUP_INTERNAL_NAME, HOVERED_MONSTER_FIELD_NAME, "L$ABSTRACT_MONSTER_INTERNAL_NAME;"))
+            add(VarInsnNode(Opcodes.ALOAD, 1))
+            add(JumpInsnNode(Opcodes.IF_ACMPNE, returnNoRender))
+
             add(VarInsnNode(Opcodes.ALOAD, 1))
             add(FieldInsnNode(Opcodes.GETFIELD, ABSTRACT_CREATURE_INTERNAL_NAME, HITBOX_FIELD_NAME, "L$HITBOX_INTERNAL_NAME;"))
             add(VarInsnNode(Opcodes.ASTORE, 2))
             add(VarInsnNode(Opcodes.ALOAD, 2))
-            add(JumpInsnNode(Opcodes.IFNULL, skipUpdate))
+            add(JumpInsnNode(Opcodes.IFNULL, returnNoRender))
 
             add(FieldInsnNode(Opcodes.GETSTATIC, SETTINGS_INTERNAL_NAME, SETTINGS_SCALE_FIELD_NAME, "F"))
             add(LdcInsnNode(PANEL_DYNAMIC_WIDTH))
@@ -472,8 +542,11 @@ internal object DownfallImportCompatPatcher {
             add(VarInsnNode(Opcodes.FLOAD, 3))
             add(FieldInsnNode(Opcodes.PUTFIELD, EASY_INFO_DISPLAY_PANEL_INTERNAL_NAME, "width", "F"))
 
-            add(skipUpdate)
             add(FieldInsnNode(Opcodes.GETSTATIC, ownerInternalName, BOSS_MECHANIC_DESC_FIELD_NAME, "Ljava/lang/String;"))
+            add(InsnNode(Opcodes.ARETURN))
+
+            add(returnNoRender)
+            add(LdcInsnNode(NO_RENDER_DESCRIPTION))
             add(InsnNode(Opcodes.ARETURN))
         }
     }

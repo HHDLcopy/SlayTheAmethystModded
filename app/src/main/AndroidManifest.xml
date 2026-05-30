@@ -96,6 +96,7 @@
             android:name="io.stamethyst.LauncherActivity"
             android:exported="true"
             android:enableOnBackInvokedCallback="false"
+            android:screenOrientation="fullUser"
             tools:targetApi="33">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

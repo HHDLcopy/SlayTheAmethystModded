@@ -94,6 +94,7 @@ class LauncherActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        LauncherOrientationPolicy.applyTo(this)
         syncLauncherLogcatCapture()
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.auto(
@@ -151,6 +152,7 @@ class LauncherActivity : AppCompatActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        LauncherOrientationPolicy.applyTo(this)
         setIntent(intent)
         handleIncomingLauncherIntent(intent)
         maybeShowExternalStsImportNotice(intent)
@@ -160,6 +162,7 @@ class LauncherActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        LauncherOrientationPolicy.applyTo(this)
         syncLauncherLogcatCapture()
         maybeScheduleGameReturnAnalysis()
     }

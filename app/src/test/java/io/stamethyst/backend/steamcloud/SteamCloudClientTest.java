@@ -100,6 +100,22 @@ public final class SteamCloudClientTest {
     }
 
     @Test
+    public void ensureValidUploadBatchId_rejectsZeroBatchId() throws Exception {
+        InvocationTargetException error = Assert.assertThrows(
+            InvocationTargetException.class,
+            () -> invokeEnsureValidUploadBatchId(0L, EResult.OK)
+        );
+
+        Assert.assertTrue(error.getCause() instanceof IllegalStateException);
+        Assert.assertTrue(error.getCause().getMessage().contains("invalid batchId=0"));
+    }
+
+    @Test
+    public void ensureValidUploadBatchId_acceptsNonZeroBatchId() throws Exception {
+        invokeEnsureValidUploadBatchId(6872875296586793002L, EResult.OK);
+    }
+
+    @Test
     public void isRetryableDownloadException_retriesTransientHttpFailuresOnly() throws Exception {
         Assert.assertTrue(invokeIsRetryableDownloadException(newHttpStatusIOException(503)));
         Assert.assertTrue(invokeIsRetryableDownloadException(newHttpStatusIOException(500)));
@@ -152,6 +168,16 @@ public final class SteamCloudClientTest {
         );
         method.setAccessible(true);
         return (long) method.invoke(null, result, attempt);
+    }
+
+    private static void invokeEnsureValidUploadBatchId(long batchId, EResult result) throws Exception {
+        Method method = SteamCloudClient.class.getDeclaredMethod(
+            "ensureValidUploadBatchId",
+            long.class,
+            EResult.class
+        );
+        method.setAccessible(true);
+        method.invoke(null, batchId, result);
     }
 
     private static boolean invokeIsRetryableDownloadException(Throwable error) throws Exception {

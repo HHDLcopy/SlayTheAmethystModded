@@ -100,6 +100,22 @@ internal class WorkshopViewModel : ViewModel() {
         } ?: detailsCache[detailsCacheKey(appId, publishedFileId)]
     }
 
+    private fun findSummaryFallback(appId: UInt, publishedFileId: ULong): WorkshopItemSummary? {
+        uiState.items.firstOrNull { item ->
+            item.appId == appId && item.publishedFileId == publishedFileId
+        }?.let { return it }
+        uiState.selected?.takeIf { selected ->
+            selected.summary.appId == appId && selected.summary.publishedFileId == publishedFileId
+        }?.summary?.let { return it }
+        detailsCache[detailsCacheKey(appId, publishedFileId)]?.summary?.let { return it }
+        uiState.selected?.dependencies?.firstOrNull { dependency ->
+            dependency.appId == appId && dependency.publishedFileId == publishedFileId
+        }?.let { return it }
+        return uiState.installedMods.firstOrNull { record ->
+            record.appId == appId && record.publishedFileId == publishedFileId
+        }?.toWorkshopItemSummary()
+    }
+
     fun refreshDownloadState(context: Context) {
         WorkshopDownloadCenterStore.initialize(context)
         if (refreshDownloadStateJob?.isActive == true) return
@@ -120,6 +136,40 @@ internal class WorkshopViewModel : ViewModel() {
                 listMode = activeListMode,
                 installedMods = installedMods,
                 downloadInProgress = loadedTasks.any { it.status.isActiveDownload() },
+            )
+        }
+    }
+
+    fun refreshDownloadTaskState(context: Context) {
+        WorkshopDownloadCenterStore.initialize(context)
+        if (refreshDownloadStateJob?.isActive == true) return
+        val currentMetadataStore = metadataStore
+        val currentService = service
+        refreshDownloadStateJob = viewModelScope.launch {
+            val loadedTasks = withContext(Dispatchers.IO) {
+                WorkshopDownloadCenterStore.loadTasks()
+            }
+            WorkshopDownloadCenterStore.replaceInMemory(loadedTasks)
+            val hasActiveDownload = loadedTasks.any { task -> task.status.isActiveDownload() }
+            if (hasActiveDownload) {
+                if (!uiState.downloadInProgress) {
+                    uiState = uiState.copy(downloadInProgress = true)
+                }
+                return@launch
+            }
+
+            val (installedMods, steamLoggedIn) = withContext(Dispatchers.IO) {
+                currentMetadataStore?.markMissingFiles()
+                Pair(
+                    currentMetadataStore?.list().orEmpty(),
+                    currentService?.hasSteamAuth() == true,
+                )
+            }
+            uiState = uiState.copy(
+                steamLoggedIn = steamLoggedIn,
+                listMode = activeListMode,
+                installedMods = installedMods,
+                downloadInProgress = false,
             )
         }
     }
@@ -326,10 +376,15 @@ internal class WorkshopViewModel : ViewModel() {
     }
 
     fun openDetails(context: Context, item: WorkshopItemSummary) {
-        loadDetails(context, item.appId, item.publishedFileId)
+        loadDetails(context, item.appId, item.publishedFileId, item)
     }
 
-    fun loadDetails(context: Context, appId: UInt, publishedFileId: ULong) {
+    fun loadDetails(
+        context: Context,
+        appId: UInt,
+        publishedFileId: ULong,
+        fallbackSummary: WorkshopItemSummary? = null,
+    ) {
         val currentService = service ?: return
         viewModelScope.launch {
             uiState = uiState.copy(
@@ -344,7 +399,8 @@ internal class WorkshopViewModel : ViewModel() {
                 detailChangeNotesErrorMessage = null,
             )
             runCatching {
-                withContext(Dispatchers.IO) { currentService.getDetails(appId, publishedFileId) }
+                val summaryFallback = fallbackSummary ?: findSummaryFallback(appId, publishedFileId)
+                withContext(Dispatchers.IO) { currentService.getDetails(appId, publishedFileId, summaryFallback) }
             }.onSuccess { details ->
                 detailsCache[details.cacheKey()] = details
                 val shouldLoadComments = details.shouldLoadWorkshopComments()
@@ -725,7 +781,7 @@ internal class WorkshopViewModel : ViewModel() {
         viewModelScope.launch {
             uiState = uiState.copy(downloadStatus = context.getString(R.string.workshop_status_checking_dependencies))
             runCatching {
-                withContext(Dispatchers.IO) { currentService.getDetails(item.appId, item.publishedFileId) }
+                withContext(Dispatchers.IO) { currentService.getDetails(item.appId, item.publishedFileId, item) }
             }.onSuccess { details ->
                 detailsCache[details.cacheKey()] = details
                 uiState = uiState.copy(selected = details)
@@ -1060,6 +1116,15 @@ private fun WorkshopItemDetails.shouldLoadWorkshopComments(): Boolean =
 private fun WorkshopItemDetails.cacheKey(): String = detailsCacheKey(summary.appId, summary.publishedFileId)
 
 private fun detailsCacheKey(appId: UInt, publishedFileId: ULong): String = "$appId:$publishedFileId"
+
+private fun WorkshopInstalledModRecord.toWorkshopItemSummary(): WorkshopItemSummary = WorkshopItemSummary(
+    publishedFileId = publishedFileId,
+    appId = appId,
+    title = title,
+    previewUrl = previewUrl,
+    description = description,
+    updatedAtMillis = updatedAtMillis,
+)
 
 private fun WorkshopItemDetails.commentUnavailableMessage(context: Context): String? = when {
     commentThreadContext == null -> context.getString(R.string.workshop_comments_unavailable)

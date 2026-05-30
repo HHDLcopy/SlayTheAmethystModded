@@ -77,6 +77,7 @@ object LauncherConfig {
         "mobileglues_fsr1_quality_preset"
     private const val PREF_KEY_THEME_MODE = "theme_mode"
     private const val PREF_KEY_THEME_COLOR = "theme_color"
+    private const val PREF_KEY_BOOT_OVERLAY_ANIMATION = "boot_overlay_animation"
     private const val PREF_KEY_SHOW_MOD_FILE_NAME = "show_mod_file_name"
     private const val PREF_KEY_MOBILE_HUD_ENABLED = "mobile_hud_enabled"
     private const val PREF_KEY_COMPENDIUM_UPGRADE_TOUCH_FIX_ENABLED =
@@ -173,6 +174,8 @@ object LauncherConfig {
     private const val PREF_KEY_LAST_UPDATE_ERROR_SUMMARY = "last_update_error_summary"
     private const val PREF_KEY_FIRST_RUN_SETUP_COMPLETED = "first_run_setup_completed"
     private const val PREF_KEY_BASIC_TUTORIAL_NOTICE_DISMISSED = "basic_tutorial_notice_dismissed"
+    private const val PREF_KEY_DEVELOPER_SETTINGS_WARNING_DISMISSED =
+        "developer_settings_warning_dismissed"
     private const val PREF_KEY_EXPECTED_BACK_EXIT_AT_MS = "expected_back_exit_at_ms"
     private const val PREF_KEY_EXPECTED_BACK_EXIT_RESTART_AT_MS = "expected_back_exit_restart_at_ms"
     private const val EXPECTED_BACK_EXIT_VALID_WINDOW_MS = 30_000L
@@ -213,6 +216,8 @@ object LauncherConfig {
         MobileGluesFsr1QualityPreset.DISABLED
     val DEFAULT_THEME_MODE: LauncherThemeMode = LauncherThemeMode.FOLLOW_SYSTEM
     val DEFAULT_THEME_COLOR: LauncherThemeColor = LauncherThemeColor.COLORLESS
+    val DEFAULT_BOOT_OVERLAY_ANIMATION: BootOverlayAnimation =
+        BootOverlayAnimation.CARD_SHUFFLE
     const val DEFAULT_SHOW_FLOATING_MOUSE_WINDOW = true
     val DEFAULT_TOUCH_MOUSE_INTERACTION_MODE: TouchMouseInteractionMode =
         TouchMouseInteractionMode.OPEN_MENU_ON_TAP
@@ -387,6 +392,20 @@ object LauncherConfig {
         }
     }
 
+    fun readBootOverlayAnimation(context: Context): BootOverlayAnimation {
+        val stored = prefs(context).getString(
+            PREF_KEY_BOOT_OVERLAY_ANIMATION,
+            DEFAULT_BOOT_OVERLAY_ANIMATION.persistedValue
+        )
+        return BootOverlayAnimation.fromPersistedValue(stored) ?: DEFAULT_BOOT_OVERLAY_ANIMATION
+    }
+
+    fun saveBootOverlayAnimation(context: Context, animation: BootOverlayAnimation) {
+        prefs(context).edit {
+            putString(PREF_KEY_BOOT_OVERLAY_ANIMATION, animation.persistedValue)
+        }
+    }
+
     fun isBasicTutorialNoticeDismissed(context: Context): Boolean {
         return prefs(context).getBoolean(PREF_KEY_BASIC_TUTORIAL_NOTICE_DISMISSED, false)
     }
@@ -394,6 +413,16 @@ object LauncherConfig {
     fun setBasicTutorialNoticeDismissed(context: Context, dismissed: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_BASIC_TUTORIAL_NOTICE_DISMISSED, dismissed)
+        }
+    }
+
+    fun isDeveloperSettingsWarningDismissed(context: Context): Boolean {
+        return prefs(context).getBoolean(PREF_KEY_DEVELOPER_SETTINGS_WARNING_DISMISSED, false)
+    }
+
+    fun setDeveloperSettingsWarningDismissed(context: Context, dismissed: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_DEVELOPER_SETTINGS_WARNING_DISMISSED, dismissed)
         }
     }
 

@@ -17,7 +17,9 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -80,6 +82,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -151,6 +155,7 @@ private fun LauncherGamePage(
     onOpenFeedbackSubscriptions: () -> Unit,
     onUpdateNoticeClick: () -> Unit,
     onEnabledModsClick: () -> Unit,
+    onModSizeClick: () -> Unit,
     onSteamCloudClick: () -> Unit,
     onLaunch: () -> Unit,
 ) {
@@ -213,6 +218,7 @@ private fun LauncherGamePage(
                     gameRunning = uiState.gameProcessRunning,
                     hasStorageIssue = uiState.storageIssue != null,
                     onEnabledModsClick = onEnabledModsClick,
+                    onModSizeClick = onModSizeClick,
                 )
 
                 if (feedbackUnreadCount > 0) {
@@ -255,11 +261,8 @@ private fun LauncherGamePage(
             contentPadding = PaddingValues(0.dp),
             pinnedContent = {
                 GameHeader(
-                    steamCloudIndicator = steamCloudIndicator,
                     feedbackUnreadCount = feedbackUnreadCount,
                     headerActionsEnabled = headerActionsEnabled,
-                    busy = uiState.busy,
-                    onSteamCloudClick = onSteamCloudClick,
                     onOpenFeedbackUpdates = onOpenFeedbackUpdates,
                 )
             },
@@ -269,11 +272,8 @@ private fun LauncherGamePage(
 
 @Composable
 private fun GameHeader(
-    steamCloudIndicator: MainScreenViewModel.SteamCloudIndicatorUi,
     feedbackUnreadCount: Int,
     headerActionsEnabled: Boolean,
-    busy: Boolean,
-    onSteamCloudClick: () -> Unit,
     onOpenFeedbackUpdates: () -> Unit,
 ) {
     HeaderPinnedRow(
@@ -285,13 +285,6 @@ private fun GameHeader(
         subtitle = "v${BuildConfig.VERSION_NAME}",
         iconSize = 30.dp,
     ) {
-        if (steamCloudIndicator.visible) {
-            SteamCloudStatusButton(
-                indicator = steamCloudIndicator,
-                enabled = !busy,
-                onClick = onSteamCloudClick,
-            )
-        }
         if (feedbackUnreadCount > 0) {
             CompactTopBarIconButton(
                 onClick = onOpenFeedbackUpdates,
@@ -617,6 +610,7 @@ private fun GameStatusHeroCard(
     gameRunning: Boolean,
     hasStorageIssue: Boolean,
     onEnabledModsClick: () -> Unit,
+    onModSizeClick: () -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -642,11 +636,13 @@ private fun GameStatusHeroCard(
                     modifier = Modifier.weight(1f),
                     label = stringResource(R.string.main_game_loaded_mods),
                     value = "$enabledModCount / $totalModCount",
+                    onClick = onEnabledModsClick,
                 )
                 GameMetricCard(
                     modifier = Modifier.weight(1f),
                     label = stringResource(R.string.main_game_mod_size),
                     value = formatLauncherByteSize(enabledModBytes),
+                    onClick = onModSizeClick,
                 )
             }
             TextButton(onClick = onEnabledModsClick) {
@@ -668,9 +664,15 @@ private fun GameMetricCard(
     modifier: Modifier = Modifier,
     label: String,
     value: String,
+    onClick: (() -> Unit)? = null,
 ) {
+    val surfaceModifier = if (onClick == null) {
+        modifier
+    } else {
+        modifier.clickable(onClick = onClick)
+    }
     Surface(
-        modifier = modifier,
+        modifier = surfaceModifier,
         shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.56f),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
@@ -1059,6 +1061,7 @@ internal fun LauncherMainRoute(
     viewModel: MainScreenViewModel,
     onOpenWorkshop: () -> Unit,
     handleEffects: Boolean = true,
+    pollWorkshopDownloads: Boolean = true,
     content: @Composable (
         modifier: Modifier,
         uiState: MainScreenViewModel.UiState,
@@ -1106,14 +1109,14 @@ internal fun LauncherMainRoute(
         }
     }
 
-    LaunchedEffect(hostActivity, hasActiveWorkshopDownloads) {
+    LaunchedEffect(hostActivity, hasActiveWorkshopDownloads, pollWorkshopDownloads) {
         val activity = hostActivity ?: return@LaunchedEffect
-        if (!hasActiveWorkshopDownloads) return@LaunchedEffect
+        if (!pollWorkshopDownloads || !hasActiveWorkshopDownloads) return@LaunchedEffect
         while (true) {
             delay(1000L)
-            viewModel.refresh(activity)
-            val stillActive = viewModel.uiState.optionalMods.any { mod ->
-                mod.workshop?.state == WorkshopModState.Downloading
+            val stillActive = viewModel.refreshWorkshopDownloadCards(activity)
+            if (!stillActive) {
+                viewModel.refresh(activity)
             }
             if (!stillActive) break
         }
@@ -1393,6 +1396,7 @@ private fun LauncherMainScreenContent(
     var showSteamCloudBottomSheet by remember { mutableStateOf(false) }
     var showSteamCloudLaunchWarning by remember { mutableStateOf(false) }
     var showEnabledModsDialog by remember { mutableStateOf(false) }
+    var showModSizeDialog by remember { mutableStateOf(false) }
     var pendingSteamCloudConflictChoice by remember {
         mutableStateOf<SteamCloudConflictResolutionChoice?>(null)
     }
@@ -1402,9 +1406,20 @@ private fun LauncherMainScreenContent(
     val showInitializing = uiState.initializing
     val hazeState = rememberHazeState()
     val pendingLaunchUnreadSuggestionModNames = uiState.pendingLaunchUnreadSuggestionModNames
-    val enabledModNames = uiState.optionalMods
-        .filter { it.enabled }
-        .map { mod -> mod.name.ifBlank { mod.modId } }
+    val enabledMods = remember(uiState.optionalMods) {
+        uiState.optionalMods.filter { mod -> mod.enabled && mod.installed && !mod.required }
+    }
+    val enabledModSizeItems = remember(enabledMods) {
+        enabledMods.map { mod ->
+            EnabledModSizeItem(
+                name = resolveModDisplayName(mod),
+                bytes = File(mod.storagePath).takeIf { it.isFile }?.length() ?: 0L,
+            )
+        }
+    }
+    val enabledModNames = remember(enabledModSizeItems) {
+        enabledModSizeItems.map { it.name }
+    }
     val steamCloudIndicator = uiState.steamCloudIndicator
     val steamCloudBottomSheetVisible =
         showSteamCloudBottomSheetHost && showSteamCloudBottomSheet && steamCloudIndicator.visible
@@ -1528,8 +1543,9 @@ private fun LauncherMainScreenContent(
                             onOpenFeedbackSubscriptions = onOpenFeedbackSubscriptions,
                             onUpdateNoticeClick = onUpdateNoticeClick,
                             onEnabledModsClick = { showEnabledModsDialog = true },
+                            onModSizeClick = { showModSizeDialog = true },
                             onSteamCloudClick = {
-                                requestSteamCloudNetworkAction(SteamCloudNetworkPromptAction.REFRESH)
+                                showSteamCloudBottomSheet = true
                             },
                             onLaunch = {
                                 if (actions.onLaunch() == LaunchRequestAction.OPEN_STEAM_CLOUD_SHEET) {
@@ -1728,6 +1744,13 @@ private fun LauncherMainScreenContent(
         )
     }
 
+    if (showModSizeDialog) {
+        ModSizeBreakdownDialog(
+            items = enabledModSizeItems,
+            onDismiss = { showModSizeDialog = false }
+        )
+    }
+
     if (showSteamCloudLaunchWarning) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { showSteamCloudLaunchWarning = false },
@@ -1791,6 +1814,190 @@ private fun EnabledModsDialog(
             }
         }
     )
+}
+
+private data class EnabledModSizeItem(
+    val name: String,
+    val bytes: Long,
+)
+
+@Composable
+private fun ModSizeBreakdownDialog(
+    items: List<EnabledModSizeItem>,
+    onDismiss: () -> Unit,
+) {
+    val sortedItems = remember(items) {
+        items.sortedWith(
+            compareByDescending<EnabledModSizeItem> { it.bytes }
+                .thenBy { it.name.lowercase(Locale.getDefault()) }
+        )
+    }
+    val totalBytes = sortedItems.sumOf { it.bytes.coerceAtLeast(0L) }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = stringResource(R.string.main_mod_size_dialog_title)) },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                if (sortedItems.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.main_mod_size_dialog_empty),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    Text(
+                        text = stringResource(
+                            R.string.main_mod_size_dialog_total,
+                            formatLauncherByteSize(totalBytes)
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    if (totalBytes > 0L) {
+                        ModSizeStackedProgressBar(
+                            items = sortedItems,
+                            totalBytes = totalBytes,
+                        )
+                    } else {
+                        Text(
+                            text = stringResource(R.string.main_mod_size_dialog_zero_total),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 300.dp)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        sortedItems.forEachIndexed { index, item ->
+                            ModSizeBreakdownRow(
+                                item = item,
+                                totalBytes = totalBytes,
+                                color = modSizeSegmentColor(index),
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = stringResource(R.string.common_action_close))
+            }
+        }
+    )
+}
+
+@Composable
+private fun ModSizeStackedProgressBar(
+    items: List<EnabledModSizeItem>,
+    totalBytes: Long,
+) {
+    val positiveItems = items.withIndex().filter { it.value.bytes > 0L }
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(18.dp)
+            .clip(RoundedCornerShape(999.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        var startX = 0f
+        positiveItems.forEachIndexed { index, indexedItem ->
+            val item = indexedItem.value
+            val width = if (index == positiveItems.lastIndex) {
+                size.width - startX
+            } else {
+                size.width * (item.bytes.toDouble() / totalBytes.toDouble()).toFloat()
+            }.coerceAtLeast(0f)
+            drawRect(
+                color = modSizeSegmentColor(indexedItem.index),
+                topLeft = Offset(startX, 0f),
+                size = Size(width, size.height),
+            )
+            startX += width
+        }
+    }
+}
+
+@Composable
+private fun ModSizeBreakdownRow(
+    item: EnabledModSizeItem,
+    totalBytes: Long,
+    color: Color,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Surface(
+            modifier = Modifier.size(12.dp),
+            shape = CircleShape,
+            color = color,
+            content = {}
+        )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = item.name,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = formatLauncherByteSize(item.bytes),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Text(
+            text = formatModSizePercent(item.bytes, totalBytes),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+private fun modSizeSegmentColor(index: Int): Color {
+    val colors = listOf(
+        Color(0xFF2E7D32),
+        Color(0xFF1565C0),
+        Color(0xFFC62828),
+        Color(0xFFEF6C00),
+        Color(0xFF6A1B9A),
+        Color(0xFF00838F),
+        Color(0xFFAD1457),
+        Color(0xFF558B2F),
+        Color(0xFF5D4037),
+        Color(0xFF455A64),
+        Color(0xFFF9A825),
+        Color(0xFF283593),
+    )
+    return colors[index.floorMod(colors.size)]
+}
+
+private fun formatModSizePercent(bytes: Long, totalBytes: Long): String {
+    if (bytes <= 0L || totalBytes <= 0L) {
+        return "0%"
+    }
+    val percent = bytes.toDouble() * 100.0 / totalBytes.toDouble()
+    return if (percent >= 9.95) {
+        String.format(Locale.US, "%.0f%%", percent)
+    } else {
+        String.format(Locale.US, "%.1f%%", percent)
+    }
+}
+
+private fun Int.floorMod(modulus: Int): Int {
+    return ((this % modulus) + modulus) % modulus
 }
 
 private const val BOTTOM_BAR_SWITCH_ANIMATION_MS = 220

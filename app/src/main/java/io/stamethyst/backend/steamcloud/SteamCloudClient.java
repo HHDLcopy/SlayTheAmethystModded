@@ -55,7 +55,6 @@ import in.dragonbra.javasteam.steam.discovery.ServerRecord;
 import in.dragonbra.javasteam.steam.discovery.SmartCMServerList;
 import in.dragonbra.javasteam.steam.handlers.steamcloud.AppFileChangeList;
 import in.dragonbra.javasteam.steam.handlers.steamcloud.AppFileInfo;
-import in.dragonbra.javasteam.steam.handlers.steamcloud.AppUploadBatchResponse;
 import in.dragonbra.javasteam.steam.handlers.steamcloud.FileDownloadInfo;
 import in.dragonbra.javasteam.steam.handlers.steamcloud.HttpHeaders;
 import in.dragonbra.javasteam.steam.handlers.steamcloud.SteamCloud;
@@ -674,26 +673,36 @@ public final class SteamCloudClient implements AutoCloseable {
                     + " deletes="
                     + remotePathsToDelete.size()
             );
-            AppUploadBatchResponse response = waitForStageWithRetries(
-                () -> steamCloud.beginAppUploadBatch(
-                    appId,
-                    buildUploadMachineName(),
-                    remotePathsToUpload,
-                    remotePathsToDelete,
-                    0L,
-                    0L
-                ),
-                RPC_TIMEOUT_MS,
-                "BeginAppUploadBatch"
-            );
+            SteammessagesCloudSteamclient.CCloud_BeginAppUploadBatch_Request request =
+                SteammessagesCloudSteamclient.CCloud_BeginAppUploadBatch_Request.newBuilder()
+                    .setAppid(appId)
+                    .setMachineName(buildUploadMachineName())
+                    .addAllFilesToUpload(remotePathsToUpload)
+                    .addAllFilesToDelete(remotePathsToDelete)
+                    .setClientId(0L)
+                    .setAppBuildId(0L)
+                    .build();
+            ServiceMethodResponse<SteammessagesCloudSteamclient.CCloud_BeginAppUploadBatch_Response.Builder> response =
+                waitForServiceJobWithRetries(
+                    () -> cloudService.beginAppUploadBatch(request),
+                    RPC_TIMEOUT_MS,
+                    "BeginAppUploadBatch"
+                );
+            ensureServiceResult(response, "BeginAppUploadBatch");
+            SteammessagesCloudSteamclient.CCloud_BeginAppUploadBatch_Response.Builder body = response.getBody();
+            long batchId = body.getBatchId();
+            if (batchId == 0L) {
+                recordDiagnosticEvent("begin_app_upload_batch invalid_batch_id batchId=0 result=" + response.getResult());
+            }
+            ensureValidUploadBatchId(batchId, response.getResult());
             Log.i(
                 TAG,
                 "Steam Cloud upload batch started. batchId="
-                    + response.getBatchID()
+                    + batchId
                     + " appChangeNumber="
-                    + response.getAppChangeNumber()
+                    + body.getAppChangeNumber()
             );
-            return new UploadBatch(response.getBatchID(), response.getAppChangeNumber());
+            return new UploadBatch(batchId, body.getAppChangeNumber());
         } catch (Exception error) {
             Log.e(TAG, "Steam Cloud upload batch start failed during " + currentStage + '.', error);
             throw error;
@@ -818,11 +827,19 @@ public final class SteamCloudClient implements AutoCloseable {
 
     public void completeUploadBatch(int appId, long batchId, EResult batchResult) throws Exception {
         try {
-            waitForStageWithRetries(
-                () -> steamCloud.completeAppUploadBatch(appId, batchId, batchResult),
-                RPC_TIMEOUT_MS,
-                "CompleteAppUploadBatch"
-            );
+            SteammessagesCloudSteamclient.CCloud_CompleteAppUploadBatch_Request request =
+                SteammessagesCloudSteamclient.CCloud_CompleteAppUploadBatch_Request.newBuilder()
+                    .setAppid(appId)
+                    .setBatchId(batchId)
+                    .setBatchEresult(batchResult.code())
+                    .build();
+            ServiceMethodResponse<SteammessagesCloudSteamclient.CCloud_CompleteAppUploadBatch_Response.Builder> response =
+                waitForServiceJobWithRetries(
+                    () -> cloudService.completeAppUploadBatchBlocking(request),
+                    RPC_TIMEOUT_MS,
+                    "CompleteAppUploadBatch"
+                );
+            ensureServiceResult(response, "CompleteAppUploadBatch");
             Log.i(TAG, "Steam Cloud upload batch completed. batchId=" + batchId + " result=" + batchResult);
         } catch (Exception error) {
             Log.e(TAG, "Steam Cloud upload batch completion failed during " + currentStage + '.', error);
@@ -1038,11 +1055,6 @@ public final class SteamCloudClient implements AutoCloseable {
             address = endpoint.getAddress().getHostAddress();
         }
         address = formatHostPort(address, endpoint.getPort());
-        if (SteamCloudNetworkEnvironment.INSTANCE.isProxyOrAcceleratorEndpoint(address)) {
-            recordDiagnosticEvent("cm_connect endpoint_not_persisted proxy_or_accelerator=" + address);
-            Log.i(TAG, "Not persisting proxy-like Steam websocket CM endpoint: " + address);
-            return;
-        }
         try {
             writeTextFile(lastCmEndpointFile, address + "\n");
         } catch (IOException ignored) {
@@ -1356,6 +1368,37 @@ public final class SteamCloudClient implements AutoCloseable {
         return waitForStage(job.toFuture(), timeoutMs, stage);
     }
 
+    private <T extends GeneratedMessage.Builder<T>> ServiceMethodResponse<T> waitForServiceJobWithRetries(
+        Supplier<AsyncJobSingle<ServiceMethodResponse<T>>> jobSupplier,
+        long timeoutMs,
+        String stage
+    ) throws Exception {
+        ServiceMethodResponse<T> response = null;
+        for (int attempt = 1; attempt <= TRANSIENT_RPC_MAX_ATTEMPTS; attempt++) {
+            try {
+                response = waitForServiceJob(jobSupplier.get(), timeoutMs, stage);
+            } catch (Exception error) {
+                if (!isRetryableSteamCloudException(error) || attempt >= TRANSIENT_RPC_MAX_ATTEMPTS) {
+                    throw error;
+                }
+                sleepBeforeTransientRetry(stage, error, attempt);
+                continue;
+            }
+
+            EResult result = response.getResult();
+            if (result == EResult.OK) {
+                return response;
+            }
+            if (!isRetryableSteamCloudResult(result) || attempt >= TRANSIENT_RPC_MAX_ATTEMPTS) {
+                return response;
+            }
+            sleepBeforeTransientRetry(stage, result, "", attempt);
+        }
+
+        ensureServiceResult(response, stage);
+        throw new IllegalStateException(stage + " failed without a response result.");
+    }
+
     private ServiceMethodResponse<SteammessagesCloudSteamclient.CCloud_BeginHTTPUpload_Response.Builder>
     beginHttpUploadWithRetries(
         SteammessagesCloudSteamclient.CCloud_BeginHTTPUpload_Request request,
@@ -1554,6 +1597,16 @@ public final class SteamCloudClient implements AutoCloseable {
         if (response.getResult() != EResult.OK) {
             throw new IllegalStateException(operation + " failed: " + response.getResult());
         }
+    }
+
+    private static void ensureValidUploadBatchId(long batchId, EResult result) {
+        if (batchId != 0L) {
+            return;
+        }
+        throw new IllegalStateException(
+            "BeginAppUploadBatch returned invalid batchId=0 (result=" + result
+                + "). Steam may still be clearing an earlier unfinished upload batch."
+        );
     }
 
     private static String sha1Hex(File file) throws IOException {

@@ -110,6 +110,7 @@ import io.stamethyst.backend.render.VirtualResolutionMode
 import io.stamethyst.backend.update.UpdateSource
 import io.stamethyst.backend.workshop.SteamLanguagePreference
 import io.stamethyst.config.BackBehavior
+import io.stamethyst.config.BootOverlayAnimation
 import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeMode
@@ -127,10 +128,12 @@ import io.stamethyst.ui.resolve
 import io.stamethyst.ui.UiBusyOperation
 import io.stamethyst.ui.haptics.LauncherHaptics
 import io.stamethyst.ui.icon.ArrowBack
+import io.stamethyst.ui.loading.BootAnimationPreviewGrid
 import io.stamethyst.ui.openBasicTutorial
 import io.stamethyst.ui.modimport.ModImportRequestBus
 import io.stamethyst.ui.preferences.LauncherPreferences
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 import okhttp3.Request
@@ -197,6 +200,9 @@ fun LauncherSettingsLauncherScreen(
         },
         onThemeColorChanged = { themeColor ->
             viewModel.onThemeColorChanged(activity, themeColor)
+        },
+        onBootOverlayAnimationChanged = { animation ->
+            viewModel.onBootOverlayAnimationChanged(activity, animation)
         },
         onShowModFileNameChanged = { enabled ->
             viewModel.onShowModFileNameChanged(activity, enabled)
@@ -624,20 +630,20 @@ private fun LauncherSettingsScreenContent(
         }
         item {
             SettingsCategoryCard(
-                iconResId = R.drawable.ic_build,
-                title = stringResource(R.string.settings_developer_title),
-                subtitle = stringResource(R.string.settings_developer_summary),
-                enabled = !blockingInteractionLocked,
-                onClick = onOpenDeveloperSettings,
-            )
-        }
-        item {
-            SettingsCategoryCard(
                 iconResId = R.drawable.ic_settings_native_library,
                 title = stringResource(R.string.settings_native_library_market_title),
                 subtitle = stringResource(R.string.settings_native_library_market_desc),
                 enabled = !blockingInteractionLocked,
                 onClick = onOpenNativeLibraryMarket,
+            )
+        }
+        item {
+            SettingsCategoryCard(
+                iconResId = R.drawable.ic_build,
+                title = stringResource(R.string.settings_developer_title),
+                subtitle = stringResource(R.string.settings_developer_summary),
+                enabled = !blockingInteractionLocked,
+                onClick = onOpenDeveloperSettings,
             )
         }
         item {
@@ -665,6 +671,7 @@ private fun LauncherSettingsLauncherScreenContent(
     onOpenBasicTutorial: () -> Unit = {},
     onThemeModeChanged: (LauncherThemeMode) -> Unit = {},
     onThemeColorChanged: (LauncherThemeColor) -> Unit = {},
+    onBootOverlayAnimationChanged: (BootOverlayAnimation) -> Unit = {},
     onShowModFileNameChanged: (Boolean) -> Unit = {},
     onAutoCheckUpdatesChanged: (Boolean) -> Unit = {},
     onPreferredUpdateMirrorChanged: (UpdateSource) -> Unit = {},
@@ -700,6 +707,7 @@ private fun LauncherSettingsLauncherScreenContent(
                     uiState = uiState,
                     onThemeModeChanged = onThemeModeChanged,
                     onThemeColorChanged = onThemeColorChanged,
+                    onBootOverlayAnimationChanged = onBootOverlayAnimationChanged,
                     onShowModFileNameChanged = onShowModFileNameChanged,
                 )
             }
@@ -1782,10 +1790,12 @@ internal fun SettingsAppearanceSection(
     uiState: SettingsScreenViewModel.UiState,
     onThemeModeChanged: (LauncherThemeMode) -> Unit,
     onThemeColorChanged: (LauncherThemeColor) -> Unit,
+    onBootOverlayAnimationChanged: (BootOverlayAnimation) -> Unit,
     onShowModFileNameChanged: (Boolean) -> Unit,
 ) {
     var showThemeModeDialog by rememberSaveable { mutableStateOf(false) }
     var showThemeColorDialog by rememberSaveable { mutableStateOf(false) }
+    var showBootOverlayAnimationDialog by rememberSaveable { mutableStateOf(false) }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         SettingsActionListItem(
@@ -1808,6 +1818,17 @@ internal fun SettingsAppearanceSection(
         ThemeColorPreviewRow(selectedThemeColor = uiState.themeColor)
         Text(
             text = stringResource(R.string.settings_theme_color_desc),
+            style = MaterialTheme.typography.bodySmall
+        )
+
+        SettingsActionListItem(
+            title = stringResource(R.string.settings_loading_animation_title),
+            supportingText = loadingAnimationDisplayName(uiState.bootOverlayAnimation),
+            enabled = !uiState.busy,
+            onClick = { showBootOverlayAnimationDialog = true }
+        )
+        Text(
+            text = stringResource(R.string.settings_loading_animation_desc),
             style = MaterialTheme.typography.bodySmall
         )
     }
@@ -1865,6 +1886,35 @@ internal fun SettingsAppearanceSection(
             }
         )
     }
+
+    if (showBootOverlayAnimationDialog) {
+        val animationNames = BootOverlayAnimation.entries.associateWith { animation ->
+            loadingAnimationDisplayName(animation)
+        }
+        AlertDialog(
+            onDismissRequest = { showBootOverlayAnimationDialog = false },
+            title = { Text(stringResource(R.string.settings_loading_animation_dialog_title)) },
+            text = {
+                BootAnimationPreviewGrid(
+                    selectedAnimation = uiState.bootOverlayAnimation,
+                    animationNames = animationNames,
+                    enabled = !uiState.busy,
+                    onSelect = { animation ->
+                        onBootOverlayAnimationChanged(animation)
+                        showBootOverlayAnimationDialog = false
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 430.dp)
+                )
+            },
+            confirmButton = {
+                HapticTextButton(onClick = { showBootOverlayAnimationDialog = false }) {
+                    Text(stringResource(R.string.common_action_close))
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -1879,6 +1929,33 @@ private fun themeModeDisplayName(themeMode: LauncherThemeMode): String {
     }
 }
 
+
+@Composable
+private fun loadingAnimationDisplayName(animation: BootOverlayAnimation): String {
+    return stringResource(
+        when (animation) {
+            BootOverlayAnimation.INFINITY_ORBIT ->
+                R.string.settings_loading_animation_infinity_orbit
+            BootOverlayAnimation.COMET -> R.string.settings_loading_animation_comet
+            BootOverlayAnimation.WAVE -> R.string.settings_loading_animation_wave
+            BootOverlayAnimation.HALO -> R.string.settings_loading_animation_halo
+            BootOverlayAnimation.ELASTIC_DOTS ->
+                R.string.settings_loading_animation_elastic_dots
+            BootOverlayAnimation.SPIRAL -> R.string.settings_loading_animation_spiral
+            BootOverlayAnimation.PULSE_RINGS -> R.string.settings_loading_animation_pulse_rings
+            BootOverlayAnimation.ORBITAL_ECLIPSE ->
+                R.string.settings_loading_animation_orbital_eclipse
+            BootOverlayAnimation.RUNIC_GATE -> R.string.settings_loading_animation_runic_gate
+            BootOverlayAnimation.CARD_SHUFFLE -> R.string.settings_loading_animation_card_shuffle
+            BootOverlayAnimation.PRISM_SWEEP -> R.string.settings_loading_animation_prism_sweep
+            BootOverlayAnimation.HELIX_LADDER -> R.string.settings_loading_animation_helix_ladder
+            BootOverlayAnimation.LIQUID_ORB -> R.string.settings_loading_animation_liquid_orb
+            BootOverlayAnimation.SIGNAL_STACK -> R.string.settings_loading_animation_signal_stack
+            BootOverlayAnimation.DIAMOND_FLOW -> R.string.settings_loading_animation_diamond_flow
+            BootOverlayAnimation.GRAVITY_WELL -> R.string.settings_loading_animation_gravity_well
+        }
+    )
+}
 @Composable
 internal fun SettingsUpdateSection(
     uiState: SettingsScreenViewModel.UiState,
@@ -2500,6 +2577,22 @@ private fun LauncherDeveloperSettingsScreenContent(
     onGlBridgeSwapHeartbeatDebugChanged: (Boolean) -> Unit = {},
     onResetLauncherSettingsToDefaults: () -> Unit = {},
 ) {
+    val context = LocalContext.current
+    var showWarningDialog by rememberSaveable {
+        mutableStateOf(!LauncherPreferences.isDeveloperSettingsWarningDismissed(context))
+    }
+    var warningRemainingSeconds by rememberSaveable { mutableIntStateOf(5) }
+
+    LaunchedEffect(showWarningDialog) {
+        if (showWarningDialog) {
+            warningRemainingSeconds = 5
+            while (warningRemainingSeconds > 0) {
+                delay(1000L)
+                warningRemainingSeconds -= 1
+            }
+        }
+    }
+
     SettingsRouteScaffold(
         modifier = modifier,
         uiState = uiState,
@@ -2583,6 +2676,50 @@ private fun LauncherDeveloperSettingsScreenContent(
             }
         }
     }
+
+    if (showWarningDialog) {
+        DeveloperSettingsWarningDialog(
+            remainingSeconds = warningRemainingSeconds,
+            onDismissPermanently = {
+                LauncherPreferences.setDeveloperSettingsWarningDismissed(context, true)
+                showWarningDialog = false
+            },
+            onConfirm = {
+                showWarningDialog = false
+            },
+        )
+    }
+}
+
+@Composable
+private fun DeveloperSettingsWarningDialog(
+    remainingSeconds: Int,
+    onDismissPermanently: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    val actionsEnabled = remainingSeconds <= 0
+
+    AlertDialog(
+        onDismissRequest = {},
+        title = { Text(text = stringResource(R.string.settings_developer_warning_title)) },
+        text = { Text(text = stringResource(R.string.settings_developer_warning_message)) },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                enabled = actionsEnabled,
+            ) {
+                Text(text = stringResource(R.string.settings_developer_warning_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismissPermanently,
+                enabled = actionsEnabled,
+            ) {
+                Text(text = stringResource(R.string.settings_developer_warning_dont_remind))
+            }
+        },
+    )
 }
 
 @Composable

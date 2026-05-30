@@ -404,7 +404,7 @@ class WorkshopDownloadProcessService : Service() {
                     }
                     taskStore.appendLog(details.summary.publishedFileId, "正在通过 Steam 创意工坊解析下载内容")
                     sendProgress(receiver, "正在解析下载内容", "Resolving")
-                    details = service.getDetails(details.summary.appId, details.summary.publishedFileId)
+                    details = service.getDetails(details.summary.appId, details.summary.publishedFileId, details.summary)
                     taskStore.update(details.summary.publishedFileId) { it.copy(details = details) }
                     taskStore.appendLog(
                         details.summary.publishedFileId,
@@ -1101,11 +1101,12 @@ private fun WorkshopDownloadProgress.shouldPersist(
 ): Boolean {
     val percent = progressPercent()
     if (lastPersistAtMillis == 0L) return true
-    if (percent != null && percent != lastPercent) return true
     if (isCompleteProgress()) return true
-    if (completedFiles != null && completedFiles != lastCompletedFiles && nowMillis - lastPersistAtMillis >= PROGRESS_PERSIST_INTERVAL_MS) return true
-    if (completedChunks != null && completedChunks != lastCompletedChunks && nowMillis - lastPersistAtMillis >= PROGRESS_PERSIST_INTERVAL_MS) return true
-    return nowMillis - lastPersistAtMillis >= PROGRESS_PERSIST_INTERVAL_MS
+    if (nowMillis - lastPersistAtMillis < PROGRESS_PERSIST_INTERVAL_MS) return false
+    if (percent != null && percent != lastPercent) return true
+    if (completedFiles != null && completedFiles != lastCompletedFiles) return true
+    if (completedChunks != null && completedChunks != lastCompletedChunks) return true
+    return true
 }
 
 private fun WorkshopDownloadProgress.shouldLog(
@@ -1155,7 +1156,7 @@ private fun WorkshopDownloadProgress.downloadLogLine(): String = buildString {
     }
 }
 
-private const val PROGRESS_PERSIST_INTERVAL_MS = 1_000L
+private const val PROGRESS_PERSIST_INTERVAL_MS = 2_000L
 private const val PROGRESS_LOG_INTERVAL_MS = 15_000L
 private const val PROGRESS_LOG_PERCENT_STEP = 5
 

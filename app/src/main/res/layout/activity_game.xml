@@ -15,7 +15,7 @@
         android:id="@+id/bootOverlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#CC000000" />
+        android:background="@color/game_startup_background" />
 
     <TextView
         android:id="@+id/gamePerformanceOverlay"

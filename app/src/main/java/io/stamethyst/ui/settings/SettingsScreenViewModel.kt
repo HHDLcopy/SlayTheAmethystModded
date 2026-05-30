@@ -86,6 +86,7 @@ import io.stamethyst.backend.workshop.SteamLanguagePreference
 import io.stamethyst.backend.workshop.WorkshopPreviewCacheStore
 import io.stamethyst.R
 import io.stamethyst.config.BackBehavior
+import io.stamethyst.config.BootOverlayAnimation
 import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeController
@@ -245,6 +246,8 @@ class SettingsScreenViewModel : ViewModel() {
             LauncherPreferences.DEFAULT_GPU_RESOURCE_GUARDIAN_PRESSURE_DOWNSCALE_ENABLED,
         val themeMode: LauncherThemeMode = LauncherPreferences.DEFAULT_THEME_MODE,
         val themeColor: LauncherThemeColor = LauncherPreferences.DEFAULT_THEME_COLOR,
+        val bootOverlayAnimation: BootOverlayAnimation =
+            LauncherPreferences.DEFAULT_BOOT_OVERLAY_ANIMATION,
         val selectedJvmHeapMaxMb: Int = LauncherPreferences.DEFAULT_JVM_HEAP_MAX_MB,
         val compressedPointersEnabled: Boolean = LauncherPreferences.DEFAULT_JVM_COMPRESSED_POINTERS_ENABLED,
         val stringDeduplicationEnabled: Boolean =
@@ -449,7 +452,8 @@ class SettingsScreenViewModel : ViewModel() {
     fun syncThemeAppearance(host: Activity) {
         uiState = uiState.copy(
             themeMode = SettingsRepository.loadThemeMode(host),
-            themeColor = SettingsRepository.loadThemeColor(host)
+            themeColor = SettingsRepository.loadThemeColor(host),
+            bootOverlayAnimation = SettingsRepository.loadBootOverlayAnimation(host)
         )
     }
 
@@ -463,6 +467,14 @@ class SettingsScreenViewModel : ViewModel() {
         syncThemeAppearance(host)
     }
 
+    fun onBootOverlayAnimationChanged(host: Activity, animation: BootOverlayAnimation) {
+        if (uiState.busy || uiState.bootOverlayAnimation == animation) {
+            return
+        }
+        uiState = uiState.copy(bootOverlayAnimation = animation)
+        saveBootOverlayAnimationSelection(host, animation)
+        refreshStatus(host)
+    }
     fun onPreferredUpdateMirrorChanged(host: Activity, source: UpdateSource) {
         if (!source.userSelectable) {
             return
@@ -2788,7 +2800,7 @@ class SettingsScreenViewModel : ViewModel() {
                 }
                 host.runOnUiThread {
                     nativeLibraryMarketCatalog = emptyList()
-                    LauncherThemeController.apply(LauncherPreferences.DEFAULT_THEME_MODE)
+                    LauncherThemeController.apply(host, LauncherPreferences.DEFAULT_THEME_MODE)
                     syncThemeAppearance(host)
                     syncStoredUpdateState(host)
                     uiState = uiState.copy(
@@ -3137,6 +3149,7 @@ class SettingsScreenViewModel : ViewModel() {
         uiState = uiState.copy(
             themeMode = snapshot.themeMode,
             themeColor = snapshot.themeColor,
+            bootOverlayAnimation = snapshot.bootOverlayAnimation,
             playerName = snapshot.playerName,
             selectedRenderScale = rendering.renderScale,
             selectedTargetFps = rendering.targetFps,
@@ -4470,13 +4483,19 @@ class SettingsScreenViewModel : ViewModel() {
 
     private fun saveThemeModeSelection(host: Activity, themeMode: LauncherThemeMode) {
         LauncherPreferences.saveThemeMode(host, themeMode)
-        LauncherThemeController.apply(themeMode)
+        LauncherThemeController.apply(host, themeMode)
     }
 
     private fun saveThemeColorSelection(host: Activity, themeColor: LauncherThemeColor) {
         LauncherPreferences.saveThemeColor(host, themeColor)
     }
 
+    private fun saveBootOverlayAnimationSelection(
+        host: Activity,
+        animation: BootOverlayAnimation
+    ) {
+        LauncherPreferences.saveBootOverlayAnimation(host, animation)
+    }
     private fun saveJvmHeapMaxSelection(host: Activity, heapMaxMb: Int) {
         LauncherPreferences.saveJvmHeapMaxMb(host, heapMaxMb)
     }
@@ -4642,10 +4661,10 @@ class SettingsScreenViewModel : ViewModel() {
             }
 
             override fun acceptDeviceConfirmation(): CompletableFuture<Boolean> {
-                val future = CompletableFuture<Boolean>()
+                val future = CompletableFuture.completedFuture(true)
                 host.runOnUiThread {
                     cancelPendingSteamCloudChallenge("Steam Cloud device confirmation prompt replaced.")
-                    pendingSteamCloudConfirmationFuture = future
+                    pendingSteamCloudConfirmationFuture = null
                     uiState = uiState.copy(
                         steamCloudLoginChallenge = SteamCloudLoginChallenge(
                             kind = SteamCloudLoginChallengeKind.DEVICE_CONFIRMATION
@@ -4800,39 +4819,28 @@ class SettingsScreenViewModel : ViewModel() {
     }
 
     private fun summarizeSteamCloudError(host: Activity, error: Throwable): String {
-        val cause = generateSequence(error) { current -> current.cause }
-            .firstOrNull { current ->
-                current.message?.trim()?.isNotEmpty() == true
-            } ?: error
+        val cause = SteamCloudErrorClassifier.meaningfulCause(error)
         val message = cause.message?.trim().orEmpty()
-        if (cause is CancellationException) {
-            return host.getString(R.string.settings_steam_cloud_login_cancelled_summary)
-        }
-        if (isSteamCloudUploadDisconnect(message)) {
-            return host.getString(R.string.settings_steam_cloud_upload_disconnect_summary)
-        }
-        if (isSteamCloudAuthWatchdogDisconnect(message)) {
-            return host.getString(R.string.settings_steam_cloud_login_guard_wait_timeout_summary)
+        when (SteamCloudErrorClassifier.classify(error)) {
+            SteamCloudErrorKind.USER_CANCELLED ->
+                return host.getString(R.string.settings_steam_cloud_login_cancelled_summary)
+
+            SteamCloudErrorKind.AUTH_CONNECTION_CANCELLED ->
+                return host.getString(R.string.settings_steam_cloud_login_guard_connection_cancelled_summary)
+
+            SteamCloudErrorKind.AUTH_WATCHDOG_DISCONNECT ->
+                return host.getString(R.string.settings_steam_cloud_login_guard_wait_timeout_summary)
+
+            SteamCloudErrorKind.UPLOAD_DISCONNECT ->
+                return host.getString(R.string.settings_steam_cloud_upload_disconnect_summary)
+
+            SteamCloudErrorKind.OTHER -> Unit
         }
         return if (message.isNotEmpty()) {
             message
         } else {
             cause.javaClass.simpleName
         }
-    }
-
-    private fun isSteamCloudAuthWatchdogDisconnect(message: String): Boolean {
-        val normalized = message.lowercase(Locale.US)
-        return normalized.contains("steam disconnected") &&
-            normalized.contains("steam auth completion") &&
-            normalized.contains("watchdog")
-    }
-
-    private fun isSteamCloudUploadDisconnect(message: String): Boolean {
-        val normalized = message.lowercase(Locale.US)
-        return normalized.contains("beginhttpupload") &&
-            (normalized.contains("steam disconnected") ||
-                normalized.contains("client or session is no longer active"))
     }
 
     private fun formatSettingsTimestamp(timestampMs: Long): String {

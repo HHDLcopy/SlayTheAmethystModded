@@ -301,6 +301,130 @@ class WorkshopServiceTest {
     }
 
     @Test
+    fun getDetailsParsesLiveWorkshopCommentInitShape() {
+        detailsServer.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    {
+                      "response": {
+                        "publishedfiledetails": [
+                          {
+                            "publishedfileid": "2906539837",
+                            "title": "Caffé In-Spire",
+                            "consumer_app_id": 646570,
+                            "description": "Caffé In-Spire."
+                          }
+                        ]
+                      }
+                    }
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+        browseServer.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    <script>g_sessionID = "session123";</script>
+                    <div class="breadcrumbs">
+                      <a href="https://steamcommunity.com/id/Temple9/myworkshopfiles/?appid=646570">tldyl 的创意工坊</a>
+                    </div>
+                    <div class="rightDetailsBlock">
+                      <div class="creatorsBlock">
+                        <div class="friendBlock persona online">
+                          <div class="friendBlockContent">
+                            tldyl<br>
+                            <span class="friendSmallText">游戏中</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="workshopItemDescription" id="highlightContent">一个皮肤mod<br>原版角色的咖啡厅制服皮肤</div>
+                    <script>
+                      InitializeCommentThread( "PublishedFile_Public", "PublishedFile_Public_76561198808881876_2906539837", {"feature":"2906539837","feature2":-1,"owner":"76561198808881876","total_count":34,"start":0,"pagesize":10,"extended_data":"{\"contributors\":[\"76561198808881876\",{},{}],\"appid\":646570}"}, 'https://steamcommunity.com/comment/PublishedFile_Public/', 40 );
+                    </script>
+                    <span id="commentthread_123_totalcount">34 条留言</span>
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+
+        val service = newService()
+        val details = runBlocking { service.getDetails(646570u, 2906539837uL) }
+
+        assertEquals("一个皮肤mod\n原版角色的咖啡厅制服皮肤", details.summary.description)
+        assertEquals("tldyl", details.summary.authorName)
+        assertEquals(34L, details.commentCount)
+        assertTrue(details.hasNextCommentPage)
+        assertEquals("76561198808881876", details.commentThreadContext?.ownerId)
+        assertEquals("2906539837", details.commentThreadContext?.featureId)
+        assertEquals("-1", details.commentThreadContext?.feature2)
+        assertEquals("session123", details.commentThreadContext?.sessionId)
+        assertTrue(details.commentThreadContext?.extendedData.orEmpty().contains("\"appid\":646570"))
+        assertEquals(1, browseServer.requestCount)
+        assertEquals(1, detailsServer.requestCount)
+    }
+
+    @Test
+    fun getDetailsKeepsCardSummaryWhenCommunityPageFails() {
+        detailsServer.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    {
+                      "response": {
+                        "publishedfiledetails": [
+                          {
+                            "publishedfileid": "2906539837",
+                            "title": "Caffé In-Spire",
+                            "consumer_app_id": 646570,
+                            "description": "Caffé In-Spire."
+                          }
+                        ]
+                      }
+                    }
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+        browseServer.enqueue(MockResponse.Builder().code(500).body("temporary failure").build())
+
+        val service = newService()
+        val details = runBlocking {
+            service.getDetails(
+                appId = 646570u,
+                publishedFileId = 2906539837uL,
+                fallbackSummary = WorkshopItemSummary(
+                    publishedFileId = 2906539837uL,
+                    appId = 646570u,
+                    title = "咖啡厅皮肤",
+                    previewUrl = "https://cdn.example/preview.jpg",
+                    description = "一个皮肤mod",
+                    authorName = "tldyl",
+                    fileSizeBytes = 1234L,
+                    updatedAtMillis = 1710000000L,
+                    downloadCount = 42L,
+                ),
+            )
+        }
+
+        assertEquals("Caffé In-Spire", details.summary.title)
+        assertEquals("https://cdn.example/preview.jpg", details.summary.previewUrl)
+        assertEquals("一个皮肤mod", details.summary.description)
+        assertEquals("tldyl", details.summary.authorName)
+        assertEquals(1234L, details.summary.fileSizeBytes)
+        assertEquals(1710000000L, details.summary.updatedAtMillis)
+        assertEquals(42L, details.summary.downloadCount)
+        assertEquals(null, details.commentThreadContext)
+        assertEquals(1, browseServer.requestCount)
+        assertEquals(1, detailsServer.requestCount)
+    }
+
+    @Test
     fun getChangeNotesParsesSteamChangelogBlocks() {
         browseServer.enqueue(
             MockResponse.Builder()

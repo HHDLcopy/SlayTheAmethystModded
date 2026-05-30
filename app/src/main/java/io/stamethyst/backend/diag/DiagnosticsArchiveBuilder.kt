@@ -229,6 +229,7 @@ internal object DiagnosticsArchiveBuilder {
                     "sts/logcat/${logcatFile.name}"
                 )
             }
+            exportedCount += writeLauncherCrashReportsForArchive(zipOutput, context)
 
             exportedCount += writeWorkshopDownloadDiagnostics(zipOutput, context)
             exportedCount += writeWorkshopAutoImportPatchLogsForArchive(zipOutput, context)
@@ -441,6 +442,47 @@ internal object DiagnosticsArchiveBuilder {
             )
         }
         return exportedCount
+    }
+
+    @Throws(IOException::class)
+    internal fun writeLauncherCrashReportsForArchive(
+        zipOutput: ZipOutputStream,
+        context: Context
+    ): Int {
+        val reportFiles = RuntimePaths.listLauncherCrashReportFiles(context)
+        if (reportFiles.isEmpty()) {
+            return 0
+        }
+        writeTextEntry(
+            zipOutput,
+            "sts/launcher_crash_reports/index.txt",
+            buildLauncherCrashReportIndex(context, reportFiles)
+        )
+        var exportedCount = 0
+        reportFiles.forEach { reportFile ->
+            exportedCount += writeOptionalFile(
+                zipOutput,
+                reportFile,
+                "sts/launcher_crash_reports/${reportFile.name}"
+            )
+        }
+        return exportedCount
+    }
+
+    private fun buildLauncherCrashReportIndex(context: Context, reportFiles: List<File>): String = buildString {
+        append("Launcher crash reports\n")
+        append("Directory: ").append(RuntimePaths.launcherCrashReportsDir(context).absolutePath).append('\n')
+        append("Report count: ").append(reportFiles.size).append('\n')
+        append('\n')
+        reportFiles.forEach { reportFile ->
+            append("- ").append(reportFile.name).append('\n')
+            append("  Size: ").append(reportFile.length()).append(" bytes\n")
+            append("  Modified At Ms: ").append(reportFile.lastModified()).append('\n')
+            append("  Log Entry: sts/launcher_crash_reports/")
+                .append(reportFile.name)
+                .append('\n')
+            append('\n')
+        }
     }
 
     private fun buildWorkshopAutoImportPatchLogIndex(logFiles: List<File>): String = buildString {

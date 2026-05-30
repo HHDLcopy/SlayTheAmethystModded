@@ -65,20 +65,25 @@ import io.stamethyst.config.RuntimePaths
 import io.stamethyst.config.SteamCloudSaveMode
 import io.stamethyst.config.StsExternalStorageAccess
 import io.stamethyst.model.ModItemUi
+import io.stamethyst.model.WorkshopModUi
 import io.stamethyst.model.WorkshopModState
 import io.stamethyst.ui.LauncherTransientNoticeDuration
 import io.stamethyst.ui.UiText
 import io.stamethyst.ui.UiBusyOperation
 import io.stamethyst.ui.preferences.LauncherPreferences
 import io.stamethyst.ui.settings.JvmLogShareService
+import io.stamethyst.ui.workshop.WorkshopDownloadCenterStore
+import io.stamethyst.ui.workshop.WorkshopDownloadTaskUi
 import java.io.File
 import java.io.IOException
 import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 
 @Stable
 class MainScreenViewModel : ViewModel() {
@@ -270,6 +275,48 @@ class MainScreenViewModel : ViewModel() {
             hasRamSaver = dependencyAvailability.hasRamSaver,
             storageIssue = storageIssue
         )
+    }
+
+    suspend fun refreshWorkshopDownloadCards(host: Activity): Boolean {
+        WorkshopDownloadCenterStore.initialize(host)
+        val loadedTasks = withContext(Dispatchers.IO) {
+            WorkshopDownloadCenterStore.loadTasks()
+        }
+        WorkshopDownloadCenterStore.replaceInMemory(loadedTasks)
+
+        val visibleTasks = loadedTasks.filter { task -> task.status.shouldShowLightweightWorkshopTask() }
+        val activeTasks = loadedTasks.filter { task -> task.status.isActiveDownload() }
+        val tasksByPublishedFileId = loadedTasks.associateBy { task -> task.publishedFileId }
+        val currentOptionalMods = uiState.optionalMods
+        val updatedOptionalMods = currentOptionalMods.mapNotNull { mod ->
+            val workshop = mod.workshop ?: return@mapNotNull mod
+            val task = tasksByPublishedFileId[workshop.publishedFileId] ?: return@mapNotNull mod
+            val taskState = task.status.toWorkshopModStateOrNull()
+            if (taskState == null) {
+                if (mod.isStandaloneWorkshopTaskCard(workshop)) null else mod
+            } else {
+                mod.copy(
+                    workshop = workshop.copy(
+                        state = taskState,
+                        statusText = task.message.ifBlank { workshop.statusText },
+                        downloadProgressPercent = task.progressPercent,
+                    )
+                )
+            }
+        }.toMutableList()
+
+        val existingPublishedFileIds = updatedOptionalMods
+            .mapNotNull { mod -> mod.workshop?.publishedFileId }
+            .toSet()
+        visibleTasks.asReversed().forEach { task ->
+            if (task.publishedFileId !in existingPublishedFileIds) {
+                updatedOptionalMods.add(0, task.toStandaloneWorkshopModItem())
+            }
+        }
+        if (updatedOptionalMods != currentOptionalMods) {
+            uiState = uiState.copy(optionalMods = updatedOptionalMods)
+        }
+        return activeTasks.isNotEmpty()
     }
 
     private fun clearNewlyImportedHighlights(host: Activity) {
@@ -2766,4 +2813,70 @@ class MainScreenViewModel : ViewModel() {
         modManagementController.shutdown()
         super.onCleared()
     }
+}
+
+private fun WorkshopDownloadTaskStatus.shouldShowLightweightWorkshopTask(): Boolean = when (this) {
+    WorkshopDownloadTaskStatus.Queued,
+    WorkshopDownloadTaskStatus.Resolving,
+    WorkshopDownloadTaskStatus.Downloading,
+    WorkshopDownloadTaskStatus.Pausing,
+    WorkshopDownloadTaskStatus.Cancelling,
+    WorkshopDownloadTaskStatus.Paused,
+    WorkshopDownloadTaskStatus.Failed -> true
+    WorkshopDownloadTaskStatus.Completed,
+    WorkshopDownloadTaskStatus.Cancelled -> false
+}
+
+private fun WorkshopDownloadTaskStatus.toWorkshopModStateOrNull(): WorkshopModState? = when (this) {
+    WorkshopDownloadTaskStatus.Queued,
+    WorkshopDownloadTaskStatus.Resolving,
+    WorkshopDownloadTaskStatus.Downloading,
+    WorkshopDownloadTaskStatus.Pausing,
+    WorkshopDownloadTaskStatus.Cancelling -> WorkshopModState.Downloading
+    WorkshopDownloadTaskStatus.Paused -> WorkshopModState.DownloadPaused
+    WorkshopDownloadTaskStatus.Failed -> WorkshopModState.DownloadFailed
+    WorkshopDownloadTaskStatus.Completed,
+    WorkshopDownloadTaskStatus.Cancelled -> null
+}
+
+private fun WorkshopDownloadTaskStatus.defaultWorkshopStatusText(): String = when (this) {
+    WorkshopDownloadTaskStatus.Queued -> "等待下载"
+    WorkshopDownloadTaskStatus.Resolving -> "正在解析下载内容"
+    WorkshopDownloadTaskStatus.Downloading -> "正在下载"
+    WorkshopDownloadTaskStatus.Pausing -> "正在暂停"
+    WorkshopDownloadTaskStatus.Cancelling -> "正在取消"
+    WorkshopDownloadTaskStatus.Paused -> "下载已暂停，可继续"
+    WorkshopDownloadTaskStatus.Failed -> "下载失败"
+    WorkshopDownloadTaskStatus.Completed -> "下载完成"
+    WorkshopDownloadTaskStatus.Cancelled -> "下载已取消"
+}
+
+private fun ModItemUi.isStandaloneWorkshopTaskCard(workshop: WorkshopModUi): Boolean {
+    return !installed && storagePath == "workshop:${workshop.appId}:${workshop.publishedFileId}"
+}
+
+private fun WorkshopDownloadTaskUi.toStandaloneWorkshopModItem(): ModItemUi {
+    val summary = details.summary
+    val state = status.toWorkshopModStateOrNull() ?: WorkshopModState.DownloadFailed
+    return ModItemUi(
+        modId = "workshop:${publishedFileId}",
+        manifestModId = "workshop:${publishedFileId}",
+        storagePath = "workshop:${summary.appId}:${publishedFileId}",
+        name = title.ifBlank { summary.title.ifBlank { publishedFileId.toString() } },
+        version = summary.updatedAtMillis.toString(),
+        description = description.ifBlank { summary.description },
+        dependencies = emptyList(),
+        required = false,
+        installed = false,
+        enabled = false,
+        explicitPriority = null,
+        effectivePriority = null,
+        workshop = WorkshopModUi(
+            appId = summary.appId,
+            publishedFileId = publishedFileId,
+            state = state,
+            statusText = message.ifBlank { status.defaultWorkshopStatusText() },
+            downloadProgressPercent = progressPercent,
+        ),
+    )
 }

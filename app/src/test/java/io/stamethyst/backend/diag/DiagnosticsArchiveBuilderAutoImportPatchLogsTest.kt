@@ -5,12 +5,15 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.SharedPreferences
 import io.stamethyst.backend.workshop.WorkshopAutoImportPatchLogStore
+import io.stamethyst.config.RuntimePaths
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.file.Files
 import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -35,6 +38,36 @@ class DiagnosticsArchiveBuilderAutoImportPatchLogsTest {
             assertNotNull(logEntry)
             val logText = zipFile.getInputStream(logEntry).bufferedReader(Charsets.UTF_8).use { it.readText() }
             assertTrue(logText.contains("mod.downfall.mobile_layout"))
+        }
+    }
+
+    @Test
+    fun writeLauncherCrashReportsForArchive_includesCrashReportsFromAndroidDirectory() {
+        val roots = TestRoots.create("diag-launcher-crash-reports")
+        val reportDir = RuntimePaths.launcherCrashReportsDir(roots.context).apply { mkdirs() }
+        val reportFile = File(
+            reportDir,
+            "sts-launcher-crash-uncaught-20260528-120000-000-io.stamethyst.test-pid123.txt"
+        ).apply {
+            writeText("launcher stack trace", Charsets.UTF_8)
+        }
+        File(reportDir, "notes.txt").writeText("not a crash report", Charsets.UTF_8)
+        val archive = File(roots.rootDir, "diagnostics-crash.zip")
+
+        FileOutputStream(archive, false).use { output ->
+            ZipOutputStream(output).use { zipOutput ->
+                DiagnosticsArchiveBuilder.writeLauncherCrashReportsForArchive(zipOutput, roots.context)
+            }
+        }
+
+        ZipFile(archive).use { zipFile ->
+            val indexEntry = zipFile.getEntry("sts/launcher_crash_reports/index.txt")
+            assertNotNull(indexEntry)
+            val reportEntry = zipFile.getEntry("sts/launcher_crash_reports/${reportFile.name}")
+            assertNotNull(reportEntry)
+            assertNull(zipFile.getEntry("sts/launcher_crash_reports/notes.txt"))
+            val reportText = zipFile.getInputStream(reportEntry).bufferedReader(Charsets.UTF_8).use { it.readText() }
+            assertEquals("launcher stack trace", reportText)
         }
     }
 

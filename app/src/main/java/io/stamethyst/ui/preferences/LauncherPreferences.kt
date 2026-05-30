@@ -14,6 +14,7 @@ import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.backend.render.RendererSelectionMode
 import io.stamethyst.backend.render.VirtualResolutionMode
 import io.stamethyst.config.BackBehavior
+import io.stamethyst.config.BootOverlayAnimation
 import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.LauncherThemeColor
@@ -30,6 +31,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_BACK_IMMEDIATE_EXIT
     val DEFAULT_MANUAL_DISMISS_BOOT_OVERLAY: Boolean
         get() = LauncherConfig.DEFAULT_MANUAL_DISMISS_BOOT_OVERLAY
+    val DEFAULT_BOOT_OVERLAY_ANIMATION: BootOverlayAnimation
+        get() = LauncherConfig.DEFAULT_BOOT_OVERLAY_ANIMATION
     val DEFAULT_TARGET_FPS: Int
         get() = LauncherConfig.DEFAULT_TARGET_FPS
     val TARGET_FPS_OPTIONS: IntArray
@@ -194,12 +197,27 @@ object LauncherPreferences {
         LauncherConfig.saveManualDismissBootOverlay(context, enabled)
     }
 
+    fun readBootOverlayAnimation(context: Context): BootOverlayAnimation {
+        return LauncherConfig.readBootOverlayAnimation(context)
+    }
+
+    fun saveBootOverlayAnimation(context: Context, animation: BootOverlayAnimation) {
+        LauncherConfig.saveBootOverlayAnimation(context, animation)
+    }
     fun isBasicTutorialNoticeDismissed(context: Context): Boolean {
         return LauncherConfig.isBasicTutorialNoticeDismissed(context)
     }
 
     fun setBasicTutorialNoticeDismissed(context: Context, dismissed: Boolean) {
         LauncherConfig.setBasicTutorialNoticeDismissed(context, dismissed)
+    }
+
+    fun isDeveloperSettingsWarningDismissed(context: Context): Boolean {
+        return LauncherConfig.isDeveloperSettingsWarningDismissed(context)
+    }
+
+    fun setDeveloperSettingsWarningDismissed(context: Context, dismissed: Boolean) {
+        LauncherConfig.setDeveloperSettingsWarningDismissed(context, dismissed)
     }
 
     fun readShowFloatingMouseWindow(context: Context): Boolean {

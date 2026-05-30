@@ -102,7 +102,7 @@ internal fun WorkshopDetailScreen(
         if (!state.downloadInProgress) return@LaunchedEffect
         while (true) {
             delay(1000L)
-            viewModel.refreshDownloadState(context.applicationContext)
+            viewModel.refreshDownloadTaskState(context.applicationContext)
         }
     }
 

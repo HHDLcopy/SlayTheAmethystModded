@@ -95,7 +95,10 @@ class StsGameActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val startupBackground = StartupWindowBackground.gameColor(this)
+        StartupWindowBackground.applyToWindow(window, startupBackground)
         super.onCreate(savedInstanceState)
+        StartupWindowBackground.applyToDecorView(window, startupBackground)
         launchGuardAcquired = GameProcessLaunchGuard.tryAcquire(launchGuardToken)
         if (!launchGuardAcquired) {
             MemoryDiagnosticsLogger.logEvent(

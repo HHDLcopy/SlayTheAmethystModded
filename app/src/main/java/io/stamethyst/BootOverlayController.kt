@@ -3,32 +3,32 @@ package io.stamethyst
 import android.os.SystemClock
 import android.view.View
 import androidx.annotation.StringRes
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,22 +41,24 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import io.stamethyst.config.BootOverlayAnimation
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
+import io.stamethyst.ui.loading.BootLoadingAnimation
 import io.stamethyst.ui.theme.LauncherTheme
 import java.io.RandomAccessFile
 import java.nio.charset.StandardCharsets
-import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
-private const val JVM_LOG_ENTER_ANIMATION_MS = 360L
 
 /**
  * Manages the boot overlay UI: progress bar, status text, and dismiss button.
@@ -206,6 +208,7 @@ class BootOverlayController(
         bootOverlay?.setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
         val themeMode = LauncherConfig.readThemeMode(activity)
         val themeColor = LauncherConfig.readThemeColor(activity)
+        val loadingAnimation = LauncherConfig.readBootOverlayAnimation(activity)
         bootOverlay?.setContent {
             LauncherTheme(
                 themeMode = themeMode,
@@ -213,6 +216,7 @@ class BootOverlayController(
             ) {
                 BootOverlayPanel(
                     uiState = overlayUiState,
+                    loadingAnimation = loadingAnimation,
                     manualDismissBootOverlay = manualDismissBootOverlay,
                     onDismissClick = {
                         if (!manualDismissBootOverlay || bootOverlayDismissed) {
@@ -291,11 +295,7 @@ class BootOverlayController(
         activity.runOnUiThread {
             if (bootOverlayDismissed || bootOverlay == null) return@runOnUiThread
             val nextStatus = if (normalizedMessage.isNotEmpty()) {
-                format(
-                    R.string.boot_overlay_status_with_progress,
-                    normalizedMessage,
-                    bootOverlayProgress
-                )
+                normalizedMessage
             } else {
                 overlayUiState.statusText
             }
@@ -643,6 +643,7 @@ private data class BootOverlayUiState(
 @Composable
 private fun BootOverlayPanel(
     uiState: BootOverlayUiState,
+    loadingAnimation: BootOverlayAnimation,
     manualDismissBootOverlay: Boolean,
     onDismissClick: () -> Unit
 ) {
@@ -654,42 +655,6 @@ private fun BootOverlayPanel(
             easing = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
         ),
         label = "boot_overlay_progress"
-    )
-
-    val hasJvmLogOutput = uiState.hasJvmLogOutput
-    var showJvmLogText by remember { mutableStateOf(false) }
-    LaunchedEffect(hasJvmLogOutput) {
-        if (hasJvmLogOutput) {
-            showJvmLogText = false
-            delay(JVM_LOG_ENTER_ANIMATION_MS)
-            showJvmLogText = true
-        } else {
-            showJvmLogText = false
-        }
-    }
-    val topSpacerWeight by animateFloatAsState(
-        targetValue = if (hasJvmLogOutput) 0f else 1f,
-        animationSpec = tween(
-            durationMillis = JVM_LOG_ENTER_ANIMATION_MS.toInt(),
-            easing = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
-        ),
-        label = "boot_overlay_top_spacer"
-    )
-    val bottomSpacerWeight by animateFloatAsState(
-        targetValue = if (hasJvmLogOutput) 0f else 1f,
-        animationSpec = tween(
-            durationMillis = JVM_LOG_ENTER_ANIMATION_MS.toInt(),
-            easing = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
-        ),
-        label = "boot_overlay_bottom_spacer"
-    )
-    val logAreaWeight by animateFloatAsState(
-        targetValue = if (hasJvmLogOutput) 1f else 0f,
-        animationSpec = tween(
-            durationMillis = JVM_LOG_ENTER_ANIMATION_MS.toInt(),
-            easing = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
-        ),
-        label = "boot_overlay_log_area"
     )
 
     val consumeBackgroundTapModifier = if (manualDismissBootOverlay) {
@@ -707,99 +672,34 @@ private fun BootOverlayPanel(
             .background(colorScheme.surface)
             .then(consumeBackgroundTapModifier)
             .windowInsetsPadding(WindowInsets.safeDrawing)
-            .padding(24.dp)
+            .padding(horizontal = 28.dp, vertical = 24.dp)
     ) {
-        val contentBottomPadding = if (manualDismissBootOverlay) 72.dp else 0.dp
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(bottom = contentBottomPadding),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            if (topSpacerWeight > 0f) {
-                Spacer(modifier = Modifier.weight(topSpacerWeight))
-            }
-            Text(
-                text = stringResource(R.string.boot_overlay_title_starting),
-                color = colorScheme.onSurface,
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth()
-            )
-            LinearProgressIndicator(
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val compactHeight = maxHeight < 420.dp
+            val animationSize = if (compactHeight) 112.dp else 148.dp
+            val contentBottomPadding = if (manualDismissBootOverlay) 58.dp else 0.dp
+            Row(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(999.dp)),
-                progress = { animatedProgress },
-                color = colorScheme.primary,
-                trackColor = colorScheme.primaryContainer.copy(alpha = 0.42f)
-            )
-            Text(
-                text = uiState.statusText,
-                color = colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyMedium,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth()
-            )
-            if (bottomSpacerWeight > 0f) {
-                Spacer(modifier = Modifier.weight(bottomSpacerWeight))
-            }
-            if (logAreaWeight > 0f) {
-                AnimatedVisibility(
-                    visible = hasJvmLogOutput,
-                    enter = fadeIn(
-                        animationSpec = tween(durationMillis = 220, delayMillis = 80)
-                    ) + expandVertically(
-                        animationSpec = tween(
-                            durationMillis = JVM_LOG_ENTER_ANIMATION_MS.toInt(),
-                            easing = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
-                        ),
-                        expandFrom = Alignment.Top
-                    ),
-                    exit = shrinkVertically(
-                        animationSpec = tween(
-                            durationMillis = 240,
-                            easing = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
-                        ),
-                        shrinkTowards = Alignment.Top
-                    ) + fadeOut(animationSpec = tween(durationMillis = 160)),
+                    .fillMaxSize()
+                    .padding(bottom = contentBottomPadding),
+                horizontalArrangement = Arrangement.spacedBy(24.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                BootLoadingStatusPane(
+                    uiState = uiState,
+                    loadingAnimation = loadingAnimation,
+                    animatedProgress = animatedProgress,
+                    animationSize = animationSize,
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(logAreaWeight),
-                    label = "boot_overlay_jvm_log"
-                ) {
-                    val logScrollState = rememberScrollState()
-                    val visibleJvmLogText = if (showJvmLogText) uiState.jvmLogText else ""
-                    LaunchedEffect(visibleJvmLogText) {
-                        val target = logScrollState.maxValue
-                        if (target != logScrollState.value) {
-                            logScrollState.animateScrollTo(
-                                value = target,
-                                animationSpec = tween(
-                                    durationMillis = 240,
-                                    easing = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
-                                )
-                            )
-                        }
-                    }
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(top = 6.dp)
-                    ) {
-                        Text(
-                            text = visibleJvmLogText,
-                            color = colorScheme.onSurfaceVariant.copy(alpha = 0.88f),
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily = FontFamily.Monospace,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .verticalScroll(logScrollState)
-                        )
-                    }
-                }
+                        .weight(0.42f)
+                        .fillMaxHeight()
+                )
+                BootLogPane(
+                    uiState = uiState,
+                    modifier = Modifier
+                        .weight(0.58f)
+                        .fillMaxHeight()
+                )
             }
         }
         if (manualDismissBootOverlay) {
@@ -815,6 +715,171 @@ private fun BootOverlayPanel(
             ) {
                 Text(text = dismissButtonText)
             }
+        }
+    }
+}
+
+@Composable
+private fun BootLoadingStatusPane(
+    uiState: BootOverlayUiState,
+    loadingAnimation: BootOverlayAnimation,
+    animatedProgress: Float,
+    animationSize: androidx.compose.ui.unit.Dp,
+    modifier: Modifier = Modifier
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = stringResource(R.string.boot_overlay_title_starting),
+            color = colorScheme.onSurface,
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        BootLoadingAnimation(
+            animation = loadingAnimation,
+            modifier = Modifier
+                .size(animationSize)
+                .padding(6.dp)
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        BootProgressBar(
+            progress = animatedProgress,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        Text(
+            text = "${uiState.progress.coerceIn(0, 100)}%",
+            color = colorScheme.primary,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = uiState.statusText,
+            color = colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+@Composable
+private fun BootProgressBar(
+    progress: Float,
+    modifier: Modifier = Modifier
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(999.dp)
+    Box(
+        modifier = modifier
+            .height(10.dp)
+            .clip(shape)
+            .background(colorScheme.primaryContainer.copy(alpha = 0.36f))
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
+                .fillMaxWidth(progress.coerceIn(0f, 1f))
+                .background(
+                    Brush.horizontalGradient(
+                        colors = listOf(
+                            colorScheme.primary,
+                            colorScheme.tertiary,
+                            colorScheme.secondary
+                        )
+                    )
+                )
+        )
+    }
+}
+
+@Composable
+private fun BootLogPane(
+    uiState: BootOverlayUiState,
+    modifier: Modifier = Modifier
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    val logScrollState = rememberScrollState()
+    val logText = uiState.jvmLogText.ifBlank {
+        stringResource(R.string.boot_overlay_logs_placeholder)
+    }
+    LaunchedEffect(logText, logScrollState.maxValue) {
+        val target = logScrollState.maxValue
+        if (target > 0 && target != logScrollState.value) {
+            logScrollState.animateScrollTo(
+                value = target,
+                animationSpec = tween(
+                    durationMillis = 240,
+                    easing = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
+                )
+            )
+        }
+    }
+
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(colorScheme.surfaceVariant.copy(alpha = 0.18f))
+            .border(
+                width = 1.dp,
+                color = colorScheme.outlineVariant.copy(alpha = 0.52f),
+                shape = RoundedCornerShape(8.dp)
+            )
+            .padding(16.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(colorScheme.primary)
+            )
+            Text(
+                text = stringResource(R.string.boot_overlay_logs_title),
+                color = colorScheme.onSurface,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Spacer(modifier = Modifier.height(12.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+        ) {
+            Text(
+                text = logText,
+                color = if (uiState.hasJvmLogOutput) {
+                    colorScheme.onSurfaceVariant.copy(alpha = 0.9f)
+                } else {
+                    colorScheme.onSurfaceVariant.copy(alpha = 0.62f)
+                },
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(logScrollState)
+            )
         }
     }
 }

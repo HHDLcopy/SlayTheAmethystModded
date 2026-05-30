@@ -112,7 +112,7 @@ internal object SteamCloudDiagnosticsStore {
             )
             add(
                 "Proxy/Accelerator Detected: ${
-                    if (isProxyOrAcceleratorDetected(diagnostics)) "yes" else "no"
+                    if (SteamCloudNetworkEnvironment.isProxyOrAcceleratorActive(context)) "yes" else "no"
                 }"
             )
             add(
@@ -286,15 +286,6 @@ internal object SteamCloudDiagnosticsStore {
         stackTraceText(error).lineSequence()
             .filter { it.isNotBlank() }
             .forEach { line -> lines += "  $line" }
-    }
-
-    private fun isProxyOrAcceleratorDetected(diagnostics: SteamCloudClient.DiagnosticsSnapshot?): Boolean {
-        if (diagnostics == null) {
-            return false
-        }
-        return diagnostics.wattAccelerationDescription.equals("enabled", ignoreCase = true) ||
-            SteamCloudNetworkEnvironment.isProxyOrAcceleratorEndpoint(diagnostics.resolvedServerDescription) ||
-            SteamCloudNetworkEnvironment.isProxyOrAcceleratorEndpoint(diagnostics.candidateSourceDescription)
     }
 
     private fun describeFailure(error: Throwable?): String {

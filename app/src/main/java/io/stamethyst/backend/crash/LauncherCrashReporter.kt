@@ -3,12 +3,9 @@ package io.stamethyst.backend.crash
 import android.app.ActivityManager
 import android.app.Application
 import android.app.ApplicationExitInfo
-import android.content.ContentValues
 import android.content.Context
 import android.os.Build
-import android.os.Environment
 import android.os.Process
-import android.provider.MediaStore
 import androidx.annotation.RequiresApi
 import io.stamethyst.BuildConfig
 import io.stamethyst.config.RuntimePaths
@@ -30,7 +27,6 @@ object LauncherCrashReporter {
     private const val GAME_PROCESS_SUFFIX = ":game"
     private const val MAX_TRACE_BYTES = 512 * 1024
     private const val UNCAUGHT_DUPLICATE_WINDOW_MS = 2 * 60 * 1000L
-    private const val MIME_TYPE_TEXT = "text/plain"
     private const val REPORT_PREFIX = "sts-launcher-crash"
     private const val FALLBACK_REPORT_DIR_NAME = "launcher_crash_reports"
     private const val EXIT_MARKER_FILE_NAME = ".last_launcher_exit_marker"
@@ -260,86 +256,23 @@ object LauncherCrashReporter {
         reportText: String
     ): String? {
         return runCatching {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                writeReportToScopedDownloads(context, fileName, reportText)
-            } else {
-                writeReportToLegacyDownloads(fileName, reportText)
-            }
-        }.recoverCatching {
-            writeReportToAppExternalDownloads(context, fileName, reportText)
+            writeReportToAndroidAppDirectory(context, fileName, reportText)
         }.recoverCatching {
             writeReportToInternalFallback(context, fileName, reportText)
         }.getOrNull()
     }
 
-    @RequiresApi(Build.VERSION_CODES.Q)
-    private fun writeReportToScopedDownloads(
+    @Throws(IOException::class)
+    private fun writeReportToAndroidAppDirectory(
         context: Context,
         fileName: String,
         reportText: String
     ): String {
-        val values = ContentValues().apply {
-            put(MediaStore.Downloads.DISPLAY_NAME, fileName)
-            put(MediaStore.Downloads.MIME_TYPE, MIME_TYPE_TEXT)
-            put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
-            put(MediaStore.Downloads.IS_PENDING, 1)
+        val reportDir = RuntimePaths.launcherCrashReportsDir(context)
+        if (!reportDir.exists() && !reportDir.mkdirs()) {
+            throw IOException("Failed to create launcher crash report directory: ${reportDir.absolutePath}")
         }
-        val resolver = context.contentResolver
-        val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-            ?: throw IOException("Failed to create launcher crash report in Downloads")
-
-        var success = false
-        try {
-            resolver.openOutputStream(uri).use { output ->
-                if (output == null) {
-                    throw IOException("Unable to open launcher crash report destination")
-                }
-                output.write(reportText.toByteArray(StandardCharsets.UTF_8))
-            }
-            success = true
-        } finally {
-            if (success) {
-                val pendingValues = ContentValues().apply {
-                    put(MediaStore.Downloads.IS_PENDING, 0)
-                }
-                resolver.update(uri, pendingValues, null, null)
-            } else {
-                resolver.delete(uri, null, null)
-            }
-        }
-        return "${Environment.DIRECTORY_DOWNLOADS}/$fileName"
-    }
-
-    @Suppress("DEPRECATION")
-    @Throws(IOException::class)
-    private fun writeReportToLegacyDownloads(
-        fileName: String,
-        reportText: String
-    ): String {
-        val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-            ?: throw IOException("Downloads directory is unavailable")
-        if (!downloadsDir.exists() && !downloadsDir.mkdirs()) {
-            throw IOException("Failed to create Downloads directory: ${downloadsDir.absolutePath}")
-        }
-        val reportFile = File(downloadsDir, fileName)
-        FileOutputStream(reportFile, false).use { output ->
-            output.write(reportText.toByteArray(StandardCharsets.UTF_8))
-        }
-        return reportFile.absolutePath
-    }
-
-    @Throws(IOException::class)
-    private fun writeReportToAppExternalDownloads(
-        context: Context,
-        fileName: String,
-        reportText: String
-    ): String {
-        val downloadsDir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
-            ?: throw IOException("App external Downloads directory is unavailable")
-        if (!downloadsDir.exists() && !downloadsDir.mkdirs()) {
-            throw IOException("Failed to create app Downloads directory: ${downloadsDir.absolutePath}")
-        }
-        val reportFile = File(downloadsDir, fileName)
+        val reportFile = File(reportDir, fileName)
         FileOutputStream(reportFile, false).use { output ->
             output.write(reportText.toByteArray(StandardCharsets.UTF_8))
         }

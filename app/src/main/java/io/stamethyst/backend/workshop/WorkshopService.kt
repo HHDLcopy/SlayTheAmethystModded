@@ -131,7 +131,11 @@ internal class WorkshopService(
         }.getOrThrow()
     }
 
-    suspend fun getDetails(appId: UInt, publishedFileId: ULong): WorkshopItemDetails = withContext(Dispatchers.IO) {
+    suspend fun getDetails(
+        appId: UInt,
+        publishedFileId: ULong,
+        fallbackSummary: WorkshopItemSummary? = null,
+    ): WorkshopItemDetails = withContext(Dispatchers.IO) {
         val languagePreference = steamLanguagePreference
         val requestBody = FormBody.Builder()
             .add("itemcount", "1")
@@ -153,17 +157,24 @@ internal class WorkshopService(
                     languageRequestValue = languagePreference.requestValue,
                 )
             }.getOrNull()
+            val cardSummary = fallbackSummary?.takeIf { summary ->
+                summary.appId == appId && summary.publishedFileId == publishedFileId
+            }
             val summary = WorkshopItemSummary(
                 publishedFileId = publishedFileId,
                 appId = appId,
-                title = detail.title.ifBlank { "Workshop $publishedFileId" },
-                previewUrl = detail.previewUrl.orEmpty(),
-                description = localizedDetail?.description?.ifBlank { detail.description.orEmpty() } ?: detail.description.orEmpty(),
-                authorName = detail.creatorName.orEmpty().ifBlank { localizedDetail?.authorName.orEmpty() },
-                fileSizeBytes = detail.fileSize ?: 0L,
-                updatedAtMillis = (detail.timeUpdated ?: 0L) * 1000L,
-                downloadCount = detail.subscriptions ?: 0L,
-                rating = normalizedWorkshopRating(detail.voteData?.score),
+                title = detail.title.ifBlank { cardSummary?.title.orEmpty().ifBlank { "Workshop $publishedFileId" } },
+                previewUrl = detail.previewUrl.orEmpty().ifBlank { cardSummary?.previewUrl.orEmpty() },
+                description = localizedDetail?.description.orEmpty()
+                    .ifBlank { cardSummary?.description.orEmpty() }
+                    .ifBlank { detail.description.orEmpty() },
+                authorName = detail.creatorName.orEmpty()
+                    .ifBlank { localizedDetail?.authorName.orEmpty() }
+                    .ifBlank { cardSummary?.authorName.orEmpty() },
+                fileSizeBytes = detail.fileSize ?: cardSummary?.fileSizeBytes ?: 0L,
+                updatedAtMillis = detail.timeUpdated?.let { it * 1000L } ?: cardSummary?.updatedAtMillis ?: 0L,
+                downloadCount = detail.subscriptions ?: cardSummary?.downloadCount ?: 0L,
+                rating = normalizedWorkshopRating(detail.voteData?.score) ?: cardSummary?.rating,
             )
             val dependencyIds = (
                 detail.children.mapNotNull { child -> child.publishedFileId.toULongOrNull() } +
@@ -264,10 +275,7 @@ internal class WorkshopService(
             if (!response.isSuccessful) error("Steam workshop community detail failed: ${response.code}")
             val payload = response.body?.string().orEmpty()
             LocalizedWorkshopDetail(
-                description = extractDivInnerHtml(
-                    payload = payload,
-                    openingTag = """<div class="workshopItemDescription" id="highlightContent">""",
-                )?.let(WorkshopServiceHtmlDecoder::decodeWorkshopHtmlDescription).orEmpty(),
+                description = extractWorkshopDescription(payload),
                 authorName = extractWorkshopAuthorName(payload),
                 requiredItemIds = extractRequiredItemIds(payload),
                 commentThreadContext = extractCommentThreadContext(payload),
@@ -667,7 +675,7 @@ internal class WorkshopService(
                 ?.toLongOrNull()
 
     private fun extractCommentThreadContext(payload: String): WorkshopCommentThreadContext? {
-        val commentInit = commentInitDataRegex.find(payload)?.groupValues?.getOrNull(1) ?: return null
+        val commentInit = extractCommentInitObject(payload) ?: return null
         val commentInitObject = runCatching { json.parseToJsonElement(commentInit).jsonObject }.getOrNull() ?: return null
         val ownerId = commentInitObject.stringValue("owner").ifBlank { return null }
         val featureId = commentInitObject.stringValue("feature").ifBlank { return null }
@@ -683,6 +691,73 @@ internal class WorkshopService(
         )
     }
 
+    private fun extractCommentInitObject(payload: String): String? {
+        var searchStart = 0
+        while (searchStart < payload.length) {
+            val callStart = payload.indexOf(COMMENT_INIT_CALL, searchStart, ignoreCase = true)
+            if (callStart < 0) return null
+            val openParen = payload.indexOf('(', callStart).takeIf { it >= 0 } ?: return null
+            var argumentIndex = 0
+            var cursor = openParen + 1
+            var inString: Char? = null
+            var escaped = false
+            while (cursor < payload.length) {
+                val char = payload[cursor]
+                if (inString != null) {
+                    if (escaped) {
+                        escaped = false
+                    } else if (char == '\\') {
+                        escaped = true
+                    } else if (char == inString) {
+                        inString = null
+                    }
+                    cursor += 1
+                    continue
+                }
+                when (char) {
+                    '\'', '"' -> inString = char
+                    ',' -> argumentIndex += 1
+                    ')' -> break
+                    '{' -> if (argumentIndex == 2) return extractBalancedObject(payload, cursor)
+                }
+                cursor += 1
+            }
+            searchStart = openParen + 1
+        }
+        return null
+    }
+
+    private fun extractBalancedObject(payload: String, objectStart: Int): String? {
+        var depth = 0
+        var cursor = objectStart
+        var inString: Char? = null
+        var escaped = false
+        while (cursor < payload.length) {
+            val char = payload[cursor]
+            if (inString != null) {
+                if (escaped) {
+                    escaped = false
+                } else if (char == '\\') {
+                    escaped = true
+                } else if (char == inString) {
+                    inString = null
+                }
+                cursor += 1
+                continue
+            }
+            when (char) {
+                '\'', '"' -> inString = char
+                '{' -> depth += 1
+                '}' -> {
+                    depth -= 1
+                    if (depth == 0) return payload.substring(objectStart, cursor + 1)
+                }
+            }
+            cursor += 1
+        }
+        return null
+    }
+
     private fun extractRequiredItemIds(payload: String): List<ULong> {
         val openingMatch = requiredItemsContainerOpeningRegex.find(payload) ?: return emptyList()
         val section = extractDivBlock(
@@ -694,6 +769,18 @@ internal class WorkshopService(
             .mapNotNull { match -> match.groupValues.getOrNull(1)?.toULongOrNull() }
             .distinct()
             .toList()
+    }
+
+    private fun extractWorkshopDescription(payload: String): String {
+        val openingMatch = workshopDescriptionOpeningRegex.find(payload) ?: return ""
+        val section = extractDivBlock(
+            payload = payload,
+            openingTagStart = openingMatch.range.first,
+            openingTagLength = openingMatch.value.length,
+        ) ?: return ""
+        val openingEnd = section.indexOf('>').takeIf { it >= 0 } ?: return ""
+        val closingStart = section.lastIndexOf("</div", ignoreCase = true).takeIf { it > openingEnd } ?: section.length
+        return WorkshopServiceHtmlDecoder.decodeWorkshopHtmlDescription(section.substring(openingEnd + 1, closingStart))
     }
 
     private fun extractWorkshopAuthorName(payload: String): String =
@@ -868,10 +955,7 @@ internal class WorkshopService(
         const val COMMENT_PAGE_SIZE = 5
         const val STEAM_COMMENTS_PAGE_SIZE = 50
         const val USER_AGENT = "SlayTheAmethyst/Workshop"
-        val commentInitDataRegex = Regex(
-            """InitializeCommentThread\(\s*"PublishedFile_Public"\s*,\s*"[^"]+"\s*,\s*(\{.*?\})\s*,\s*'https://steamcommunity\.com/comment/PublishedFile_Public/'""",
-            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE),
-        )
+        const val COMMENT_INIT_CALL = "InitializeCommentThread"
         val sessionIdRegex = Regex(
             """g_sessionID\s*=\s*"([^"]+)"""",
             RegexOption.IGNORE_CASE,
@@ -949,6 +1033,10 @@ internal class WorkshopService(
         val workshopBreadcrumbAuthorRegex = Regex(
             """<div\b[^>]*class="[^"]*\bbreadcrumbs\b[^"]*"[^>]*>.*?<a\b[^>]*myworkshopfiles/\?appid=\d+[^>]*>(.*?)</a>""",
             setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE),
+        )
+        val workshopDescriptionOpeningRegex = Regex(
+            """<div\b(?=[^>]*\bclass="[^"]*\bworkshopItemDescription\b[^"]*")(?=[^>]*\bid="highlightContent")[^>]*>""",
+            RegexOption.IGNORE_CASE,
         )
         val steamLoggedInFalseRegex = Regex("""g_bloggedin\s*=\s*false""", RegexOption.IGNORE_CASE)
     }

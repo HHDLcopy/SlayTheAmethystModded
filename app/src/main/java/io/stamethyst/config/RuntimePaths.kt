@@ -30,6 +30,8 @@ object RuntimePaths {
     private const val LOGCAT_SYSTEM_CAPTURE_FILE_NAME = "logcat_system_capture.log"
     private const val LAUNCHER_LOGCAT_APP_CAPTURE_FILE_NAME = "launcher_logcat_app_capture.log"
     private const val LAUNCHER_LOGCAT_SYSTEM_CAPTURE_FILE_NAME = "launcher_logcat_system_capture.log"
+    private const val LAUNCHER_CRASH_REPORT_DIR_NAME = "launcher_crash_reports"
+    private const val LAUNCHER_CRASH_REPORT_PREFIX = "sts-launcher-crash-"
     private const val MTS_CLASSPATH_CACHE_MARKER_FILE_NAME = ".mts_classpath_cache"
     private const val OPTIONAL_MOD_LIBRARY_MIGRATION_MARKER_FILE_NAME = ".optional_mod_library_migrated"
     private const val ANDROID_EXTERNAL_STORAGE_ROOT = "storage"
@@ -253,6 +255,24 @@ object RuntimePaths {
                 launcherLogcatSystemCaptureLog(context)
             )
         )
+    }
+
+    @JvmStatic
+    fun launcherCrashReportsDir(context: Context): File =
+        File(stsRoot(context), LAUNCHER_CRASH_REPORT_DIR_NAME)
+
+    @JvmStatic
+    fun listLauncherCrashReportFiles(context: Context): List<File> {
+        val directory = launcherCrashReportsDir(context)
+        if (!directory.isDirectory) {
+            return emptyList()
+        }
+        return directory.listFiles()
+            ?.asSequence()
+            ?.filter { file -> file.isFile && isLauncherCrashReportFileName(file.name) }
+            ?.sortedWith(compareByDescending<File> { it.lastModified() }.thenByDescending { it.name })
+            ?.toList()
+            .orEmpty()
     }
 
     @JvmStatic
@@ -539,6 +559,7 @@ object RuntimePaths {
         jvmLogsDir(context).mkdirs()
         jvmHistogramsDir(context).mkdirs()
         logcatDir(context).mkdirs()
+        launcherCrashReportsDir(context).mkdirs()
         mtsLocalJreBinDir(context).mkdirs()
         lwjglDir(context).mkdirs()
         lwjgl2InjectorDir(context).mkdirs()
@@ -560,6 +581,11 @@ object RuntimePaths {
     internal fun isMemoryDiagnosticsFileName(name: String): Boolean {
         return name == MEMORY_DIAGNOSTICS_LOG_FILE_NAME ||
             name.startsWith("$MEMORY_DIAGNOSTICS_LOG_FILE_NAME.")
+    }
+
+    internal fun isLauncherCrashReportFileName(name: String): Boolean {
+        return name.startsWith(LAUNCHER_CRASH_REPORT_PREFIX) &&
+            name.endsWith(".txt", ignoreCase = true)
     }
 
     internal fun compareLogcatCaptureFileNames(left: String, right: String): Int {

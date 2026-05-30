@@ -93,7 +93,10 @@ class LauncherActivity : AppCompatActivity() {
     private var launchedWithoutImportedStsJar = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val startupBackground = StartupWindowBackground.launcherColor(this)
+        StartupWindowBackground.applyToWindow(window, startupBackground)
         super.onCreate(savedInstanceState)
+        StartupWindowBackground.applyToDecorView(window, startupBackground)
         LauncherOrientationPolicy.applyTo(this)
         syncLauncherLogcatCapture()
         enableEdgeToEdge(

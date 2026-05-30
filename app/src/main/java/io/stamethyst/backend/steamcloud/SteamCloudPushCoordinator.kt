@@ -355,12 +355,15 @@ internal object SteamCloudPushCoordinator {
             )
             return result
         } catch (error: Throwable) {
-            val failureDiagnostics = client.snapshotDiagnostics()
+            var uploadBatchCompletionError: Throwable? = null
             uploadBatch?.let { batch ->
                 runCatching {
                     client.completeUploadBatch(STEAM_CLOUD_APP_ID, batch.batchId, EResult.Fail)
+                }.onFailure { completionError ->
+                    uploadBatchCompletionError = completionError
                 }
             }
+            val failureDiagnostics = client.snapshotDiagnostics()
             if (allowReconnectRetry && uploadedFileCount == 0 && isReconnectRetryCandidate(error, failureDiagnostics)) {
                 SteamCloudNetworkEnvironment.clearNetworkCache(host)
                 client.close()
@@ -390,6 +393,9 @@ internal object SteamCloudPushCoordinator {
                         add("Conflicts before failure: ${plan.conflicts.size}")
                         uploadBatch?.let { batch ->
                             add("Upload batch id: ${batch.batchId}")
+                        }
+                        uploadBatchCompletionError?.let { completionError ->
+                            add("Upload batch failure completion failed: ${summarizeErrorWithCauses(completionError)}")
                         }
                         plan.warnings.forEach { warning -> add("Warning: $warning") }
                     },
@@ -637,12 +643,15 @@ internal object SteamCloudPushCoordinator {
             )
             return result
         } catch (error: Throwable) {
-            val failureDiagnostics = client.snapshotDiagnostics()
+            var uploadBatchCompletionError: Throwable? = null
             uploadBatch?.let { batch ->
                 runCatching {
                     client.completeUploadBatch(STEAM_CLOUD_APP_ID, batch.batchId, EResult.Fail)
+                }.onFailure { completionError ->
+                    uploadBatchCompletionError = completionError
                 }
             }
+            val failureDiagnostics = client.snapshotDiagnostics()
             if (allowReconnectRetry && uploadedFileCount == 0 && isReconnectRetryCandidate(error, failureDiagnostics)) {
                 SteamCloudNetworkEnvironment.clearNetworkCache(host)
                 client.close()
@@ -671,6 +680,9 @@ internal object SteamCloudPushCoordinator {
                         addAll(describePreparedMirrorPlan(preparedPlan))
                         uploadBatch?.let { batch ->
                             add("Upload batch id: ${batch.batchId}")
+                        }
+                        uploadBatchCompletionError?.let { completionError ->
+                            add("Upload batch failure completion failed: ${summarizeErrorWithCauses(completionError)}")
                         }
                     },
                 )

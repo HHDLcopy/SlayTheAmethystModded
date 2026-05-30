@@ -107,6 +107,21 @@ abstract class StsPullLogsTask : DefaultTask() {
             }
         }
 
+        val launcherCrashReportNames = listLauncherCrashReportNames(deviceStsPaths, packageName)
+        if (launcherCrashReportNames.isEmpty()) {
+            logger.lifecycle("No launcher crash reports found on device.")
+        }
+        launcherCrashReportNames.forEach { name ->
+            logger.lifecycle("Pulling launcher crash report: $name")
+            readRemoteFile(deviceStsPaths, "launcher_crash_reports/$name", packageName)?.let { content ->
+                if (content.isEmpty()) {
+                    return@let
+                }
+                pulledEntries.add(PulledEntry("sts/launcher_crash_reports/$name", content))
+                exportedCount++
+            }
+        }
+
         val archivedLimit = if (latestExists) MAX_JVM_LOG_EXPORT_SLOTS - 1 else MAX_JVM_LOG_EXPORT_SLOTS
         val archivedNames = listArchivedJvmLogNames(deviceStsPaths, packageName).take(archivedLimit)
         if (archivedNames.isEmpty()) {
@@ -277,6 +292,13 @@ abstract class StsPullLogsTask : DefaultTask() {
                 name.endsWith(".log", ignoreCase = true) || name.contains(".log.", ignoreCase = true)
             }
             .sorted()
+
+    private fun listLauncherCrashReportNames(paths: DeviceStsPaths, packageName: String): List<String> =
+        listRemoteFileNames(paths, "launcher_crash_reports", packageName)
+            .filter { name ->
+                name.startsWith("sts-launcher-crash-") && name.endsWith(".txt", ignoreCase = true)
+            }
+            .sortedDescending()
 
     private fun buildJvmLogDeviceInfo(packageName: String): String {
         val (versionName, versionCode) = readPackageVersionInfo(packageName)

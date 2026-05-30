@@ -21,6 +21,7 @@ import io.stamethyst.backend.update.UpdateSource
 import io.stamethyst.backend.workshop.BaiduTranslationCredentialsRepository
 import io.stamethyst.backend.workshop.SteamLanguagePreference
 import io.stamethyst.config.BackBehavior
+import io.stamethyst.config.BootOverlayAnimation
 import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeMode
@@ -35,6 +36,7 @@ internal object SettingsRepository {
     data class SettingsSnapshot(
         val themeMode: LauncherThemeMode,
         val themeColor: LauncherThemeColor,
+        val bootOverlayAnimation: BootOverlayAnimation,
         val playerName: String,
         val rendering: RenderingSnapshot,
         val jvm: JvmSnapshot,
@@ -138,6 +140,10 @@ internal object SettingsRepository {
         return LauncherPreferences.readThemeColor(context)
     }
 
+    fun loadBootOverlayAnimation(context: Context): BootOverlayAnimation {
+        return LauncherPreferences.readBootOverlayAnimation(context)
+    }
+
     fun loadSettingsSnapshot(context: Context): SettingsSnapshot {
         val renderSurfaceBackend = LauncherPreferences.readRenderSurfaceBackend(context)
         val rendererSelectionMode = LauncherPreferences.readRendererSelectionMode(context)
@@ -153,6 +159,7 @@ internal object SettingsRepository {
         return SettingsSnapshot(
             themeMode = LauncherPreferences.readThemeMode(context),
             themeColor = LauncherPreferences.readThemeColor(context),
+            bootOverlayAnimation = LauncherPreferences.readBootOverlayAnimation(context),
             playerName = LauncherPreferences.readPlayerName(context),
             rendering = RenderingSnapshot(
                 renderScale = RenderScaleService.readValue(context),
@@ -258,6 +265,10 @@ internal object SettingsRepository {
     fun resetLauncherSettingsToDefaults(context: Context) {
         LauncherPreferences.saveThemeMode(context, LauncherPreferences.DEFAULT_THEME_MODE)
         LauncherPreferences.saveThemeColor(context, LauncherPreferences.DEFAULT_THEME_COLOR)
+        LauncherPreferences.saveBootOverlayAnimation(
+            context,
+            LauncherPreferences.DEFAULT_BOOT_OVERLAY_ANIMATION
+        )
         LauncherPreferences.savePlayerName(context, LauncherPreferences.DEFAULT_PLAYER_NAME)
         RenderScaleService.reset(context)
         LauncherPreferences.saveTargetFps(context, LauncherPreferences.DEFAULT_TARGET_FPS)

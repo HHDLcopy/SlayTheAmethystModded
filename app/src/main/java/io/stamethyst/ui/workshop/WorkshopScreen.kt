@@ -68,6 +68,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -108,6 +109,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
+// Increase this value to require a longer scroll back toward the top before expanding the search header.
+private val WorkshopHeaderExpandScrollDistanceThreshold = 64.dp
+
 @Composable
 internal fun WorkshopScreen(
     viewModel: WorkshopViewModel,
@@ -116,6 +120,7 @@ internal fun WorkshopScreen(
     initialListMode: WorkshopListMode = WorkshopListMode.Browse,
     showSubscriptionsButton: Boolean = false,
     useFloatingHeader: Boolean = true,
+    active: Boolean = true,
     title: String? = null,
     subtitle: String? = null,
     onBack: () -> Unit,
@@ -139,11 +144,18 @@ internal fun WorkshopScreen(
     val headerHazeState = rememberHazeState()
     var headerHeightPx by remember { mutableIntStateOf(0) }
     val headerCollapseOffsetPx = with(density) { 24.dp.roundToPx() }
-    val headerCollapsed by remember(listState, headerCollapseOffsetPx) {
+    val headerExpandScrollDistanceThresholdPx = with(density) {
+        WorkshopHeaderExpandScrollDistanceThreshold.roundToPx()
+    }
+    var headerExpandedByDownScroll by remember { mutableStateOf(false) }
+    val headerPastCollapseOffset by remember(listState, headerCollapseOffsetPx) {
         derivedStateOf {
             listState.firstVisibleItemIndex > 0 ||
                 listState.firstVisibleItemScrollOffset > headerCollapseOffsetPx
         }
+    }
+    val headerCollapsed by remember {
+        derivedStateOf { headerPastCollapseOffset && !headerExpandedByDownScroll }
     }
     val measuredHeaderHeight = with(density) { headerHeightPx.toDp() }
     val headerPlaceholderHeight = if (useFloatingHeader && state.listMode == WorkshopListMode.Browse) 250.dp else 102.dp
@@ -180,11 +192,43 @@ internal fun WorkshopScreen(
         listState.animateScrollToItem(0)
     }
 
-    LaunchedEffect(state.downloadInProgress) {
-        if (!state.downloadInProgress) return@LaunchedEffect
+    LaunchedEffect(listState, headerExpandScrollDistanceThresholdPx) {
+        var previousIndex = listState.firstVisibleItemIndex
+        var previousOffset = listState.firstVisibleItemScrollOffset
+        var scrollDistanceTowardTopPx = 0
+        snapshotFlow {
+            Triple(
+                listState.firstVisibleItemIndex,
+                listState.firstVisibleItemScrollOffset,
+                listState.layoutInfo.visibleItemsInfo.firstOrNull()?.size ?: 0,
+            )
+        }.collect { (index, offset, firstVisibleItemSizePx) ->
+                val estimatedItemSizePx = firstVisibleItemSizePx.coerceAtLeast(1)
+                val scrollDeltaPx = (index - previousIndex) * estimatedItemSizePx + (offset - previousOffset)
+                when {
+                    scrollDeltaPx < 0 -> {
+                        scrollDistanceTowardTopPx += -scrollDeltaPx
+                        if (headerExpandScrollDistanceThresholdPx <= 0 ||
+                            scrollDistanceTowardTopPx >= headerExpandScrollDistanceThresholdPx
+                        ) {
+                            headerExpandedByDownScroll = true
+                        }
+                    }
+                    scrollDeltaPx > 0 -> {
+                        scrollDistanceTowardTopPx = 0
+                        headerExpandedByDownScroll = false
+                    }
+                }
+                previousIndex = index
+                previousOffset = offset
+            }
+    }
+
+    LaunchedEffect(active, state.downloadInProgress) {
+        if (!active || !state.downloadInProgress) return@LaunchedEffect
         while (true) {
             delay(1000L)
-            viewModel.refreshDownloadState(context.applicationContext)
+            viewModel.refreshDownloadTaskState(context.applicationContext)
         }
     }
 
@@ -507,7 +551,7 @@ private fun WorkshopHeaderPinnedContent(
         modifier = Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(start = 16.dp, top = 18.dp, end = 16.dp, bottom = 12.dp),
+            .padding(start = 16.dp, top = 18.dp, end = 16.dp, bottom = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

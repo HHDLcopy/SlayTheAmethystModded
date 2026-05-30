@@ -45,6 +45,7 @@
             android:enableOnBackInvokedCallback="true"
             android:process=":game"
             android:screenOrientation="sensorLandscape"
+            android:theme="@style/Theme.SlayTheAmethyst.Game"
             tools:targetApi="33">
 
             <layout

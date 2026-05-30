@@ -189,6 +189,8 @@ GET /healthz
 
 ## 诊断压缩包结构
 
+基础诊断压缩包会包含 `sts/launcher_crash_reports/sts-launcher-crash-*.txt`（如果启动器自身崩溃报告存在）。
+
 反馈压缩包会在原有诊断压缩包基础上增加：
 
 - `sts/feedback/issue_title.txt`

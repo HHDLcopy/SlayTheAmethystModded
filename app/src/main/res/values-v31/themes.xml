@@ -2,10 +2,15 @@
 <resources>
     <style name="Theme.SlayTheAmethyst" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="android:windowBackground">@color/launcher_startup_background</item>
+        <item name="android:windowSplashScreenBackground">@color/launcher_startup_background</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@color/launcher_startup_background</item>
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
     </style>
+
     <style name="Theme.SlayTheAmethyst.Game" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="android:windowBackground">@color/game_startup_background</item>
+        <item name="android:windowSplashScreenBackground">@color/game_startup_background</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@color/game_startup_background</item>
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
     </style>
 </resources>

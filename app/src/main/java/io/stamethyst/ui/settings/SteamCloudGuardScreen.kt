@@ -76,7 +76,8 @@ fun LauncherSteamCloudGuardScreen(
     val navigator = currentNavigator
     val uiState = viewModel.uiState
     val challenge = uiState.steamCloudLoginChallenge
-    val canNavigateBack = challenge != null || !uiState.busy
+    val canNavigateBack =
+        !uiState.busy || (challenge != null && challenge.kind != SteamCloudLoginChallengeKind.DEVICE_CONFIRMATION)
 
     LaunchedEffect(activity) {
         viewModel.bind(activity)
@@ -102,7 +103,7 @@ fun LauncherSteamCloudGuardScreen(
 
     fun handleBack() {
         when {
-            challenge != null -> {
+            challenge != null && challenge.kind != SteamCloudLoginChallengeKind.DEVICE_CONFIRMATION -> {
                 viewModel.onCancelSteamCloudChallenge()
                 navigator.goBack()
             }
@@ -184,10 +185,10 @@ fun LauncherSteamCloudGuardScreen(
                     when (challenge.kind) {
                         SteamCloudLoginChallengeKind.DEVICE_CONFIRMATION -> {
                             Button(
-                                onClick = viewModel::onAcceptSteamCloudDeviceConfirmation,
+                                onClick = { openSteamApp(activity) },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text(stringResource(R.string.settings_steam_cloud_challenge_continue_action))
+                                Text(stringResource(R.string.settings_steam_cloud_open_steam_action))
                             }
                         }
 

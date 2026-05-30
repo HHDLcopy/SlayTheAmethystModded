@@ -32,8 +32,11 @@ Windows:
 - One zip bundle named `sts-jvm-logs-export-<timestamp>.zip`
 - The task resolves the same runtime root as the app: external app files `.../Android/data/<package>/files/sts` when available, otherwise the legacy internal `files/sts`
 - Bundle contents (Gradle task output):
+  - `sts/jvm_logs/device_info.txt`
   - `sts/jvm_logs/latest.log` (if present)
   - `sts/jvm_logs/boot_bridge_events.log` (if present)
   - Up to 4 archived `sts/jvm_logs/jvm_log_*.log` files (or up to 5 if `latest.log` is absent)
-  - `sts/jvm_logs/README.txt` when no JVM logs are found
-- Note: Settings -> Share Logs additionally includes `sts/jvm_logs/device_info.txt`.
+  - `sts/logcat/*.log*` (if present)
+  - `sts/launcher_crash_reports/sts-launcher-crash-*.txt` (if present)
+  - `sts/jvm_histograms/*.txt` (if present)
+  - `sts/README.txt` when no diagnostic logs are found

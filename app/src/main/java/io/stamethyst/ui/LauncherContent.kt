@@ -1113,6 +1113,9 @@ private fun LauncherDockPager(
     }
     val workshopUpdateCheckState by WorkshopUpdateCheckCoordinator.uiState.collectAsState()
     val currentDockRoute = pagerState.currentLauncherDockRoute()
+    val shouldPollMainWorkshopDownloads = handleMainEffects &&
+        (currentDockRoute == Route.Main || currentDockRoute == Route.Mods)
+    val shouldPollWorkshopScreenDownloads = handleMainEffects && currentDockRoute == Route.Workshop
 
     LaunchedEffect(context) {
         WorkshopUpdateCheckCoordinator.bind(context.applicationContext)
@@ -1130,6 +1133,7 @@ private fun LauncherDockPager(
         viewModel = mainViewModel,
         onOpenWorkshop = onOpenWorkshop,
         handleEffects = handleMainEffects,
+        pollWorkshopDownloads = shouldPollMainWorkshopDownloads,
     ) { routeModifier, uiState, actions ->
         HorizontalPager(
             state = pagerState,
@@ -1185,6 +1189,7 @@ private fun LauncherDockPager(
                         modifier = Modifier.fillMaxSize(),
                         showBackButton = false,
                         showSubscriptionsButton = true,
+                        active = shouldPollWorkshopScreenDownloads,
                         onBack = {},
                         onOpenSteamLogin = onOpenSteamLogin,
                         onOpenDownloadCenter = onOpenDownloadCenter,

@@ -4,7 +4,6 @@ import android.app.Application
 import android.content.Context
 import android.content.ContextWrapper
 import io.stamethyst.config.RuntimePaths
-import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -68,40 +67,60 @@ class OptionalModStorageCoordinatorTest {
     }
 
     @Test
-    fun syncRuntimeOptionalMods_keepsReservedAndMirrorsEnabledLibraryFilesOnly() {
-        val tempDir = Files.createTempDirectory("optional-mod-storage-sync-test")
+    fun cleanupLegacyRuntimeMods_salvagesUniqueOptionalJarsRewritesConfigsAndDeletesModsDir() {
+        val tempDir = Files.createTempDirectory("optional-mod-storage-cleanup-test")
         val runtimeModsDir = Files.createDirectory(tempDir.resolve("mods")).toFile()
         val libraryDir = Files.createDirectory(tempDir.resolve("mods_library")).toFile()
+        val enabledModsConfig = tempDir.resolve("enabled_mods.txt").toFile()
+        val priorityModsConfig = tempDir.resolve("priority_mod_roots.txt").toFile()
 
         Files.write(runtimeModsDir.toPath().resolve("BaseMod.jar"), byteArrayOf(1))
         Files.write(runtimeModsDir.toPath().resolve("StSLib.jar"), byteArrayOf(2))
         Files.write(runtimeModsDir.toPath().resolve("AmethystRuntimeCompat.jar"), byteArrayOf(10))
         Files.write(runtimeModsDir.toPath().resolve("RamSaver.jar"), byteArrayOf(11))
-        Files.write(runtimeModsDir.toPath().resolve("stale.jar"), byteArrayOf(9))
-        val runtimeAlpha = Files.write(runtimeModsDir.toPath().resolve("Alpha.jar"), byteArrayOf(0)).toFile()
-
-        val libraryAlpha = Files.write(libraryDir.toPath().resolve("Alpha.jar"), byteArrayOf(3, 4, 5)).toFile()
+        val runtimeAlpha = Files.write(runtimeModsDir.toPath().resolve("Alpha.jar"), byteArrayOf(3, 4, 5)).toFile()
+        val runtimeBeta = Files.write(runtimeModsDir.toPath().resolve("Beta.jar"), byteArrayOf(6, 7, 8)).toFile()
         val libraryBeta = Files.write(libraryDir.toPath().resolve("Beta.jar"), byteArrayOf(6, 7, 8)).toFile()
 
-        OptionalModStorageCoordinator.syncRuntimeOptionalMods(
-            runtimeModsDir = runtimeModsDir,
-            enabledLibraryFiles = listOf(libraryAlpha, libraryBeta)
+        enabledModsConfig.writeText(
+            listOf(runtimeAlpha.absolutePath, runtimeBeta.absolutePath).joinToString("\n"),
+            StandardCharsets.UTF_8
         )
+        priorityModsConfig.writeText(runtimeBeta.absolutePath, StandardCharsets.UTF_8)
 
-        assertTrue(runtimeModsDir.toPath().resolve("BaseMod.jar").toFile().isFile)
-        assertTrue(runtimeModsDir.toPath().resolve("StSLib.jar").toFile().isFile)
-        assertTrue(runtimeModsDir.toPath().resolve("AmethystRuntimeCompat.jar").toFile().isFile)
-        assertTrue(runtimeModsDir.toPath().resolve("RamSaver.jar").toFile().isFile)
-        assertFalse(runtimeModsDir.toPath().resolve("stale.jar").toFile().exists())
-        assertTrue(runtimeModsDir.toPath().resolve("Alpha.jar").toFile().isFile)
-        assertTrue(runtimeModsDir.toPath().resolve("Beta.jar").toFile().isFile)
-        assertArrayEquals(
-            Files.readAllBytes(libraryAlpha.toPath()),
-            Files.readAllBytes(runtimeAlpha.toPath())
+        OptionalModStorageCoordinator.salvageLegacyOptionalModsForRuntimeCleanup(
+            legacyRuntimeModsDir = runtimeModsDir,
+            libraryDir = libraryDir,
+            enabledModsConfig = enabledModsConfig,
+            priorityModsConfig = priorityModsConfig,
+            normalizeSelectionPath = { it }
         )
-        assertArrayEquals(
-            Files.readAllBytes(libraryBeta.toPath()),
-            Files.readAllBytes(runtimeModsDir.toPath().resolve("Beta.jar"))
+        OptionalModStorageCoordinator.deleteLegacyRuntimeModsDir(runtimeModsDir)
+
+        val migratedAlpha = libraryDir.toPath().resolve("Alpha.jar").toFile()
+        assertFalse(runtimeModsDir.exists())
+        assertTrue(migratedAlpha.isFile)
+        assertTrue(libraryBeta.isFile)
+        assertFalse(libraryDir.toPath().resolve("Beta (2).jar").toFile().exists())
+        assertEquals(
+            listOf(migratedAlpha.absolutePath, libraryBeta.absolutePath),
+            enabledModsConfig.readLines(StandardCharsets.UTF_8)
+        )
+        assertEquals(libraryBeta.absolutePath, priorityModsConfig.readText(StandardCharsets.UTF_8).trim())
+    }
+
+    @Test
+    fun writeMtsModFileList_writesAbsoluteJarPathsInOrder() {
+        val tempDir = Files.createTempDirectory("optional-mod-storage-file-list-test")
+        val first = Files.write(tempDir.resolve("BaseMod.jar"), byteArrayOf(1)).toFile()
+        val second = Files.write(tempDir.resolve("Alpha.jar"), byteArrayOf(2)).toFile()
+        val fileList = tempDir.resolve(".mts_mod_file_list").toFile()
+
+        OptionalModStorageCoordinator.writeMtsModFileList(fileList, listOf(first, second))
+
+        assertEquals(
+            listOf(first.absolutePath, second.absolutePath),
+            fileList.readLines(StandardCharsets.UTF_8)
         )
     }
 

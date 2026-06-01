@@ -102,6 +102,7 @@ object ModManager {
 
     private data class OptionalModLaunchEntry(
         val storageKey: String,
+        val jarFile: File,
         val normalizedModId: String,
         val normalizedManifestModId: String,
         val launchModId: String,
@@ -249,7 +250,12 @@ object ModManager {
         }
 
         val filesByLaunchId: MutableMap<String, MutableList<File>> = LinkedHashMap()
-        listJarFilesInRuntimeModsDir(context).forEach { file ->
+        val launchFiles = try {
+            listMtsLaunchModFiles(context)
+        } catch (_: Throwable) {
+            emptyList()
+        }
+        launchFiles.forEach { file ->
             val launchModId = try {
                 MtsLaunchManifestValidator.resolveLaunchModId(file).trim()
             } catch (_: Throwable) {
@@ -589,6 +595,42 @@ object ModManager {
 
     @JvmStatic
     @Throws(IOException::class)
+    fun listMtsLaunchModFiles(context: Context): List<File> {
+        val launchModFiles = ArrayList<File>()
+        launchModFiles.add(
+            resolveRequiredLaunchModFile(
+                RuntimePaths.importedBaseModJar(context),
+                "BaseMod.jar"
+            )
+        )
+        launchModFiles.add(
+            resolveRequiredLaunchModFile(
+                RuntimePaths.importedStsLibJar(context),
+                "StSLib.jar"
+            )
+        )
+        launchModFiles.add(
+            resolveRequiredLaunchModFile(
+                RuntimePaths.importedAmethystRuntimeCompatJar(context),
+                "AmethystRuntimeCompat.jar"
+            )
+        )
+        if (LauncherConfig.isRamSaverEnabled(context)) {
+            launchModFiles.add(
+                resolveRequiredLaunchModFile(
+                    RuntimePaths.importedRamSaverJar(context),
+                    "RamSaver.jar"
+                )
+            )
+        }
+        listEnabledOptionalLaunchEntries(context).forEach { entry ->
+            launchModFiles.add(entry.jarFile)
+        }
+        return launchModFiles
+    }
+
+    @JvmStatic
+    @Throws(IOException::class)
     fun resolveLaunchModIds(context: Context): List<String> {
         val baseModId = resolveRequiredLaunchModId(
             RuntimePaths.importedBaseModJar(context),
@@ -615,55 +657,12 @@ object ModManager {
             null
         }
 
-        val optionalModFiles = findOptionalModFiles(context)
-        val rawSelection = readEnabledOptionalModKeys(context)
-        val enabledSelection = normalizeEnabledOptionalSelection(context, rawSelection, optionalModFiles)
-        maybePersistSelectionNormalization(context, rawSelection, enabledSelection)
-        val rawPrioritySelection = readOptionalModPriorityMapSafely(context)
-        val explicitPrioritySelection = normalizeOptionalModPrioritySelection(context, rawPrioritySelection, optionalModFiles)
-        maybePersistOptionalPriorityNormalization(context, rawPrioritySelection, explicitPrioritySelection)
-
         val launchModIds = ArrayList<String>()
         launchModIds.add(baseModId)
         launchModIds.add(stsLibId)
         launchModIds.add(runtimeCompatId)
         ramSaverId?.let(launchModIds::add)
-
-        val enabledOptionalEntries = ArrayList<OptionalModLaunchEntry>()
-        optionalModFiles.forEachIndexed { index, entry ->
-            if (!enabledSelection.contains(entry.storageKey)) {
-                return@forEachIndexed
-            }
-            if (isRamSaverOptionalMod(entry)) {
-                return@forEachIndexed
-            }
-            val launchError = entry.launchValidationError.trim()
-            if (launchError.isNotEmpty()) {
-                throw IOException(launchError)
-            }
-            val launchModId = entry.launchModId.trim()
-            if (launchModId.isNotEmpty()) {
-                enabledOptionalEntries.add(
-                    OptionalModLaunchEntry(
-                        storageKey = entry.storageKey,
-                        normalizedModId = entry.normalizedModId,
-                        normalizedManifestModId = normalizeModId(entry.rawModId),
-                        launchModId = launchModId,
-                        dependencies = ArrayList(entry.dependencies),
-                        originalIndex = index
-                    )
-                )
-            }
-        }
-        val priorityState = resolvePrioritySelectionState(
-            entries = enabledOptionalEntries.map { it.toPriorityEntry() },
-            explicitSelection = explicitPrioritySelection
-        )
-        val orderedEntries = sortLaunchEntries(
-            entries = enabledOptionalEntries,
-            effectivePriorityByKey = priorityState.effectiveByKey
-        )
-        orderedEntries.forEach { entry ->
+        listEnabledOptionalLaunchEntries(context).forEach { entry ->
             launchModIds.add(entry.launchModId)
         }
         return launchModIds
@@ -729,6 +728,17 @@ object ModManager {
     }
 
     @Throws(IOException::class)
+    private fun resolveRequiredLaunchModFile(
+        jarFile: File,
+        label: String
+    ): File {
+        if (!jarFile.isFile) {
+            throw IOException("$label not found")
+        }
+        return jarFile
+    }
+
+    @Throws(IOException::class)
     private fun resolveRequiredLaunchModId(
         jarFile: File,
         expectedModId: String,
@@ -743,6 +753,53 @@ object ModManager {
             throw IOException("$label has unexpected modid: $raw")
         }
         return raw
+    }
+
+    @Throws(IOException::class)
+    private fun listEnabledOptionalLaunchEntries(context: Context): List<OptionalModLaunchEntry> {
+        val optionalModFiles = findOptionalModFiles(context)
+        val rawSelection = readEnabledOptionalModKeys(context)
+        val enabledSelection = normalizeEnabledOptionalSelection(context, rawSelection, optionalModFiles)
+        maybePersistSelectionNormalization(context, rawSelection, enabledSelection)
+        val rawPrioritySelection = readOptionalModPriorityMapSafely(context)
+        val explicitPrioritySelection = normalizeOptionalModPrioritySelection(context, rawPrioritySelection, optionalModFiles)
+        maybePersistOptionalPriorityNormalization(context, rawPrioritySelection, explicitPrioritySelection)
+
+        val enabledOptionalEntries = ArrayList<OptionalModLaunchEntry>()
+        optionalModFiles.forEachIndexed { index, entry ->
+            if (!enabledSelection.contains(entry.storageKey)) {
+                return@forEachIndexed
+            }
+            if (isRamSaverOptionalMod(entry)) {
+                return@forEachIndexed
+            }
+            val launchError = entry.launchValidationError.trim()
+            if (launchError.isNotEmpty()) {
+                throw IOException(launchError)
+            }
+            val launchModId = entry.launchModId.trim()
+            if (launchModId.isNotEmpty()) {
+                enabledOptionalEntries.add(
+                    OptionalModLaunchEntry(
+                        storageKey = entry.storageKey,
+                        jarFile = entry.jarFile,
+                        normalizedModId = entry.normalizedModId,
+                        normalizedManifestModId = normalizeModId(entry.rawModId),
+                        launchModId = launchModId,
+                        dependencies = ArrayList(entry.dependencies),
+                        originalIndex = index
+                    )
+                )
+            }
+        }
+        val priorityState = resolvePrioritySelectionState(
+            entries = enabledOptionalEntries.map { it.toPriorityEntry() },
+            explicitSelection = explicitPrioritySelection
+        )
+        return sortLaunchEntries(
+            entries = enabledOptionalEntries,
+            effectivePriorityByKey = priorityState.effectiveByKey
+        )
     }
 
     private fun findOptionalModFiles(context: Context): List<OptionalModFileEntry> {
@@ -793,17 +850,6 @@ object ModManager {
     private fun listJarFilesInOptionalModLibrary(context: Context): List<File> {
         OptionalModStorageCoordinator.ensureOptionalModLibraryReady(context)
         val modsDir = RuntimePaths.optionalModsLibraryDir(context)
-        val files = modsDir.listFiles() ?: return emptyList()
-        return files
-            .asSequence()
-            .filter { it.isFile }
-            .filter { it.name.lowercase(Locale.ROOT).endsWith(".jar") }
-            .sortedWith(compareBy<File>({ it.name.lowercase(Locale.ROOT) }, { it.name }, { it.absolutePath }))
-            .toList()
-    }
-
-    private fun listJarFilesInRuntimeModsDir(context: Context): List<File> {
-        val modsDir = RuntimePaths.modsDir(context)
         val files = modsDir.listFiles() ?: return emptyList()
         return files
             .asSequence()

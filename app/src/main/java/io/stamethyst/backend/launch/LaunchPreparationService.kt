@@ -10,7 +10,6 @@ import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.backend.mods.OptionalModStorageCoordinator
 import io.stamethyst.backend.mods.StsJarValidator
 import io.stamethyst.backend.runtime.RuntimePackInstaller
-import java.io.File
 import java.io.IOException
 import kotlin.math.roundToInt
 
@@ -78,7 +77,7 @@ object LaunchPreparationService {
             ModJarSupport.validateMtsJar(RuntimePaths.importedMtsJar(context))
             ModJarSupport.validateBaseModJar(RuntimePaths.importedBaseModJar(context))
             ModJarSupport.validateStsLibJar(RuntimePaths.importedStsLibJar(context))
-            OptionalModStorageCoordinator.syncEnabledOptionalModsToRuntime(context)
+            OptionalModStorageCoordinator.prepareMtsModFileList(context)
 
             throwIfInterrupted()
             if (MtsClasspathWarmupCoordinator.isCacheCurrent(context)) {
@@ -106,12 +105,13 @@ object LaunchPreparationService {
                 context.progressText(R.string.startup_progress_resolving_enabled_mod_launch_list)
             )
             val launchModIds = ModManager.resolveLaunchModIds(context)
+            val launchModFiles = ModManager.listMtsLaunchModFiles(context)
             MemoryDiagnosticsLogger.logModSnapshot(
                 context = context,
                 event = "launch_preparation_resolved_launch_mods",
                 launchMode = launchMode,
                 enabledLibraryFiles = ModManager.listEnabledOptionalModFiles(context),
-                runtimeModFiles = RuntimePaths.modsDir(context).listFiles().orEmpty().filter(File::isFile),
+                runtimeModFiles = launchModFiles,
                 launchModIds = launchModIds
             )
         }

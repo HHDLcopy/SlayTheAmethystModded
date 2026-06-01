@@ -43,7 +43,7 @@ object MtsClasspathWarmupCoordinator {
             45,
             context.progressText(R.string.startup_progress_preparing_mts_classpath_cache)
         )
-        OptionalModStorageCoordinator.syncEnabledOptionalModsToRuntime(context)
+        OptionalModStorageCoordinator.prepareMtsModFileList(context)
         ModJarSupport.prepareMtsClasspath(
             context,
             mapProgressRange(progressCallback, 45, 94)

@@ -12,6 +12,7 @@ object RuntimePaths {
     private const val STS_DIR_NAME = "sts"
     private const val LATEST_LOG_FILE_NAME = "latest.log"
     private const val BOOT_BRIDGE_EVENTS_FILE_NAME = "boot_bridge_events.log"
+    private const val MTS_MOD_FILE_LIST_FILE_NAME = ".mts_mod_file_list"
     private const val JVM_LOG_DIR_NAME = "jvm_logs"
     private const val WORKSHOP_AUTO_IMPORT_PATCH_LOG_DIR_NAME = "workshop_auto_import_patch_logs"
     private const val MEMORY_DIAGNOSTICS_LOG_FILE_NAME = "memory_diagnostics.log"
@@ -82,6 +83,9 @@ object RuntimePaths {
     fun modsDir(context: Context): File = File(stsRoot(context), "mods")
 
     @JvmStatic
+    fun requiredModsDir(context: Context): File = File(stsRoot(context), "required_mods")
+
+    @JvmStatic
     fun texturePacksDir(context: Context): File = File(stsRoot(context), "texPacks")
 
     @JvmStatic
@@ -99,17 +103,20 @@ object RuntimePaths {
     fun optionalModsLibraryDir(context: Context): File = File(stsRoot(context), "mods_library")
 
     @JvmStatic
-    fun importedBaseModJar(context: Context): File = File(modsDir(context), "BaseMod.jar")
+    fun importedBaseModJar(context: Context): File = File(requiredModsDir(context), "BaseMod.jar")
 
     @JvmStatic
-    fun importedStsLibJar(context: Context): File = File(modsDir(context), "StSLib.jar")
+    fun importedStsLibJar(context: Context): File = File(requiredModsDir(context), "StSLib.jar")
 
     @JvmStatic
     fun importedAmethystRuntimeCompatJar(context: Context): File =
-        File(modsDir(context), "AmethystRuntimeCompat.jar")
+        File(requiredModsDir(context), "AmethystRuntimeCompat.jar")
 
     @JvmStatic
-    fun importedRamSaverJar(context: Context): File = File(modsDir(context), "RamSaver.jar")
+    fun importedRamSaverJar(context: Context): File = File(requiredModsDir(context), "RamSaver.jar")
+
+    @JvmStatic
+    fun mtsModFileList(context: Context): File = File(stsRoot(context), MTS_MOD_FILE_LIST_FILE_NAME)
 
     @JvmStatic
     fun enabledModsConfig(context: Context): File = File(stsRoot(context), "enabled_mods.txt")
@@ -554,7 +561,7 @@ object RuntimePaths {
     fun ensureBaseDirs(context: Context) {
         stsRoot(context).mkdirs()
         stsHome(context).mkdirs()
-        modsDir(context).mkdirs()
+        requiredModsDir(context).mkdirs()
         optionalModsLibraryDir(context).mkdirs()
         jvmLogsDir(context).mkdirs()
         jvmHistogramsDir(context).mkdirs()

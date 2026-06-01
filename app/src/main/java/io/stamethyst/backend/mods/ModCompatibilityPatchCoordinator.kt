@@ -56,9 +56,10 @@ internal object ModCompatibilityPatchCoordinator {
         applyGlobalAtlasFilterCompat(context, installedModsById)
     }
 
+    @Throws(IOException::class)
     fun findInstalledModsById(context: Context): Map<String, File> {
         val modsById: MutableMap<String, File> = HashMap()
-        val modFiles = RuntimePaths.modsDir(context).listFiles() ?: return modsById
+        val modFiles = ModManager.listMtsLaunchModFiles(context)
         for (modFile in modFiles) {
             if (!modFile.isFile) {
                 continue
@@ -261,7 +262,7 @@ internal object ModCompatibilityPatchCoordinator {
         if (fixedTargetJarName.isNullOrBlank()) {
             return null
         }
-        return File(RuntimePaths.modsDir(context), fixedTargetJarName)
+        return File(RuntimePaths.requiredModsDir(context), fixedTargetJarName)
     }
 
     @Throws(IOException::class)

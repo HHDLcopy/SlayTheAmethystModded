@@ -2,7 +2,12 @@ package io.stamethyst.backend.mods
 
 import org.objectweb.asm.ClassReader
 import org.objectweb.asm.ClassWriter
+import org.objectweb.asm.Opcodes
 import org.objectweb.asm.tree.ClassNode
+import org.objectweb.asm.tree.InsnList
+import org.objectweb.asm.tree.MethodInsnNode
+import org.objectweb.asm.tree.MethodNode
+import org.objectweb.asm.tree.VarInsnNode
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -16,6 +21,9 @@ internal object MtsLoaderCrashPatcher {
     private const val LOADER_CLASS_ENTRY = "com/evacipated/cardcrawl/modthespire/Loader.class"
     private const val RUN_MODS_METHOD_NAME = "runMods"
     private const val RUN_MODS_METHOD_DESC = "([Ljava/io/File;)V"
+    private const val FILE_LIST_OVERRIDE_CLASS = "io/stamethyst/bridge/MtsModFileListOverride"
+    private const val FILE_LIST_OVERRIDE_METHOD_NAME = "resolve"
+    private const val FILE_LIST_OVERRIDE_METHOD_DESC = "([Ljava/io/File;)[Ljava/io/File;"
 
     private val SWALLOWED_FAILURE_TYPES = setOf(
         "com/evacipated/cardcrawl/modthespire/MissingDependencyException",
@@ -76,7 +84,7 @@ internal object MtsLoaderCrashPatcher {
             if (tempJar.exists()) {
                 tempJar.delete()
             }
-            throw IOException("Failed to patch ModTheSpire startup failure handling")
+            throw IOException("Failed to patch ModTheSpire startup handling and file list override")
         }
 
         if (mtsJar.exists() && !mtsJar.delete()) {
@@ -99,9 +107,10 @@ internal object MtsLoaderCrashPatcher {
         val runModsMethod = classNode.methods.firstOrNull { method ->
             method.name == RUN_MODS_METHOD_NAME && method.desc == RUN_MODS_METHOD_DESC
         } ?: return false
-        return runModsMethod.tryCatchBlocks.none { tryCatch ->
+        val startupFailuresAreNotSwallowed = runModsMethod.tryCatchBlocks.none { tryCatch ->
             SWALLOWED_FAILURE_TYPES.contains(tryCatch.type)
         }
+        return startupFailuresAreNotSwallowed && hasFileListOverrideCall(runModsMethod)
     }
 
     internal fun patchLoaderBytes(loaderBytes: ByteArray): ByteArray {
@@ -114,13 +123,51 @@ internal object MtsLoaderCrashPatcher {
         runModsMethod.tryCatchBlocks.removeAll { tryCatch ->
             SWALLOWED_FAILURE_TYPES.contains(tryCatch.type)
         }
-        if (runModsMethod.tryCatchBlocks.size == originalCatchCount) {
+        val removedSwallowedFailures = runModsMethod.tryCatchBlocks.size != originalCatchCount
+        val alreadyOverridesFileList = hasFileListOverrideCall(runModsMethod)
+        if (!alreadyOverridesFileList) {
+            insertFileListOverride(runModsMethod)
+        }
+        if (!removedSwallowedFailures && alreadyOverridesFileList) {
             return loaderBytes
         }
 
         val classWriter = ClassWriter(0)
         classNode.accept(classWriter)
         return classWriter.toByteArray()
+    }
+
+    private fun insertFileListOverride(runModsMethod: MethodNode) {
+        val instructions = InsnList()
+        instructions.add(VarInsnNode(Opcodes.ALOAD, 0))
+        instructions.add(
+            MethodInsnNode(
+                Opcodes.INVOKESTATIC,
+                FILE_LIST_OVERRIDE_CLASS,
+                FILE_LIST_OVERRIDE_METHOD_NAME,
+                FILE_LIST_OVERRIDE_METHOD_DESC,
+                false
+            )
+        )
+        instructions.add(VarInsnNode(Opcodes.ASTORE, 0))
+        runModsMethod.instructions.insert(instructions)
+        runModsMethod.maxStack = maxOf(runModsMethod.maxStack, 1)
+    }
+
+    private fun hasFileListOverrideCall(runModsMethod: MethodNode): Boolean {
+        val iterator = runModsMethod.instructions.iterator()
+        while (iterator.hasNext()) {
+            val instruction = iterator.next()
+            if (instruction is MethodInsnNode &&
+                instruction.opcode == Opcodes.INVOKESTATIC &&
+                instruction.owner == FILE_LIST_OVERRIDE_CLASS &&
+                instruction.name == FILE_LIST_OVERRIDE_METHOD_NAME &&
+                instruction.desc == FILE_LIST_OVERRIDE_METHOD_DESC
+            ) {
+                return true
+            }
+        }
+        return false
     }
 
     private fun readClassNode(loaderBytes: ByteArray): ClassNode {

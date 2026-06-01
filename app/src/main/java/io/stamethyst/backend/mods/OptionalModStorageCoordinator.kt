@@ -4,15 +4,14 @@ import android.content.Context
 import android.system.ErrnoException
 import android.system.Os
 import io.stamethyst.backend.diag.MemoryDiagnosticsLogger
+import io.stamethyst.backend.fs.FileTreeCleaner
 import io.stamethyst.config.RuntimePaths
 import java.io.File
-import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
 import java.io.OutputStreamWriter
 import java.nio.charset.StandardCharsets
 import java.util.LinkedHashMap
-import java.util.LinkedHashSet
 import java.util.Locale
 
 internal object OptionalModStorageCoordinator {
@@ -47,26 +46,40 @@ internal object OptionalModStorageCoordinator {
     @JvmStatic
     @Throws(IOException::class)
     fun syncEnabledOptionalModsToRuntime(context: Context) {
+        prepareMtsModFileList(context)
+    }
+
+    @JvmStatic
+    @Throws(IOException::class)
+    fun prepareMtsModFileList(context: Context) {
         ensureOptionalModLibraryReady(context)
-        val enabledLibraryFiles = ModManager.listEnabledOptionalModFiles(context)
         val runtimeModsDir = RuntimePaths.modsDir(context)
+        salvageLegacyOptionalModsForRuntimeCleanup(
+            legacyRuntimeModsDir = runtimeModsDir,
+            libraryDir = RuntimePaths.optionalModsLibraryDir(context),
+            enabledModsConfig = RuntimePaths.enabledModsConfig(context),
+            priorityModsConfig = RuntimePaths.priorityModsConfig(context),
+            normalizeSelectionPath = { raw ->
+                RuntimePaths.normalizeLegacyStsPath(context, raw)
+            }
+        )
+        val enabledLibraryFiles = ModManager.listEnabledOptionalModFiles(context)
+        val launchModFiles = ModManager.listMtsLaunchModFiles(context)
         MemoryDiagnosticsLogger.logModSnapshot(
             context = context,
-            event = "runtime_optional_mod_sync_started",
+            event = "mts_mod_file_list_prepare_started",
             launchMode = "mts",
             enabledLibraryFiles = enabledLibraryFiles,
-            runtimeModFiles = listOptionalJarFiles(runtimeModsDir)
+            runtimeModFiles = launchModFiles
         )
-        syncRuntimeOptionalMods(
-            runtimeModsDir = runtimeModsDir,
-            enabledLibraryFiles = enabledLibraryFiles
-        )
+        writeMtsModFileList(RuntimePaths.mtsModFileList(context), launchModFiles)
+        deleteLegacyRuntimeModsDir(runtimeModsDir)
         MemoryDiagnosticsLogger.logModSnapshot(
             context = context,
-            event = "runtime_optional_mod_sync_completed",
+            event = "mts_mod_file_list_prepare_completed",
             launchMode = "mts",
             enabledLibraryFiles = enabledLibraryFiles,
-            runtimeModFiles = listOptionalJarFiles(runtimeModsDir)
+            runtimeModFiles = launchModFiles
         )
     }
 
@@ -98,32 +111,79 @@ internal object OptionalModStorageCoordinator {
     }
 
     @Throws(IOException::class)
-    internal fun syncRuntimeOptionalMods(
-        runtimeModsDir: File,
-        enabledLibraryFiles: List<File>
+    internal fun salvageLegacyOptionalModsForRuntimeCleanup(
+        legacyRuntimeModsDir: File,
+        libraryDir: File,
+        enabledModsConfig: File,
+        priorityModsConfig: File,
+        normalizeSelectionPath: ((String) -> String?)? = null
     ) {
-        ensureDirectory(runtimeModsDir)
-
-        val expectedNames = enabledLibraryFiles.mapTo(LinkedHashSet()) { it.name }
-        runtimeModsDir.listFiles().orEmpty().forEach { existing ->
-            if (!existing.isFile) {
-                return@forEach
-            }
-            if (!existing.name.lowercase(Locale.ROOT).endsWith(".jar")) {
-                return@forEach
-            }
-            if (isReservedJarName(existing.name)) {
-                return@forEach
-            }
-            if (!expectedNames.contains(existing.name)) {
-                if (!existing.delete()) {
-                    throw IOException("Failed to delete runtime mod file: ${existing.absolutePath}")
-                }
-            }
+        ensureDirectory(libraryDir)
+        if (!legacyRuntimeModsDir.isDirectory) {
+            return
+        }
+        val legacyOptionalFiles = listOptionalJarFiles(legacyRuntimeModsDir)
+        if (legacyOptionalFiles.isEmpty()) {
+            return
         }
 
-        enabledLibraryFiles.forEach { source ->
-            syncFileIfChanged(source, File(runtimeModsDir, source.name))
+        val movedPaths = LinkedHashMap<String, String>()
+        legacyOptionalFiles.forEach { source ->
+            val equivalentLibraryFile = findEquivalentLibraryFile(libraryDir, source)
+            if (equivalentLibraryFile != null) {
+                movedPaths[source.absolutePath] = equivalentLibraryFile.absolutePath
+                if (!source.delete()) {
+                    throw IOException("Failed to delete legacy duplicate mod file: ${source.absolutePath}")
+                }
+                return@forEach
+            }
+            val target = buildUniqueImportTarget(libraryDir, source.name)
+            moveFileReplacing(source, target)
+            movedPaths[source.absolutePath] = target.absolutePath
+        }
+        rewriteSelectionConfig(enabledModsConfig, movedPaths, normalizeSelectionPath)
+        rewriteSelectionConfig(priorityModsConfig, movedPaths, normalizeSelectionPath)
+    }
+
+    @Throws(IOException::class)
+    internal fun writeMtsModFileList(fileList: File, launchModFiles: List<File>) {
+        val parent = fileList.parentFile
+        if (parent != null) {
+            ensureDirectory(parent)
+        }
+        val temp = File(
+            parent ?: fileList.absoluteFile.parentFile ?: throw IOException("MTS file list has no parent"),
+            ".${fileList.name}.${System.nanoTime()}.tmp"
+        )
+        try {
+            OutputStreamWriter(FileOutputStream(temp, false), StandardCharsets.UTF_8).use { writer ->
+                launchModFiles.forEach { file ->
+                    writer.write(file.absolutePath)
+                    writer.write('\n'.code)
+                }
+            }
+            if (fileList.exists() && !fileList.delete()) {
+                throw IOException("Failed to replace MTS mod file list: ${fileList.absolutePath}")
+            }
+            if (!temp.renameTo(fileList)) {
+                throw IOException("Failed to move ${temp.absolutePath} -> ${fileList.absolutePath}")
+            }
+        } finally {
+            if (temp.exists()) {
+                temp.delete()
+            }
+        }
+    }
+
+    @Throws(IOException::class)
+    internal fun deleteLegacyRuntimeModsDir(runtimeModsDir: File) {
+        if (!runtimeModsDir.exists()) {
+            return
+        }
+        if (!FileTreeCleaner.deleteRecursively(runtimeModsDir) || runtimeModsDir.exists()) {
+            val remaining = FileTreeCleaner.summarizeRemainingEntries(runtimeModsDir)
+            val suffix = remaining?.let { ": $it" }.orEmpty()
+            throw IOException("Failed to delete legacy runtime mods directory: ${runtimeModsDir.absolutePath}$suffix")
         }
     }
 
@@ -233,46 +293,6 @@ internal object OptionalModStorageCoordinator {
     }
 
     @Throws(IOException::class)
-    private fun syncFileIfChanged(source: File, target: File) {
-        if (!source.isFile) {
-            throw IOException("Library mod file missing: ${source.absolutePath}")
-        }
-        val parent = target.parentFile
-        if (parent != null) {
-            ensureDirectory(parent)
-        }
-        if (target.isFile &&
-            target.length() == source.length() &&
-            target.lastModified() >= source.lastModified()
-        ) {
-            return
-        }
-
-        val temp = File(
-            parent ?: target.absoluteFile.parentFile ?: throw IOException("Target has no parent"),
-            ".${target.name}.${System.nanoTime()}.tmp"
-        )
-        try {
-            FileInputStream(source).use { input ->
-                FileOutputStream(temp, false).use { output ->
-                    input.copyTo(output)
-                }
-            }
-            temp.setLastModified(source.lastModified())
-            if (target.exists() && !target.delete()) {
-                throw IOException("Failed to replace runtime mod file: ${target.absolutePath}")
-            }
-            if (!temp.renameTo(target)) {
-                throw IOException("Failed to move ${temp.absolutePath} -> ${target.absolutePath}")
-            }
-        } finally {
-            if (temp.exists()) {
-                temp.delete()
-            }
-        }
-    }
-
-    @Throws(IOException::class)
     private fun moveFileReplacing(source: File, target: File) {
         val parent = target.parentFile
         if (parent != null) {
@@ -317,6 +337,51 @@ internal object OptionalModStorageCoordinator {
             "stslib.jar" == normalized ||
             "amethystruntimecompat.jar" == normalized ||
             "ramsaver.jar" == normalized
+    }
+
+    private fun findEquivalentLibraryFile(libraryDir: File, source: File): File? {
+        val candidates = listOptionalJarFiles(libraryDir)
+        candidates.firstOrNull { candidate ->
+            candidate.name == source.name && filesHaveSameContent(candidate, source)
+        }?.let { return it }
+        return candidates.firstOrNull { candidate ->
+            filesHaveSameContent(candidate, source)
+        }
+    }
+
+    private fun filesHaveSameContent(left: File, right: File): Boolean {
+        if (!left.isFile || !right.isFile || left.length() != right.length()) {
+            return false
+        }
+        return try {
+            var sameContent = true
+            left.inputStream().use { leftInput ->
+                right.inputStream().use { rightInput ->
+                    val leftBuffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    val rightBuffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    while (sameContent) {
+                        val leftRead = leftInput.read(leftBuffer)
+                        val rightRead = rightInput.read(rightBuffer)
+                        if (leftRead != rightRead) {
+                            sameContent = false
+                            break
+                        }
+                        for (index in 0 until leftRead) {
+                            if (leftBuffer[index] != rightBuffer[index]) {
+                                sameContent = false
+                                break
+                            }
+                        }
+                        if (leftRead < 0) {
+                            break
+                        }
+                    }
+                }
+            }
+            sameContent
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     private fun sanitizeImportedJarFileName(requestedFileName: String?): String {

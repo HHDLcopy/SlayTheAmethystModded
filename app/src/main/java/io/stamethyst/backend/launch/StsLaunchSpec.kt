@@ -448,6 +448,9 @@ object StsLaunchSpec {
         args.add("-Damethyst.debug.force_jvm_crash=${if (forceJvmCrash) "true" else "false"}")
         args.add("-Damethyst.debug.force_runtime_crash=${if (BuildConfig.BUILD_TYPE == "debug" && forceRuntimeCrash) "true" else "false"}")
         args.add("-Damethyst.bridge.events=${RuntimePaths.bootBridgeEventsLog(context).absolutePath}")
+        if (isMtsLaunchMode(launchMode)) {
+            args.add("-Damethyst.mts.mod_file_list=${RuntimePaths.mtsModFileList(context).absolutePath}")
+        }
         if (LauncherConfig.isGamePerformanceOverlayEnabled(context)) {
             args.add("-Damethyst.bridge.heap_snapshot=${RuntimePaths.jvmHeapSnapshot(context).absolutePath}")
             args.add("-Damethyst.bridge.gc_histogram_dir=${RuntimePaths.jvmHistogramsDir(context).absolutePath}")

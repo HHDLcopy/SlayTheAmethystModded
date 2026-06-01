@@ -8,7 +8,7 @@ import java.nio.file.Files
 
 class MtsLoaderCrashPatcherTest {
     @Test
-    fun ensurePatchedMtsJar_removesRunModsSwallowHandlers() {
+    fun ensurePatchedMtsJar_removesRunModsSwallowHandlersAndInjectsFileListOverride() {
         val sourceJar = sequenceOf(
             File("src/main/assets/components/mods/ModTheSpire.jar"),
             File("app/src/main/assets/components/mods/ModTheSpire.jar")

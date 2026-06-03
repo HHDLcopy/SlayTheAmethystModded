@@ -920,7 +920,7 @@ private fun SearchPanelContent(
                             onSearchHistoryExpandedChange(true)
                         },
                         onSearch = { onSearch(query) },
-                        expanded = false,
+                        expanded = searchHistoryExpanded,
                         onExpandedChange = { onSearchHistoryExpandedChange(it) },
                         placeholder = { Text(stringResource(R.string.workshop_search_placeholder)) },
                         trailingIcon = {
@@ -930,12 +930,8 @@ private fun SearchPanelContent(
                         },
                     )
                 },
-                expanded = false,
-                onExpandedChange = {},
-            ) {}
-            DropdownMenu(
                 expanded = searchHistoryExpanded,
-                onDismissRequest = { onSearchHistoryExpandedChange(false) },
+                onExpandedChange = onSearchHistoryExpandedChange,
             ) {
                 SearchHistorySuggestions(
                     history = searchHistory,

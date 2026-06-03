@@ -687,7 +687,7 @@ internal fun ModFolderSection(
                                                 modSearchHistoryExpanded = true
                                             },
                                             onSearch = { submitModSearch() },
-                                            expanded = false,
+                                            expanded = modSearchHistoryExpanded,
                                             onExpandedChange = { modSearchHistoryExpanded = it },
                                             placeholder = { Text(stringResource(R.string.main_folder_filter_hint)) },
                                             trailingIcon = {
@@ -697,13 +697,9 @@ internal fun ModFolderSection(
                                             },
                                         )
                                     },
-                                    expanded = false,
-                                    onExpandedChange = {},
-                                    shape = RoundedCornerShape(10.dp),
-                                ) {}
-                                DropdownMenu(
                                     expanded = modSearchHistoryExpanded,
-                                    onDismissRequest = { modSearchHistoryExpanded = false },
+                                    onExpandedChange = { modSearchHistoryExpanded = it },
+                                    shape = RoundedCornerShape(10.dp),
                                 ) {
                                     SearchHistorySuggestions(
                                         history = modSearchHistory,

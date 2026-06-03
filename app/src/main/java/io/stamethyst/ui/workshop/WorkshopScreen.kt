@@ -111,6 +111,40 @@ import kotlinx.coroutines.withContext
 
 // Increase this value to require a longer scroll back toward the top before expanding the search header.
 private val WorkshopHeaderExpandScrollDistanceThreshold = 64.dp
+private const val WorkshopHeaderUnknownVisibleItemDeltaPx = 10_000
+
+internal data class WorkshopHeaderVisibleItemOffset(
+    val index: Int,
+    val offset: Int,
+)
+
+internal data class WorkshopHeaderScrollSample(
+    val firstVisibleItemIndex: Int,
+    val firstVisibleItemScrollOffset: Int,
+    val visibleItemOffsets: List<WorkshopHeaderVisibleItemOffset>,
+)
+
+internal fun workshopHeaderScrollDeltaPx(
+    previous: WorkshopHeaderScrollSample,
+    current: WorkshopHeaderScrollSample,
+): Int {
+    current.visibleItemOffsets.forEach { currentItem ->
+        val previousItem = previous.visibleItemOffsets.firstOrNull { it.index == currentItem.index }
+        if (previousItem != null) {
+            return previousItem.offset - currentItem.offset
+        }
+    }
+
+    val indexDelta = current.firstVisibleItemIndex - previous.firstVisibleItemIndex
+    if (indexDelta != 0) {
+        return if (indexDelta > 0) {
+            WorkshopHeaderUnknownVisibleItemDeltaPx
+        } else {
+            -WorkshopHeaderUnknownVisibleItemDeltaPx
+        }
+    }
+    return current.firstVisibleItemScrollOffset - previous.firstVisibleItemScrollOffset
+}
 
 @Composable
 internal fun WorkshopScreen(
@@ -193,35 +227,40 @@ internal fun WorkshopScreen(
     }
 
     LaunchedEffect(listState, headerExpandScrollDistanceThresholdPx) {
-        var previousIndex = listState.firstVisibleItemIndex
-        var previousOffset = listState.firstVisibleItemScrollOffset
+        var previousSample = WorkshopHeaderScrollSample(
+            firstVisibleItemIndex = listState.firstVisibleItemIndex,
+            firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset,
+            visibleItemOffsets = listState.layoutInfo.visibleItemsInfo.map {
+                WorkshopHeaderVisibleItemOffset(index = it.index, offset = it.offset)
+            },
+        )
         var scrollDistanceTowardTopPx = 0
         snapshotFlow {
-            Triple(
-                listState.firstVisibleItemIndex,
-                listState.firstVisibleItemScrollOffset,
-                listState.layoutInfo.visibleItemsInfo.firstOrNull()?.size ?: 0,
+            WorkshopHeaderScrollSample(
+                firstVisibleItemIndex = listState.firstVisibleItemIndex,
+                firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset,
+                visibleItemOffsets = listState.layoutInfo.visibleItemsInfo.map {
+                    WorkshopHeaderVisibleItemOffset(index = it.index, offset = it.offset)
+                },
             )
-        }.collect { (index, offset, firstVisibleItemSizePx) ->
-                val estimatedItemSizePx = firstVisibleItemSizePx.coerceAtLeast(1)
-                val scrollDeltaPx = (index - previousIndex) * estimatedItemSizePx + (offset - previousOffset)
-                when {
-                    scrollDeltaPx < 0 -> {
-                        scrollDistanceTowardTopPx += -scrollDeltaPx
-                        if (headerExpandScrollDistanceThresholdPx <= 0 ||
-                            scrollDistanceTowardTopPx >= headerExpandScrollDistanceThresholdPx
-                        ) {
-                            headerExpandedByDownScroll = true
-                        }
-                    }
-                    scrollDeltaPx > 0 -> {
-                        scrollDistanceTowardTopPx = 0
-                        headerExpandedByDownScroll = false
+        }.collect { sample ->
+            val scrollDeltaPx = workshopHeaderScrollDeltaPx(previousSample, sample)
+            when {
+                scrollDeltaPx < 0 -> {
+                    scrollDistanceTowardTopPx += -scrollDeltaPx
+                    if (headerExpandScrollDistanceThresholdPx <= 0 ||
+                        scrollDistanceTowardTopPx >= headerExpandScrollDistanceThresholdPx
+                    ) {
+                        headerExpandedByDownScroll = true
                     }
                 }
-                previousIndex = index
-                previousOffset = offset
+                scrollDeltaPx > 0 -> {
+                    scrollDistanceTowardTopPx = 0
+                    headerExpandedByDownScroll = false
+                }
             }
+            previousSample = sample
+        }
     }
 
     LaunchedEffect(active, state.downloadInProgress) {

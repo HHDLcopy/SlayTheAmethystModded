@@ -489,6 +489,8 @@
     <string name="main_mod_delete_confirm_format">確定刪除 %1$s 嗎？</string>
     <string name="main_mod_drag">拖拽模組</string>
     <string name="main_mod_version_format">版本: %1$s</string>
+    <string name="main_mod_version_with_size_format">版本: %1$s - %2$s</string>
+    <string name="main_mod_file_size_format">大小: %1$s</string>
     <string name="main_mod_dependencies_format">前置: %1$s</string>
     <string name="main_mod_share_chooser_title">分享模組到</string>
     <string name="mod_import_busy_message">正在匯入所選模組 jar…</string>
@@ -1188,6 +1190,7 @@
     <string name="settings_steam_cloud_login_succeeded">Steam Cloud 登入成功：%1$s。</string>
     <string name="settings_steam_cloud_login_cancelled">Steam Cloud 登入已取消。</string>
     <string name="settings_steam_cloud_login_failed">Steam Cloud 登入失敗：%1$s</string>
+    <string name="settings_steam_cloud_login_invalid_credentials_summary">Steam 拒絕了賬號名或密碼。請確認填寫的是 Steam 登入賬號名（不是個人資料暱稱），並重新輸入密碼。</string>
     <string name="settings_steam_cloud_login_guard_wait_timeout_summary">Steam Guard 驗證等待過久，Steam 已關閉本次登入連線。請重新登入，並儘快輸入最新驗證碼或完成裝置確認。</string>
     <string name="settings_steam_cloud_login_guard_connection_cancelled_summary">Steam Guard 驗證連線在收到登入結果前中斷。請重新登入，儘快批准 Steam 提示，並在確認期間保持網路穩定。</string>
     <string name="settings_steam_cloud_upload_disconnect_summary">Steam Cloud 上傳連線在請求上傳地址時中斷。請切換為直連模式，或關閉代理/加速器後重試。</string>

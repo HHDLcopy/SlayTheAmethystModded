@@ -9,6 +9,7 @@ data class ModItemUi(
     val storagePath: String,
     val name: String,
     val version: String,
+    val fileSizeBytes: Long = 0L,
     val description: String,
     val dependencies: List<String>,
     val required: Boolean,

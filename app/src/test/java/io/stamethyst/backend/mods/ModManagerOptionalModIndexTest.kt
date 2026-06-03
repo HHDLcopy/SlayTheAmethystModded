@@ -94,6 +94,32 @@ class ModManagerOptionalModIndexTest {
     }
 
     @Test
+    fun listInstalledMods_reusesLargeOptionalModIndexForWorkshopSizedLibrary() {
+        val roots = TestRoots.create("mod-manager-large-optional-index")
+        val context = roots.context
+        val libraryDir = RuntimePaths.optionalModsLibraryDir(context)
+        val expectedIds = (1..260).map { index -> "large_mod_$index" }
+
+        expectedIds.forEachIndexed { index, modId ->
+            writeOptionalModJar(
+                file = File(libraryDir, "LargeMod%03d.jar".format(index + 1)),
+                modId = modId,
+                name = "Large Mod ${index + 1}",
+                lastModified = 20_000L + index
+            )
+        }
+
+        val firstPass = ModManager.listInstalledMods(context).filterNot { it.required }
+        assertEquals(expectedIds, firstPass.map { it.modId })
+
+        val indexRoot = JSONObject(RuntimePaths.optionalModIndexFile(context).readText(StandardCharsets.UTF_8))
+        assertEquals(260, indexRoot.getJSONArray("entries").length())
+
+        val secondPass = ModManager.listInstalledMods(context).filterNot { it.required }
+        assertEquals(expectedIds, secondPass.map { it.modId })
+    }
+
+    @Test
     fun resolveLaunchModIds_refreshesWhenUserReplacesJarInPlace() {
         val roots = TestRoots.create("mod-manager-launch-refresh")
         val context = roots.context

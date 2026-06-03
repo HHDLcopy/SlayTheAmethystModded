@@ -489,6 +489,8 @@ Do you still want to continue?</string>
     <string name="main_mod_delete_confirm_format">Delete %1$s?</string>
     <string name="main_mod_drag">Drag mod</string>
     <string name="main_mod_version_format">Version: %1$s</string>
+    <string name="main_mod_version_with_size_format">Version: %1$s - %2$s</string>
+    <string name="main_mod_file_size_format">Size: %1$s</string>
     <string name="main_mod_dependencies_format">Prerequisites: %1$s</string>
     <string name="main_mod_share_chooser_title">Share mod to</string>
     <string name="mod_import_busy_message">Importing selected mod jars...</string>
@@ -1188,6 +1190,7 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="settings_steam_cloud_login_succeeded">Steam Cloud login succeeded for %1$s.</string>
     <string name="settings_steam_cloud_login_cancelled">Steam Cloud login cancelled.</string>
     <string name="settings_steam_cloud_login_failed">Steam Cloud login failed: %1$s</string>
+    <string name="settings_steam_cloud_login_invalid_credentials_summary">Steam rejected the account name or password. Use the Steam account login name, not the profile display name, and re-enter the password.</string>
     <string name="settings_steam_cloud_login_guard_wait_timeout_summary">Steam Guard verification waited too long. Steam closed the login connection; sign in again and enter the latest code or approve the prompt quickly.</string>
     <string name="settings_steam_cloud_login_guard_connection_cancelled_summary">Steam Guard verification connection was interrupted before Steam returned a login result. Sign in again, approve the Steam prompt quickly, and keep the network stable during confirmation.</string>
     <string name="settings_steam_cloud_upload_disconnect_summary">Steam Cloud upload connection was interrupted while requesting an upload slot. Switch to direct mode, turn off the proxy or accelerator, or retry on a stable network.</string>

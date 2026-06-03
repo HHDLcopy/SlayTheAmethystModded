@@ -102,6 +102,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
             signingConfig = if (hasReleaseSigning) {
                 signingConfigs.getByName("release")
             } else {
@@ -134,6 +135,10 @@ android {
         jniLibs.pickFirsts += setOf(
             "**/libbytehook.so",
             "**/libc++_shared.so"
+        )
+        resources.excludes += setOf(
+            "org/bouncycastle/pqc/crypto/picnic/**",
+            "org/bouncycastle/x509/CertPathReviewerMessages*.properties"
         )
     }
 
@@ -188,6 +193,7 @@ dependencies {
 
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.uiautomator)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)

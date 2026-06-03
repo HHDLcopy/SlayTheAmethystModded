@@ -9,6 +9,7 @@ internal enum class SteamCloudErrorKind {
     USER_CANCELLED,
     AUTH_CONNECTION_CANCELLED,
     AUTH_WATCHDOG_DISCONNECT,
+    INVALID_CREDENTIALS,
     UPLOAD_DISCONNECT,
     OTHER,
 }
@@ -20,13 +21,19 @@ internal object SteamCloudErrorClassifier {
             return SteamCloudErrorKind.AUTH_CONNECTION_CANCELLED
         }
 
-        val message = firstMeaningfulMessage(causeChain)
+        val messages = causeChain.mapNotNull { current ->
+            current.message?.trim()?.takeIf { it.isNotEmpty() }
+        }
+        val message = messages.firstOrNull().orEmpty()
         val firstCause = causeChain.firstOrNull()
         if (firstCause is CancellationException && isExplicitUserCancellation(firstCause)) {
             return SteamCloudErrorKind.USER_CANCELLED
         }
         if (firstCause is CancellationException) {
             return SteamCloudErrorKind.AUTH_CONNECTION_CANCELLED
+        }
+        if (messages.any(::isSteamInvalidCredentials)) {
+            return SteamCloudErrorKind.INVALID_CREDENTIALS
         }
         if (isSteamCloudUploadDisconnect(message)) {
             return SteamCloudErrorKind.UPLOAD_DISCONNECT
@@ -69,12 +76,6 @@ internal object SteamCloudErrorClassifier {
         }
     }
 
-    private fun firstMeaningfulMessage(causeChain: List<Throwable>): String {
-        return causeChain.firstOrNull { current ->
-            current.message?.trim()?.isNotEmpty() == true
-        }?.message?.trim().orEmpty()
-    }
-
     private fun isSteamCloudAuthConnectionCancellation(error: Throwable): Boolean {
         if (error !is CancellationException) {
             return false
@@ -98,6 +99,12 @@ internal object SteamCloudErrorClassifier {
         return normalized.contains("steam disconnected") &&
             normalized.contains("steam auth completion") &&
             normalized.contains("watchdog")
+    }
+
+    private fun isSteamInvalidCredentials(message: String): Boolean {
+        val normalized = message.lowercase(Locale.US)
+        return normalized.contains("invalidpassword") ||
+            normalized.contains("invalid password")
     }
 
     private fun isSteamCloudUploadDisconnect(message: String): Boolean {

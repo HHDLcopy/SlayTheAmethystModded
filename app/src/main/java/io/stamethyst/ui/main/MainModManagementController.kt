@@ -1542,6 +1542,7 @@ internal class MainModManagementController(
                 storagePath = mod.jarFile.absolutePath,
                 name = mod.name,
                 version = mod.version,
+                fileSizeBytes = mod.jarFile.length().coerceAtLeast(0L),
                 description = mod.description,
                 dependencies = mod.dependencies,
                 required = mod.required,
@@ -1713,12 +1714,17 @@ internal class MainModManagementController(
     ): ModItemUi {
         val absoluteJarPath = resolveWorkshopJarPath(host, this)
         val workshop = toWorkshopModUi(host, representedByInstalledMod = false, task = task)
+        val fileSizeBytes = task?.fileSizeBytes
+            ?.takeIf { it > 0L }
+            ?: File(absoluteJarPath).takeIf { it.isFile }?.length()?.coerceAtLeast(0L)
+            ?: 0L
         return ModItemUi(
             modId = "workshop:${publishedFileId}",
             manifestModId = "workshop:${publishedFileId}",
             storagePath = "workshop:${appId}:${publishedFileId}",
             name = title,
             version = versionText,
+            fileSizeBytes = fileSizeBytes,
             description = description,
             dependencies = emptyList(),
             required = false,

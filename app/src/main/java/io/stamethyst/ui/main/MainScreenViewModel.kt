@@ -296,6 +296,7 @@ class MainScreenViewModel : ViewModel() {
                 if (mod.isStandaloneWorkshopTaskCard(workshop)) null else mod
             } else {
                 mod.copy(
+                    fileSizeBytes = task.fileSizeBytes.takeIf { it > 0L } ?: mod.fileSizeBytes,
                     workshop = workshop.copy(
                         state = taskState,
                         statusText = task.message.ifBlank { workshop.statusText },
@@ -2864,6 +2865,7 @@ private fun WorkshopDownloadTaskUi.toStandaloneWorkshopModItem(): ModItemUi {
         storagePath = "workshop:${summary.appId}:${publishedFileId}",
         name = title.ifBlank { summary.title.ifBlank { publishedFileId.toString() } },
         version = summary.updatedAtMillis.toString(),
+        fileSizeBytes = fileSizeBytes.takeIf { it > 0L } ?: totalBytes ?: summary.fileSizeBytes,
         description = description.ifBlank { summary.description },
         dependencies = emptyList(),
         required = false,

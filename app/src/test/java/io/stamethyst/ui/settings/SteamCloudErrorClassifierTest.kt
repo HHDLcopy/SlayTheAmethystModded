@@ -35,4 +35,16 @@ class SteamCloudErrorClassifierTest {
             SteamCloudErrorClassifier.classify(error)
         )
     }
+
+    @Test
+    fun classify_treatsSteamInvalidPasswordAsInvalidCredentials() {
+        val error = CompletionException(
+            RuntimeException("Authentication failed via credentials with result: InvalidPassword")
+        )
+
+        assertEquals(
+            SteamCloudErrorKind.INVALID_CREDENTIALS,
+            SteamCloudErrorClassifier.classify(error)
+        )
+    }
 }

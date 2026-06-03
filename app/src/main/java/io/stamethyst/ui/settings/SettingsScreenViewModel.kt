@@ -4831,6 +4831,9 @@ class SettingsScreenViewModel : ViewModel() {
             SteamCloudErrorKind.AUTH_WATCHDOG_DISCONNECT ->
                 return host.getString(R.string.settings_steam_cloud_login_guard_wait_timeout_summary)
 
+            SteamCloudErrorKind.INVALID_CREDENTIALS ->
+                return host.getString(R.string.settings_steam_cloud_login_invalid_credentials_summary)
+
             SteamCloudErrorKind.UPLOAD_DISCONNECT ->
                 return host.getString(R.string.settings_steam_cloud_upload_disconnect_summary)
 

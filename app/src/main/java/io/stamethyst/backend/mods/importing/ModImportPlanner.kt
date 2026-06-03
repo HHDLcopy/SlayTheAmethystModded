@@ -578,6 +578,7 @@ internal object ModImportPlanner {
             storagePath = storagePath,
             name = name,
             version = version,
+            fileSizeBytes = File(storagePath).takeIf { it.isFile }?.length()?.coerceAtLeast(0L) ?: 0L,
             description = description,
             dependencies = dependencies,
             required = required,

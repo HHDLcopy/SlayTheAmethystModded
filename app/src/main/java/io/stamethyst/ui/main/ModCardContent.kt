@@ -2,6 +2,7 @@ package io.stamethyst.ui.main
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
@@ -38,6 +39,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -45,6 +48,7 @@ import io.stamethyst.R
 import io.stamethyst.backend.workshop.WorkshopPreviewCacheStore
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.model.WorkshopModState
+import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -71,6 +75,7 @@ internal fun ModCardBodyContent(
     val resolvedName = resolveModDisplayName(mod, showModFileName = showModFileName)
     val resolvedModId = mod.manifestModId.ifBlank { mod.modId }
     val resolvedVersion = mod.version.ifBlank { stringResource(R.string.main_mod_unknown_version) }
+    val resolvedFileSize = formatModFileSize(mod.fileSizeBytes)
     val resolvedDescription = mod.description.ifBlank { stringResource(R.string.main_mod_no_description) }
     val dependencies = mod.dependencies
         .map { it.trim() }
@@ -112,10 +117,9 @@ internal fun ModCardBodyContent(
     }
 
     Spacer(modifier = Modifier.height(2.dp))
-    Text(
-        text = stringResource(R.string.main_mod_version_format, resolvedVersion),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.outline
+    ModCardMetadataRow(
+        version = resolvedVersion,
+        fileSize = resolvedFileSize
     )
     Text(
         text = resolvedDescription,
@@ -169,6 +173,79 @@ internal fun ModCardBodyContent(
                 }
             }
         )
+    }
+}
+
+@Composable
+private fun ModCardMetadataRow(
+    version: String,
+    fileSize: String?,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        ModCardMetadataItem(
+            iconResId = R.drawable.ic_mod_version,
+            text = version,
+            accessibilityText = stringResource(R.string.main_mod_version_format, version),
+            modifier = Modifier.weight(1f, fill = false)
+        )
+        if (!fileSize.isNullOrBlank()) {
+            ModCardMetadataItem(
+                iconResId = R.drawable.ic_mod_size,
+                text = fileSize,
+                accessibilityText = stringResource(R.string.main_mod_file_size_format, fileSize)
+            )
+        }
+    }
+}
+
+@Composable
+private fun ModCardMetadataItem(
+    @DrawableRes iconResId: Int,
+    text: String,
+    accessibilityText: String,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier.clearAndSetSemantics {
+            contentDescription = accessibilityText
+        },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(3.dp)
+    ) {
+        Icon(
+            painter = painterResource(iconResId),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.outline,
+            modifier = Modifier.size(14.dp)
+        )
+        Text(
+            text = text,
+            modifier = Modifier.weight(1f, fill = false),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.outline,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+private fun formatModFileSize(bytes: Long): String? {
+    if (bytes <= 0L) return null
+    val units = arrayOf("B", "KB", "MB", "GB")
+    var value = bytes.toDouble()
+    var unitIndex = 0
+    while (value >= 1024.0 && unitIndex < units.lastIndex) {
+        value /= 1024.0
+        unitIndex++
+    }
+    return if (unitIndex == 0) {
+        "$bytes ${units[unitIndex]}"
+    } else {
+        "${String.format(Locale.US, "%.1f", value)} ${units[unitIndex]}"
     }
 }
 

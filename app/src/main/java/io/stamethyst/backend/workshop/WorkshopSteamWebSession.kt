@@ -58,6 +58,10 @@ internal class WorkshopSteamWebSession(
     private var primedScope: String? = null
     private var webLoginContext: SteamWebLoginContext? = null
 
+    fun currentSessionId(): String? = synchronized(lock) {
+        webLoginContext?.sessionId
+    }
+
     suspend fun ensurePrimed(
         account: SteamAccountSession?,
         client: OkHttpClient,

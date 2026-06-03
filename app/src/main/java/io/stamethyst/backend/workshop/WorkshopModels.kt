@@ -123,6 +123,14 @@ data class WorkshopChangeNotes(
     val url: String,
 )
 
+data class WorkshopSubscriptionResult(
+    val publishedFileId: ULong,
+    val appId: UInt,
+    val subscribedAtMillis: Long,
+)
+
+class WorkshopSteamLoginRequiredException : IllegalStateException("Steam login is required for this workshop action.")
+
 data class WorkshopCommentThreadContext(
     val ownerId: String,
     val featureId: String,

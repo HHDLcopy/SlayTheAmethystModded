@@ -554,6 +554,14 @@ object LauncherPreferences {
         LauncherConfig.saveWorkshopAutoImportAtlasDownscaleMaxEdgePx(context, maxEdgePx)
     }
 
+    fun isWorkshopSubscribeWarningDismissed(context: Context): Boolean {
+        return LauncherConfig.isWorkshopSubscribeWarningDismissed(context)
+    }
+
+    fun setWorkshopSubscribeWarningDismissed(context: Context, dismissed: Boolean) {
+        LauncherConfig.setWorkshopSubscribeWarningDismissed(context, dismissed)
+    }
+
     fun readLastWorkshopUpdateCheckAtMs(context: Context): Long {
         return LauncherConfig.readLastWorkshopUpdateCheckAtMs(context)
     }

@@ -2196,7 +2196,16 @@
     <string name="workshop_description_empty">該模組暫未提供簡介。</string>
     <string name="workshop_description_collapse">收起簡介</string>
     <string name="workshop_description_expand">展開簡介</string>
+    <string name="workshop_action_view_log">查看日誌</string>
     <string name="workshop_action_view_change_notes">查看更新日誌</string>
+    <string name="workshop_action_subscribe_mod">訂閱模組</string>
+    <string name="workshop_action_subscribed_mod">已訂閱</string>
+    <string name="workshop_subscribe_confirm_title">是否訂閱該模組</string>
+    <string name="workshop_subscribe_confirm_message">訂閱 %1$s 後，將同步訂閱到 Steam 帳號，電腦上會自動下載該模組。</string>
+    <string name="workshop_subscribe_do_not_remind">不再提醒</string>
+    <string name="workshop_subscribe_requires_steam_login">該功能僅在登入 Steam 後才可使用。</string>
+    <string name="workshop_subscribe_success">已訂閱 %1$s。</string>
+    <string name="workshop_subscribe_failed">訂閱失敗：%1$s</string>
     <string name="workshop_change_notes_title">更新日誌</string>
     <string name="workshop_change_notes_latest_title">最新更新內容</string>
     <string name="workshop_change_notes_loading">正在載入更新日誌…</string>

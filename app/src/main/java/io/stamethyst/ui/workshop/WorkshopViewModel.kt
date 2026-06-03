@@ -31,6 +31,7 @@ import io.stamethyst.backend.workshop.WorkshopMetadataStore
 import io.stamethyst.backend.workshop.WorkshopModCategory
 import io.stamethyst.backend.workshop.WorkshopModCardState
 import io.stamethyst.backend.workshop.WorkshopService
+import io.stamethyst.backend.workshop.WorkshopSteamLoginRequiredException
 import io.stamethyst.backend.workshop.WorkshopUpdateCheckResult
 import io.stamethyst.backend.workshop.WorkshopUpdateChecker
 import io.stamethyst.backend.workshop.buildBaiduModDescriptionReference
@@ -390,6 +391,7 @@ internal class WorkshopViewModel : ViewModel() {
                     nextPage = page + 1,
                     hasMorePages = result.hasNextPage,
                     steamLoggedIn = currentService.hasSteamAuth(),
+                    subscribedWorkshopIds = uiState.subscribedWorkshopIds + result.items.map { it.publishedFileId },
                     errorMessage = null,
                 )
             }.onFailure { error ->
@@ -426,6 +428,8 @@ internal class WorkshopViewModel : ViewModel() {
                 detailTranslationErrorMessage = null,
                 detailChangeNotesLoadingId = null,
                 detailChangeNotesErrorMessage = null,
+                detailSubscriptionLoadingId = null,
+                detailSubscriptionMessage = null,
             )
             runCatching {
                 val summaryFallback = fallbackSummary ?: findSummaryFallback(appId, publishedFileId)
@@ -580,6 +584,64 @@ internal class WorkshopViewModel : ViewModel() {
     fun downloadSelected(context: Context) {
         val details = uiState.selected ?: return
         startDownloadAfterDependencyCheck(context, details.summary, details)
+    }
+
+    fun showWorkshopSubscribeSteamLoginRequired(context: Context) {
+        uiState = uiState.copy(
+            detailSubscriptionLoadingId = null,
+            detailSubscriptionMessage = context.getString(R.string.workshop_subscribe_requires_steam_login),
+        )
+    }
+
+    fun dismissWorkshopSubscribeMessage() {
+        uiState = uiState.copy(detailSubscriptionMessage = null)
+    }
+
+    fun subscribeSelected(context: Context) {
+        val currentService = service ?: return
+        val details = uiState.selected ?: return
+        val summary = details.summary
+        if (uiState.detailSubscriptionLoadingId == summary.publishedFileId ||
+            uiState.subscribedWorkshopIds.contains(summary.publishedFileId)
+        ) {
+            return
+        }
+        if (!currentService.hasSteamAuth()) {
+            showWorkshopSubscribeSteamLoginRequired(context)
+            return
+        }
+        uiState = uiState.copy(
+            detailSubscriptionLoadingId = summary.publishedFileId,
+            detailSubscriptionMessage = null,
+        )
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    currentService.subscribeToPublishedFile(summary.appId, summary.publishedFileId)
+                }
+            }.onSuccess {
+                uiState = uiState.copy(
+                    detailSubscriptionLoadingId = null,
+                    subscribedWorkshopIds = uiState.subscribedWorkshopIds + summary.publishedFileId,
+                    detailSubscriptionMessage = context.getString(
+                        R.string.workshop_subscribe_success,
+                        summary.title.ifBlank { summary.publishedFileId.toString() },
+                    ),
+                )
+            }.onFailure { error ->
+                if (error is WorkshopSteamLoginRequiredException) {
+                    showWorkshopSubscribeSteamLoginRequired(context)
+                    return@onFailure
+                }
+                uiState = uiState.copy(
+                    detailSubscriptionLoadingId = null,
+                    detailSubscriptionMessage = context.getString(
+                        R.string.workshop_subscribe_failed,
+                        error.message ?: error.javaClass.simpleName,
+                    ),
+                )
+            }
+        }
     }
 
     fun toggleSelectedDetailsTranslation(
@@ -1131,6 +1193,9 @@ internal data class WorkshopUiState(
     val detailChangeNotes: Map<String, WorkshopChangeNotes> = emptyMap(),
     val detailChangeNotesLoadingId: ULong? = null,
     val detailChangeNotesErrorMessage: String? = null,
+    val detailSubscriptionLoadingId: ULong? = null,
+    val subscribedWorkshopIds: Set<ULong> = emptySet(),
+    val detailSubscriptionMessage: String? = null,
     val errorMessage: String? = null,
 ) {
     companion object {

@@ -131,6 +131,50 @@ internal class WorkshopService(
         }.getOrThrow()
     }
 
+    suspend fun subscribeToPublishedFile(
+        appId: UInt,
+        publishedFileId: ULong,
+    ): WorkshopSubscriptionResult = withContext(Dispatchers.IO) {
+        val account = readSteamAccountSession(identity)
+            ?: throw WorkshopSteamLoginRequiredException()
+        steamWebSession.ensurePrimed(
+            account = account,
+            client = workshopClient,
+            languagePreference = steamLanguagePreference,
+        )
+        val sessionId = steamWebSession.currentSessionId()
+            ?: throw WorkshopSteamLoginRequiredException()
+        val requestBody = FormBody.Builder()
+            .add("id", publishedFileId.toString())
+            .add("appid", appId.toString())
+            .add("sessionid", sessionId)
+            .build()
+        val request = Request.Builder()
+            .url("https://steamcommunity.com/sharedfiles/subscribe".toHttpUrl())
+            .post(requestBody)
+            .header("X-Requested-With", "XMLHttpRequest")
+            .header("Accept", "application/json, text/javascript, */*; q=0.01")
+            .header("Referer", "https://steamcommunity.com/sharedfiles/filedetails/?id=$publishedFileId")
+            .header("Origin", "https://steamcommunity.com")
+            .header("User-Agent", USER_AGENT)
+            .build()
+        workshopClient.newCall(request).execute().use { response ->
+            val payload = response.body.string()
+            if (looksLikeSteamLoginUrl(response.request.url.toString()) || looksLikeSteamLoginPage(payload)) {
+                throw WorkshopSteamLoginRequiredException()
+            }
+            if (!response.isSuccessful) {
+                error("Steam workshop subscribe failed: ${response.code}")
+            }
+            parseSubscribeResponse(payload)
+            WorkshopSubscriptionResult(
+                publishedFileId = publishedFileId,
+                appId = appId,
+                subscribedAtMillis = System.currentTimeMillis(),
+            )
+        }
+    }
+
     suspend fun getDetails(
         appId: UInt,
         publishedFileId: ULong,
@@ -254,6 +298,26 @@ internal class WorkshopService(
                 json.decodeFromString<PublishedFileDetailsEnvelope>(payload).response.publishedFileDetails
             }.getOrDefault(emptyList())
         }
+    }
+
+    private fun parseSubscribeResponse(payload: String) {
+        val trimmed = payload.trim()
+        if (trimmed.isBlank()) {
+            error("Steam workshop subscribe returned an empty response")
+        }
+        val responseJson = runCatching { json.parseToJsonElement(trimmed).jsonObject }
+            .getOrElse {
+                if (looksLikeCaptivePortal(trimmed)) {
+                    error("当前网络返回了 Wi-Fi/校园网认证页面，请先完成网络认证后重试")
+                }
+                error("Steam workshop subscribe returned an unexpected response")
+            }
+        if (responseJson.successValue("success") == true) return
+        val message = responseJson.stringValue("errmsg")
+            .ifBlank { responseJson.stringValue("error") }
+            .ifBlank { responseJson.stringValue("message") }
+            .ifBlank { "Steam workshop subscribe failed" }
+        error(message)
     }
 
     private fun loadLocalizedDetailPage(
@@ -1197,6 +1261,15 @@ private fun JsonObject.longValue(key: String): Long? =
 
 private fun JsonObject.intValue(key: String): Int? =
     this[key]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
+
+private fun JsonObject.successValue(key: String): Boolean? {
+    val raw = this[key]?.jsonPrimitive?.contentOrNull?.trim()?.lowercase() ?: return null
+    return when (raw) {
+        "1", "true", "ok", "success" -> true
+        "0", "false", "fail", "failed" -> false
+        else -> raw.toIntOrNull()?.let { it == 1 }
+    }
+}
 
 private fun MatchResult.groupValueOrNull(name: String): String? =
     runCatching { groups[name]?.value }.getOrNull()

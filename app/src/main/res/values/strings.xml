@@ -2196,7 +2196,16 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="workshop_description_empty">This mod has no description.</string>
     <string name="workshop_description_collapse">Collapse description</string>
     <string name="workshop_description_expand">Expand description</string>
+    <string name="workshop_action_view_log">View log</string>
     <string name="workshop_action_view_change_notes">View changelog</string>
+    <string name="workshop_action_subscribe_mod">Subscribe mod</string>
+    <string name="workshop_action_subscribed_mod">Subscribed</string>
+    <string name="workshop_subscribe_confirm_title">Subscribe to this mod?</string>
+    <string name="workshop_subscribe_confirm_message">After subscribing to %1$s, the subscription will be synced to your Steam account and Steam on your computer will automatically download this mod.</string>
+    <string name="workshop_subscribe_do_not_remind">Do not remind again</string>
+    <string name="workshop_subscribe_requires_steam_login">This feature is only available after signing in to Steam.</string>
+    <string name="workshop_subscribe_success">Subscribed to %1$s.</string>
+    <string name="workshop_subscribe_failed">Subscription failed: %1$s</string>
     <string name="workshop_change_notes_title">Changelog</string>
     <string name="workshop_change_notes_latest_title">Latest update</string>
     <string name="workshop_change_notes_loading">Loading changelog...</string>

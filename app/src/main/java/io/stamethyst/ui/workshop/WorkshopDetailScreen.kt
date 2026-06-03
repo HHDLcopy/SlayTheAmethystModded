@@ -31,6 +31,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -66,6 +67,7 @@ import io.stamethyst.backend.workshop.WorkshopItemSummary
 import io.stamethyst.ui.Icons
 import io.stamethyst.ui.SimpleMarkdownCard
 import io.stamethyst.ui.icon.ArrowBack
+import io.stamethyst.ui.preferences.LauncherPreferences
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -128,6 +130,8 @@ internal fun WorkshopDetailScreen(
         summary.title.isNotBlank() || summary.description.isNotBlank()
     } == true
     var showChangeNotesDialog by rememberSaveable(publishedFileId.toString()) { mutableStateOf(false) }
+    var showSubscribeConfirmDialog by rememberSaveable(publishedFileId.toString()) { mutableStateOf(false) }
+    var dontRemindSubscribeWarning by rememberSaveable(publishedFileId.toString()) { mutableStateOf(false) }
     val primaryContentState = when {
         state.detailLoadingId == publishedFileId && selectedDetails == null -> DetailPrimaryContentState.Loading
         state.errorMessage != null && selectedDetails == null -> DetailPrimaryContentState.Error
@@ -231,9 +235,25 @@ internal fun WorkshopDetailScreen(
                                     installedMods = state.installedMods,
                                     downloadTasks = WorkshopDownloadCenterStore.tasks,
                                 ),
+                                subscriptionLoading = state.detailSubscriptionLoadingId == details.summary.publishedFileId,
+                                subscribed = state.subscribedWorkshopIds.contains(details.summary.publishedFileId),
                                 onDownload = {
                                     requestNotificationPermissionIfNeeded()
                                     viewModel.downloadSelected(context.applicationContext)
+                                },
+                                onViewChangeNotes = {
+                                    showChangeNotesDialog = true
+                                    viewModel.loadSelectedChangeNotes(context.applicationContext)
+                                },
+                                onSubscribe = {
+                                    if (!state.steamLoggedIn) {
+                                        viewModel.showWorkshopSubscribeSteamLoginRequired(context.applicationContext)
+                                    } else if (LauncherPreferences.isWorkshopSubscribeWarningDismissed(context.applicationContext)) {
+                                        viewModel.subscribeSelected(context.applicationContext)
+                                    } else {
+                                        dontRemindSubscribeWarning = false
+                                        showSubscribeConfirmDialog = true
+                                    }
                                 },
                             )
                         } ?: LoadingDetailCard()
@@ -271,10 +291,6 @@ internal fun WorkshopDetailScreen(
                         },
                         isTranslating = isTranslatingDetails,
                         translationErrorMessage = state.detailTranslationErrorMessage,
-                        onViewChangeNotes = {
-                            showChangeNotesDialog = true
-                            viewModel.loadSelectedChangeNotes(context.applicationContext)
-                        },
                     )
                 }
                 item(key = "workshop-detail-comments") {
@@ -318,6 +334,87 @@ internal fun WorkshopDetailScreen(
             onDismiss = { showChangeNotesDialog = false },
         )
     }
+
+    if (showSubscribeConfirmDialog && selectedDetails != null) {
+        WorkshopSubscribeConfirmDialog(
+            modTitle = selectedDetails.summary.title.ifBlank { selectedDetails.summary.publishedFileId.toString() },
+            dontRemind = dontRemindSubscribeWarning,
+            onDontRemindChange = { dontRemindSubscribeWarning = it },
+            onDismiss = { showSubscribeConfirmDialog = false },
+            onConfirm = {
+                if (dontRemindSubscribeWarning) {
+                    LauncherPreferences.setWorkshopSubscribeWarningDismissed(context.applicationContext, true)
+                }
+                showSubscribeConfirmDialog = false
+                viewModel.subscribeSelected(context.applicationContext)
+            },
+        )
+    }
+
+    state.detailSubscriptionMessage?.let { message ->
+        WorkshopSubscribeMessageDialog(
+            message = message,
+            onDismiss = { viewModel.dismissWorkshopSubscribeMessage() },
+        )
+    }
+}
+
+@Composable
+private fun WorkshopSubscribeConfirmDialog(
+    modTitle: String,
+    dontRemind: Boolean,
+    onDontRemindChange: (Boolean) -> Unit,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.workshop_subscribe_confirm_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(stringResource(R.string.workshop_subscribe_confirm_message, modTitle))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Checkbox(
+                        checked = dontRemind,
+                        onCheckedChange = onDontRemindChange,
+                    )
+                    Text(
+                        text = stringResource(R.string.workshop_subscribe_do_not_remind),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onConfirm) {
+                Text(stringResource(R.string.workshop_action_subscribe_mod))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.main_folder_dialog_cancel))
+            }
+        },
+    )
+}
+
+@Composable
+private fun WorkshopSubscribeMessageDialog(
+    message: String,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        text = { Text(message) },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.common_action_acknowledge))
+            }
+        },
+    )
 }
 
 @Composable
@@ -414,7 +511,11 @@ private fun WorkshopChangeNotesDialog(
 private fun DetailModCard(
     details: WorkshopItemDetails,
     downloadState: WorkshopModDownloadState,
+    subscriptionLoading: Boolean,
+    subscribed: Boolean,
     onDownload: () -> Unit,
+    onViewChangeNotes: () -> Unit,
+    onSubscribe: () -> Unit,
 ) {
     Card(
         colors = workshopDetailCardColors(),
@@ -453,6 +554,45 @@ private fun DetailModCard(
                 }
             }
             DetailMetaGrid(details = details)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedButton(
+                    onClick = onViewChangeNotes,
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp),
+                ) {
+                    Text(stringResource(R.string.workshop_action_view_log))
+                }
+                Button(
+                    onClick = onSubscribe,
+                    enabled = !subscriptionLoading && !subscribed,
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp),
+                ) {
+                    if (subscriptionLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                        )
+                    } else {
+                        Text(
+                            stringResource(
+                                if (subscribed) {
+                                    R.string.workshop_action_subscribed_mod
+                                } else {
+                                    R.string.workshop_action_subscribe_mod
+                                },
+                            )
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -618,7 +758,6 @@ private fun DetailDescriptionCard(
     text: String,
     isTranslating: Boolean,
     translationErrorMessage: String?,
-    onViewChangeNotes: () -> Unit,
 ) {
     var expanded by rememberSaveable(publishedFileId.toString()) { mutableStateOf(false) }
     val description = text.ifBlank { stringResource(R.string.workshop_description_empty) }
@@ -650,14 +789,6 @@ private fun DetailDescriptionCard(
                 maxLines = if (expanded) Int.MAX_VALUE else 4,
                 overflow = TextOverflow.Ellipsis,
             )
-            OutlinedButton(
-                onClick = onViewChangeNotes,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 48.dp),
-            ) {
-                Text(stringResource(R.string.workshop_action_view_change_notes))
-            }
             if (isTranslating) {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),

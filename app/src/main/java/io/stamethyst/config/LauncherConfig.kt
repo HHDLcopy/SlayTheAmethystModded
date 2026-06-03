@@ -162,6 +162,8 @@ object LauncherConfig {
         "workshop_auto_import_atlas_downscale_enabled"
     private const val PREF_KEY_WORKSHOP_AUTO_IMPORT_ATLAS_DOWNSCALE_MAX_EDGE_PX =
         "workshop_auto_import_atlas_downscale_max_edge_px"
+    private const val PREF_KEY_WORKSHOP_SUBSCRIBE_WARNING_DISMISSED =
+        "workshop_subscribe_warning_dismissed"
     private const val PREF_KEY_LAST_WORKSHOP_UPDATE_CHECK_AT_MS = "last_workshop_update_check_at_ms"
     private const val PREF_KEY_STEAM_CLOUD_SAVE_MODE = "steam_cloud_save_mode"
     private const val PREF_KEY_STEAM_CLOUD_SYNC_BLACKLIST_PATHS =
@@ -1512,6 +1514,19 @@ object LauncherConfig {
                 PREF_KEY_WORKSHOP_AUTO_IMPORT_ATLAS_DOWNSCALE_MAX_EDGE_PX,
                 normalizeWorkshopAutoImportAtlasDownscaleMaxEdgePx(maxEdgePx)
             )
+        }
+    }
+
+    fun isWorkshopSubscribeWarningDismissed(context: Context): Boolean {
+        return prefs(context, crossProcess = true).getBoolean(
+            PREF_KEY_WORKSHOP_SUBSCRIBE_WARNING_DISMISSED,
+            false
+        )
+    }
+
+    fun setWorkshopSubscribeWarningDismissed(context: Context, dismissed: Boolean) {
+        prefs(context, crossProcess = true).edit(commit = true) {
+            putBoolean(PREF_KEY_WORKSHOP_SUBSCRIBE_WARNING_DISMISSED, dismissed)
         }
     }
 

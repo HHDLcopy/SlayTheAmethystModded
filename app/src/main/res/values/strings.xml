@@ -1132,7 +1132,7 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="settings_steam_cloud_pull_action">Pull now</string>
     <string name="settings_steam_cloud_manifest_dialog_summary">%1$d files total (%2$d preferences, %3$d saves)</string>
     <string name="settings_steam_cloud_push_confirm_title">Confirm manual upload</string>
-    <string name="settings_steam_cloud_push_confirm_desc">This will upload %1$d local file(s) to Steam Cloud (%2$s total). Only local-only changes are uploaded; remote deletions are never issued in Phase 2.</string>
+    <string name="settings_steam_cloud_push_confirm_desc">This will upload %1$d local file(s) to Steam Cloud (%2$s total). Cloud files under `saves/` may be removed when the matching local save file was deleted; preferences and other cloud-only files stay untouched.</string>
     <string name="settings_steam_cloud_push_confirm_remote_only">%1$d remote-only change(s) will remain untouched. Pull first if you want those changes locally.</string>
     <string name="settings_steam_cloud_push_action">Upload now</string>
     <string name="settings_steam_cloud_upload_plan_dialog_title">Steam Cloud upload plan</string>
@@ -1199,9 +1199,9 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="settings_steam_cloud_manifest_refresh_failed">Steam Cloud manifest refresh failed: %1$s</string>
     <string name="settings_steam_cloud_manifest_missing">No cached Steam Cloud manifest is available yet.</string>
     <string name="settings_steam_cloud_upload_plan_failed">Failed to build the Steam Cloud upload plan: %1$s</string>
-    <string name="settings_steam_cloud_push_succeeded">Steam Cloud manual upload completed: %1$d files uploaded.</string>
+    <string name="settings_steam_cloud_push_succeeded">Steam Cloud manual sync completed: %1$d file(s) uploaded, %2$d remote save file(s) removed.</string>
     <string name="settings_steam_cloud_push_failed">Steam Cloud manual upload failed: %1$s</string>
-    <string name="settings_steam_cloud_push_no_changes">No local-only Steam Cloud changes are ready to upload.</string>
+    <string name="settings_steam_cloud_push_no_changes">No safe local Steam Cloud changes are ready to sync.</string>
     <string name="settings_steam_cloud_push_blocked_by_conflicts">Steam Cloud upload blocked: %1$d conflict(s) require manual review.</string>
     <string name="settings_steam_cloud_pull_succeeded">Steam Cloud full pull completed: %1$d files applied.</string>
     <string name="settings_steam_cloud_pull_failed">Steam Cloud full pull failed: %1$s</string>

@@ -15,7 +15,6 @@ import io.stamethyst.backend.mods.MtsLaunchManifestValidator
 import io.stamethyst.backend.workshop.WorkshopDownloadProcessService
 import io.stamethyst.backend.workshop.WorkshopDownloadTaskRecord
 import io.stamethyst.backend.workshop.WorkshopDownloadTaskStore
-import io.stamethyst.backend.workshop.WorkshopInterruptedDownloadRecovery
 import io.stamethyst.backend.workshop.WorkshopInstalledModRecord
 import io.stamethyst.backend.workshop.WorkshopMetadataStore
 import io.stamethyst.backend.workshop.WorkshopModCardState
@@ -24,7 +23,6 @@ import io.stamethyst.backend.workshop.WorkshopResolvedModState
 import io.stamethyst.backend.workshop.WorkshopResolvedModStateKind
 import io.stamethyst.backend.workshop.allLocalJarPaths
 import io.stamethyst.backend.workshop.isActiveDownload
-import io.stamethyst.backend.workshop.isRunningDownload
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.model.WorkshopModState
@@ -56,10 +54,6 @@ internal data class MainMtsLaunchValidationIssue(
 internal class MainModManagementController(
     private val hostCallbacks: Host
 ) {
-    private companion object {
-        const val ACTIVE_WORKSHOP_DOWNLOAD_RECOVERY_GRACE_MS = 30_000L
-    }
-
     interface Host {
         fun canEditMainScreenState(): Boolean
         fun isBusy(): Boolean
@@ -150,7 +144,6 @@ internal class MainModManagementController(
         if (!storageAccessible) {
             return
         }
-        recoverInterruptedWorkshopDownloads(host)
         WorkshopMetadataStore(host).markMissingFiles()
         val mods = loadModItems(host)
         requiredModsSnapshot.clear()
@@ -175,48 +168,6 @@ internal class MainModManagementController(
         MainFolderAssignmentHandoffStore.consumePendingAssignments(host, folderStateStore)
         sanitizeFolderAssignments(optionalMods)
         persistFolderState(host)
-    }
-
-    private fun recoverInterruptedWorkshopDownloads(host: Activity) {
-        val metadataStore = WorkshopMetadataStore(host)
-        val taskStore = WorkshopDownloadTaskStore(host)
-        val now = System.currentTimeMillis()
-        taskStore.list().forEach { task ->
-            if (task.shouldRecoverInterruptedWorkshopDownload(host, now)) {
-                WorkshopInterruptedDownloadRecovery.recoverFinishedTransferIfPossible(
-                    context = host,
-                    metadataStore = metadataStore,
-                    taskStore = taskStore,
-                    task = task,
-                )
-            }
-        }
-        taskStore.recoverInterruptedTasksWithResult { task ->
-            task.shouldRecoverInterruptedWorkshopDownload(host, now)
-        }.forEach { task ->
-            if (WorkshopInterruptedDownloadRecovery.recoverFinishedTransferIfPossible(
-                    context = host,
-                    metadataStore = metadataStore,
-                    taskStore = taskStore,
-                    task = task,
-                )
-            ) {
-                return@forEach
-            }
-            val summary = task.details.summary
-            metadataStore.updateState(
-                appId = summary.appId,
-                publishedFileId = summary.publishedFileId,
-                state = WorkshopModCardState.DownloadPaused,
-                statusText = task.message.ifBlank { host.getString(R.string.workshop_download_task_message_paused) },
-            )
-        }
-    }
-
-    private fun WorkshopDownloadTaskRecord.shouldRecoverInterruptedWorkshopDownload(host: Activity, now: Long): Boolean {
-        if (WorkshopDownloadProcessService.isActiveDownload(host, publishedFileId)) return false
-        if (status.isRunningDownload() && now - updatedAtMillis < ACTIVE_WORKSHOP_DOWNLOAD_RECOVERY_GRACE_MS) return false
-        return true
     }
 
     fun snapshot(): Snapshot {
@@ -1651,11 +1602,9 @@ internal class MainModManagementController(
     }
 
     private fun loadDownloadCenterTaskRecords(host: Activity): Map<ULong, WorkshopDownloadTaskRecord> {
-        val persistedTasks = WorkshopDownloadTaskStore(host).list()
-            .map { task -> task.normalizeActiveDownloadTask(host) }
         val visibleDownloadCenterTasks = WorkshopDownloadCenterStore.tasks
             .map { task -> task.toRecord().normalizeActiveDownloadTask(host) }
-        return (persistedTasks + visibleDownloadCenterTasks)
+        return visibleDownloadCenterTasks
             .groupBy { it.publishedFileId }
             .mapValues { (_, tasks) -> mergeDownloadCenterTaskRecords(tasks) }
     }

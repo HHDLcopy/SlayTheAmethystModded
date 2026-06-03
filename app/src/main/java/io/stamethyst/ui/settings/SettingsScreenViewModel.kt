@@ -1371,7 +1371,7 @@ class SettingsScreenViewModel : ViewModel() {
                             )
                         }
 
-                        plan.uploadCandidates.isEmpty() -> {
+                        plan.uploadCandidates.isEmpty() && plan.remoteDeleteCandidates.isEmpty() -> {
                             uiState = uiState.copy(steamCloudUploadPlanDialogSnapshot = plan)
                             showToast(
                                 host,
@@ -1426,7 +1426,8 @@ class SettingsScreenViewModel : ViewModel() {
                         host,
                         UiText.StringResource(
                             R.string.settings_steam_cloud_push_succeeded,
-                            result.uploadedFileCount
+                            result.uploadedFileCount,
+                            result.deletedRemoteFileCount
                         )
                     )
                     refreshStatus(host)

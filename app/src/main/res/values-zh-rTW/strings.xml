@@ -1132,7 +1132,7 @@
     <string name="settings_steam_cloud_pull_action">立即拉取</string>
     <string name="settings_steam_cloud_manifest_dialog_summary">共 %1$d 個檔案（preferences %2$d，saves %3$d）</string>
     <string name="settings_steam_cloud_push_confirm_title">確認手動上傳</string>
-    <string name="settings_steam_cloud_push_confirm_desc">這會把 %1$d 個本地檔案上傳到 Steam Cloud（共 %2$s）。只會上傳本地單端變更；Phase 2 不會發起遠端刪除。</string>
+    <string name="settings_steam_cloud_push_confirm_desc">這會把 %1$d 個本地檔案上傳到 Steam Cloud（共 %2$s）。當本地刪除了對應存檔檔案時，可能會刪除雲端 `saves/` 下的匹配檔案；preferences 和其他僅雲端檔案會保持不動。</string>
     <string name="settings_steam_cloud_push_confirm_remote_only">另有 %1$d 個僅雲端變更會保持不動；如果你希望把它們同步到本地，請先執行拉取。</string>
     <string name="settings_steam_cloud_push_action">立即上傳</string>
     <string name="settings_steam_cloud_upload_plan_dialog_title">Steam Cloud 上傳計劃</string>
@@ -1199,9 +1199,9 @@
     <string name="settings_steam_cloud_manifest_refresh_failed">Steam Cloud manifest 重新整理失敗：%1$s</string>
     <string name="settings_steam_cloud_manifest_missing">當前還沒有可檢視的快取 Steam Cloud manifest。</string>
     <string name="settings_steam_cloud_upload_plan_failed">構建 Steam Cloud 上傳計劃失敗：%1$s</string>
-    <string name="settings_steam_cloud_push_succeeded">Steam Cloud 手動上傳完成：已上傳 %1$d 個檔案。</string>
+    <string name="settings_steam_cloud_push_succeeded">Steam Cloud 手動同步完成：上傳 %1$d 個檔案，刪除 %2$d 個雲端存檔檔案。</string>
     <string name="settings_steam_cloud_push_failed">Steam Cloud 手動上傳失敗：%1$s</string>
-    <string name="settings_steam_cloud_push_no_changes">當前沒有可安全上傳的本地單端 Steam Cloud 變更。</string>
+    <string name="settings_steam_cloud_push_no_changes">當前沒有可安全同步的本地 Steam Cloud 變更。</string>
     <string name="settings_steam_cloud_push_blocked_by_conflicts">Steam Cloud 上傳被阻止：檢測到 %1$d 個需要人工處理的衝突。</string>
     <string name="settings_steam_cloud_pull_succeeded">Steam Cloud 全量拉取完成：已應用 %1$d 個檔案。</string>
     <string name="settings_steam_cloud_pull_failed">Steam Cloud 全量拉取失敗：%1$s</string>

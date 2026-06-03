@@ -333,7 +333,7 @@ class SteamCloudDiffPlannerTest {
     }
 
     @Test
-    fun buildUploadPlan_ignoresLocalDeletesInPhase2() {
+    fun buildUploadPlan_ignoresPreferenceLocalDeletes() {
         val baseline = SteamCloudSyncBaseline(
             syncedAtMs = 1L,
             localEntries = listOf(
@@ -365,7 +365,58 @@ class SteamCloudDiffPlannerTest {
 
         assertEquals(0, plan.uploadCandidates.size)
         assertEquals(0, plan.conflicts.size)
+        assertEquals(0, plan.remoteDeleteCandidates.size)
         assertTrue(plan.warnings.any { it.contains("do not delete Steam Cloud files") })
+    }
+
+    @Test
+    fun buildUploadPlan_deletesRemoteSaveWhenLocalSaveWasDeleted() {
+        val baseline = SteamCloudSyncBaseline(
+            syncedAtMs = 1L,
+            localEntries = listOf(
+                localEntry(
+                    localRelativePath = "saves/WATCHER.autosave",
+                    rootKind = SteamCloudRootKind.SAVES,
+                    sha256 = "baseline",
+                )
+            ),
+            remoteEntries = listOf(
+                remoteEntry(
+                    remotePath = "%GameInstall%saves/WATCHER.autosave",
+                    localRelativePath = "saves/WATCHER.autosave",
+                    rootKind = SteamCloudRootKind.SAVES,
+                    rawSize = 100L,
+                    timestamp = 100L,
+                )
+            )
+        )
+
+        val plan = SteamCloudDiffPlanner.buildUploadPlan(
+            plannedAtMs = 2L,
+            currentLocalEntries = emptyList(),
+            currentRemoteSnapshot = remoteSnapshot(
+                remoteEntry(
+                    remotePath = "%GameInstall%saves/WATCHER.autosave",
+                    localRelativePath = "saves/WATCHER.autosave",
+                    rootKind = SteamCloudRootKind.SAVES,
+                    rawSize = 100L,
+                    timestamp = 100L,
+                )
+            ),
+            baseline = baseline,
+        )
+
+        assertEquals(0, plan.uploadCandidates.size)
+        assertEquals(0, plan.conflicts.size)
+        assertEquals(0, plan.remoteOnlyChanges.size)
+        assertEquals(1, plan.remoteDeleteCandidates.size)
+        assertEquals(
+            "%GameInstall%saves/WATCHER.autosave",
+            plan.remoteDeleteCandidates.single().remotePath
+        )
+        assertEquals("saves/WATCHER.autosave", plan.remoteDeleteCandidates.single().localRelativePath)
+        assertEquals(SteamCloudRootKind.SAVES, plan.remoteDeleteCandidates.single().rootKind)
+        assertFalse(plan.warnings.any { it.contains("do not delete Steam Cloud files") })
     }
 
     private fun remoteSnapshot(vararg entries: SteamCloudManifestEntry): SteamCloudManifestSnapshot {

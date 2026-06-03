@@ -19,18 +19,19 @@ internal object WorkshopDownloadCenterStore {
 
     val tasks = mutableStateListOf<WorkshopDownloadTaskUi>()
     val taskStatuses = mutableStateMapOf<ULong, WorkshopDownloadTaskStatus>()
+    private val initLock = Any()
     private var store: WorkshopDownloadTaskStore? = null
     private var appContext: Context? = null
-    private var loaded = false
+    private var recoveredInterruptedDownloads = false
 
     fun initialize(context: Context) {
-        appContext = context.applicationContext
-        if (!loaded) {
-            loaded = true
-            store = WorkshopDownloadTaskStore(context)
-            recoverInterruptedDownloads(context)
-            refresh()
-        }
+        ensureStore(context)
+    }
+
+    fun loadTasksWithRecovery(context: Context): List<WorkshopDownloadTaskUi> {
+        ensureStore(context)
+        recoverInterruptedDownloadsIfNeeded(context)
+        return loadTasks()
     }
 
     fun refresh() {
@@ -51,8 +52,8 @@ internal object WorkshopDownloadCenterStore {
     }
 
     fun upsert(task: WorkshopDownloadTaskUi) {
+        upsertInMemory(task)
         store?.upsert(task.toRecord())
-        refresh()
     }
 
     fun persistUpsert(task: WorkshopDownloadTaskUi) {
@@ -63,6 +64,23 @@ internal object WorkshopDownloadCenterStore {
         taskStatuses[task.publishedFileId] = task.status
         val index = tasks.indexOfFirst { it.publishedFileId == task.publishedFileId }
         if (index >= 0) tasks[index] = task else tasks.add(0, task)
+    }
+
+    fun updateInMemory(
+        publishedFileId: ULong,
+        transform: (WorkshopDownloadTaskUi) -> WorkshopDownloadTaskUi,
+    ): WorkshopDownloadTaskUi? {
+        val index = tasks.indexOfFirst { it.publishedFileId == publishedFileId }
+        if (index < 0) return null
+        val updatedTask = transform(tasks[index])
+        tasks[index] = updatedTask
+        taskStatuses[publishedFileId] = updatedTask.status
+        return updatedTask
+    }
+
+    fun removeInMemory(publishedFileId: ULong) {
+        taskStatuses.remove(publishedFileId)
+        tasks.removeAll { it.publishedFileId == publishedFileId }
     }
 
     private fun replaceTaskStatuses(loadedTasks: List<WorkshopDownloadTaskUi>) {
@@ -80,20 +98,62 @@ internal object WorkshopDownloadCenterStore {
     }
 
     fun update(publishedFileId: ULong, transform: (WorkshopDownloadTaskUi) -> WorkshopDownloadTaskUi) {
+        val updatedTask = updateInMemory(publishedFileId, transform)
+        if (updatedTask != null) {
+            store?.upsert(updatedTask.toRecord())
+            return
+        }
         store?.update(publishedFileId) { record -> transform(record.toUi(appContext)).toRecord() }
-        refresh()
+    }
+
+    fun persistUpdate(publishedFileId: ULong, transform: (WorkshopDownloadTaskUi) -> WorkshopDownloadTaskUi) {
+        store?.update(publishedFileId) { record -> transform(record.toUi(appContext)).toRecord() }
     }
 
     fun remove(publishedFileId: ULong) {
+        removeInMemory(publishedFileId)
         store?.remove(publishedFileId)
-        refresh()
     }
 
-    fun find(publishedFileId: ULong): WorkshopDownloadTaskUi? = store?.find(publishedFileId)?.toUi(appContext)
+    fun persistRemove(publishedFileId: ULong) {
+        store?.remove(publishedFileId)
+    }
 
-    fun hasRunningTask(): Boolean = store?.hasRunningTask() == true
+    fun find(publishedFileId: ULong): WorkshopDownloadTaskUi? = tasks.firstOrNull { it.publishedFileId == publishedFileId }
 
-    fun nextQueuedTask(): WorkshopDownloadTaskUi? = store?.nextQueuedTask()?.toUi(appContext)
+    fun hasRunningTask(): Boolean = tasks.any { it.status.isRunningDownload() }
+
+    fun nextQueuedTask(): WorkshopDownloadTaskUi? = tasks
+        .filter { it.status == WorkshopDownloadTaskStatus.Queued }
+        .minByOrNull { it.updatedAtMillis }
+
+    private fun ensureStore(context: Context): WorkshopDownloadTaskStore {
+        val applicationContext = context.applicationContext
+        return synchronized(initLock) {
+            appContext = applicationContext
+            store ?: WorkshopDownloadTaskStore(applicationContext).also { store = it }
+        }
+    }
+
+    private fun recoverInterruptedDownloadsIfNeeded(context: Context) {
+        val shouldRecover = synchronized(initLock) {
+            if (recoveredInterruptedDownloads) {
+                false
+            } else {
+                recoveredInterruptedDownloads = true
+                true
+            }
+        }
+        if (!shouldRecover) return
+        try {
+            recoverInterruptedDownloads(context)
+        } catch (error: Throwable) {
+            synchronized(initLock) {
+                recoveredInterruptedDownloads = false
+            }
+            throw error
+        }
+    }
 
     private fun recoverInterruptedDownloads(context: Context) {
         val taskStore = store ?: return

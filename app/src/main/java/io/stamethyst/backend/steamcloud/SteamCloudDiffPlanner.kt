@@ -19,6 +19,7 @@ internal object SteamCloudDiffPlanner {
         }
 
         val uploadCandidates = mutableListOf<SteamCloudUploadCandidate>()
+        val remoteDeleteCandidates = mutableListOf<SteamCloudRemoteDeleteCandidate>()
         val conflicts = mutableListOf<SteamCloudConflict>()
         val remoteOnlyChanges = mutableListOf<SteamCloudRemoteOnlyChange>()
         val warnings = mutableListOf<String>()
@@ -69,7 +70,15 @@ internal object SteamCloudDiffPlanner {
 
                 localChanged -> {
                     if (currentLocal == null) {
-                        ignoredLocalDeletionCount++
+                        if (rootKind == SteamCloudRootKind.SAVES && currentRemote != null) {
+                            remoteDeleteCandidates += SteamCloudRemoteDeleteCandidate(
+                                remotePath = currentRemote.remotePath,
+                                localRelativePath = localRelativePath,
+                                rootKind = rootKind,
+                            )
+                        } else {
+                            ignoredLocalDeletionCount++
+                        }
                         continue
                     }
                     val remotePath = currentRemote?.remotePath
@@ -129,6 +138,7 @@ internal object SteamCloudDiffPlanner {
             uploadCandidates = uploadCandidates,
             conflicts = conflicts,
             remoteOnlyChanges = remoteOnlyChanges,
+            remoteDeleteCandidates = remoteDeleteCandidates,
             warnings = warnings.distinct(),
         )
     }

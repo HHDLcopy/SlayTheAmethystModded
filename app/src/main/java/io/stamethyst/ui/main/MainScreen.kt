@@ -1106,6 +1106,7 @@ internal fun LauncherMainRoute(
             viewModel.refresh(hostActivity)
             viewModel.syncModSuggestionsIfNeeded(hostActivity)
             viewModel.syncSteamCloudIndicatorIfNeeded(hostActivity, force = true)
+            viewModel.refreshWorkshopDownloadCards(hostActivity)
         }
     }
 

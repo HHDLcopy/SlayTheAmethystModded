@@ -278,9 +278,8 @@ class MainScreenViewModel : ViewModel() {
     }
 
     suspend fun refreshWorkshopDownloadCards(host: Activity): Boolean {
-        WorkshopDownloadCenterStore.initialize(host)
         val loadedTasks = withContext(Dispatchers.IO) {
-            WorkshopDownloadCenterStore.loadTasks()
+            WorkshopDownloadCenterStore.loadTasksWithRecovery(host)
         }
         WorkshopDownloadCenterStore.replaceInMemory(loadedTasks)
 
@@ -430,7 +429,9 @@ class MainScreenViewModel : ViewModel() {
                             }
                         }
 
-                        plan.uploadCandidates.isEmpty() && plan.remoteOnlyChanges.isEmpty() -> {
+                        plan.uploadCandidates.isEmpty() &&
+                            plan.remoteDeleteCandidates.isEmpty() &&
+                            plan.remoteOnlyChanges.isEmpty() -> {
                             host.runOnUiThread {
                                 if (!isSteamCloudCheckSessionCurrent(checkSessionId)) {
                                     return@runOnUiThread
@@ -737,7 +738,7 @@ class MainScreenViewModel : ViewModel() {
                 }
             }
 
-            if (plan.uploadCandidates.isNotEmpty()) {
+            if (plan.uploadCandidates.isNotEmpty() || plan.remoteDeleteCandidates.isNotEmpty()) {
                 SteamCloudPushCoordinator.pushLocalChanges(
                     host = host,
                     authMaterial = authMaterial,
@@ -893,67 +894,69 @@ class MainScreenViewModel : ViewModel() {
 
     fun onRetryWorkshopDownload(host: Activity, mod: ModItemUi) {
         val workshop = mod.workshop ?: return
-        val store = WorkshopMetadataStore(host)
-        val record = store.findByPublishedFileId(workshop.appId, workshop.publishedFileId)
-        if (record == null) {
-            _effects.tryEmit(Effect.ShowSnackbar(UiText.DynamicString("未找到创意工坊下载记录")))
-            return
-        }
-        val taskStore = WorkshopDownloadTaskStore(host)
-        val existingTask = taskStore.find(record.publishedFileId)
-        val preservePartialDownload = when (workshop.state) {
-            WorkshopModState.DownloadPaused,
-            WorkshopModState.DownloadFailed -> true
-            else -> false
-        }
-        if (existingTask == null || existingTask.status == WorkshopDownloadTaskStatus.Completed) {
-            taskStore.upsert(record.toWorkshopDownloadTaskRecord().copy(preservePartialDownload = preservePartialDownload))
-        } else {
-            taskStore.update(record.publishedFileId) { task ->
-                task.copy(
-                    status = WorkshopDownloadTaskStatus.Queued,
-                    message = "等待下载",
-                    updatedAtMillis = System.currentTimeMillis(),
-                    progressPercent = if (preservePartialDownload) task.progressPercent else null,
-                    downloadedBytes = if (preservePartialDownload) task.downloadedBytes else 0L,
-                    completedFiles = if (preservePartialDownload) task.completedFiles else null,
-                    completedChunks = if (preservePartialDownload) task.completedChunks else null,
-                    errorClass = "",
-                    errorMessage = "",
-                    errorStackTrace = "",
-                    preservePartialDownload = preservePartialDownload,
-                )
+        workshopUpdateExecutor.execute {
+            val store = WorkshopMetadataStore(host)
+            val record = store.findByPublishedFileId(workshop.appId, workshop.publishedFileId)
+            if (record == null) {
+                _effects.tryEmit(Effect.ShowSnackbar(UiText.DynamicString("未找到创意工坊下载记录")))
+                return@execute
             }
+            val taskStore = WorkshopDownloadTaskStore(host)
+            val existingTask = taskStore.find(record.publishedFileId)
+            val preservePartialDownload = when (workshop.state) {
+                WorkshopModState.DownloadPaused,
+                WorkshopModState.DownloadFailed -> true
+                else -> false
+            }
+            if (existingTask == null || existingTask.status == WorkshopDownloadTaskStatus.Completed) {
+                taskStore.upsert(record.toWorkshopDownloadTaskRecord().copy(preservePartialDownload = preservePartialDownload))
+            } else {
+                taskStore.update(record.publishedFileId) { task ->
+                    task.copy(
+                        status = WorkshopDownloadTaskStatus.Queued,
+                        message = "等待下载",
+                        updatedAtMillis = System.currentTimeMillis(),
+                        progressPercent = if (preservePartialDownload) task.progressPercent else null,
+                        downloadedBytes = if (preservePartialDownload) task.downloadedBytes else 0L,
+                        completedFiles = if (preservePartialDownload) task.completedFiles else null,
+                        completedChunks = if (preservePartialDownload) task.completedChunks else null,
+                        errorClass = "",
+                        errorMessage = "",
+                        errorStackTrace = "",
+                        preservePartialDownload = preservePartialDownload,
+                    )
+                }
+            }
+            store.updateState(
+                appId = record.appId,
+                publishedFileId = record.publishedFileId,
+                state = WorkshopModCardState.Downloading,
+                statusText = "等待下载",
+            )
+            WorkshopDownloadProcessService.startNextQueued(host.applicationContext)
+            host.runOnUiThread { refresh(host) }
         }
-        store.updateState(
-            appId = record.appId,
-            publishedFileId = record.publishedFileId,
-            state = WorkshopModCardState.Downloading,
-            statusText = "等待下载",
-        )
-        WorkshopDownloadProcessService.startNextQueued(host)
-        refresh(host)
     }
 
     fun onUpdateWorkshopMod(host: Activity, mod: ModItemUi) {
         val workshop = mod.workshop ?: return
-        val store = WorkshopMetadataStore(host)
-        val record = store.findByPublishedFileId(workshop.appId, workshop.publishedFileId)
-        if (record == null) {
-            _effects.tryEmit(Effect.ShowSnackbar(UiText.DynamicString("未找到创意工坊下载记录")))
-            return
-        }
-        val taskStore = WorkshopDownloadTaskStore(host)
-        if (taskStore.find(record.publishedFileId)?.status?.isActiveDownload() == true) {
-            _effects.tryEmit(Effect.ShowSnackbar(UiText.DynamicString("该模组已在更新队列中")))
-            return
-        }
-        val existingTask = taskStore.find(record.publishedFileId)
-        taskStore.upsert(
-            record.toWorkshopUpdatePlaceholderTaskRecord(message = "正在准备更新")
-        )
-        refresh(host)
         workshopUpdateExecutor.execute {
+            val store = WorkshopMetadataStore(host)
+            val record = store.findByPublishedFileId(workshop.appId, workshop.publishedFileId)
+            if (record == null) {
+                _effects.tryEmit(Effect.ShowSnackbar(UiText.DynamicString("未找到创意工坊下载记录")))
+                return@execute
+            }
+            val taskStore = WorkshopDownloadTaskStore(host)
+            if (taskStore.find(record.publishedFileId)?.status?.isActiveDownload() == true) {
+                _effects.tryEmit(Effect.ShowSnackbar(UiText.DynamicString("该模组已在更新队列中")))
+                return@execute
+            }
+            val existingTask = taskStore.find(record.publishedFileId)
+            taskStore.upsert(
+                record.toWorkshopUpdatePlaceholderTaskRecord(message = "正在准备更新")
+            )
+            host.runOnUiThread { refresh(host) }
             try {
                 val details = runBlocking {
                     WorkshopService(host.applicationContext)

@@ -134,6 +134,7 @@ internal object SteamCloudPushCoordinator {
                         addAll(planUploadTimingLines(telemetry))
                         add("Manifest files: ${snapshot.fileCount}")
                         add("Upload candidates: ${plan.uploadCandidates.size}")
+                        add("Remote delete candidates: ${plan.remoteDeleteCandidates.size}")
                         add("Conflicts: ${plan.conflicts.size}")
                         add("Remote-only changes: ${plan.remoteOnlyChanges.size}")
                         add("Baseline configured: ${plan.baselineConfigured}")
@@ -178,8 +179,11 @@ internal object SteamCloudPushCoordinator {
         require(plan.conflicts.isEmpty()) {
             "Steam Cloud push was requested with unresolved conflicts."
         }
-        require(plan.uploadCandidates.isNotEmpty()) {
-            "Steam Cloud push was requested with no upload candidates."
+        require(plan.uploadCandidates.isNotEmpty() || plan.remoteDeleteCandidates.isNotEmpty()) {
+            "Steam Cloud push was requested with no upload or delete candidates."
+        }
+        require(plan.remoteDeleteCandidates.all { it.rootKind == SteamCloudRootKind.SAVES }) {
+            "Steam Cloud push attempted to delete non-save files."
         }
 
         val startedAtMs = System.currentTimeMillis()
@@ -187,6 +191,7 @@ internal object SteamCloudPushCoordinator {
         var uploadBatch: SteamCloudClient.UploadBatch? = null
         var uploadedBytes = 0L
         var uploadedFileCount = 0
+        val totalOperations = plan.syncOperationCount()
 
         try {
             client.beginOperationDiagnostics(
@@ -219,7 +224,7 @@ internal object SteamCloudPushCoordinator {
                     direction = SteamCloudSyncDirection.PUSH_LOCAL_TO_CLOUD,
                     phase = SteamCloudSyncPhase.PREPARING_UPLOAD,
                     completedFiles = 0,
-                    totalFiles = plan.uploadCandidates.size,
+                    totalFiles = totalOperations,
                     progressPercent = 20,
                 )
             )
@@ -229,16 +234,18 @@ internal object SteamCloudPushCoordinator {
                     direction = SteamCloudSyncDirection.PUSH_LOCAL_TO_CLOUD,
                     phase = SteamCloudSyncPhase.CREATING_UPLOAD_BATCH,
                     completedFiles = 0,
-                    totalFiles = plan.uploadCandidates.size,
+                    totalFiles = totalOperations,
                     progressPercent = 24,
                 )
             )
             uploadBatch = client.beginUploadBatch(
                 STEAM_CLOUD_APP_ID,
                 plan.uploadCandidates.map { it.remotePath },
+                plan.remoteDeleteCandidates.map { it.remotePath },
             )
             ensureNotCancelled(shouldContinue)
 
+            val totalUploads = plan.uploadCandidates.size
             plan.uploadCandidates.forEachIndexed { index, candidate ->
                 ensureNotCancelled(shouldContinue)
                 val sourceFile = File(
@@ -251,9 +258,9 @@ internal object SteamCloudPushCoordinator {
                         direction = SteamCloudSyncDirection.PUSH_LOCAL_TO_CLOUD,
                         phase = SteamCloudSyncPhase.REQUESTING_UPLOAD_SLOT,
                         completedFiles = index + 1,
-                        totalFiles = plan.uploadCandidates.size,
+                        totalFiles = totalOperations,
                         currentPath = candidate.localRelativePath,
-                        progressPercent = 28 + ((index * 55) / plan.uploadCandidates.size),
+                        progressPercent = 28 + ((index * 55) / totalUploads),
                     )
                 )
                 val uploadedFile = try {
@@ -278,9 +285,9 @@ internal object SteamCloudPushCoordinator {
                         direction = SteamCloudSyncDirection.PUSH_LOCAL_TO_CLOUD,
                         phase = SteamCloudSyncPhase.UPLOADING,
                         completedFiles = index + 1,
-                        totalFiles = plan.uploadCandidates.size,
+                        totalFiles = totalOperations,
                         currentPath = candidate.localRelativePath,
-                        progressPercent = 30 + (((index + 1) * 55) / plan.uploadCandidates.size),
+                        progressPercent = 30 + (((index + 1) * 55) / totalUploads),
                     )
                 )
             }
@@ -289,8 +296,8 @@ internal object SteamCloudPushCoordinator {
                 SteamCloudSyncProgress(
                     direction = SteamCloudSyncDirection.PUSH_LOCAL_TO_CLOUD,
                     phase = SteamCloudSyncPhase.FINALIZING,
-                    completedFiles = plan.uploadCandidates.size,
-                    totalFiles = plan.uploadCandidates.size,
+                    completedFiles = totalOperations,
+                    totalFiles = totalOperations,
                     progressPercent = 92,
                 )
             )
@@ -311,6 +318,7 @@ internal object SteamCloudPushCoordinator {
             val result = SteamCloudPushResult(
                 uploadedFileCount = plan.uploadCandidates.size,
                 uploadedBytes = uploadedBytes,
+                deletedRemoteFileCount = plan.remoteDeleteCandidates.size,
                 completedAtMs = System.currentTimeMillis(),
                 summaryPath = SteamCloudManifestStore.pushSummaryFile(host).absolutePath,
                 warnings = plan.warnings + refreshedSnapshot.warnings,
@@ -348,6 +356,7 @@ internal object SteamCloudPushCoordinator {
                 extraLines = listOf(
                     "Uploaded files: ${result.uploadedFileCount}",
                     "Uploaded bytes: ${result.uploadedBytes}",
+                    "Deleted remote files: ${result.deletedRemoteFileCount}",
                     "Upload summary: ${result.summaryPath}",
                     "Manifest path: ${SteamCloudManifestStore.manifestFile(host).absolutePath}",
                     "Baseline path: ${SteamCloudBaselineStore.baselineFile(host).absolutePath}",
@@ -390,6 +399,7 @@ internal object SteamCloudPushCoordinator {
                     error = error,
                     extraLines = buildList {
                         add("Upload candidates before failure: ${plan.uploadCandidates.size}")
+                        add("Remote delete candidates before failure: ${plan.remoteDeleteCandidates.size}")
                         add("Conflicts before failure: ${plan.conflicts.size}")
                         uploadBatch?.let { batch ->
                             add("Upload batch id: ${batch.batchId}")
@@ -721,6 +731,10 @@ internal object SteamCloudPushCoordinator {
             if (plan.remoteOnlyChanges.isNotEmpty()) {
                 add("Remote-only Changes Left Unmodified: ${plan.remoteOnlyChanges.size}")
             }
+            if (plan.remoteDeleteCandidates.isNotEmpty()) {
+                add("Deleted Remote Paths:")
+                plan.remoteDeleteCandidates.forEach { candidate -> add(" - ${candidate.remotePath}") }
+            }
             if (result.warnings.isNotEmpty()) {
                 add("")
                 add("Warnings:")
@@ -780,7 +794,13 @@ internal object SteamCloudPushCoordinator {
     }
 
     private fun SteamCloudUploadPlan.isAlreadySynced(): Boolean =
-        conflicts.isEmpty() && uploadCandidates.isEmpty() && remoteOnlyChanges.isEmpty()
+        conflicts.isEmpty() &&
+            uploadCandidates.isEmpty() &&
+            remoteDeleteCandidates.isEmpty() &&
+            remoteOnlyChanges.isEmpty()
+
+    private fun SteamCloudUploadPlan.syncOperationCount(): Int =
+        uploadCandidates.size + remoteDeleteCandidates.size
 
     private fun planUploadTimingLines(telemetry: PlanUploadTelemetry): List<String> = listOf(
         "Plan total measured ms: ${formatTimingMs(telemetry.totalMeasuredMs)}",

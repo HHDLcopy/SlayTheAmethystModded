@@ -97,9 +97,13 @@ internal fun WorkshopDownloadCenterScreen(
         }
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(activity) {
+        val context = activity ?: return@LaunchedEffect
         while (true) {
-            WorkshopDownloadCenterStore.refresh()
+            val loadedTasks = withContext(Dispatchers.IO) {
+                WorkshopDownloadCenterStore.loadTasksWithRecovery(context)
+            }
+            WorkshopDownloadCenterStore.replaceInMemory(loadedTasks)
             delay(1000)
         }
     }

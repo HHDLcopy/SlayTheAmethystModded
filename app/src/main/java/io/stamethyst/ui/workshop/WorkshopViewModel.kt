@@ -44,6 +44,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 @Stable
@@ -63,6 +65,7 @@ internal class WorkshopViewModel : ViewModel() {
     private var refreshDownloadStateJob: Job? = null
     private val detailsCache = mutableMapOf<String, WorkshopItemDetails>()
     private val translationClient = BaiduAiTextTranslationClient()
+    private val downloadTaskPersistenceMutex = Mutex()
 
     fun load(context: Context, initialListMode: WorkshopListMode = WorkshopListMode.Browse) {
         WorkshopDownloadCenterStore.initialize(context)
@@ -87,7 +90,10 @@ internal class WorkshopViewModel : ViewModel() {
             listMode = activeListMode,
             installedMods = metadataStore?.list().orEmpty(),
         )
-        WorkshopDownloadProcessService.startNextQueued(context)
+        viewModelScope.launch(Dispatchers.IO) {
+            WorkshopDownloadProcessService.startNextQueued(context)
+        }
+        refreshDownloadState(context)
         when (activeListMode) {
             WorkshopListMode.Browse -> search(context, "")
             WorkshopListMode.Subscriptions -> loadSubscribedPage(context, page = 1, append = false)
@@ -125,7 +131,7 @@ internal class WorkshopViewModel : ViewModel() {
             val (loadedTasks, installedMods, steamLoggedIn) = withContext(Dispatchers.IO) {
                 currentMetadataStore?.markMissingFiles()
                 Triple(
-                    WorkshopDownloadCenterStore.loadTasks(),
+                    WorkshopDownloadCenterStore.loadTasksWithRecovery(context),
                     currentMetadataStore?.list().orEmpty(),
                     currentService?.hasSteamAuth() == true,
                 )
@@ -147,7 +153,7 @@ internal class WorkshopViewModel : ViewModel() {
         val currentService = service
         refreshDownloadStateJob = viewModelScope.launch {
             val loadedTasks = withContext(Dispatchers.IO) {
-                WorkshopDownloadCenterStore.loadTasks()
+                WorkshopDownloadCenterStore.loadTasksWithRecovery(context)
             }
             WorkshopDownloadCenterStore.replaceInMemory(loadedTasks)
             val hasActiveDownload = loadedTasks.any { task -> task.status.isActiveDownload() }
@@ -171,6 +177,29 @@ internal class WorkshopViewModel : ViewModel() {
                 installedMods = installedMods,
                 downloadInProgress = false,
             )
+        }
+    }
+
+    private fun updateDownloadTaskAsync(
+        publishedFileId: ULong,
+        transform: (WorkshopDownloadTaskUi) -> WorkshopDownloadTaskUi,
+    ): WorkshopDownloadTaskUi? {
+        val updatedTask = WorkshopDownloadCenterStore.updateInMemory(publishedFileId, transform)
+        persistDownloadTaskAsync {
+            if (updatedTask != null) {
+                WorkshopDownloadCenterStore.persistUpsert(updatedTask)
+            } else {
+                WorkshopDownloadCenterStore.persistUpdate(publishedFileId, transform)
+            }
+        }
+        return updatedTask
+    }
+
+    private fun persistDownloadTaskAsync(block: () -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            downloadTaskPersistenceMutex.withLock {
+                block()
+            }
         }
     }
 
@@ -696,7 +725,7 @@ internal class WorkshopViewModel : ViewModel() {
     fun pauseDownload(context: Context, task: WorkshopDownloadTaskUi) {
         val details = task.details
         if (task.status.isRunningDownload()) {
-            WorkshopDownloadCenterStore.update(task.publishedFileId) {
+            updateDownloadTaskAsync(task.publishedFileId) {
                 it.copy(
                     status = WorkshopDownloadTaskStatus.Pausing,
                     message = context.getString(R.string.workshop_status_pausing),
@@ -706,7 +735,7 @@ internal class WorkshopViewModel : ViewModel() {
             }
             WorkshopDownloadProcessService.pause(context, details.summary.appId, details.summary.publishedFileId, createDownloadResultReceiver(context.applicationContext, details.summary))
         } else {
-            WorkshopDownloadCenterStore.update(task.publishedFileId) {
+            updateDownloadTaskAsync(task.publishedFileId) {
                 it.copy(
                     status = WorkshopDownloadTaskStatus.Paused,
                     message = context.getString(R.string.workshop_status_paused),
@@ -714,9 +743,11 @@ internal class WorkshopViewModel : ViewModel() {
                     preservePartialDownload = true,
                 )
             }
-            metadataStore?.updateState(details.summary.appId, details.summary.publishedFileId, WorkshopModCardState.DownloadPaused, context.getString(R.string.workshop_status_paused))
+            viewModelScope.launch(Dispatchers.IO) {
+                metadataStore?.updateState(details.summary.appId, details.summary.publishedFileId, WorkshopModCardState.DownloadPaused, context.getString(R.string.workshop_status_paused))
+            }
         }
-        uiState = uiState.copy(downloadStatus = context.getString(R.string.workshop_status_pausing), downloadInProgress = true, installedMods = metadataStore?.list().orEmpty())
+        uiState = uiState.copy(downloadStatus = context.getString(R.string.workshop_status_pausing), downloadInProgress = true)
     }
 
     fun resumeDownload(context: Context, task: WorkshopDownloadTaskUi) {
@@ -740,19 +771,27 @@ internal class WorkshopViewModel : ViewModel() {
     fun cancelDownload(context: Context, task: WorkshopDownloadTaskUi) {
         val details = task.details
         if (task.status.isRunningDownload()) {
-            WorkshopDownloadCenterStore.update(task.publishedFileId) {
+            updateDownloadTaskAsync(task.publishedFileId) {
                 it.copy(status = WorkshopDownloadTaskStatus.Cancelling, message = context.getString(R.string.workshop_status_canceling), updatedAtMillis = System.currentTimeMillis())
             }
             WorkshopDownloadProcessService.cancel(context, details.summary.appId, details.summary.publishedFileId, createDownloadResultReceiver(context.applicationContext, details.summary))
-            uiState = uiState.copy(downloadStatus = context.getString(R.string.workshop_status_canceling), downloadInProgress = true, installedMods = metadataStore?.list().orEmpty())
+            uiState = uiState.copy(downloadStatus = context.getString(R.string.workshop_status_canceling), downloadInProgress = true)
             return
         }
-        WorkshopDownloadTaskStore(context).removeAndMarkDeleted(task.publishedFileId)
-        WorkshopDownloadCenterStore.refresh()
-        metadataStore?.remove(details.summary.appId, details.summary.publishedFileId)
-        File(context.filesDir, "workshop/${details.summary.appId}/${details.summary.publishedFileId}").deleteRecursively()
-        uiState = uiState.copy(downloadStatus = context.getString(R.string.workshop_status_cancelled), downloadInProgress = false, installedMods = metadataStore?.list().orEmpty())
-        if (!task.status.isRunningDownload()) WorkshopDownloadProcessService.startNextQueued(context)
+        WorkshopDownloadCenterStore.removeInMemory(task.publishedFileId)
+        uiState = uiState.copy(
+            downloadStatus = context.getString(R.string.workshop_status_cancelled),
+            downloadInProgress = false,
+            installedMods = uiState.installedMods.filterNot {
+                it.appId == details.summary.appId && it.publishedFileId == details.summary.publishedFileId
+            },
+        )
+        persistDownloadTaskAsync {
+            WorkshopDownloadTaskStore(context).removeAndMarkDeleted(task.publishedFileId)
+            metadataStore?.remove(details.summary.appId, details.summary.publishedFileId)
+            File(context.filesDir, "workshop/${details.summary.appId}/${details.summary.publishedFileId}").deleteRecursively()
+            WorkshopDownloadProcessService.startNextQueued(context)
+        }
     }
 
     fun download(context: Context, item: WorkshopItemSummary) {
@@ -883,7 +922,7 @@ internal class WorkshopViewModel : ViewModel() {
                 it.appId == queuedRecord.appId && it.publishedFileId == queuedRecord.publishedFileId
             },
         )
-        viewModelScope.launch(Dispatchers.IO) {
+        persistDownloadTaskAsync {
             WorkshopDownloadCenterStore.persistUpsert(queuedTask)
             metadataStore?.upsert(queuedRecord)
             WorkshopDownloadProcessService.startNextQueued(context)
@@ -902,24 +941,27 @@ internal class WorkshopViewModel : ViewModel() {
     ) {
         val details = task.details
         if (blockBlockedWorkshopDownload(context, details.summary, task)) return
-        WorkshopDownloadCenterStore.upsert(
-            task.copy(
-                status = WorkshopDownloadTaskStatus.Queued,
-                message = if (WorkshopDownloadCenterStore.hasRunningTask()) context.getString(R.string.workshop_status_added_to_queue) else message,
-                updatedAtMillis = System.currentTimeMillis(),
-                progressPercent = if (preservePartialDownload) task.progressPercent else null,
-                downloadedBytes = if (preservePartialDownload) task.downloadedBytes else 0L,
-                completedFiles = if (preservePartialDownload) task.completedFiles else null,
-                completedChunks = if (preservePartialDownload) task.completedChunks else null,
-                errorClass = "",
-                errorMessage = "",
-                errorStackTrace = "",
-                downloadLog = if (preservePartialDownload) task.downloadLog else "",
-                preservePartialDownload = preservePartialDownload,
-            )
+        val queuedTask = task.copy(
+            status = WorkshopDownloadTaskStatus.Queued,
+            message = if (WorkshopDownloadCenterStore.hasRunningTask()) context.getString(R.string.workshop_status_added_to_queue) else message,
+            updatedAtMillis = System.currentTimeMillis(),
+            progressPercent = if (preservePartialDownload) task.progressPercent else null,
+            downloadedBytes = if (preservePartialDownload) task.downloadedBytes else 0L,
+            completedFiles = if (preservePartialDownload) task.completedFiles else null,
+            completedChunks = if (preservePartialDownload) task.completedChunks else null,
+            errorClass = "",
+            errorMessage = "",
+            errorStackTrace = "",
+            downloadLog = if (preservePartialDownload) task.downloadLog else "",
+            preservePartialDownload = preservePartialDownload,
         )
-        metadataStore?.updateState(details.summary.appId, details.summary.publishedFileId, WorkshopModCardState.Downloading, context.getString(R.string.workshop_download_task_message_waiting))
-        WorkshopDownloadProcessService.startNextQueued(context)
+        WorkshopDownloadCenterStore.upsertInMemory(queuedTask)
+        uiState = uiState.copy(downloadInProgress = true)
+        persistDownloadTaskAsync {
+            WorkshopDownloadCenterStore.persistUpsert(queuedTask)
+            metadataStore?.updateState(details.summary.appId, details.summary.publishedFileId, WorkshopModCardState.Downloading, context.getString(R.string.workshop_download_task_message_waiting))
+            WorkshopDownloadProcessService.startNextQueued(context)
+        }
     }
 
     private fun blockBlockedWorkshopDownload(
@@ -934,24 +976,25 @@ internal class WorkshopViewModel : ViewModel() {
         )
         val blockedTaskMessage = context.getString(R.string.workshop_download_task_message_blocked)
         if (task != null) {
-            WorkshopDownloadCenterStore.update(task.publishedFileId) {
+            updateDownloadTaskAsync(task.publishedFileId) {
                 it.copy(
                     status = WorkshopDownloadTaskStatus.Cancelled,
                     message = blockedTaskMessage,
                     updatedAtMillis = System.currentTimeMillis(),
                 )
             }
-            metadataStore?.updateState(
-                summary.appId,
-                summary.publishedFileId,
-                WorkshopModCardState.DownloadFailed,
-                blockedTaskMessage,
-            )
+            viewModelScope.launch(Dispatchers.IO) {
+                metadataStore?.updateState(
+                    summary.appId,
+                    summary.publishedFileId,
+                    WorkshopModCardState.DownloadFailed,
+                    blockedTaskMessage,
+                )
+            }
         }
         uiState = uiState.copy(
             downloadStatus = message,
             downloadInProgress = WorkshopDownloadCenterStore.tasks.any { it.status.isActiveDownload() },
-            installedMods = metadataStore?.list().orEmpty(),
         )
         return true
     }
@@ -961,8 +1004,7 @@ internal class WorkshopViewModel : ViewModel() {
             val message = resultData.getString(WorkshopDownloadProcessService.EXTRA_MESSAGE).orEmpty()
             val status = resultData.getString(WorkshopDownloadProcessService.EXTRA_TASK_STATUS)?.toTaskStatus()
             if (status != null || message.isNotBlank()) {
-                WorkshopDownloadCenterStore.refresh()
-                WorkshopDownloadCenterStore.update(summary.publishedFileId) {
+                updateDownloadTaskAsync(summary.publishedFileId) {
                     it.copy(
                         status = status ?: it.status,
                         message = message.ifBlank { it.message },
@@ -985,7 +1027,7 @@ internal class WorkshopViewModel : ViewModel() {
                     if (message.isNotBlank()) uiState = uiState.copy(downloadStatus = message)
                 }
                 WorkshopDownloadProcessService.RESULT_COMPLETED -> {
-                    WorkshopDownloadCenterStore.update(summary.publishedFileId) {
+                    updateDownloadTaskAsync(summary.publishedFileId) {
                         it.copy(
                             status = WorkshopDownloadTaskStatus.Completed,
                             message = message.ifBlank { context.getString(R.string.workshop_status_download_completed) },
@@ -998,33 +1040,29 @@ internal class WorkshopViewModel : ViewModel() {
                     uiState = uiState.copy(
                         downloadStatus = message.ifBlank { context.getString(R.string.workshop_status_download_completed) },
                         downloadInProgress = false,
-                        installedMods = metadataStore?.list().orEmpty(),
                     )
-                    WorkshopDownloadCenterStore.refresh()
+                    refreshDownloadState(context)
                 }
                 WorkshopDownloadProcessService.RESULT_FAILURE -> {
                     uiState = uiState.copy(
                         downloadStatus = message.ifBlank { context.getString(R.string.workshop_status_download_failed) },
                         downloadInProgress = false,
-                        installedMods = metadataStore?.list().orEmpty(),
                     )
-                    WorkshopDownloadCenterStore.refresh()
+                    refreshDownloadState(context)
                 }
                 WorkshopDownloadProcessService.RESULT_PAUSED -> {
                     uiState = uiState.copy(
                         downloadStatus = message.ifBlank { context.getString(R.string.workshop_status_paused) },
                         downloadInProgress = false,
-                        installedMods = metadataStore?.list().orEmpty(),
                     )
-                    WorkshopDownloadCenterStore.refresh()
+                    refreshDownloadState(context)
                 }
                 WorkshopDownloadProcessService.RESULT_CANCELLED -> {
                     uiState = uiState.copy(
                         downloadStatus = message.ifBlank { context.getString(R.string.workshop_status_cancelled) },
                         downloadInProgress = false,
-                        installedMods = metadataStore?.list().orEmpty(),
                     )
-                    WorkshopDownloadCenterStore.refresh()
+                    refreshDownloadState(context)
                 }
             }
         }
@@ -1033,13 +1071,18 @@ internal class WorkshopViewModel : ViewModel() {
     fun checkUpdates(context: Context) {
         viewModelScope.launch {
             uiState = uiState.copy(downloadStatus = context.getString(R.string.workshop_status_checking_updates), updateChecking = true)
-            runCatching { withContext(Dispatchers.IO) { WorkshopUpdateChecker(context).checkInstalledMods() } }
-                .onSuccess { report ->
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val report = WorkshopUpdateChecker(context).checkInstalledMods()
+                    Pair(report, metadataStore?.list().orEmpty())
+                }
+            }
+                .onSuccess { (report, installedMods) ->
                     val results = report.results
                     val updateCount = results.count { it.hasUpdate }
                     uiState = uiState.copy(
                         updateResults = results,
-                        installedMods = metadataStore?.list().orEmpty(),
+                        installedMods = installedMods,
                         updateChecking = false,
                         downloadStatus = if (updateCount > 0) {
                             buildString {

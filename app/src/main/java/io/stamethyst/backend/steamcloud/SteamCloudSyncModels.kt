@@ -64,6 +64,12 @@ data class SteamCloudRemoteOnlyChange(
     val baselineRemote: SteamCloudManifestEntry?,
 )
 
+data class SteamCloudRemoteDeleteCandidate(
+    val remotePath: String,
+    val localRelativePath: String,
+    val rootKind: SteamCloudRootKind,
+)
+
 data class SteamCloudUploadPlan(
     val plannedAtMs: Long,
     val remoteManifestFetchedAtMs: Long = 0L,
@@ -71,6 +77,7 @@ data class SteamCloudUploadPlan(
     val uploadCandidates: List<SteamCloudUploadCandidate>,
     val conflicts: List<SteamCloudConflict>,
     val remoteOnlyChanges: List<SteamCloudRemoteOnlyChange>,
+    val remoteDeleteCandidates: List<SteamCloudRemoteDeleteCandidate>,
     val warnings: List<String>,
 ) {
     val uploadBytes: Long

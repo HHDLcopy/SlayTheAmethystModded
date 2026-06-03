@@ -2,8 +2,12 @@ package top.apricityx.workshop.steam.protocol
 
 import top.apricityx.workshop.steam.proto.CPublishedFile_QueryFiles_Request
 import top.apricityx.workshop.steam.proto.CPublishedFile_QueryFiles_Response
+import top.apricityx.workshop.steam.proto.CPublishedFile_AreFilesInSubscriptionList_Request
+import top.apricityx.workshop.steam.proto.CPublishedFile_AreFilesInSubscriptionList_Response
 import top.apricityx.workshop.steam.proto.CPublishedFile_GetUserFiles_Request
 import top.apricityx.workshop.steam.proto.CPublishedFile_GetUserFiles_Response
+import top.apricityx.workshop.steam.proto.CPublishedFile_Subscribe_Request
+import top.apricityx.workshop.steam.proto.CPublishedFile_Subscribe_Response
 
 data class SteamPublishedFileQuery(
     val appId: UInt,
@@ -49,6 +53,7 @@ class SteamPublishedFileClient(
         type: String = "myfiles",
         sortMethod: String = "lastupdated",
         language: Int = STEAM_LANGUAGE_ENGLISH,
+        idsOnly: Boolean = false,
     ): SteamPublishedFileQueryResult {
         val cmServers = directoryClient.loadServers()
         return sessionFactory().use { session ->
@@ -68,6 +73,7 @@ class SteamPublishedFileClient(
                         .setReturnVoteData(true)
                         .setReturnShortDescription(true)
                         .setStripDescriptionBbcode(true)
+                        .setIdsOnly(idsOnly)
                         .build(),
                     parser = CPublishedFile_GetUserFiles_Response.parser(),
                 )
@@ -127,6 +133,69 @@ class SteamPublishedFileClient(
             }
         }
     }
+
+    suspend fun subscribe(
+        account: SteamAccountSession,
+        appId: UInt,
+        publishedFileId: ULong,
+    ) {
+        val cmServers = directoryClient.loadServers()
+        sessionFactory().use { session ->
+            try {
+                session.connectWithRefreshToken(cmServers, account)
+                session.callServiceMethod(
+                    methodName = "PublishedFile.Subscribe#1",
+                    request = CPublishedFile_Subscribe_Request.newBuilder()
+                        .setPublishedfileid(publishedFileId.toLong())
+                        .setListType(STEAM_PUBLISHED_FILE_LIST_TYPE_SUBSCRIBED)
+                        .setAppid(appId.toInt())
+                        .setNotifyClient(true)
+                        .build(),
+                    parser = CPublishedFile_Subscribe_Response.parser(),
+                )
+            } catch (error: Throwable) {
+                throw when (error) {
+                    is SteamProtocolException -> error
+                    else -> SteamProtocolException("Failed to subscribe Steam published file", error)
+                }
+            }
+        }
+    }
+
+    suspend fun areFilesInSubscriptionList(
+        account: SteamAccountSession,
+        appId: UInt,
+        publishedFileIds: Collection<ULong>,
+    ): Map<ULong, Boolean> {
+        val requestedIds = publishedFileIds.distinct()
+        if (requestedIds.isEmpty()) return emptyMap()
+        val cmServers = directoryClient.loadServers()
+        return sessionFactory().use { session ->
+            try {
+                session.connectWithRefreshToken(cmServers, account)
+                val response = session.callServiceMethod(
+                    methodName = "PublishedFile.AreFilesInSubscriptionList#1",
+                    request = CPublishedFile_AreFilesInSubscriptionList_Request.newBuilder()
+                        .setAppid(appId.toInt())
+                        .addAllPublishedfileids(requestedIds.map { it.toLong() })
+                        .setListtype(STEAM_PUBLISHED_FILE_LIST_TYPE_SUBSCRIBED)
+                        .build(),
+                    parser = CPublishedFile_AreFilesInSubscriptionList_Response.parser(),
+                )
+                val responseMap = response.filesList.associate { file ->
+                    file.publishedfileid.toULong() to file.inlist
+                }
+                requestedIds.associateWith { publishedFileId ->
+                    responseMap[publishedFileId] == true
+                }
+            } catch (error: Throwable) {
+                throw when (error) {
+                    is SteamProtocolException -> error
+                    else -> SteamProtocolException("Failed to query Steam published file subscription list", error)
+                }
+            }
+        }
+    }
 }
 
 private fun List<top.apricityx.workshop.steam.proto.PublishedFileDetails>.toSteamPublishedFileItems(): List<SteamPublishedFileItem> =
@@ -154,3 +223,4 @@ private fun List<top.apricityx.workshop.steam.proto.PublishedFileDetails>.toStea
 const val STEAM_LANGUAGE_ENGLISH = 0
 const val STEAM_LANGUAGE_SIMPLIFIED_CHINESE = 6
 const val STEAM_PUBLISHED_FILE_QUERY_TYPE_RANKED_BY_TEXT_SEARCH = 12
+const val STEAM_PUBLISHED_FILE_LIST_TYPE_SUBSCRIBED = 1

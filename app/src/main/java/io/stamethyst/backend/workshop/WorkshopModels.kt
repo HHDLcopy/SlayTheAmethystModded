@@ -131,6 +131,9 @@ data class WorkshopSubscriptionResult(
 
 class WorkshopSteamLoginRequiredException : IllegalStateException("Steam login is required for this workshop action.")
 
+class WorkshopSubscriptionVerificationException :
+    IllegalStateException("Steam accepted the subscribe request but did not add the file to subscriptions.")
+
 data class WorkshopCommentThreadContext(
     val ownerId: String,
     val featureId: String,

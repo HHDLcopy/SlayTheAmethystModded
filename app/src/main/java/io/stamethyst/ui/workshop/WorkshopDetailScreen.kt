@@ -228,6 +228,7 @@ internal fun WorkshopDetailScreen(
                             onRetry = { viewModel.loadDetails(context.applicationContext, appId, publishedFileId) },
                         )
                         DetailPrimaryContentState.Content -> selectedDetails?.let { details ->
+                            val subscriptionStatus = state.detailSubscriptionStatusFor(details.summary.publishedFileId)
                             DetailModCard(
                                 details = details,
                                 downloadState = resolveWorkshopModDownloadState(
@@ -235,8 +236,15 @@ internal fun WorkshopDetailScreen(
                                     installedMods = state.installedMods,
                                     downloadTasks = WorkshopDownloadCenterStore.tasks,
                                 ),
-                                subscriptionLoading = state.detailSubscriptionLoadingId == details.summary.publishedFileId,
-                                subscribed = state.subscribedWorkshopIds.contains(details.summary.publishedFileId),
+                                subscriptionLoading = state.detailSubscriptionLoadingId == details.summary.publishedFileId ||
+                                    subscriptionStatus == WorkshopDetailSubscriptionStatus.Checking,
+                                subscribed = when (subscriptionStatus) {
+                                    WorkshopDetailSubscriptionStatus.Subscribed -> true
+                                    WorkshopDetailSubscriptionStatus.NotSubscribed,
+                                    WorkshopDetailSubscriptionStatus.Checking -> false
+                                    WorkshopDetailSubscriptionStatus.Unknown ->
+                                        state.subscribedWorkshopIds.contains(details.summary.publishedFileId)
+                                },
                                 onDownload = {
                                     requestNotificationPermissionIfNeeded()
                                     viewModel.downloadSelected(context.applicationContext)

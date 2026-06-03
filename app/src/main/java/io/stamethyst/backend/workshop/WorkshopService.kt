@@ -11,6 +11,7 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
@@ -131,48 +132,168 @@ internal class WorkshopService(
         }.getOrThrow()
     }
 
+    suspend fun isSubscribedToPublishedFile(
+        appId: UInt,
+        publishedFileId: ULong,
+    ): Boolean = withContext(Dispatchers.IO) {
+        val account = readSteamAccountSession(identity)
+            ?: throw WorkshopSteamLoginRequiredException()
+        val publishedFileClient = SteamPublishedFileClient(
+            directoryClient = SteamDirectoryClient(client),
+            sessionFactory = { identity.createSession(client) },
+        )
+        runCatching {
+            publishedFileClient.areFilesInSubscriptionList(
+                account = account,
+                appId = appId,
+                publishedFileIds = listOf(publishedFileId),
+            )[publishedFileId] == true
+        }.onSuccess { subscribed ->
+            Log.i(
+                TAG,
+                "isSubscribedToPublishedFile directResult=$subscribed appId=$appId publishedFileId=$publishedFileId",
+            )
+            if (subscribed) return@withContext true
+        }.onFailure { error ->
+            Log.w(
+                TAG,
+                "isSubscribedToPublishedFile directCheckFailed appId=$appId publishedFileId=$publishedFileId",
+                error,
+            )
+        }
+        val pageSize = 100
+        var page = 1
+        var checkedCount = 0
+        var expectedTotal: Int? = null
+        while (page <= MAX_SUBSCRIPTION_STATUS_CHECK_PAGES) {
+            val result = publishedFileClient.getUserFiles(
+                account = account,
+                appId = appId,
+                page = page,
+                pageSize = pageSize,
+                type = "mysubscriptions",
+                language = steamLanguagePreference.protocolLanguage,
+                idsOnly = true,
+            )
+            if (result.items.any { item -> item.publishedFileId == publishedFileId }) {
+                Log.i(TAG, "isSubscribedToPublishedFile result=true appId=$appId publishedFileId=$publishedFileId page=$page")
+                return@withContext true
+            }
+            if (expectedTotal == null) {
+                expectedTotal = result.total
+            }
+            checkedCount += result.items.size
+            val total = expectedTotal
+            if (result.items.isEmpty() || checkedCount >= total || result.items.size < pageSize) {
+                Log.i(
+                    TAG,
+                    "isSubscribedToPublishedFile result=false appId=$appId publishedFileId=$publishedFileId checked=$checkedCount total=$total pages=$page",
+                )
+                return@withContext false
+            }
+            page += 1
+        }
+        Log.w(
+            TAG,
+            "isSubscribedToPublishedFile result=false appId=$appId publishedFileId=$publishedFileId reason=maxPages checked=$checkedCount total=${expectedTotal ?: 0}",
+        )
+        false
+    }
+
     suspend fun subscribeToPublishedFile(
         appId: UInt,
         publishedFileId: ULong,
     ): WorkshopSubscriptionResult = withContext(Dispatchers.IO) {
+        var failureLogged = false
+        fun logFailure(message: String, error: Throwable? = null) {
+            failureLogged = true
+            if (error != null) {
+                Log.e(TAG, message, error)
+            } else {
+                Log.e(TAG, message)
+            }
+        }
+        try {
+            subscribeToPublishedFileInternal(appId, publishedFileId, ::logFailure)
+        } catch (error: Throwable) {
+            if (!failureLogged) {
+                Log.e(TAG, "subscribeToPublishedFile failed appId=$appId publishedFileId=$publishedFileId", error)
+            }
+            throw error
+        }
+    }
+
+    private suspend fun subscribeToPublishedFileInternal(
+        appId: UInt,
+        publishedFileId: ULong,
+        logFailure: (String, Throwable?) -> Unit,
+    ): WorkshopSubscriptionResult {
+        Log.i(TAG, "subscribeToPublishedFile start appId=$appId publishedFileId=$publishedFileId")
         val account = readSteamAccountSession(identity)
-            ?: throw WorkshopSteamLoginRequiredException()
-        steamWebSession.ensurePrimed(
-            account = account,
-            client = workshopClient,
-            languagePreference = steamLanguagePreference,
-        )
-        val sessionId = steamWebSession.currentSessionId()
-            ?: throw WorkshopSteamLoginRequiredException()
-        val requestBody = FormBody.Builder()
-            .add("id", publishedFileId.toString())
-            .add("appid", appId.toString())
-            .add("sessionid", sessionId)
-            .build()
-        val request = Request.Builder()
-            .url("https://steamcommunity.com/sharedfiles/subscribe".toHttpUrl())
-            .post(requestBody)
-            .header("X-Requested-With", "XMLHttpRequest")
-            .header("Accept", "application/json, text/javascript, */*; q=0.01")
-            .header("Referer", "https://steamcommunity.com/sharedfiles/filedetails/?id=$publishedFileId")
-            .header("Origin", "https://steamcommunity.com")
-            .header("User-Agent", USER_AGENT)
-            .build()
-        workshopClient.newCall(request).execute().use { response ->
-            val payload = response.body.string()
-            if (looksLikeSteamLoginUrl(response.request.url.toString()) || looksLikeSteamLoginPage(payload)) {
+            ?: run {
+                logFailure(
+                    "subscribeToPublishedFile failed appId=$appId publishedFileId=$publishedFileId reason=missingSteamAuth",
+                    null,
+                )
                 throw WorkshopSteamLoginRequiredException()
             }
-            if (!response.isSuccessful) {
-                error("Steam workshop subscribe failed: ${response.code}")
-            }
-            parseSubscribeResponse(payload)
-            WorkshopSubscriptionResult(
-                publishedFileId = publishedFileId,
-                appId = appId,
-                subscribedAtMillis = System.currentTimeMillis(),
+        runCatching {
+            val publishedFileClient = SteamPublishedFileClient(
+                directoryClient = SteamDirectoryClient(client),
+                sessionFactory = { identity.createSession(client) },
             )
+            publishedFileClient.subscribe(
+                account = account,
+                appId = appId,
+                publishedFileId = publishedFileId,
+            )
+        }.onFailure { error ->
+            logFailure(
+                "subscribeToPublishedFile failed appId=$appId publishedFileId=$publishedFileId reason=steamProtocol",
+                error,
+            )
+        }.getOrThrow()
+        Log.i(TAG, "subscribeToPublishedFile protocolAccepted appId=$appId publishedFileId=$publishedFileId transport=steamProtocol")
+        if (!verifySubscribedAfterSubscribe(appId, publishedFileId)) {
+            logFailure(
+                "subscribeToPublishedFile failed appId=$appId publishedFileId=$publishedFileId reason=verificationFailed",
+                null,
+            )
+            throw WorkshopSubscriptionVerificationException()
         }
+        Log.i(TAG, "subscribeToPublishedFile success appId=$appId publishedFileId=$publishedFileId transport=steamProtocol verified=true")
+        return WorkshopSubscriptionResult(
+            publishedFileId = publishedFileId,
+            appId = appId,
+            subscribedAtMillis = System.currentTimeMillis(),
+        )
+    }
+
+    private suspend fun verifySubscribedAfterSubscribe(
+        appId: UInt,
+        publishedFileId: ULong,
+    ): Boolean {
+        repeat(SUBSCRIPTION_VERIFY_ATTEMPTS) { attempt ->
+            if (attempt > 0) {
+                delay(SUBSCRIPTION_VERIFY_DELAY_MS)
+            }
+            val attemptNumber = attempt + 1
+            val subscribed = runCatching {
+                isSubscribedToPublishedFile(appId, publishedFileId)
+            }.onFailure { error ->
+                Log.w(
+                    TAG,
+                    "subscribeToPublishedFile verificationCheckFailed appId=$appId publishedFileId=$publishedFileId attempt=$attemptNumber",
+                    error,
+                )
+            }.getOrDefault(false)
+            Log.i(
+                TAG,
+                "subscribeToPublishedFile verificationResult=$subscribed appId=$appId publishedFileId=$publishedFileId attempt=$attemptNumber",
+            )
+            if (subscribed) return true
+        }
+        return false
     }
 
     suspend fun getDetails(
@@ -298,26 +419,6 @@ internal class WorkshopService(
                 json.decodeFromString<PublishedFileDetailsEnvelope>(payload).response.publishedFileDetails
             }.getOrDefault(emptyList())
         }
-    }
-
-    private fun parseSubscribeResponse(payload: String) {
-        val trimmed = payload.trim()
-        if (trimmed.isBlank()) {
-            error("Steam workshop subscribe returned an empty response")
-        }
-        val responseJson = runCatching { json.parseToJsonElement(trimmed).jsonObject }
-            .getOrElse {
-                if (looksLikeCaptivePortal(trimmed)) {
-                    error("当前网络返回了 Wi-Fi/校园网认证页面，请先完成网络认证后重试")
-                }
-                error("Steam workshop subscribe returned an unexpected response")
-            }
-        if (responseJson.successValue("success") == true) return
-        val message = responseJson.stringValue("errmsg")
-            .ifBlank { responseJson.stringValue("error") }
-            .ifBlank { responseJson.stringValue("message") }
-            .ifBlank { "Steam workshop subscribe failed" }
-        error(message)
     }
 
     private fun loadLocalizedDetailPage(
@@ -998,26 +1099,13 @@ internal class WorkshopService(
             sample.contains("wifi") && sample.contains("login") && !sample.contains("workshopitem")
     }
 
-    private fun looksLikeSteamLoginPage(html: String): Boolean {
-        val sample = html.take(8192).lowercase()
-        return sample.contains("<form") && sample.contains("login_form") ||
-            steamLoggedInFalseRegex.containsMatchIn(sample)
-    }
-
-    private fun looksLikeSteamLoginUrl(url: String): Boolean {
-        val normalized = url.lowercase()
-        return normalized.contains("steamcommunity.com/login/") ||
-            normalized.contains("steamcommunity.com/login/home")
-    }
-
-    private fun summarizeSteamHtmlForLog(html: String): String = html
-        .replace(Regex("""\s+"""), " ")
-        .take(1200)
-
     private companion object {
         const val TAG = "WorkshopService"
         const val COMMENT_PAGE_SIZE = 5
         const val STEAM_COMMENTS_PAGE_SIZE = 50
+        const val MAX_SUBSCRIPTION_STATUS_CHECK_PAGES = 50
+        const val SUBSCRIPTION_VERIFY_ATTEMPTS = 4
+        const val SUBSCRIPTION_VERIFY_DELAY_MS = 750L
         const val USER_AGENT = "SlayTheAmethyst/Workshop"
         const val COMMENT_INIT_CALL = "InitializeCommentThread"
         val sessionIdRegex = Regex(
@@ -1102,7 +1190,6 @@ internal class WorkshopService(
             """<div\b(?=[^>]*\bclass="[^"]*\bworkshopItemDescription\b[^"]*")(?=[^>]*\bid="highlightContent")[^>]*>""",
             RegexOption.IGNORE_CASE,
         )
-        val steamLoggedInFalseRegex = Regex("""g_bloggedin\s*=\s*false""", RegexOption.IGNORE_CASE)
     }
 }
 
@@ -1261,15 +1348,6 @@ private fun JsonObject.longValue(key: String): Long? =
 
 private fun JsonObject.intValue(key: String): Int? =
     this[key]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
-
-private fun JsonObject.successValue(key: String): Boolean? {
-    val raw = this[key]?.jsonPrimitive?.contentOrNull?.trim()?.lowercase() ?: return null
-    return when (raw) {
-        "1", "true", "ok", "success" -> true
-        "0", "false", "fail", "failed" -> false
-        else -> raw.toIntOrNull()?.let { it == 1 }
-    }
-}
 
 private fun MatchResult.groupValueOrNull(name: String): String? =
     runCatching { groups[name]?.value }.getOrNull()

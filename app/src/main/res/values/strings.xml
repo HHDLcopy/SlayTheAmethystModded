@@ -2205,6 +2205,7 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="workshop_subscribe_do_not_remind">Do not remind again</string>
     <string name="workshop_subscribe_requires_steam_login">This feature is only available after signing in to Steam.</string>
     <string name="workshop_subscribe_success">Subscribed to %1$s.</string>
+    <string name="workshop_subscribe_not_confirmed">Steam accepted the request, but the mod was not found in your subscription list. Please try again later.</string>
     <string name="workshop_subscribe_failed">Subscription failed: %1$s</string>
     <string name="workshop_change_notes_title">Changelog</string>
     <string name="workshop_change_notes_latest_title">Latest update</string>

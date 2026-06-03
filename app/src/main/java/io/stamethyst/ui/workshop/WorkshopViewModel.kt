@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.ResultReceiver
+import android.util.Log
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -32,6 +33,7 @@ import io.stamethyst.backend.workshop.WorkshopModCategory
 import io.stamethyst.backend.workshop.WorkshopModCardState
 import io.stamethyst.backend.workshop.WorkshopService
 import io.stamethyst.backend.workshop.WorkshopSteamLoginRequiredException
+import io.stamethyst.backend.workshop.WorkshopSubscriptionVerificationException
 import io.stamethyst.backend.workshop.WorkshopUpdateCheckResult
 import io.stamethyst.backend.workshop.WorkshopUpdateChecker
 import io.stamethyst.backend.workshop.buildBaiduModDescriptionReference
@@ -216,13 +218,23 @@ internal class WorkshopViewModel : ViewModel() {
                 items = emptyList(),
                 nextPage = 1,
                 hasMorePages = false,
+                subscribedWorkshopIds = emptySet(),
+                detailSubscriptionStatus = WorkshopDetailSubscriptionStatus.Unknown,
                 errorMessage = null,
             )
             return
         }
 
         if (uiState.steamLoggedIn != steamLoggedIn) {
-            uiState = uiState.copy(steamLoggedIn = steamLoggedIn)
+            uiState = if (steamLoggedIn) {
+                uiState.copy(steamLoggedIn = true)
+            } else {
+                uiState.copy(
+                    steamLoggedIn = false,
+                    subscribedWorkshopIds = emptySet(),
+                    detailSubscriptionStatus = WorkshopDetailSubscriptionStatus.Unknown,
+                )
+            }
         }
         if (steamLoggedIn && activeListMode == WorkshopListMode.Subscriptions && !uiState.browseLoading) {
             loadSubscribedPage(context, page = 1, append = false)
@@ -358,6 +370,8 @@ internal class WorkshopViewModel : ViewModel() {
                 items = emptyList(),
                 nextPage = 1,
                 hasMorePages = false,
+                subscribedWorkshopIds = emptySet(),
+                detailSubscriptionStatus = WorkshopDetailSubscriptionStatus.Unknown,
                 errorMessage = null,
             )
             return
@@ -430,6 +444,12 @@ internal class WorkshopViewModel : ViewModel() {
                 detailChangeNotesErrorMessage = null,
                 detailSubscriptionLoadingId = null,
                 detailSubscriptionMessage = null,
+                detailSubscriptionStatusId = publishedFileId,
+                detailSubscriptionStatus = if (currentService.hasSteamAuth()) {
+                    WorkshopDetailSubscriptionStatus.Checking
+                } else {
+                    WorkshopDetailSubscriptionStatus.Unknown
+                },
             )
             runCatching {
                 val summaryFallback = fallbackSummary ?: findSummaryFallback(appId, publishedFileId)
@@ -447,8 +467,13 @@ internal class WorkshopViewModel : ViewModel() {
                 if (shouldLoadComments) {
                     loadWorkshopCommentsPage(context, appId, publishedFileId, page = 1)
                 }
+                refreshDetailSubscriptionStatus(appId, publishedFileId)
             }.onFailure { error ->
-                uiState = uiState.copy(detailLoadingId = null, errorMessage = error.message ?: error.javaClass.simpleName)
+                uiState = uiState.copy(
+                    detailLoadingId = null,
+                    detailSubscriptionStatus = WorkshopDetailSubscriptionStatus.Unknown,
+                    errorMessage = error.message ?: error.javaClass.simpleName,
+                )
             }
         }
     }
@@ -587,6 +612,7 @@ internal class WorkshopViewModel : ViewModel() {
     }
 
     fun showWorkshopSubscribeSteamLoginRequired(context: Context) {
+        Log.w(WORKSHOP_SUBSCRIPTION_LOG_TAG, "subscribeSelected blocked reason=steamLoginRequired")
         uiState = uiState.copy(
             detailSubscriptionLoadingId = null,
             detailSubscriptionMessage = context.getString(R.string.workshop_subscribe_requires_steam_login),
@@ -597,13 +623,100 @@ internal class WorkshopViewModel : ViewModel() {
         uiState = uiState.copy(detailSubscriptionMessage = null)
     }
 
+    private fun refreshDetailSubscriptionStatus(
+        appId: UInt,
+        publishedFileId: ULong,
+    ) {
+        val currentService = service ?: return
+        if (!currentService.hasSteamAuth()) {
+            uiState = uiState.copy(
+                steamLoggedIn = false,
+                detailSubscriptionStatusId = publishedFileId,
+                detailSubscriptionStatus = WorkshopDetailSubscriptionStatus.Unknown,
+                subscribedWorkshopIds = uiState.subscribedWorkshopIds - publishedFileId,
+            )
+            return
+        }
+        uiState = uiState.copy(
+            steamLoggedIn = true,
+            detailSubscriptionStatusId = publishedFileId,
+            detailSubscriptionStatus = WorkshopDetailSubscriptionStatus.Checking,
+        )
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    currentService.isSubscribedToPublishedFile(appId, publishedFileId)
+                }
+            }.onSuccess { subscribed ->
+                Log.i(
+                    WORKSHOP_SUBSCRIPTION_LOG_TAG,
+                    "refreshDetailSubscriptionStatus success appId=$appId publishedFileId=$publishedFileId subscribed=$subscribed",
+                )
+                val nextSubscribedIds = if (subscribed) {
+                    uiState.subscribedWorkshopIds + publishedFileId
+                } else {
+                    uiState.subscribedWorkshopIds - publishedFileId
+                }
+                uiState = uiState.copy(
+                    subscribedWorkshopIds = nextSubscribedIds,
+                    detailSubscriptionStatus = if (uiState.detailSubscriptionStatusId == publishedFileId) {
+                        if (subscribed) {
+                            WorkshopDetailSubscriptionStatus.Subscribed
+                        } else {
+                            WorkshopDetailSubscriptionStatus.NotSubscribed
+                        }
+                    } else {
+                        uiState.detailSubscriptionStatus
+                    },
+                )
+            }.onFailure { error ->
+                if (error is WorkshopSteamLoginRequiredException) {
+                    Log.w(
+                        WORKSHOP_SUBSCRIPTION_LOG_TAG,
+                        "refreshDetailSubscriptionStatus failed appId=$appId publishedFileId=$publishedFileId reason=steamLoginRequired",
+                        error,
+                    )
+                    uiState = uiState.copy(
+                        steamLoggedIn = false,
+                        detailSubscriptionStatus = if (uiState.detailSubscriptionStatusId == publishedFileId) {
+                            WorkshopDetailSubscriptionStatus.Unknown
+                        } else {
+                            uiState.detailSubscriptionStatus
+                        },
+                        subscribedWorkshopIds = uiState.subscribedWorkshopIds - publishedFileId,
+                    )
+                    return@onFailure
+                }
+                Log.e(
+                    WORKSHOP_SUBSCRIPTION_LOG_TAG,
+                    "refreshDetailSubscriptionStatus failed appId=$appId publishedFileId=$publishedFileId",
+                    error,
+                )
+                uiState = uiState.copy(
+                    detailSubscriptionStatus = if (uiState.detailSubscriptionStatusId == publishedFileId) {
+                        WorkshopDetailSubscriptionStatus.Unknown
+                    } else {
+                        uiState.detailSubscriptionStatus
+                    },
+                )
+            }
+        }
+    }
+
     fun subscribeSelected(context: Context) {
         val currentService = service ?: return
         val details = uiState.selected ?: return
         val summary = details.summary
+        val subscriptionStatus = uiState.detailSubscriptionStatusFor(summary.publishedFileId)
         if (uiState.detailSubscriptionLoadingId == summary.publishedFileId ||
-            uiState.subscribedWorkshopIds.contains(summary.publishedFileId)
+            subscriptionStatus == WorkshopDetailSubscriptionStatus.Checking ||
+            subscriptionStatus == WorkshopDetailSubscriptionStatus.Subscribed ||
+            (subscriptionStatus == WorkshopDetailSubscriptionStatus.Unknown && uiState.subscribedWorkshopIds.contains(summary.publishedFileId))
         ) {
+            Log.i(
+                WORKSHOP_SUBSCRIPTION_LOG_TAG,
+                "subscribeSelected skipped appId=${summary.appId} publishedFileId=${summary.publishedFileId} loading=${uiState.detailSubscriptionLoadingId == summary.publishedFileId} status=$subscriptionStatus alreadySubscribed=${uiState.subscribedWorkshopIds.contains(summary.publishedFileId)}",
+            )
             return
         }
         if (!currentService.hasSteamAuth()) {
@@ -620,9 +733,15 @@ internal class WorkshopViewModel : ViewModel() {
                     currentService.subscribeToPublishedFile(summary.appId, summary.publishedFileId)
                 }
             }.onSuccess {
+                Log.i(
+                    WORKSHOP_SUBSCRIPTION_LOG_TAG,
+                    "subscribeSelected success appId=${summary.appId} publishedFileId=${summary.publishedFileId} title=${summary.title}",
+                )
                 uiState = uiState.copy(
                     detailSubscriptionLoadingId = null,
                     subscribedWorkshopIds = uiState.subscribedWorkshopIds + summary.publishedFileId,
+                    detailSubscriptionStatusId = summary.publishedFileId,
+                    detailSubscriptionStatus = WorkshopDetailSubscriptionStatus.Subscribed,
                     detailSubscriptionMessage = context.getString(
                         R.string.workshop_subscribe_success,
                         summary.title.ifBlank { summary.publishedFileId.toString() },
@@ -630,14 +749,32 @@ internal class WorkshopViewModel : ViewModel() {
                 )
             }.onFailure { error ->
                 if (error is WorkshopSteamLoginRequiredException) {
+                    Log.w(
+                        WORKSHOP_SUBSCRIPTION_LOG_TAG,
+                        "subscribeSelected failed appId=${summary.appId} publishedFileId=${summary.publishedFileId} reason=steamLoginRequired",
+                        error,
+                    )
                     showWorkshopSubscribeSteamLoginRequired(context)
                     return@onFailure
                 }
+                Log.e(
+                    WORKSHOP_SUBSCRIPTION_LOG_TAG,
+                    "subscribeSelected failed appId=${summary.appId} publishedFileId=${summary.publishedFileId}",
+                    error,
+                )
+                val errorMessage = if (error is WorkshopSubscriptionVerificationException) {
+                    context.getString(R.string.workshop_subscribe_not_confirmed)
+                } else {
+                    error.message ?: error.javaClass.simpleName
+                }
                 uiState = uiState.copy(
                     detailSubscriptionLoadingId = null,
+                    subscribedWorkshopIds = uiState.subscribedWorkshopIds - summary.publishedFileId,
+                    detailSubscriptionStatusId = summary.publishedFileId,
+                    detailSubscriptionStatus = WorkshopDetailSubscriptionStatus.NotSubscribed,
                     detailSubscriptionMessage = context.getString(
                         R.string.workshop_subscribe_failed,
-                        error.message ?: error.javaClass.simpleName,
+                        errorMessage,
                     ),
                 )
             }
@@ -1194,10 +1331,15 @@ internal data class WorkshopUiState(
     val detailChangeNotesLoadingId: ULong? = null,
     val detailChangeNotesErrorMessage: String? = null,
     val detailSubscriptionLoadingId: ULong? = null,
+    val detailSubscriptionStatusId: ULong? = null,
+    val detailSubscriptionStatus: WorkshopDetailSubscriptionStatus = WorkshopDetailSubscriptionStatus.Unknown,
     val subscribedWorkshopIds: Set<ULong> = emptySet(),
     val detailSubscriptionMessage: String? = null,
     val errorMessage: String? = null,
 ) {
+    fun detailSubscriptionStatusFor(publishedFileId: ULong): WorkshopDetailSubscriptionStatus =
+        if (detailSubscriptionStatusId == publishedFileId) detailSubscriptionStatus else WorkshopDetailSubscriptionStatus.Unknown
+
     companion object {
         const val PAGE_SIZE = 30
     }
@@ -1206,6 +1348,13 @@ internal data class WorkshopUiState(
 internal enum class WorkshopListMode {
     Browse,
     Subscriptions,
+}
+
+internal enum class WorkshopDetailSubscriptionStatus {
+    Unknown,
+    Checking,
+    NotSubscribed,
+    Subscribed,
 }
 
 internal data class WorkshopPendingDependencyDownload(
@@ -1260,3 +1409,4 @@ private fun Bundle.optionalLong(key: String): Long? = if (containsKey(key)) getL
 private const val BAIDU_AUTO_DETECT_LANGUAGE = "auto"
 private const val BAIDU_DEFAULT_TARGET_LANGUAGE = "zh"
 private const val BAIDU_STS_GAME_TITLE = "Slay the Spire"
+private const val WORKSHOP_SUBSCRIPTION_LOG_TAG = "WorkshopSubscribe"

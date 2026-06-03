@@ -8,7 +8,12 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
@@ -22,6 +27,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Spacer
@@ -43,6 +49,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -66,9 +73,9 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -104,47 +111,16 @@ import io.stamethyst.backend.workshop.WorkshopPreviewCacheStore
 import io.stamethyst.backend.workshop.isActiveDownload
 import io.stamethyst.ui.CollapsibleFloatingGlassHeader
 import io.stamethyst.ui.Icons
+import io.stamethyst.ui.SearchHistoryStore
+import io.stamethyst.ui.SearchHistorySuggestions
 import io.stamethyst.ui.icon.ArrowBack
+import io.stamethyst.ui.icon.KeyboardArrowUp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-// Increase this value to require a longer scroll back toward the top before expanding the search header.
-private val WorkshopHeaderExpandScrollDistanceThreshold = 64.dp
-private const val WorkshopHeaderUnknownVisibleItemDeltaPx = 10_000
-
-internal data class WorkshopHeaderVisibleItemOffset(
-    val index: Int,
-    val offset: Int,
-)
-
-internal data class WorkshopHeaderScrollSample(
-    val firstVisibleItemIndex: Int,
-    val firstVisibleItemScrollOffset: Int,
-    val visibleItemOffsets: List<WorkshopHeaderVisibleItemOffset>,
-)
-
-internal fun workshopHeaderScrollDeltaPx(
-    previous: WorkshopHeaderScrollSample,
-    current: WorkshopHeaderScrollSample,
-): Int {
-    current.visibleItemOffsets.forEach { currentItem ->
-        val previousItem = previous.visibleItemOffsets.firstOrNull { it.index == currentItem.index }
-        if (previousItem != null) {
-            return previousItem.offset - currentItem.offset
-        }
-    }
-
-    val indexDelta = current.firstVisibleItemIndex - previous.firstVisibleItemIndex
-    if (indexDelta != 0) {
-        return if (indexDelta > 0) {
-            WorkshopHeaderUnknownVisibleItemDeltaPx
-        } else {
-            -WorkshopHeaderUnknownVisibleItemDeltaPx
-        }
-    }
-    return current.firstVisibleItemScrollOffset - previous.firstVisibleItemScrollOffset
-}
+private val WorkshopBackToTopButtonScrollThreshold = 320.dp
 
 @Composable
 internal fun WorkshopScreen(
@@ -174,14 +150,14 @@ internal fun WorkshopScreen(
         }
     }
     val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
     val density = LocalDensity.current
     val headerHazeState = rememberHazeState()
     var headerHeightPx by remember { mutableIntStateOf(0) }
     val headerCollapseOffsetPx = with(density) { 24.dp.roundToPx() }
-    val headerExpandScrollDistanceThresholdPx = with(density) {
-        WorkshopHeaderExpandScrollDistanceThreshold.roundToPx()
+    val backToTopButtonScrollThresholdPx = with(density) {
+        WorkshopBackToTopButtonScrollThreshold.roundToPx()
     }
-    var headerExpandedByDownScroll by remember { mutableStateOf(false) }
     val headerPastCollapseOffset by remember(listState, headerCollapseOffsetPx) {
         derivedStateOf {
             listState.firstVisibleItemIndex > 0 ||
@@ -189,7 +165,13 @@ internal fun WorkshopScreen(
         }
     }
     val headerCollapsed by remember {
-        derivedStateOf { headerPastCollapseOffset && !headerExpandedByDownScroll }
+        derivedStateOf { headerPastCollapseOffset }
+    }
+    val showBackToTopButton by remember(listState, backToTopButtonScrollThresholdPx) {
+        derivedStateOf {
+            listState.firstVisibleItemIndex > 0 ||
+                listState.firstVisibleItemScrollOffset > backToTopButtonScrollThresholdPx
+        }
     }
     val measuredHeaderHeight = with(density) { headerHeightPx.toDp() }
     val headerPlaceholderHeight = if (useFloatingHeader && state.listMode == WorkshopListMode.Browse) 250.dp else 102.dp
@@ -204,12 +186,14 @@ internal fun WorkshopScreen(
     var sort by rememberSaveable { mutableStateOf(WorkshopBrowseSort.MostPopular) }
     var timeFilter by rememberSaveable { mutableStateOf(WorkshopBrowseTimeFilter.OneWeek) }
     var category by rememberSaveable { mutableStateOf(WorkshopModCategory.All) }
-    fun searchWithPopularAllTime() {
+    fun searchWithPopularAllTime(searchQuery: String = query) {
+        val normalizedQuery = searchQuery.trim()
         val searchSort = WorkshopBrowseSort.MostPopular
         val searchTimeFilter = WorkshopBrowseTimeFilter.AllTime
+        query = normalizedQuery
         sort = searchSort
         timeFilter = searchTimeFilter
-        viewModel.search(context.applicationContext, query, searchSort, searchTimeFilter, category)
+        viewModel.search(context.applicationContext, normalizedQuery, searchSort, searchTimeFilter, category)
     }
     val shouldLoadMore by remember {
         derivedStateOf {
@@ -224,43 +208,6 @@ internal fun WorkshopScreen(
 
     LaunchedEffect(state.listMode) {
         listState.animateScrollToItem(0)
-    }
-
-    LaunchedEffect(listState, headerExpandScrollDistanceThresholdPx) {
-        var previousSample = WorkshopHeaderScrollSample(
-            firstVisibleItemIndex = listState.firstVisibleItemIndex,
-            firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset,
-            visibleItemOffsets = listState.layoutInfo.visibleItemsInfo.map {
-                WorkshopHeaderVisibleItemOffset(index = it.index, offset = it.offset)
-            },
-        )
-        var scrollDistanceTowardTopPx = 0
-        snapshotFlow {
-            WorkshopHeaderScrollSample(
-                firstVisibleItemIndex = listState.firstVisibleItemIndex,
-                firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset,
-                visibleItemOffsets = listState.layoutInfo.visibleItemsInfo.map {
-                    WorkshopHeaderVisibleItemOffset(index = it.index, offset = it.offset)
-                },
-            )
-        }.collect { sample ->
-            val scrollDeltaPx = workshopHeaderScrollDeltaPx(previousSample, sample)
-            when {
-                scrollDeltaPx < 0 -> {
-                    scrollDistanceTowardTopPx += -scrollDeltaPx
-                    if (headerExpandScrollDistanceThresholdPx <= 0 ||
-                        scrollDistanceTowardTopPx >= headerExpandScrollDistanceThresholdPx
-                    ) {
-                        headerExpandedByDownScroll = true
-                    }
-                }
-                scrollDeltaPx > 0 -> {
-                    scrollDistanceTowardTopPx = 0
-                    headerExpandedByDownScroll = false
-                }
-            }
-            previousSample = sample
-        }
     }
 
     LaunchedEffect(active, state.downloadInProgress) {
@@ -505,6 +452,28 @@ internal fun WorkshopScreen(
                     null
                 },
             )
+        }
+        AnimatedVisibility(
+            visible = showBackToTopButton,
+            enter = fadeIn() + scaleIn(),
+            exit = scaleOut() + fadeOut(),
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .navigationBarsPadding()
+                .padding(end = 24.dp, bottom = 28.dp),
+        ) {
+            FloatingActionButton(
+                onClick = {
+                    coroutineScope.launch {
+                        listState.animateScrollToItem(0)
+                    }
+                },
+            ) {
+                Icon(
+                    imageVector = Icons.KeyboardArrowUp,
+                    contentDescription = stringResource(R.string.workshop_scroll_to_top),
+                )
+            }
         }
         }
     }
@@ -793,7 +762,7 @@ private fun SearchPanel(
     timeFilter: WorkshopBrowseTimeFilter,
     category: WorkshopModCategory,
     onQueryChange: (String) -> Unit,
-    onSearch: () -> Unit,
+    onSearch: (String) -> Unit,
     onOpenDetailsById: (ULong) -> Unit,
     onSortChange: (WorkshopBrowseSort) -> Unit,
     onTimeFilterChange: (WorkshopBrowseTimeFilter) -> Unit,
@@ -807,10 +776,20 @@ private fun SearchPanel(
     var openDetailsByIdDialogVisible by rememberSaveable { mutableStateOf(false) }
     var openDetailsByIdText by rememberSaveable { mutableStateOf("") }
     var openDetailsByIdError by rememberSaveable { mutableStateOf<String?>(null) }
+    var searchHistoryExpanded by remember { mutableStateOf(false) }
+    val context = LocalContext.current.applicationContext
+    var searchHistory by remember(context) {
+        mutableStateOf(SearchHistoryStore.loadWorkshopSearchHistory(context))
+    }
     val invalidWorkshopIdMessage = stringResource(R.string.workshop_download_by_id_invalid)
-    fun submitSearch() {
+    fun submitSearch(searchQuery: String = query) {
+        val normalizedQuery = searchQuery.trim()
         keyboardController?.hide()
-        onSearch()
+        searchHistoryExpanded = false
+        if (normalizedQuery.isNotEmpty()) {
+            searchHistory = SearchHistoryStore.recordWorkshopSearch(context, normalizedQuery)
+        }
+        onSearch(normalizedQuery)
     }
     fun submitOpenDetailsById() {
         val publishedFileId = parseWorkshopPublishedFileId(openDetailsByIdText)
@@ -836,8 +815,15 @@ private fun SearchPanel(
                 sortMenuExpanded = sortMenuExpanded,
                 timeMenuExpanded = timeMenuExpanded,
                 categoryMenuExpanded = categoryMenuExpanded,
+                searchHistory = searchHistory,
+                searchHistoryExpanded = searchHistoryExpanded,
                 onQueryChange = onQueryChange,
                 onSearch = ::submitSearch,
+                onSearchHistoryExpandedChange = { searchHistoryExpanded = it },
+                onSearchHistorySelected = { selected ->
+                    onQueryChange(selected)
+                    submitSearch(selected)
+                },
                 onOpenDetailsByIdClick = { openDetailsByIdDialogVisible = true },
                 onSortMenuExpandedChange = { sortMenuExpanded = it },
                 onTimeMenuExpandedChange = { timeMenuExpanded = it },
@@ -858,8 +844,15 @@ private fun SearchPanel(
             sortMenuExpanded = sortMenuExpanded,
             timeMenuExpanded = timeMenuExpanded,
             categoryMenuExpanded = categoryMenuExpanded,
+            searchHistory = searchHistory,
+            searchHistoryExpanded = searchHistoryExpanded,
             onQueryChange = onQueryChange,
             onSearch = ::submitSearch,
+            onSearchHistoryExpandedChange = { searchHistoryExpanded = it },
+            onSearchHistorySelected = { selected ->
+                onQueryChange(selected)
+                submitSearch(selected)
+            },
             onOpenDetailsByIdClick = { openDetailsByIdDialogVisible = true },
             onSortMenuExpandedChange = { sortMenuExpanded = it },
             onTimeMenuExpandedChange = { timeMenuExpanded = it },
@@ -898,8 +891,12 @@ private fun SearchPanelContent(
     sortMenuExpanded: Boolean,
     timeMenuExpanded: Boolean,
     categoryMenuExpanded: Boolean,
+    searchHistory: List<String>,
+    searchHistoryExpanded: Boolean,
     onQueryChange: (String) -> Unit,
-    onSearch: () -> Unit,
+    onSearch: (String) -> Unit,
+    onSearchHistoryExpandedChange: (Boolean) -> Unit,
+    onSearchHistorySelected: (String) -> Unit,
     onOpenDetailsByIdClick: () -> Unit,
     onSortMenuExpandedChange: (Boolean) -> Unit,
     onTimeMenuExpandedChange: (Boolean) -> Unit,
@@ -912,26 +909,40 @@ private fun SearchPanelContent(
         modifier.animateContentSize(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        SearchBar(
-            modifier = Modifier.fillMaxWidth(),
-            inputField = {
-                SearchBarDefaults.InputField(
-                    query = query,
-                    onQueryChange = onQueryChange,
-                    onSearch = { onSearch() },
-                    expanded = false,
-                    onExpandedChange = {},
-                    placeholder = { Text(stringResource(R.string.workshop_search_placeholder)) },
-                    trailingIcon = {
-                        TextButton(
-                            onClick = onSearch,
-                        ) { Text(stringResource(R.string.workshop_search_action)) }
-                    },
+        Box {
+            SearchBar(
+                modifier = Modifier.fillMaxWidth(),
+                inputField = {
+                    SearchBarDefaults.InputField(
+                        query = query,
+                        onQueryChange = {
+                            onQueryChange(it)
+                            onSearchHistoryExpandedChange(true)
+                        },
+                        onSearch = { onSearch(query) },
+                        expanded = false,
+                        onExpandedChange = { onSearchHistoryExpandedChange(it) },
+                        placeholder = { Text(stringResource(R.string.workshop_search_placeholder)) },
+                        trailingIcon = {
+                            TextButton(
+                                onClick = { onSearch(query) },
+                            ) { Text(stringResource(R.string.workshop_search_action)) }
+                        },
+                    )
+                },
+                expanded = false,
+                onExpandedChange = {},
+            ) {}
+            DropdownMenu(
+                expanded = searchHistoryExpanded,
+                onDismissRequest = { onSearchHistoryExpandedChange(false) },
+            ) {
+                SearchHistorySuggestions(
+                    history = searchHistory,
+                    onSelect = onSearchHistorySelected,
                 )
-            },
-            expanded = false,
-            onExpandedChange = {},
-        ) {}
+            }
+        }
         FlowRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),

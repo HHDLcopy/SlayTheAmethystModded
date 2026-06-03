@@ -892,6 +892,8 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="common_action_install">Install</string>
     <string name="common_action_remove">Remove</string>
     <string name="common_action_open_issue">Open issue</string>
+    <string name="search_history_title">Recent searches</string>
+    <string name="search_history_empty">No search history yet.</string>
     <string name="common_content_desc_back">Back</string>
     <string name="common_busy_preparing_jvm_log_bundle">Preparing JVM log bundle...</string>
     <string name="main_feedback_updates_content_description">Feedback updates available</string>
@@ -2031,6 +2033,7 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="workshop_download_center_subtitle">Download progress and task details</string>
     <string name="workshop_market_title">Mod market</string>
     <string name="workshop_market_subtitle">Browse and download mods</string>
+    <string name="workshop_scroll_to_top">Back to top</string>
     <string name="workshop_section_browse">Workshop list</string>
     <string name="workshop_section_loading">Loading</string>
     <string name="workshop_section_no_results">No results</string>

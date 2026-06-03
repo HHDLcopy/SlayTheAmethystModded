@@ -20,10 +20,12 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -37,12 +39,12 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DockedSearchBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SearchBar
 import androidx.compose.material3.SearchBarDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -72,6 +74,7 @@ import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -182,9 +185,24 @@ internal fun ModFolderSection(
     }
     val context = LocalContext.current.applicationContext
     val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+    val density = LocalDensity.current
     var modSearchHistoryExpanded by remember { mutableStateOf(false) }
+    var wasModSearchKeyboardVisible by remember { mutableStateOf(false) }
     var modSearchHistory by remember(context) {
         mutableStateOf(SearchHistoryStore.loadModSearchHistory(context))
+    }
+    val modSearchKeyboardVisible = WindowInsets.ime.getBottom(density) > 0
+    LaunchedEffect(modSearchKeyboardVisible) {
+        if (
+            wasModSearchKeyboardVisible &&
+            !modSearchKeyboardVisible &&
+            modSearchHistoryExpanded
+        ) {
+            focusManager.clearFocus(force = true)
+            modSearchHistoryExpanded = false
+        }
+        wasModSearchKeyboardVisible = modSearchKeyboardVisible
     }
     fun submitModSearch(searchQuery: String = filterText) {
         val normalizedQuery = searchQuery.trim()
@@ -194,7 +212,6 @@ internal fun ModFolderSection(
             modSearchHistory = SearchHistoryStore.recordModSearch(context, normalizedQuery)
         }
     }
-    val density = LocalDensity.current
     val headerCollapseThresholdPx = with(density) { 24.dp.roundToPx() }
     LaunchedEffect(interactionState.listState, headerCollapseThresholdPx) {
         snapshotFlow {
@@ -672,43 +689,39 @@ internal fun ModFolderSection(
                         }
 
                         ModFolderLazyItem.FilterInput -> {
-                            Box(
+                            DockedSearchBar(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(horizontal = 8.dp, vertical = 2.dp),
-                            ) {
-                                SearchBar(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    inputField = {
-                                        SearchBarDefaults.InputField(
-                                            query = filterText,
-                                            onQueryChange = {
-                                                interactionState.filterText = it
-                                                modSearchHistoryExpanded = true
-                                            },
-                                            onSearch = { submitModSearch() },
-                                            expanded = modSearchHistoryExpanded,
-                                            onExpandedChange = { modSearchHistoryExpanded = it },
-                                            placeholder = { Text(stringResource(R.string.main_folder_filter_hint)) },
-                                            trailingIcon = {
-                                                TextButton(onClick = { submitModSearch() }) {
-                                                    Text(stringResource(R.string.workshop_search_action))
-                                                }
-                                            },
-                                        )
-                                    },
-                                    expanded = modSearchHistoryExpanded,
-                                    onExpandedChange = { modSearchHistoryExpanded = it },
-                                    shape = RoundedCornerShape(10.dp),
-                                ) {
-                                    SearchHistorySuggestions(
-                                        history = modSearchHistory,
-                                        onSelect = { selected ->
-                                            interactionState.filterText = selected
-                                            submitModSearch(selected)
+                                inputField = {
+                                    SearchBarDefaults.InputField(
+                                        query = filterText,
+                                        onQueryChange = {
+                                            interactionState.filterText = it
+                                            modSearchHistoryExpanded = true
+                                        },
+                                        onSearch = { submitModSearch(it) },
+                                        expanded = modSearchHistoryExpanded,
+                                        onExpandedChange = { modSearchHistoryExpanded = it },
+                                        placeholder = { Text(stringResource(R.string.main_folder_filter_hint)) },
+                                        trailingIcon = {
+                                            TextButton(onClick = { submitModSearch() }) {
+                                                Text(stringResource(R.string.workshop_search_action))
+                                            }
                                         },
                                     )
-                                }
+                                },
+                                expanded = modSearchHistoryExpanded,
+                                onExpandedChange = { modSearchHistoryExpanded = it },
+                                shape = RoundedCornerShape(10.dp),
+                            ) {
+                                SearchHistorySuggestions(
+                                    history = modSearchHistory,
+                                    onSelect = { selected ->
+                                        interactionState.filterText = selected
+                                        submitModSearch(selected)
+                                    },
+                                )
                             }
                         }
 

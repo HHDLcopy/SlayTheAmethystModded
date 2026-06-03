@@ -14,12 +14,12 @@ import org.junit.Test
 
 class SteamCloudNetworkEnvironmentTest {
     @Test
-    fun shouldPromptForDirectMode_whenWattAccelerationIsEnabled() {
+    fun shouldPromptForDirectMode_ignoresWattAccelerationSetting() {
         val roots = TestRoots.create("steam-cloud-direct-mode-watt")
         try {
             LauncherConfig.setSteamCloudWattAccelerationEnabled(roots.context, true)
 
-            assertTrue(SteamCloudNetworkEnvironment.shouldPromptForDirectMode(roots.context))
+            assertFalse(SteamCloudNetworkEnvironment.shouldPromptForDirectMode(roots.context))
         } finally {
             roots.rootDir.deleteRecursively()
         }

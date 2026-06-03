@@ -10,11 +10,9 @@ internal object SteamCloudNetworkEnvironment {
     private const val LAST_CM_ENDPOINT_FILE_NAME = "last-websocket-cm-endpoint.txt"
     private const val CM_SERVER_LIST_FILE_NAME = "steam-cm-server-list.bin"
 
+    @Suppress("UNUSED_PARAMETER")
     fun shouldPromptForDirectMode(context: Context): Boolean {
-        if (isWattAccelerationEnabled(context)) {
-            return true
-        }
-        return isVpnActive(context)
+        return false
     }
 
     fun switchToDirectMode(context: Context) {

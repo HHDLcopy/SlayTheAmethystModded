@@ -27,12 +27,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -46,6 +48,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DockedSearchBar
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -60,7 +63,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
-import androidx.compose.material3.SearchBar
 import androidx.compose.material3.SearchBarDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -87,6 +89,7 @@ import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -121,6 +124,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private val WorkshopBackToTopButtonScrollThreshold = 320.dp
+private val WorkshopBackToTopButtonBottomPadding = 112.dp
 
 @Composable
 internal fun WorkshopScreen(
@@ -404,7 +408,7 @@ internal fun WorkshopScreen(
                 expandedContentTopPadding = 0.dp,
                 onHeightChanged = {
                     if (!headerCollapsed) {
-                        headerHeightPx = maxOf(headerHeightPx, it)
+                        headerHeightPx = it
                     }
                 },
                 pinnedContent = {
@@ -460,7 +464,7 @@ internal fun WorkshopScreen(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .navigationBarsPadding()
-                .padding(end = 24.dp, bottom = 28.dp),
+                .padding(end = 24.dp, bottom = WorkshopBackToTopButtonBottomPadding),
         ) {
             FloatingActionButton(
                 onClick = {
@@ -770,6 +774,8 @@ private fun SearchPanel(
     contained: Boolean = true,
 ) {
     val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+    val density = LocalDensity.current
     var sortMenuExpanded by remember { mutableStateOf(false) }
     var timeMenuExpanded by remember { mutableStateOf(false) }
     var categoryMenuExpanded by remember { mutableStateOf(false) }
@@ -777,11 +783,24 @@ private fun SearchPanel(
     var openDetailsByIdText by rememberSaveable { mutableStateOf("") }
     var openDetailsByIdError by rememberSaveable { mutableStateOf<String?>(null) }
     var searchHistoryExpanded by remember { mutableStateOf(false) }
+    var wasSearchKeyboardVisible by remember { mutableStateOf(false) }
     val context = LocalContext.current.applicationContext
     var searchHistory by remember(context) {
         mutableStateOf(SearchHistoryStore.loadWorkshopSearchHistory(context))
     }
     val invalidWorkshopIdMessage = stringResource(R.string.workshop_download_by_id_invalid)
+    val searchKeyboardVisible = WindowInsets.ime.getBottom(density) > 0
+    LaunchedEffect(searchKeyboardVisible) {
+        if (
+            wasSearchKeyboardVisible &&
+            !searchKeyboardVisible &&
+            searchHistoryExpanded
+        ) {
+            focusManager.clearFocus(force = true)
+            searchHistoryExpanded = false
+        }
+        wasSearchKeyboardVisible = searchKeyboardVisible
+    }
     fun submitSearch(searchQuery: String = query) {
         val normalizedQuery = searchQuery.trim()
         keyboardController?.hide()
@@ -909,35 +928,33 @@ private fun SearchPanelContent(
         modifier.animateContentSize(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Box {
-            SearchBar(
-                modifier = Modifier.fillMaxWidth(),
-                inputField = {
-                    SearchBarDefaults.InputField(
-                        query = query,
-                        onQueryChange = {
-                            onQueryChange(it)
-                            onSearchHistoryExpandedChange(true)
-                        },
-                        onSearch = { onSearch(query) },
-                        expanded = searchHistoryExpanded,
-                        onExpandedChange = { onSearchHistoryExpandedChange(it) },
-                        placeholder = { Text(stringResource(R.string.workshop_search_placeholder)) },
-                        trailingIcon = {
-                            TextButton(
-                                onClick = { onSearch(query) },
-                            ) { Text(stringResource(R.string.workshop_search_action)) }
-                        },
-                    )
-                },
-                expanded = searchHistoryExpanded,
-                onExpandedChange = onSearchHistoryExpandedChange,
-            ) {
-                SearchHistorySuggestions(
-                    history = searchHistory,
-                    onSelect = onSearchHistorySelected,
+        DockedSearchBar(
+            modifier = Modifier.fillMaxWidth(),
+            inputField = {
+                SearchBarDefaults.InputField(
+                    query = query,
+                    onQueryChange = {
+                        onQueryChange(it)
+                        onSearchHistoryExpandedChange(true)
+                    },
+                    onSearch = onSearch,
+                    expanded = searchHistoryExpanded,
+                    onExpandedChange = onSearchHistoryExpandedChange,
+                    placeholder = { Text(stringResource(R.string.workshop_search_placeholder)) },
+                    trailingIcon = {
+                        TextButton(
+                            onClick = { onSearch(query) },
+                        ) { Text(stringResource(R.string.workshop_search_action)) }
+                    },
                 )
-            }
+            },
+            expanded = searchHistoryExpanded,
+            onExpandedChange = onSearchHistoryExpandedChange,
+        ) {
+            SearchHistorySuggestions(
+                history = searchHistory,
+                onSelect = onSearchHistorySelected,
+            )
         }
         FlowRow(
             modifier = Modifier.fillMaxWidth(),

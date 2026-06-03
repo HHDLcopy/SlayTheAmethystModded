@@ -123,15 +123,17 @@ internal class WorkshopSteamWebSession(
         return listOf(
             Cookie.Builder()
                 .name("steamLoginSecure")
-                .value("${context.steamId}||${context.accessToken}")
+                .value("${context.steamId}%7C%7C${context.accessToken}")
                 .domain(domain)
                 .path("/")
+                .secure()
                 .build(),
             Cookie.Builder()
                 .name("sessionid")
                 .value(context.sessionId)
                 .domain(domain)
                 .path("/")
+                .secure()
                 .build(),
         )
     }

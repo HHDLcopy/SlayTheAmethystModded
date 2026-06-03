@@ -914,6 +914,7 @@ fun LauncherMainScreen(
     viewModel: MainScreenViewModel,
     onOpenFeedback: () -> Unit = {},
     onOpenWorkshop: () -> Unit = {},
+    onOpenWorkshopDetails: (ModItemUi) -> Unit = {},
     updateNotice: LauncherUpdateNoticeUiState? = null,
     feedbackUnreadCount: Int = 0,
     onOpenFeedbackUpdates: () -> Unit = {},
@@ -924,6 +925,7 @@ fun LauncherMainScreen(
         modifier = modifier,
         viewModel = viewModel,
         onOpenWorkshop = onOpenWorkshop,
+        onOpenWorkshopDetails = onOpenWorkshopDetails,
     ) { routeModifier, uiState, actions ->
         LauncherGameScreenContent(
             modifier = routeModifier,
@@ -946,6 +948,7 @@ fun LauncherModsScreen(
     viewModel: MainScreenViewModel,
     onOpenFeedback: () -> Unit = {},
     onOpenWorkshop: () -> Unit = {},
+    onOpenWorkshopDetails: (ModItemUi) -> Unit = {},
     feedbackUnreadCount: Int = 0,
     onOpenFeedbackUpdates: () -> Unit = {},
     onBatchSelectionModeChange: (Boolean) -> Unit = {},
@@ -968,6 +971,7 @@ fun LauncherModsScreen(
         modifier = modifier,
         viewModel = viewModel,
         onOpenWorkshop = onOpenWorkshop,
+        onOpenWorkshopDetails = onOpenWorkshopDetails,
     ) { routeModifier, uiState, actions ->
         LauncherModsScreenContent(
             modifier = routeModifier,
@@ -1060,6 +1064,7 @@ internal fun LauncherMainRoute(
     modifier: Modifier,
     viewModel: MainScreenViewModel,
     onOpenWorkshop: () -> Unit,
+    onOpenWorkshopDetails: (ModItemUi) -> Unit = {},
     handleEffects: Boolean = true,
     pollWorkshopDownloads: Boolean = true,
     content: @Composable (
@@ -1099,6 +1104,7 @@ internal fun LauncherMainRoute(
         hostActivity = hostActivity,
         importModsLauncher = importModsLauncher,
         onOpenWorkshop = onOpenWorkshop,
+        onOpenWorkshopDetails = onOpenWorkshopDetails,
     )
 
     LaunchedEffect(hostActivity) {
@@ -3331,6 +3337,7 @@ private fun ColumnScope.MainContentSwitcher(
                         onPatchWorkshopMod = actions.onPatchWorkshopMod,
                         onRetryWorkshopDownload = actions.onRetryWorkshopDownload,
                         onUpdateWorkshopMod = actions.onUpdateWorkshopMod,
+                        onOpenWorkshopDetails = actions.onOpenWorkshopDetails,
                         onRenameFolder = actions.onRenameFolder,
                         onDeleteFolder = actions.onDeleteFolder,
                         onMarkModSuggestionRead = actions.onMarkModSuggestionRead,

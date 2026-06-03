@@ -1082,6 +1082,7 @@ internal fun ModFolderSection(
                                     onPatchWorkshopMod = { latestCallbacks.value.onPatchWorkshopMod(it) },
                                     onRetryWorkshopDownload = { latestCallbacks.value.onRetryWorkshopDownload(it) },
                                     onUpdateWorkshopMod = { latestCallbacks.value.onUpdateWorkshopMod(it) },
+                                    onOpenWorkshopDetails = { latestCallbacks.value.onOpenWorkshopDetails(it) },
                                     onDragStart = { dragInfo ->
                                         val currentMod = latestMod.value
                                         dragCoordinator.startModDrag(

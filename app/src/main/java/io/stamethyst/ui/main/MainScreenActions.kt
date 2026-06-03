@@ -26,6 +26,7 @@ internal data class MainScreenActions(
     val onPatchWorkshopMod: (ModItemUi) -> Unit = {},
     val onRetryWorkshopDownload: (ModItemUi) -> Unit = {},
     val onUpdateWorkshopMod: (ModItemUi) -> Unit = {},
+    val onOpenWorkshopDetails: (ModItemUi) -> Unit = {},
     val onToggleMod: (ModItemUi, Boolean) -> Unit = { _, _ -> },
     val onSetPriority: (ModItemUi, Int?) -> Unit = { _, _ -> },
     val onSetModFavorite: (ModItemUi, Boolean) -> Unit = { _, _ -> },
@@ -78,8 +79,9 @@ internal fun rememberMainScreenActions(
     hostActivity: Activity?,
     importModsLauncher: ActivityResultLauncher<Array<String>>,
     onOpenWorkshop: () -> Unit = {},
+    onOpenWorkshopDetails: (ModItemUi) -> Unit = {},
 ): MainScreenActions {
-    return remember(viewModel, hostActivity, importModsLauncher, onOpenWorkshop) {
+    return remember(viewModel, hostActivity, importModsLauncher, onOpenWorkshop, onOpenWorkshopDetails) {
         val activity = hostActivity
         if (activity == null) {
             MainScreenActions(isHostAvailable = false)
@@ -99,6 +101,7 @@ internal fun rememberMainScreenActions(
                 onPatchWorkshopMod = { mod -> viewModel.onPatchWorkshopMod(activity, mod) },
                 onRetryWorkshopDownload = { mod -> viewModel.onRetryWorkshopDownload(activity, mod) },
                 onUpdateWorkshopMod = { mod -> viewModel.onUpdateWorkshopMod(activity, mod) },
+                onOpenWorkshopDetails = onOpenWorkshopDetails,
                 onToggleMod = { mod, checked -> viewModel.onToggleMod(activity, mod, checked) },
                 onSetPriority = { mod, priority ->
                     viewModel.onSetPriority(activity, mod, priority)

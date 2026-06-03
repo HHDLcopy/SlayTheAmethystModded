@@ -104,6 +104,7 @@ internal data class ModCardCallbacks(
     val onPatchWorkshopMod: (ModItemUi) -> Unit = {},
     val onRetryWorkshopDownload: (ModItemUi) -> Unit = {},
     val onUpdateWorkshopMod: (ModItemUi) -> Unit = {},
+    val onOpenWorkshopDetails: (ModItemUi) -> Unit = {},
     val onDragStart: (ModCardDragStartInfo) -> Unit = {},
     val onDragCancel: () -> Unit = {},
     val onMoveFolderPickerRequest: (ModItemUi) -> Unit = {},
@@ -340,6 +341,7 @@ internal fun ModCard(
             importPatchBadgeEnabled = true,
             onImportPatchClick = { showImportPatchDialog = true },
             updateBadgeEnabled = !batchSelectionMode,
+            onOpenWorkshopDetails = { callbacks.onOpenWorkshopDetails(it) },
             onUpdateBadgeClick = {
                 updateChangeNotesState = WorkshopUpdateChangeNotesState.Idle
                 updateChangeNotesReloadToken++

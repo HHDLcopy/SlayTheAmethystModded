@@ -68,6 +68,7 @@ internal fun ModCardBodyContent(
     onImportPatchClick: () -> Unit = {},
     updateBadgeEnabled: Boolean = true,
     onUpdateBadgeClick: () -> Unit = {},
+    onOpenWorkshopDetails: (ModItemUi) -> Unit = {},
     headerLeading: @Composable RowScope.() -> Unit = {},
     headerTrailing: @Composable RowScope.() -> Unit
 ) {
@@ -168,8 +169,22 @@ internal fun ModCardBodyContent(
             onDismissRequest = { showWorkshopBadgeDialog = false },
             text = { Text(stringResource(R.string.main_mod_workshop_origin_message)) },
             confirmButton = {
-                TextButton(onClick = { showWorkshopBadgeDialog = false }) {
-                    Text(text = stringResource(R.string.common_action_confirm))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(
+                        onClick = {
+                            showWorkshopBadgeDialog = false
+                            onOpenWorkshopDetails(mod)
+                        }
+                    ) {
+                        Text(text = stringResource(R.string.main_mod_workshop_origin_open_details))
+                    }
+                    TextButton(onClick = { showWorkshopBadgeDialog = false }) {
+                        Text(text = stringResource(R.string.common_action_confirm))
+                    }
                 }
             }
         )

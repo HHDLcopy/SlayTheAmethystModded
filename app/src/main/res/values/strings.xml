@@ -2255,6 +2255,7 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="main_workshop_checking_notice">Checking mod updates</string>
     <string name="main_open_workshop">Open Workshop</string>
     <string name="main_mod_workshop_origin_message">This mod was downloaded from the market and will be checked for updates automatically.</string>
+    <string name="main_mod_workshop_origin_open_details">View market details</string>
     <string name="main_mod_update_available">Update available</string>
     <string name="main_mod_workshop_action_install">Install</string>
     <string name="main_mod_workshop_action_continue_download">Continue download</string>

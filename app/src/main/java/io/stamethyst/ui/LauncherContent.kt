@@ -84,6 +84,7 @@ import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import io.stamethyst.R
+import io.stamethyst.model.ModItemUi
 import io.stamethyst.backend.workshop.WorkshopItemSummary
 import io.stamethyst.backend.workshop.WorkshopUpdateCheckCoordinator
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
@@ -264,6 +265,24 @@ fun LauncherContent(
         }
     }
 
+    fun openWorkshopDetail(appId: UInt, publishedFileId: ULong) {
+        navigator.push(
+            Route.WorkshopDetail(
+                publishedFileId = publishedFileId.toString(),
+                appId = appId.toLong(),
+            )
+        )
+    }
+
+    fun openWorkshopItemDetails(item: WorkshopItemSummary) {
+        openWorkshopDetail(item.appId, item.publishedFileId)
+    }
+
+    fun openInstalledWorkshopDetails(mod: ModItemUi) {
+        val workshop = mod.workshop ?: return
+        openWorkshopDetail(workshop.appId, workshop.publishedFileId)
+    }
+
     LaunchedEffect(currentRoute) {
         if (currentRoute != Route.Mods) {
             modsBatchSelectionMode = false
@@ -381,14 +400,8 @@ fun LauncherContent(
                             onOpenSteamLogin = { navigator.push(Route.SteamCloudLogin) },
                             onOpenDownloadCenter = { navigator.push(Route.WorkshopDownloadCenter) },
                             onOpenSubscriptions = { navigator.push(Route.WorkshopSubscriptions) },
-                            onOpenWorkshopDetails = { item ->
-                                navigator.push(
-                                    Route.WorkshopDetail(
-                                        publishedFileId = item.publishedFileId.toString(),
-                                        appId = item.appId.toLong(),
-                                    )
-                                )
-                            },
+                            onOpenWorkshopDetails = ::openWorkshopItemDetails,
+                            onOpenInstalledWorkshopDetails = ::openInstalledWorkshopDetails,
                             onBatchSelectionModeChange = { modsBatchSelectionMode = it },
                             userScrollEnabled = !modsBatchSelectionMode && !showOverlayNav,
                             handleMainEffects = !showOverlayNav,
@@ -490,6 +503,7 @@ fun LauncherContent(
                                     modifier = Modifier.fillMaxSize(),
                                     onOpenFeedback = { navigator.push(Route.Feedback) },
                                     onOpenWorkshop = { selectDockRoute(Route.Workshop) },
+                                    onOpenWorkshopDetails = ::openInstalledWorkshopDetails,
                                     updateNotice = updateNotice,
                                     feedbackUnreadCount = feedbackInboxState.unreadIssueCount,
                                     onOpenFeedbackUpdates = { openFeedbackUpdates() },
@@ -524,6 +538,7 @@ fun LauncherContent(
                                     modifier = Modifier.fillMaxSize(),
                                     onOpenFeedback = { navigator.push(Route.Feedback) },
                                     onOpenWorkshop = { selectDockRoute(Route.Workshop) },
+                                    onOpenWorkshopDetails = ::openInstalledWorkshopDetails,
                                     feedbackUnreadCount = feedbackInboxState.unreadIssueCount,
                                     onOpenFeedbackUpdates = { openFeedbackUpdates() },
                                     onBatchSelectionModeChange = { modsBatchSelectionMode = it }
@@ -606,14 +621,7 @@ fun LauncherContent(
                                     onOpenSteamLogin = { navigator.push(Route.SteamCloudLogin) },
                                     onOpenDownloadCenter = { navigator.push(Route.WorkshopDownloadCenter) },
                                     onOpenSubscriptions = { navigator.push(Route.WorkshopSubscriptions) },
-                                    onOpenDetails = { item ->
-                                        navigator.push(
-                                            Route.WorkshopDetail(
-                                                publishedFileId = item.publishedFileId.toString(),
-                                                appId = item.appId.toLong(),
-                                            )
-                                        )
-                                    },
+                                    onOpenDetails = ::openWorkshopItemDetails,
                                 )
                             }
                         }
@@ -625,14 +633,7 @@ fun LauncherContent(
                                 onBack = { navigator.goBack() },
                                 onOpenSteamLogin = { navigator.push(Route.SteamCloudLogin) },
                                 onOpenDownloadCenter = { navigator.push(Route.WorkshopDownloadCenter) },
-                                onOpenDetails = { item ->
-                                    navigator.push(
-                                        Route.WorkshopDetail(
-                                            publishedFileId = item.publishedFileId.toString(),
-                                            appId = item.appId.toLong(),
-                                        )
-                                    )
-                                },
+                                onOpenDetails = ::openWorkshopItemDetails,
                             )
                         }
 
@@ -647,14 +648,7 @@ fun LauncherContent(
                                 onOpenBaiduTranslationCredentials = { notice ->
                                     navigator.push(Route.BaiduTranslationCredentials(notice))
                                 },
-                                onOpenDetails = { item ->
-                                    navigator.push(
-                                        Route.WorkshopDetail(
-                                            publishedFileId = item.publishedFileId.toString(),
-                                            appId = item.appId.toLong(),
-                                        )
-                                    )
-                                },
+                                onOpenDetails = ::openWorkshopItemDetails,
                             )
                         }
 
@@ -1092,6 +1086,7 @@ private fun LauncherDockPager(
     onOpenDownloadCenter: () -> Unit,
     onOpenSubscriptions: () -> Unit,
     onOpenWorkshopDetails: (WorkshopItemSummary) -> Unit,
+    onOpenInstalledWorkshopDetails: (ModItemUi) -> Unit,
     onBatchSelectionModeChange: (Boolean) -> Unit,
     userScrollEnabled: Boolean,
     handleMainEffects: Boolean,
@@ -1126,6 +1121,7 @@ private fun LauncherDockPager(
         modifier = modifier,
         viewModel = mainViewModel,
         onOpenWorkshop = onOpenWorkshop,
+        onOpenWorkshopDetails = onOpenInstalledWorkshopDetails,
         handleEffects = handleMainEffects,
         pollWorkshopDownloads = shouldPollMainWorkshopDownloads,
     ) { routeModifier, uiState, actions ->

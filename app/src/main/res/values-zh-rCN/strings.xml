@@ -2254,6 +2254,7 @@
     <string name="main_workshop_checking_notice">正在检查模组更新</string>
     <string name="main_open_workshop">打开创意工坊</string>
     <string name="main_mod_workshop_origin_message">该模组从市场中下载，将会自动检查更新。</string>
+    <string name="main_mod_workshop_origin_open_details">前往市场详情页</string>
     <string name="main_mod_update_available">更新可用</string>
     <string name="main_mod_workshop_action_install">安装</string>
     <string name="main_mod_workshop_action_continue_download">继续下载</string>

@@ -158,6 +158,9 @@ class Navigator internal constructor(
    * @param route 新的根页面
    */
   fun resetRoot(route: NavKey) {
+    if (backStack.size == 1 && backStack.firstOrNull() == route) {
+      return
+    }
     backStack.clear()
     backStack.add(route)
   }

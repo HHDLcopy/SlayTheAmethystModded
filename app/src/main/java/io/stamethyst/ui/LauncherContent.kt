@@ -270,12 +270,6 @@ fun LauncherContent(
         }
     }
 
-    LaunchedEffect(currentRoute, activity) {
-        if (currentRoute == Route.Mods) {
-            mainViewModel.refresh(activity)
-        }
-    }
-
     LaunchedEffect(
         settingsUiState.steamCloudAccountName,
         settingsUiState.steamCloudRefreshTokenConfigured,
@@ -329,7 +323,7 @@ fun LauncherContent(
                 onMainScreenOpened()
             }
             if (currentRoute == Route.Mods) {
-                mainViewModel.refresh(activity)
+                mainViewModel.refreshIfStale(activity)
             }
         }
         LaunchedEffect(activity, transientNoticeHostState) {

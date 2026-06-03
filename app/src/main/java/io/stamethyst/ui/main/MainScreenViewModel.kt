@@ -6,6 +6,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
 import android.net.Uri
+import android.os.SystemClock
 import android.util.TypedValue
 import android.view.ViewGroup
 import android.widget.ScrollView
@@ -218,6 +219,7 @@ class MainScreenViewModel : ViewModel() {
     @Volatile
     private var steamCloudSyncCancelRequested = false
     private var lastSteamCloudCheckAtMs: Long? = null
+    private var lastFullRefreshAtElapsedMs: Long? = null
     @Volatile
     private var launchInFlight = false
 
@@ -275,6 +277,16 @@ class MainScreenViewModel : ViewModel() {
             hasRamSaver = dependencyAvailability.hasRamSaver,
             storageIssue = storageIssue
         )
+        lastFullRefreshAtElapsedMs = SystemClock.elapsedRealtime()
+    }
+
+    fun refreshIfStale(host: Activity) {
+        val now = SystemClock.elapsedRealtime()
+        val lastRefreshAt = lastFullRefreshAtElapsedMs
+        if (lastRefreshAt != null && now - lastRefreshAt < PASSIVE_REFRESH_DEBOUNCE_MS) {
+            return
+        }
+        refresh(host)
     }
 
     suspend fun refreshWorkshopDownloadCards(host: Activity): Boolean {
@@ -2797,6 +2809,7 @@ class MainScreenViewModel : ViewModel() {
     }
 
     companion object {
+        private const val PASSIVE_REFRESH_DEBOUNCE_MS = 750L
         private const val STEAM_CLOUD_STATUS_REFRESH_INTERVAL_MS = 60_000L
         private const val BYTES_PER_MIB = 1024L * 1024L
         private const val ENABLED_MOD_SIZE_WARNING_THRESHOLD_BYTES = 1024L * BYTES_PER_MIB

@@ -452,9 +452,11 @@ internal class WorkshopViewModel : ViewModel() {
                 },
             )
             runCatching {
-                val summaryFallback = fallbackSummary ?: findSummaryFallback(appId, publishedFileId)
+                val cachedDetails = findCachedDetails(appId, publishedFileId)
+                val summaryFallback = cachedDetails?.summary ?: fallbackSummary ?: findSummaryFallback(appId, publishedFileId)
                 withContext(Dispatchers.IO) { currentService.getDetails(appId, publishedFileId, summaryFallback) }
-            }.onSuccess { details ->
+            }.onSuccess { loadedDetails ->
+                val details = loadedDetails.mergeCachedCommunityData(findCachedDetails(appId, publishedFileId))
                 detailsCache[details.cacheKey()] = details
                 val shouldLoadComments = details.shouldLoadWorkshopComments()
                 uiState = uiState.copy(
@@ -582,18 +584,22 @@ internal class WorkshopViewModel : ViewModel() {
             runCatching {
                 withContext(Dispatchers.IO) { currentService.getCommentsPage(detailSnapshot, page) }
             }.onSuccess { commentPage ->
+                val updatedDetails = uiState.selected?.takeIf { current ->
+                    current.summary.appId == appId && current.summary.publishedFileId == publishedFileId
+                }?.copy(
+                    commentsUrl = commentPage.commentsUrl,
+                    commentCount = commentPage.commentCount,
+                    commentPage = commentPage.page,
+                    commentTotalPages = commentPage.totalPages,
+                    hasPreviousCommentPage = commentPage.hasPreviousPage,
+                    hasNextCommentPage = commentPage.hasNextPage,
+                    comments = commentPage.comments,
+                )
+                if (updatedDetails != null) {
+                    detailsCache[updatedDetails.cacheKey()] = updatedDetails
+                }
                 uiState = uiState.copy(
-                    selected = uiState.selected?.takeIf { current ->
-                        current.summary.appId == appId && current.summary.publishedFileId == publishedFileId
-                    }?.copy(
-                        commentsUrl = commentPage.commentsUrl,
-                        commentCount = commentPage.commentCount,
-                        commentPage = commentPage.page,
-                        commentTotalPages = commentPage.totalPages,
-                        hasPreviousCommentPage = commentPage.hasPreviousPage,
-                        hasNextCommentPage = commentPage.hasNextPage,
-                        comments = commentPage.comments,
-                    ) ?: uiState.selected,
+                    selected = updatedDetails ?: uiState.selected,
                     commentLoadingId = null,
                     commentErrorMessage = null,
                 )
@@ -1369,6 +1375,39 @@ internal data class WorkshopDetailTranslation(
 
 private fun WorkshopItemDetails.shouldLoadWorkshopComments(): Boolean =
     commentThreadContext != null && commentCount != 0L
+
+private fun WorkshopItemDetails.mergeCachedCommunityData(cached: WorkshopItemDetails?): WorkshopItemDetails {
+    if (cached == null || cached.cacheKey() != cacheKey()) return this
+    val communityMissing = commentThreadContext == null && commentCount == null
+    val samePublishedVersion = summary.updatedAtMillis <= 0L ||
+        cached.summary.updatedAtMillis <= 0L ||
+        summary.updatedAtMillis == cached.summary.updatedAtMillis
+    val useCachedDescription = cached.summary.description.length > summary.description.length &&
+        samePublishedVersion &&
+        (communityMissing || cached.summary.description.contains(summary.description.trim()))
+    val useCachedComments = communityMissing && cached.commentThreadContext != null
+    val useCachedDependencies = communityMissing && dependencies.isEmpty() && cached.dependencies.isNotEmpty()
+    return copy(
+        summary = summary.copy(
+            description = if (useCachedDescription) cached.summary.description else summary.description,
+            authorName = summary.authorName.ifBlank { cached.summary.authorName },
+        ),
+        changeNotes = changeNotes.ifBlank { cached.changeNotes },
+        changeNotesUrl = changeNotesUrl.ifBlank { cached.changeNotesUrl },
+        dependencies = if (useCachedDependencies) cached.dependencies else dependencies,
+        commentThreadContext = if (useCachedComments) cached.commentThreadContext else commentThreadContext,
+        commentCount = if (useCachedComments) cached.commentCount else commentCount,
+        commentPage = if (useCachedComments && cached.comments.isNotEmpty()) cached.commentPage else commentPage,
+        commentTotalPages = if (useCachedComments) cached.commentTotalPages else commentTotalPages,
+        hasPreviousCommentPage = if (useCachedComments && cached.comments.isNotEmpty()) {
+            cached.hasPreviousCommentPage
+        } else {
+            hasPreviousCommentPage
+        },
+        hasNextCommentPage = if (useCachedComments) cached.hasNextCommentPage else hasNextCommentPage,
+        comments = if (useCachedComments && cached.comments.isNotEmpty()) cached.comments else comments,
+    )
+}
 
 private fun WorkshopItemDetails.cacheKey(): String = detailsCacheKey(summary.appId, summary.publishedFileId)
 

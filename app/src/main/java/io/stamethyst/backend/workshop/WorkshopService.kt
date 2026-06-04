@@ -10,6 +10,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -317,27 +318,38 @@ internal class WorkshopService(
             val envelope = json.decodeFromString<PublishedFileDetailsEnvelope>(payload)
             val detail = envelope.response.publishedFileDetails.firstOrNull() ?: error("No workshop detail returned")
             val localizedDetail = runCatching {
-                loadLocalizedDetailPage(
+                loadLocalizedDetailPageWithRetry(
                     publishedFileId = publishedFileId,
                     languageRequestValue = languagePreference.requestValue,
+                )
+            }.onFailure { error ->
+                logWarning(
+                    "getDetails community detail failed appId=$appId publishedFileId=$publishedFileId",
+                    error,
                 )
             }.getOrNull()
             val cardSummary = fallbackSummary?.takeIf { summary ->
                 summary.appId == appId && summary.publishedFileId == publishedFileId
             }
+            val apiUpdatedAtMillis = detail.timeUpdated?.let { it * 1000L }
+            val fallbackMatchesApiVersion = cardSummary?.let { summary ->
+                apiUpdatedAtMillis == null ||
+                    summary.updatedAtMillis <= 0L ||
+                    summary.updatedAtMillis == apiUpdatedAtMillis
+            } == true
             val summary = WorkshopItemSummary(
                 publishedFileId = publishedFileId,
                 appId = appId,
                 title = detail.title.ifBlank { cardSummary?.title.orEmpty().ifBlank { "Workshop $publishedFileId" } },
                 previewUrl = detail.previewUrl.orEmpty().ifBlank { cardSummary?.previewUrl.orEmpty() },
                 description = localizedDetail?.description.orEmpty()
-                    .ifBlank { cardSummary?.description.orEmpty() }
+                    .ifBlank { cardSummary?.description.orEmpty().takeIf { fallbackMatchesApiVersion }.orEmpty() }
                     .ifBlank { detail.description.orEmpty() },
                 authorName = detail.creatorName.orEmpty()
                     .ifBlank { localizedDetail?.authorName.orEmpty() }
                     .ifBlank { cardSummary?.authorName.orEmpty() },
                 fileSizeBytes = detail.fileSize ?: cardSummary?.fileSizeBytes ?: 0L,
-                updatedAtMillis = detail.timeUpdated?.let { it * 1000L } ?: cardSummary?.updatedAtMillis ?: 0L,
+                updatedAtMillis = apiUpdatedAtMillis ?: cardSummary?.updatedAtMillis ?: 0L,
                 downloadCount = detail.subscriptions ?: cardSummary?.downloadCount ?: 0L,
                 rating = normalizedWorkshopRating(detail.voteData?.score) ?: cardSummary?.rating,
             )
@@ -439,6 +451,9 @@ internal class WorkshopService(
         return workshopClient.newCall(request).execute().use { response ->
             if (!response.isSuccessful) error("Steam workshop community detail failed: ${response.code}")
             val payload = response.body?.string().orEmpty()
+            if (looksLikeCaptivePortal(payload)) {
+                error("Steam workshop community detail returned a captive portal page")
+            }
             LocalizedWorkshopDetail(
                 description = extractWorkshopDescription(payload),
                 authorName = extractWorkshopAuthorName(payload),
@@ -447,6 +462,35 @@ internal class WorkshopService(
                 commentCount = extractCommentCount(payload),
             )
         }
+    }
+
+    private suspend fun loadLocalizedDetailPageWithRetry(
+        publishedFileId: ULong,
+        languageRequestValue: String,
+    ): LocalizedWorkshopDetail {
+        var lastError: Throwable? = null
+        var lastDetail: LocalizedWorkshopDetail? = null
+        repeat(COMMUNITY_DETAIL_ATTEMPTS) { attempt ->
+            runCatching {
+                loadLocalizedDetailPage(
+                    publishedFileId = publishedFileId,
+                    languageRequestValue = languageRequestValue,
+                )
+            }.onSuccess { detail ->
+                if (detail.hasUsefulContent() || attempt == COMMUNITY_DETAIL_ATTEMPTS - 1) {
+                    return detail
+                }
+                lastDetail = detail
+            }.onFailure { error ->
+                if (error is CancellationException) throw error
+                lastError = error
+                if (attempt == COMMUNITY_DETAIL_ATTEMPTS - 1) {
+                    throw error
+                }
+            }
+            delay(COMMUNITY_DETAIL_RETRY_DELAY_MS * (attempt + 1L))
+        }
+        return lastDetail ?: throw (lastError ?: IllegalStateException("Steam workshop community detail did not return content"))
     }
 
     private fun loadChangeNotesMarkdownBlocks(
@@ -835,8 +879,9 @@ internal class WorkshopService(
             ?: totalCommentCountLabelRegex.find(payload)
                 ?.groupValues
                 ?.getOrNull(1)
+                ?.let(commentCountLabelDigitsRegex::find)
+                ?.value
                 ?.replace(",", "")
-                ?.trim()
                 ?.toLongOrNull()
 
     private fun extractCommentThreadContext(payload: String): WorkshopCommentThreadContext? {
@@ -936,16 +981,36 @@ internal class WorkshopService(
             .toList()
     }
 
-    private fun extractWorkshopDescription(payload: String): String {
-        val openingMatch = workshopDescriptionOpeningRegex.find(payload) ?: return ""
-        val section = extractDivBlock(
+    private fun extractWorkshopDescription(payload: String): String =
+        workshopDescriptionOpeningRegex.findAll(payload)
+            .mapNotNull { openingMatch -> extractWorkshopDescriptionCandidate(payload, openingMatch) }
+            .maxByOrNull { description -> description.length }
+            .orEmpty()
+
+    private fun extractWorkshopDescriptionCandidate(payload: String, openingMatch: MatchResult): String? {
+        val openingEnd = payload.indexOf('>', openingMatch.range.first).takeIf { it >= 0 } ?: return null
+        val balancedBlock = extractDivBlock(
             payload = payload,
             openingTagStart = openingMatch.range.first,
             openingTagLength = openingMatch.value.length,
-        ) ?: return ""
-        val openingEnd = section.indexOf('>').takeIf { it >= 0 } ?: return ""
-        val closingStart = section.lastIndexOf("</div", ignoreCase = true).takeIf { it > openingEnd } ?: section.length
-        return WorkshopServiceHtmlDecoder.decodeWorkshopHtmlDescription(section.substring(openingEnd + 1, closingStart))
+        )
+        val balancedInnerHtml = balancedBlock?.let { section ->
+            val sectionOpeningEnd = section.indexOf('>').takeIf { it >= 0 } ?: return@let null
+            val closingStart = section.lastIndexOf("</div", ignoreCase = true).takeIf { it > sectionOpeningEnd } ?: section.length
+            section.substring(sectionOpeningEnd + 1, closingStart)
+        }
+        val markerInnerHtml = extractWorkshopDescriptionUntilNextDetailSection(payload, openingEnd + 1)
+        return listOfNotNull(balancedInnerHtml, markerInnerHtml)
+            .map(WorkshopServiceHtmlDecoder::decodeWorkshopHtmlDescription)
+            .filter(String::isNotBlank)
+            .maxByOrNull(String::length)
+    }
+
+    private fun extractWorkshopDescriptionUntilNextDetailSection(payload: String, contentStart: Int): String? {
+        val markerMatch = workshopDescriptionEndMarkerRegex.find(payload, contentStart) ?: return null
+        val raw = payload.substring(contentStart, markerMatch.range.first)
+        val closingStart = raw.lastIndexOf("</div", ignoreCase = true).takeIf { it >= 0 } ?: raw.length
+        return raw.substring(0, closingStart)
     }
 
     private fun extractWorkshopAuthorName(payload: String): String =
@@ -1090,6 +1155,16 @@ internal class WorkshopService(
     private fun resolveSteamCommentsPage(appCommentPage: Int): Int =
         (((appCommentPage - 1) * COMMENT_PAGE_SIZE) / STEAM_COMMENTS_PAGE_SIZE) + 1
 
+    private fun logWarning(message: String, error: Throwable? = null) {
+        runCatching {
+            if (error != null) {
+                Log.w(TAG, message, error)
+            } else {
+                Log.w(TAG, message)
+            }
+        }
+    }
+
     private fun looksLikeCaptivePortal(html: String): Boolean {
         val sample = html.take(4096).lowercase()
         return sample.contains("eportal/index.jsp") ||
@@ -1103,6 +1178,8 @@ internal class WorkshopService(
         const val TAG = "WorkshopService"
         const val COMMENT_PAGE_SIZE = 5
         const val STEAM_COMMENTS_PAGE_SIZE = 50
+        const val COMMUNITY_DETAIL_ATTEMPTS = 2
+        const val COMMUNITY_DETAIL_RETRY_DELAY_MS = 350L
         const val MAX_SUBSCRIPTION_STATUS_CHECK_PAGES = 50
         const val SUBSCRIPTION_VERIFY_ATTEMPTS = 4
         const val SUBSCRIPTION_VERIFY_DELAY_MS = 750L
@@ -1120,6 +1197,7 @@ internal class WorkshopService(
             """id="commentthread_[^"]*_totalcount">([^<]+)<""",
             RegexOption.IGNORE_CASE,
         )
+        val commentCountLabelDigitsRegex = Regex("""\d[\d,]*""")
         val commentBlockOpeningRegex = Regex(
             """<div\b[^>]*class="[^"]*\bcommentthread_comment\b[^"]*"[^>]*id="comment_([^"]+)"[^>]*>""",
             RegexOption.IGNORE_CASE,
@@ -1189,6 +1267,9 @@ internal class WorkshopService(
         val workshopDescriptionOpeningRegex = Regex(
             """<div\b(?=[^>]*\bclass="[^"]*\bworkshopItemDescription\b[^"]*")(?=[^>]*\bid="highlightContent")[^>]*>""",
             RegexOption.IGNORE_CASE,
+        )
+        val workshopDescriptionEndMarkerRegex = Regex(
+            """(?is)</div>\s*</div>\s*(?:<script\b|<div\b[^>]*class="[^"]*\bdetailBox\b|$)""",
         )
     }
 }
@@ -1289,6 +1370,13 @@ private data class LocalizedWorkshopDetail(
     val commentThreadContext: WorkshopCommentThreadContext? = null,
     val commentCount: Long? = null,
 )
+
+private fun LocalizedWorkshopDetail.hasUsefulContent(): Boolean =
+    description.isNotBlank() ||
+        authorName.isNotBlank() ||
+        requiredItemIds.isNotEmpty() ||
+        commentThreadContext != null ||
+        commentCount != null
 
 private fun extractDivInnerHtml(
     payload: String,

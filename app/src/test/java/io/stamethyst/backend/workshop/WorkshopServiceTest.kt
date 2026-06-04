@@ -369,6 +369,125 @@ class WorkshopServiceTest {
     }
 
     @Test
+    fun getDetailsKeepsFullDescriptionAroundNestedMarkup() {
+        detailsServer.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    {
+                      "response": {
+                        "publishedfiledetails": [
+                          {
+                            "publishedfileid": "2906539837",
+                            "title": "Caffé In-Spire",
+                            "consumer_app_id": 646570,
+                            "description": "Short API description"
+                          }
+                        ]
+                      }
+                    }
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+        browseServer.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    <div class="detailBox altFooter">
+                      <div class="workshopItemDescriptionTitle">描述</div>
+                      <div class="workshopItemDescription" id="highlightContent">
+                        一个皮肤mod<br>
+                        <div class="bb_h1">安装说明</div>
+                        原版角色的咖啡厅制服皮肤<br>
+                        如果使用此mod时出现了人物贴图变黑块/无法全屏/无法启动等问题，是电脑配置无法加载GIF导致，并非mod问题<br>
+                        享受女仆装吧！
+                      </div>
+                    </div>
+                    <div class="detailBox">
+                      <script>
+                        InitializeCommentThread( "PublishedFile_Public", "PublishedFile_Public_76561198808881876_2906539837", {"feature":"2906539837","feature2":-1,"owner":"76561198808881876","total_count":34,"start":0,"pagesize":10}, 'https://steamcommunity.com/comment/PublishedFile_Public/', 40 );
+                      </script>
+                      <span id="commentthread_PublishedFile_Public_76561198808881876_2906539837_totalcount">34 条留言</span>
+                    </div>
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+
+        val service = newService()
+        val details = runBlocking { service.getDetails(646570u, 2906539837uL) }
+
+        assertTrue(details.summary.description.contains("一个皮肤mod"))
+        assertTrue(details.summary.description.contains("原版角色的咖啡厅制服皮肤"))
+        assertTrue(details.summary.description.contains("如果使用此mod时出现了人物贴图变黑块"))
+        assertTrue(details.summary.description.contains("享受女仆装吧！"))
+        assertEquals(34L, details.commentCount)
+        assertEquals("76561198808881876", details.commentThreadContext?.ownerId)
+        assertEquals("2906539837", details.commentThreadContext?.featureId)
+        assertEquals("-1", details.commentThreadContext?.feature2)
+    }
+
+    @Test
+    fun getDetailsRetriesCommunityPageBeforeFallingBackToShortDescription() {
+        detailsServer.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    {
+                      "response": {
+                        "publishedfiledetails": [
+                          {
+                            "publishedfileid": "2906539837",
+                            "title": "Caffé In-Spire",
+                            "consumer_app_id": 646570,
+                            "description": "短简介"
+                          }
+                        ]
+                      }
+                    }
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+        browseServer.enqueue(MockResponse.Builder().code(500).body("temporary failure").build())
+        browseServer.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    <div class="detailBox altFooter">
+                      <div class="workshopItemDescriptionTitle">描述</div>
+                      <div class="workshopItemDescription" id="highlightContent">
+                        短简介<br>
+                        第二次进入才拿到的完整简介<br>
+                        包含更多安装说明和兼容性说明
+                      </div>
+                    </div>
+                    <script>
+                      InitializeCommentThread( "PublishedFile_Public", "PublishedFile_Public_76561198808881876_2906539837", {"feature":"2906539837","feature2":-1,"owner":"76561198808881876","total_count":34,"start":0,"pagesize":10}, 'https://steamcommunity.com/comment/PublishedFile_Public/', 40 );
+                    </script>
+                    <span id="commentthread_PublishedFile_Public_76561198808881876_2906539837_totalcount">34 条留言</span>
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+
+        val service = newService()
+        val details = runBlocking { service.getDetails(646570u, 2906539837uL) }
+
+        assertTrue(details.summary.description.contains("第二次进入才拿到的完整简介"))
+        assertTrue(details.summary.description.contains("包含更多安装说明和兼容性说明"))
+        assertEquals(34L, details.commentCount)
+        assertEquals("76561198808881876", details.commentThreadContext?.ownerId)
+        assertEquals("2906539837", details.commentThreadContext?.featureId)
+        assertEquals(2, browseServer.requestCount)
+    }
+
+    @Test
     fun getDetailsKeepsCardSummaryWhenCommunityPageFails() {
         detailsServer.enqueue(
             MockResponse.Builder()
@@ -391,6 +510,7 @@ class WorkshopServiceTest {
                 )
                 .build(),
         )
+        browseServer.enqueue(MockResponse.Builder().code(500).body("temporary failure").build())
         browseServer.enqueue(MockResponse.Builder().code(500).body("temporary failure").build())
 
         val service = newService()
@@ -420,7 +540,7 @@ class WorkshopServiceTest {
         assertEquals(1710000000L, details.summary.updatedAtMillis)
         assertEquals(42L, details.summary.downloadCount)
         assertEquals(null, details.commentThreadContext)
-        assertEquals(1, browseServer.requestCount)
+        assertEquals(2, browseServer.requestCount)
         assertEquals(1, detailsServer.requestCount)
     }
 

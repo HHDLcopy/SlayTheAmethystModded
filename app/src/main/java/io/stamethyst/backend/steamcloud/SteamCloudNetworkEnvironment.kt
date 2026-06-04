@@ -1,8 +1,9 @@
 package io.stamethyst.backend.steamcloud
 
+import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
-import android.content.Context
+import io.stamethyst.backend.network.NetworkAccelerationPolicy
 import io.stamethyst.config.LauncherConfig
 import java.io.File
 
@@ -37,38 +38,16 @@ internal object SteamCloudNetworkEnvironment {
 
     @JvmStatic
     fun isProxyOrAcceleratorActive(context: Context): Boolean =
-        isWattAccelerationEnabled(context) || isVpnActive(context)
+        isWattAccelerationEnabled(context) || NetworkAccelerationPolicy.isVpnActive(context)
 
     @Suppress("DEPRECATION")
     internal fun hasVpnTransport(
         connectivityManager: ConnectivityManager?,
         capabilitiesProvider: (android.net.Network) -> NetworkCapabilities?,
-    ): Boolean {
-        if (connectivityManager == null) {
-            return false
-        }
-        val activeNetwork = connectivityManager.activeNetwork
-        if (activeNetwork != null &&
-            capabilitiesProvider(activeNetwork)?.let { hasVpnTransport(it::hasTransport) } == true
-        ) {
-            return true
-        }
-        return connectivityManager.allNetworks.any { network ->
-            capabilitiesProvider(network)?.let { hasVpnTransport(it::hasTransport) } == true
-        }
-    }
+    ): Boolean = NetworkAccelerationPolicy.hasVpnTransport(connectivityManager, capabilitiesProvider)
 
     internal fun hasVpnTransport(hasTransport: (Int) -> Boolean): Boolean =
-        hasTransport(NetworkCapabilities.TRANSPORT_VPN)
-
-    private fun isVpnActive(context: Context): Boolean =
-        runCatching {
-            val connectivityManager =
-                context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-            hasVpnTransport(connectivityManager) { network ->
-                connectivityManager?.getNetworkCapabilities(network)
-            }
-        }.getOrDefault(false)
+        NetworkAccelerationPolicy.hasVpnTransport(hasTransport)
 
     private fun isWattAccelerationEnabled(context: Context): Boolean =
         runCatching {

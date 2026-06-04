@@ -3,6 +3,7 @@ package io.stamethyst.backend.update
 import android.content.Context
 import io.stamethyst.backend.github.GithubAcceleratedHttp
 import io.stamethyst.backend.github.GithubRequestClients
+import io.stamethyst.backend.network.NetworkAccelerationPolicy
 import java.io.IOException
 import java.nio.charset.StandardCharsets
 import okhttp3.OkHttpClient
@@ -28,8 +29,12 @@ object LauncherUpdateService {
     ): UpdateCheckExecutionResult {
         val clients = createGithubClients(context)
         val normalizedPreferredSource = UpdateSource.normalizePreferredUserSource(preferredUserSource.id)
+        val bypassAcceleratedLinks = NetworkAccelerationPolicy.shouldBypassAcceleratedLinks(context)
         val metadataResult = try {
-            GithubMirrorFallback.run(normalizedPreferredSource) { source ->
+            GithubMirrorFallback.run(
+                normalizedPreferredSource,
+                bypassAcceleratedLinks = bypassAcceleratedLinks,
+            ) { source ->
                 val responseText = requestText(
                     clients.pick(source.usesGithubAcceleration),
                     source.buildUrl(LATEST_RELEASE_API_URL)
@@ -65,7 +70,8 @@ object LauncherUpdateService {
                 clients = clients,
                 release = release,
                 preferredUserSource = normalizedPreferredSource,
-                metadataSource = metadataSource
+                metadataSource = metadataSource,
+                bypassAcceleratedLinks = bypassAcceleratedLinks,
             )
         } catch (error: Throwable) {
             return UpdateCheckExecutionResult.Failure(
@@ -92,8 +98,12 @@ object LauncherUpdateService {
     ): UpdateReleaseHistoryResult {
         val clients = createGithubClients(context)
         val normalizedPreferredSource = UpdateSource.normalizePreferredUserSource(preferredUserSource.id)
+        val bypassAcceleratedLinks = NetworkAccelerationPolicy.shouldBypassAcceleratedLinks(context)
         val normalizedLimit = limit.coerceIn(1, 20)
-        val metadataResult = GithubMirrorFallback.run(normalizedPreferredSource) { source ->
+        val metadataResult = GithubMirrorFallback.run(
+            normalizedPreferredSource,
+            bypassAcceleratedLinks = bypassAcceleratedLinks,
+        ) { source ->
             val requestUrl = source.buildUrl("$RELEASE_HISTORY_API_URL?per_page=$normalizedLimit")
             val responseText = requestText(
                 clients.pick(source.usesGithubAcceleration),
@@ -161,11 +171,13 @@ object LauncherUpdateService {
         release: UpdateReleaseInfo,
         preferredUserSource: UpdateSource,
         metadataSource: UpdateSource,
+        bypassAcceleratedLinks: Boolean = false,
     ): UpdateDownloadResolution {
         return GithubMirrorFallback.run(
             UpdateSource.downloadCandidates(
                 preferredUserSource = preferredUserSource,
-                metadataSource = metadataSource
+                metadataSource = metadataSource,
+                bypassAcceleratedLinks = bypassAcceleratedLinks,
             )
         ) { source ->
             val candidateUrl = source.buildUrl(release.assetDownloadUrl)

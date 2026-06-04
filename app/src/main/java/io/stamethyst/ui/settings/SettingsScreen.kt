@@ -6,7 +6,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.os.Build
 import android.view.HapticFeedbackConstants
 import androidx.activity.compose.LocalActivity
@@ -95,7 +94,7 @@ import androidx.compose.ui.unit.dp
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import io.stamethyst.R
-import io.stamethyst.backend.steamcloud.SteamCloudAcceleratedHttp
+import io.stamethyst.backend.steamcloud.SteamCloudAvatarCacheStore
 import io.stamethyst.backend.steamcloud.SteamCloudConflict
 import io.stamethyst.backend.steamcloud.SteamCloudConflictKind
 import io.stamethyst.backend.steamcloud.SteamCloudManifestEntry
@@ -136,7 +135,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
-import okhttp3.Request
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -1603,7 +1601,9 @@ private fun SteamCloudAvatarImage(
     val context = LocalContext.current.applicationContext
     val avatarBitmap by produceState<Bitmap?>(initialValue = null, loggedIn, avatarUrl) {
         value = if (loggedIn && avatarUrl.isNotBlank()) {
-            loadSteamCloudAvatarBitmap(context, avatarUrl)
+            withContext(Dispatchers.IO) {
+                SteamCloudAvatarCacheStore.load(context, avatarUrl)
+            }
         } else {
             null
         }
@@ -1633,34 +1633,6 @@ private fun SteamCloudAvatarImage(
         }
     }
 }
-
-private suspend fun loadSteamCloudAvatarBitmap(
-    context: Context,
-    avatarUrl: String,
-): Bitmap? = withContext(Dispatchers.IO) {
-    runCatching {
-        val client = SteamCloudAcceleratedHttp.createClient(
-            context = context,
-            connectTimeoutMs = AVATAR_CONNECT_TIMEOUT_MS,
-            readTimeoutMs = AVATAR_READ_TIMEOUT_MS,
-            callTimeoutMs = AVATAR_CALL_TIMEOUT_MS,
-        )
-        val request = Request.Builder()
-            .url(avatarUrl)
-            .header("User-Agent", "SlayTheAmethyst/${context.packageName}")
-            .build()
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                return@use null
-            }
-            response.body.byteStream().use(BitmapFactory::decodeStream)
-        }
-    }.getOrNull()
-}
-
-private const val AVATAR_CONNECT_TIMEOUT_MS = 8_000L
-private const val AVATAR_READ_TIMEOUT_MS = 15_000L
-private const val AVATAR_CALL_TIMEOUT_MS = 20_000L
 
 @Composable
 private fun SteamCloudUploadCandidateCard(candidate: SteamCloudUploadCandidate) {

@@ -110,7 +110,13 @@ enum class UpdateSource(
             }
         }
 
-        fun githubResourceFallbackCandidates(preferredUserSource: UpdateSource): List<UpdateSource> {
+        fun githubResourceFallbackCandidates(
+            preferredUserSource: UpdateSource,
+            bypassAcceleratedLinks: Boolean = false,
+        ): List<UpdateSource> {
+            if (bypassAcceleratedLinks) {
+                return listOf(OFFICIAL)
+            }
             val preferred = normalizePreferredGithubResourceSource(preferredUserSource)
             val ordered = LinkedHashSet<UpdateSource>()
             ordered += preferred
@@ -129,18 +135,28 @@ enum class UpdateSource(
             return ordered.toList()
         }
 
-        fun metadataCandidates(preferredUserSource: UpdateSource): List<UpdateSource> {
-            return githubResourceFallbackCandidates(preferredUserSource)
+        fun metadataCandidates(
+            preferredUserSource: UpdateSource,
+            bypassAcceleratedLinks: Boolean = false,
+        ): List<UpdateSource> {
+            return githubResourceFallbackCandidates(preferredUserSource, bypassAcceleratedLinks)
         }
 
         fun downloadCandidates(
             preferredUserSource: UpdateSource,
             metadataSource: UpdateSource,
+            bypassAcceleratedLinks: Boolean = false,
         ): List<UpdateSource> {
-            return githubResourceFallbackCandidates(preferredUserSource)
+            return githubResourceFallbackCandidates(preferredUserSource, bypassAcceleratedLinks)
         }
 
-        fun oneShotDownloadSelectionSources(primarySource: UpdateSource): List<UpdateSource> {
+        fun oneShotDownloadSelectionSources(
+            primarySource: UpdateSource,
+            bypassAcceleratedLinks: Boolean = false,
+        ): List<UpdateSource> {
+            if (bypassAcceleratedLinks) {
+                return listOf(OFFICIAL)
+            }
             val ordered = LinkedHashSet<UpdateSource>()
             ordered += primarySource
             userSelectableSources().forEach { source ->

@@ -16,9 +16,11 @@ import androidx.lifecycle.ViewModel
 import io.stamethyst.BuildConfig
 import io.stamethyst.backend.diag.LogcatCaptureProcessClient
 import io.stamethyst.backend.diag.LauncherLogcatCaptureProcessClient
+import io.stamethyst.backend.network.NetworkAccelerationPolicy
 import io.stamethyst.backend.steamcloud.STEAM_CLOUD_APP_ID
 import io.stamethyst.backend.steamcloud.SteamCloudAuthCoordinator
 import io.stamethyst.backend.steamcloud.SteamCloudAuthStore
+import io.stamethyst.backend.steamcloud.SteamCloudAvatarCacheStore
 import io.stamethyst.backend.steamcloud.SteamCloudBaselineStore
 import io.stamethyst.backend.steamcloud.SteamCloudClient
 import io.stamethyst.backend.steamcloud.SteamCloudDiagnosticsStore
@@ -812,7 +814,10 @@ class SettingsScreenViewModel : ViewModel() {
         downloadResolution: UpdateDownloadResolution?,
     ): UpdatePromptState? {
         val resolvedDownload = downloadResolution ?: return null
-        val downloadOptions = UpdateSource.oneShotDownloadSelectionSources(resolvedDownload.source)
+        val downloadOptions = UpdateSource.oneShotDownloadSelectionSources(
+            primarySource = resolvedDownload.source,
+            bypassAcceleratedLinks = NetworkAccelerationPolicy.shouldBypassAcceleratedLinks(host),
+        )
             .map { source ->
                 UpdateDownloadOptionState(
                     source = source,
@@ -1507,6 +1512,7 @@ class SettingsScreenViewModel : ViewModel() {
             return
         }
         SteamCloudNetworkEnvironment.clearNetworkCache(host)
+        SteamCloudAvatarCacheStore.clear(host)
         showToast(host, UiText.StringResource(R.string.settings_steam_cloud_network_cache_cleared))
         refreshStatus(host)
     }
@@ -1834,6 +1840,7 @@ class SettingsScreenViewModel : ViewModel() {
                 }
                 LauncherPreferences.saveSteamCloudSaveMode(host, SteamCloudSaveMode.INDEPENDENT)
                 runCatching { SteamCloudAuthStore.clear(host) }
+                runCatching { SteamCloudAvatarCacheStore.clear(host) }
                 SteamCloudManifestStore.clear(host)
                 SteamCloudBaselineStore.clear(host)
                 SteamCloudDiagnosticsStore.clear(host)

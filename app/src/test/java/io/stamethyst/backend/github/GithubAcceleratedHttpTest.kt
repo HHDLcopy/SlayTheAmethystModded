@@ -10,6 +10,7 @@ import okhttp3.Request
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -85,6 +86,25 @@ class GithubAcceleratedHttpTest {
                 "https://objects.githubusercontent.com/github-production-release-asset-test/app-release.apk".toHttpUrl(),
             ).host,
         )
+    }
+
+    @Test
+    fun requestClients_pickFallsBackToPlainClientWhenAccelerationIsNotAllowed() {
+        var accelerationAllowed = true
+        val plainClient = OkHttpClient.Builder().build()
+        val acceleratedClient = OkHttpClient.Builder().build()
+        val clients = GithubRequestClients(
+            plainClient = plainClient,
+            acceleratedClient = acceleratedClient,
+            accelerationAllowedProvider = { accelerationAllowed },
+        )
+
+        assertSame(acceleratedClient, clients.pick(useAcceleration = true))
+        assertSame(plainClient, clients.pick(useAcceleration = false))
+
+        accelerationAllowed = false
+
+        assertSame(plainClient, clients.pick(useAcceleration = true))
     }
 
     @Test

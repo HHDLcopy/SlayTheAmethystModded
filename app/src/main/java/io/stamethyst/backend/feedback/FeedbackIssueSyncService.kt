@@ -4,6 +4,7 @@ import android.content.Context
 import io.stamethyst.BuildConfig
 import io.stamethyst.backend.github.GithubAcceleratedHttp
 import io.stamethyst.backend.github.GithubRequestClients
+import io.stamethyst.backend.network.NetworkAccelerationPolicy
 import io.stamethyst.backend.update.GithubMirrorFallback
 import io.stamethyst.backend.update.UpdateMirrorManager
 import io.stamethyst.backend.update.UpdateSource
@@ -135,8 +136,12 @@ object FeedbackIssueSyncService {
         }
         val clients = createGithubClients(context)
         val preferred = UpdateMirrorManager.current(context)
+        val bypassAcceleratedLinks = NetworkAccelerationPolicy.shouldBypassAcceleratedLinks(context)
         try {
-            return GithubMirrorFallback.run(preferred) { source ->
+            return GithubMirrorFallback.run(
+                preferred,
+                bypassAcceleratedLinks = bypassAcceleratedLinks,
+            ) { source ->
                 fetchIssuePageFromSource(
                     clients.pick(source.usesGithubAcceleration),
                     source,
@@ -259,8 +264,12 @@ object FeedbackIssueSyncService {
         existingCache: FeedbackIssueThreadCache? = FeedbackIssueLocalStore.loadIssueCache(context, issueNumber),
     ): FeedbackIssueThreadCache {
         val preferred = UpdateMirrorManager.current(context)
+        val bypassAcceleratedLinks = NetworkAccelerationPolicy.shouldBypassAcceleratedLinks(context)
         return try {
-            GithubMirrorFallback.run(preferred) { source ->
+            GithubMirrorFallback.run(
+                preferred,
+                bypassAcceleratedLinks = bypassAcceleratedLinks,
+            ) { source ->
                 fetchIssueSummaryFromSource(
                     clients.pick(source.usesGithubAcceleration),
                     source,
@@ -280,8 +289,12 @@ object FeedbackIssueSyncService {
         existingCache: FeedbackIssueThreadCache? = FeedbackIssueLocalStore.loadIssueCache(context, issueNumber),
     ): FeedbackIssueThreadCache {
         val preferred = UpdateMirrorManager.current(context)
+        val bypassAcceleratedLinks = NetworkAccelerationPolicy.shouldBypassAcceleratedLinks(context)
         return try {
-            GithubMirrorFallback.run(preferred) { source ->
+            GithubMirrorFallback.run(
+                preferred,
+                bypassAcceleratedLinks = bypassAcceleratedLinks,
+            ) { source ->
                 fetchIssueDetailsFromSource(
                     clients.pick(source.usesGithubAcceleration),
                     source,

@@ -1,6 +1,7 @@
 package io.stamethyst.backend.github
 
 import android.content.Context
+import io.stamethyst.backend.network.NetworkAccelerationPolicy
 import java.io.File
 import java.io.IOException
 import java.net.ProtocolException
@@ -88,6 +89,12 @@ internal object GithubAcceleratedHttp {
         readTimeoutMs: Int,
         followRedirects: Boolean = true,
     ): GithubRequestClients {
+        val accelerationAllowedProvider = {
+            NetworkAccelerationPolicy.shouldUseAcceleratedLinks(
+                context = context,
+                configuredEnabled = true,
+            )
+        }
         return GithubRequestClients(
             plainClient = createPlainClient(
                 connectTimeoutMs = connectTimeoutMs,
@@ -100,6 +107,7 @@ internal object GithubAcceleratedHttp {
                 readTimeoutMs = readTimeoutMs,
                 followRedirects = followRedirects,
             ),
+            accelerationAllowedProvider = accelerationAllowedProvider,
         )
     }
 
@@ -124,7 +132,15 @@ internal object GithubAcceleratedHttp {
             .followRedirects(followRedirects)
             .followSslRedirects(followRedirects)
             .hostnameVerifier(runtime.hostnameVerifier)
-            .addExperimentalGithubDirectAccess(runtime)
+            .addExperimentalGithubDirectAccess(
+                runtime = runtime,
+                enabledProvider = {
+                    NetworkAccelerationPolicy.shouldUseAcceleratedLinks(
+                        context = context,
+                        configuredEnabled = true,
+                    )
+                },
+            )
             .build()
     }
 
@@ -136,9 +152,10 @@ internal object GithubAcceleratedHttp {
 internal data class GithubRequestClients(
     val plainClient: OkHttpClient,
     val acceleratedClient: OkHttpClient,
+    val accelerationAllowedProvider: () -> Boolean = { true },
 ) {
     fun pick(useAcceleration: Boolean): OkHttpClient {
-        return if (useAcceleration) acceleratedClient else plainClient
+        return if (useAcceleration && accelerationAllowedProvider()) acceleratedClient else plainClient
     }
 }
 
@@ -191,11 +208,13 @@ internal fun createExperimentalGithubDirectAccessRuntime(
 
 internal fun OkHttpClient.Builder.addExperimentalGithubDirectAccess(
     runtime: ExperimentalGithubDirectAccessRuntime,
+    enabledProvider: () -> Boolean = { true },
 ): OkHttpClient.Builder = apply {
     addInterceptor(
         ExperimentalGithubDirectAccessInterceptor(
             routeResolvers = runtime.resolvers,
             directCallFactory = runtime.directHttpClient,
+            enabledProvider = enabledProvider,
         ),
     )
 }

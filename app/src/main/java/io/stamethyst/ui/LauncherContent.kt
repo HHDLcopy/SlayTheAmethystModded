@@ -266,6 +266,7 @@ fun LauncherContent(
     }
 
     fun openWorkshopDetail(appId: UInt, publishedFileId: ULong) {
+        forwardPageTransition = true
         navigator.push(
             Route.WorkshopDetail(
                 publishedFileId = publishedFileId.toString(),

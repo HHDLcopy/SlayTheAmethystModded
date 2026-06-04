@@ -41,6 +41,17 @@ class UpdateSourceOrderingTest {
     }
 
     @Test
+    fun metadataCandidates_bypassAccelerationUsesOfficialOnly() {
+        assertEquals(
+            listOf(UpdateSource.OFFICIAL),
+            UpdateSource.metadataCandidates(
+                preferredUserSource = UpdateSource.ACCELERATED_DIRECT,
+                bypassAcceleratedLinks = true,
+            ),
+        )
+    }
+
+    @Test
     fun metadataCandidates_prioritizePreferredVipFirstThenOtherMirrors() {
         assertEquals(
             listOf(
@@ -108,6 +119,18 @@ class UpdateSourceOrderingTest {
     }
 
     @Test
+    fun downloadCandidates_bypassAccelerationUsesOfficialOnly() {
+        assertEquals(
+            listOf(UpdateSource.OFFICIAL),
+            UpdateSource.downloadCandidates(
+                preferredUserSource = UpdateSource.GH_PROXY_COM,
+                metadataSource = UpdateSource.GH_LLKK,
+                bypassAcceleratedLinks = true,
+            ),
+        )
+    }
+
+    @Test
     fun oneShotDownloadSelectionSources_keepResolvedSourceFirst() {
         assertEquals(
             listOf(
@@ -133,6 +156,17 @@ class UpdateSourceOrderingTest {
                 UpdateSource.OFFICIAL
             ),
             UpdateSource.oneShotDownloadSelectionSources(UpdateSource.GH_PROXY_NET)
+        )
+    }
+
+    @Test
+    fun oneShotDownloadSelectionSources_bypassAccelerationUsesOfficialOnly() {
+        assertEquals(
+            listOf(UpdateSource.OFFICIAL),
+            UpdateSource.oneShotDownloadSelectionSources(
+                primarySource = UpdateSource.GH_PROXY_VIP,
+                bypassAcceleratedLinks = true,
+            ),
         )
     }
 }

@@ -1156,7 +1156,7 @@
     <string name="settings_steam_cloud_challenge_device_code_retry_title">请输入新的 Steam Guard 2FA 验证码</string>
     <string name="settings_steam_cloud_challenge_email_code_title">输入 Steam 邮箱验证码</string>
     <string name="settings_steam_cloud_challenge_email_code_retry_title">请输入新的 Steam 邮箱验证码</string>
-    <string name="settings_steam_cloud_challenge_device_confirmation_desc">请在受信设备上确认这次 Steam 登录。Steam 接受确认后，本页会自动继续。</string>
+    <string name="settings_steam_cloud_challenge_device_confirmation_desc">请在受信设备上确认这次 Steam 登录。Steam 接受确认后，本页会自动继续。如果提示异地登录，请选择 Steam 客户端登录，地址填加速器/VPN所在的地址，登录原因选择其他。如果异地登录/风险登录的验证过不去，请移步其他平台找教程。如果 Steam 未弹出登录请求，请使用加速器后，重新登录。</string>
     <string name="settings_steam_cloud_challenge_device_code_desc">请输入当前 Steam Guard 2FA 验证码。</string>
     <string name="settings_steam_cloud_challenge_email_code_desc">请输入 Steam 发到邮箱的验证码。</string>
     <string name="settings_steam_cloud_challenge_email_code_desc_with_hint">请输入 Steam 发到 %1$s 的邮箱验证码。</string>
@@ -2046,7 +2046,7 @@
     <string name="workshop_loading_more">正在加载更多模组</string>
     <string name="workshop_no_more_items">已经到底了</string>
     <string name="workshop_not_logged_in_browse">Steam 尚未登录，部分模组不会显示。</string>
-    <string name="workshop_not_logged_in_subscriptions">登录 Steam 后才能查看当前账号已订阅的创意工坊模组。</string>
+    <string name="workshop_not_logged_in_subscriptions">登录 Steam 且购买正版游戏后才能查看当前账号已订阅的创意工坊模组。</string>
     <string name="workshop_action_login_steam">登录 Steam</string>
     <string name="workshop_search_placeholder">搜索模组</string>
     <string name="workshop_search_action">搜索</string>
@@ -2202,7 +2202,7 @@
     <string name="workshop_subscribe_confirm_title">是否订阅该模组</string>
     <string name="workshop_subscribe_confirm_message">订阅 %1$s 后，将同步订阅到 Steam 账号，电脑上会自动下载该模组。</string>
     <string name="workshop_subscribe_do_not_remind">不再提醒</string>
-    <string name="workshop_subscribe_requires_steam_login">该功能仅在登录 Steam 后才可使用。</string>
+    <string name="workshop_subscribe_requires_steam_login">该功能仅在登录 Steam 且购买正版游戏后才可使用。</string>
     <string name="workshop_subscribe_success">已订阅 %1$s。</string>
     <string name="workshop_subscribe_not_confirmed">Steam 已接受订阅请求，但该模组未出现在订阅列表中，请稍后重试。</string>
     <string name="workshop_subscribe_failed">订阅失败：%1$s</string>

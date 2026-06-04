@@ -24,9 +24,16 @@ class GithubMirrorFallbackException(
 object GithubMirrorFallback {
     inline fun <T> run(
         preferredUserSource: UpdateSource,
+        bypassAcceleratedLinks: Boolean = false,
         block: (UpdateSource) -> T
     ): GithubMirrorFallbackSuccess<T> {
-        return run(UpdateSource.githubResourceFallbackCandidates(preferredUserSource), block)
+        return run(
+            UpdateSource.githubResourceFallbackCandidates(
+                preferredUserSource = preferredUserSource,
+                bypassAcceleratedLinks = bypassAcceleratedLinks,
+            ),
+            block,
+        )
     }
 
     inline fun <T> run(

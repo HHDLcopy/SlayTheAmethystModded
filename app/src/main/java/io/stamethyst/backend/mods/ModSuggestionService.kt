@@ -2,6 +2,7 @@ package io.stamethyst.backend.mods
 
 import android.content.Context
 import io.stamethyst.backend.github.GithubAcceleratedHttp
+import io.stamethyst.backend.network.NetworkAccelerationPolicy
 import io.stamethyst.backend.update.GithubMirrorFallback
 import io.stamethyst.backend.update.UpdateSource
 import io.stamethyst.config.RuntimePaths
@@ -77,7 +78,10 @@ object ModSuggestionService {
             readTimeoutMs = READ_TIMEOUT_MS,
             followRedirects = true,
         )
-        val fetchedRawJson = GithubMirrorFallback.run(source) { candidate ->
+        val fetchedRawJson = GithubMirrorFallback.run(
+            source,
+            bypassAcceleratedLinks = NetworkAccelerationPolicy.shouldBypassAcceleratedLinks(context),
+        ) { candidate ->
             requestText(
                 clients.pick(candidate.usesGithubAcceleration),
                 candidate.buildUrl(resolveSuggestionUrl(localeKey))

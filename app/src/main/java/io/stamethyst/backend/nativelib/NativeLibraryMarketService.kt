@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.res.AssetManager
 import io.stamethyst.backend.fs.FileTreeCleaner
 import io.stamethyst.backend.github.GithubAcceleratedHttp
+import io.stamethyst.backend.network.NetworkAccelerationPolicy
 import io.stamethyst.backend.update.GithubMirrorFallback
 import io.stamethyst.backend.update.UpdateSource
 import io.stamethyst.config.RuntimePaths
@@ -77,7 +78,10 @@ object NativeLibraryMarketService {
             readTimeoutMs = READ_TIMEOUT_MS,
             followRedirects = true,
         )
-        return GithubMirrorFallback.run(source) { candidate ->
+        return GithubMirrorFallback.run(
+            source,
+            bypassAcceleratedLinks = NetworkAccelerationPolicy.shouldBypassAcceleratedLinks(context),
+        ) { candidate ->
             parseCatalog(
                 requestText(
                     clients.pick(candidate.usesGithubAcceleration),
@@ -170,7 +174,10 @@ object NativeLibraryMarketService {
             val cachedDownloads = LinkedHashMap<String, File>()
             entry.files.forEachIndexed { index, file ->
                 val downloadIndex = index + 1
-                val downloadedArtifact = GithubMirrorFallback.run(source) { candidate ->
+                val downloadedArtifact = GithubMirrorFallback.run(
+                    source,
+                    bypassAcceleratedLinks = NetworkAccelerationPolicy.shouldBypassAcceleratedLinks(context),
+                ) { candidate ->
                     val requestUrl = candidate.buildUrl(file.downloadUrl)
                     cachedDownloads[requestUrl]?.takeIf(File::isFile)?.let { return@run it }
                     val downloadedFile = File(

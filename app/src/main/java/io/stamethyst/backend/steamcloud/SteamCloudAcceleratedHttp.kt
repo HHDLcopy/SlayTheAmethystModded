@@ -8,6 +8,7 @@ import io.stamethyst.backend.github.GithubDirectHostnameVerifier
 import io.stamethyst.backend.github.WattToolkitGithubRouteResolver
 import io.stamethyst.backend.github.WattToolkitRouteProfile
 import io.stamethyst.backend.github.trustWattToolkitForwardCertificates
+import io.stamethyst.backend.network.NetworkAccelerationPolicy
 import io.stamethyst.config.LauncherConfig
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -92,6 +93,12 @@ object SteamCloudAcceleratedHttp {
             return builder.build()
         }
 
+        val accelerationEnabledProvider = {
+            NetworkAccelerationPolicy.shouldUseAcceleratedLinks(
+                context = context,
+                configuredEnabled = enabledProvider?.invoke() ?: enabled,
+            )
+        }
         val filesDir = context.filesDir
         val runtime = runtimeCache.getOrPut(filesDir.absolutePath) {
             createSteamCloudWattToolkitRuntime(filesDir)
@@ -102,7 +109,7 @@ object SteamCloudAcceleratedHttp {
                 ExperimentalGithubDirectAccessInterceptor(
                     routeResolvers = runtime.resolvers,
                     directCallFactory = runtime.directHttpClient,
-                    enabledProvider = enabledProvider ?: { enabled },
+                    enabledProvider = accelerationEnabledProvider,
                 ),
             )
             .build()

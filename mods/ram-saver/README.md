@@ -43,6 +43,9 @@ Extends the default rotating-bucket aging window from the original aggressive 5 
 13. `optispire.RamSaver`
 Pins hot real textures for a bounded time when they are slow to materialize or repeatedly materialized within a short window, then enforces a configurable total hot-texture budget (`ramsaver.hot.budget_mb`). This preserves correctness while reducing repeated render-thread `RealTexture` decode/upload work for frequently reused card, UI, map, reward, and effect textures. Type: performance/thermal mitigation implemented by `RamSaver.markTextureMaterialized`, `RamSaver.isHotTexturePinned`, `RamSaver.enforceHotPinBudget`, and `ManagedAsset.isHotPinned`.
 
+14. `optispire.RamSaver`
+Catches runtime failures while materializing a lazy file-backed texture, logs the failing path and exception, and substitutes a pinned 1x1 transparent fallback texture instead of letting render-thread PNG decode failures crash the game. This addresses crashes such as `Couldn't load file: HakureiReimuResources/images/ui/PowerShadow.png` / `decoder init failed for stream` when Ram Saver restores a mod texture during rendering. Type: crash fix implemented by `RamSaver.FileTextureSupplier` and the materialization fallback path in `RamSaver`.
+
 ## Maintenance rule
 
 If you add another runtime/gameplay fix through this mod, update this README in the same change and describe:

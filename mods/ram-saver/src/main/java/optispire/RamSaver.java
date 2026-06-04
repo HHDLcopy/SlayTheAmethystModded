@@ -72,6 +72,7 @@ import com.badlogic.gdx.graphics.Pixmap;
 import com.badlogic.gdx.graphics.RealTexture;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.TextureAtlas;
+import com.badlogic.gdx.graphics.glutils.PixmapTextureData;
 import com.badlogic.gdx.utils.ObjectSet;
 import com.badlogic.gdx.utils.Pool;
 import com.evacipated.cardcrawl.modthespire.lib.SpirePatch;
@@ -283,7 +284,7 @@ public class RamSaver {
                         file.path(),
                         "format=" + format + " useMipMaps=" + useMipMaps + " error=" + e.getClass().getName() + ":" + e.getMessage()
                 );
-                throw e;
+                return getOrCreateMaterializationFallback(this, e);
             }
         }
 
@@ -439,6 +440,7 @@ public class RamSaver {
             state.width = width;
             state.height = height;
             state.knowSize = width > 0 && height > 0;
+            state.materializationFailed = false;
             boolean shouldPin = HOT_PIN_BUDGET_BYTES > 0L
                     && (elapsedNanos >= HOT_SLOW_LOAD_NANOS || state.recentMaterializeCount >= HOT_LOAD_REPEAT_THRESHOLD);
             if (shouldPin) {
@@ -460,6 +462,135 @@ public class RamSaver {
                             + " " + hotPinInventoryDetails(now)
             );
         }
+    }
+
+    private static Texture getOrCreateMaterializationFallback(FileTextureSupplier supplier, RuntimeException error) {
+        String textureID = supplier.file.path();
+        int failureCount = recordTextureMaterializationFailure(textureID, error);
+        Texture fallback = getMaterializationFallback(textureID);
+        if (fallback == null) {
+            fallback = createMaterializationFallback(supplier, error);
+            setMaterializationFallback(textureID, fallback);
+            RamSaverDiag.logStackRepeat(
+                    "supplier_get_fallback_created",
+                    textureID,
+                    "failureCount=" + failureCount
+                            + " format=" + supplier.format
+                            + " useMipMaps=" + supplier.useMipMaps
+                            + " error=" + exceptionDetails(error)
+                            + " fallback=" + textureDetails(fallback)
+            );
+        }
+        else {
+            RamSaverDiag.logRepeat(
+                    "supplier_get_fallback_reuse",
+                    textureID,
+                    "failureCount=" + failureCount
+                            + " error=" + exceptionDetails(error)
+                            + " fallback=" + textureDetails(fallback)
+            );
+        }
+        logMaterializationFallback(textureID, supplier, error, failureCount, fallback);
+        return fallback;
+    }
+
+    private static int recordTextureMaterializationFailure(String textureID, RuntimeException error) {
+        FakeTextureState state = getOrCreateFakeTextureState(textureID);
+        synchronized (state) {
+            state.materializationFailed = true;
+            state.materializationFailureCount++;
+            state.materializationFailureDetails = exceptionDetails(error);
+            return state.materializationFailureCount;
+        }
+    }
+
+    private static Texture getMaterializationFallback(String textureID) {
+        FakeTextureState state = getFakeTextureState(textureID);
+        if (state == null) {
+            return null;
+        }
+        synchronized (state) {
+            Texture fallback = state.materializationFallback;
+            if (fallback != null && fallback.getTextureObjectHandle() != 0) {
+                return fallback;
+            }
+            state.materializationFallback = null;
+            return null;
+        }
+    }
+
+    private static void setMaterializationFallback(String textureID, Texture fallback) {
+        FakeTextureState state = getOrCreateFakeTextureState(textureID);
+        synchronized (state) {
+            state.materializationFallback = fallback;
+        }
+    }
+
+    private static Texture createMaterializationFallback(FileTextureSupplier supplier, RuntimeException originalError) {
+        Pixmap pixmap = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
+        pixmap.setColor(0f, 0f, 0f, 0f);
+        pixmap.fill();
+        try {
+            RealTexture fallback = new RealTexture(new PixmapTextureData(pixmap, Pixmap.Format.RGBA8888, false, true));
+            fallback.setFilter(supplier.minFilter, supplier.magFilter);
+            fallback.setWrap(supplier.uWrap, supplier.vWrap);
+            return fallback;
+        }
+        catch (RuntimeException fallbackError) {
+            System.out.println("[ram-saver] texture materialization fallback failed path="
+                    + RamSaverDiag.safe(supplier.file.path())
+                    + " originalError=" + exceptionDetails(originalError)
+                    + " fallbackError=" + exceptionDetails(fallbackError));
+            RamSaverDiag.logStackRepeat(
+                    "supplier_get_fallback_failed",
+                    supplier.file.path(),
+                    "originalError=" + exceptionDetails(originalError)
+                            + " fallbackError=" + exceptionDetails(fallbackError)
+            );
+            throw originalError;
+        }
+    }
+
+    private static boolean isMaterializationFallback(String textureID) {
+        FakeTextureState state = getFakeTextureState(textureID);
+        if (state == null) {
+            return false;
+        }
+        synchronized (state) {
+            return state.materializationFailed && state.materializationFallback != null;
+        }
+    }
+
+    private static void logMaterializationFallback(String textureID, FileTextureSupplier supplier, RuntimeException error, int failureCount, Texture fallback) {
+        if (!shouldLogTextureMaterializationFailure(failureCount)) {
+            return;
+        }
+        System.out.println("[ram-saver] texture materialization failed; using transparent fallback"
+                + " path=" + RamSaverDiag.safe(textureID)
+                + " failureCount=" + failureCount
+                + " format=" + supplier.format
+                + " useMipMaps=" + supplier.useMipMaps
+                + " error=" + exceptionDetails(error)
+                + " fallbackHandle=" + fallback.getTextureObjectHandle()
+                + " fallbackSize=" + fallback.getWidth() + "x" + fallback.getHeight());
+    }
+
+    private static boolean shouldLogTextureMaterializationFailure(int count) {
+        return count <= 3
+                || count == 5
+                || count == 10
+                || count == 25
+                || count == 50
+                || count == 100
+                || (count <= 1000 && count % 100 == 0)
+                || count % 1000 == 0;
+    }
+
+    private static String exceptionDetails(Throwable error) {
+        if (error == null) {
+            return "null";
+        }
+        return error.getClass().getName() + ":" + RamSaverDiag.safe(error.getMessage());
     }
 
     public static void registerTexture(String textureID, FileTextureSupplier texSupplier) {
@@ -567,7 +698,8 @@ public class RamSaver {
         }
         ManagedAsset holder = managedAssetPool.obtain();
         holder.setAsset(id, t, ManagedAsset.AssetType.TEXTURE);
-        holder.canAge = canAge;
+        boolean materializationFallback = isMaterializationFallback(id);
+        holder.canAge = canAge && !materializationFallback;
         ManagedAsset old = loadedAssets.put(id, holder);
         boolean createdSet = false;
         boolean appendedToExistingSet = false;
@@ -585,6 +717,7 @@ public class RamSaver {
                             id,
                             started,
                             "canAge=" + canAge
+                                    + " materializationFallback=" + materializationFallback
                                     + " replaced=false appendedToExistingSet=true createdSet=false setSize=" + set.size()
                                     + " " + textureDetails(t)
                                     + " " + holder.describe()
@@ -610,6 +743,7 @@ public class RamSaver {
                 id,
                 started,
                 "canAge=" + canAge
+                        + " materializationFallback=" + materializationFallback
                         + " replaced=" + (old != null)
                         + " appendedToExistingSet=" + appendedToExistingSet
                         + " createdSet=" + createdSet
@@ -1043,6 +1177,10 @@ public class RamSaver {
         int recentMaterializeCount;
         long lastMaterializedNanos;
         long lastMaterializeElapsedNanos;
+        boolean materializationFailed;
+        int materializationFailureCount;
+        String materializationFailureDetails;
+        Texture materializationFallback;
         boolean hotPinned;
         long hotPinnedUntilNanos;
         long hotPinnedAtNanos;

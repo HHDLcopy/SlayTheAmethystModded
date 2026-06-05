@@ -429,10 +429,12 @@ internal class WorkshopViewModel : ViewModel() {
         appId: UInt,
         publishedFileId: ULong,
         fallbackSummary: WorkshopItemSummary? = null,
+        clearSelected: Boolean = false,
     ) {
         val currentService = service ?: return
         viewModelScope.launch {
             uiState = uiState.copy(
+                selected = if (clearSelected) null else uiState.selected,
                 detailLoadingId = publishedFileId,
                 errorMessage = null,
                 commentLoadingId = null,
@@ -478,6 +480,19 @@ internal class WorkshopViewModel : ViewModel() {
                 )
             }
         }
+    }
+
+    fun retryDetailsLoad(
+        context: Context,
+        appId: UInt,
+        publishedFileId: ULong,
+    ) {
+        loadDetails(
+            context = context,
+            appId = appId,
+            publishedFileId = publishedFileId,
+            clearSelected = true,
+        )
     }
 
     fun loadSelectedChangeNotes(context: Context) {
@@ -1392,6 +1407,11 @@ private fun WorkshopItemDetails.mergeCachedCommunityData(cached: WorkshopItemDet
             description = if (useCachedDescription) cached.summary.description else summary.description,
             authorName = summary.authorName.ifBlank { cached.summary.authorName },
         ),
+        fullDescriptionUnavailable = if (useCachedDescription) {
+            cached.fullDescriptionUnavailable
+        } else {
+            fullDescriptionUnavailable
+        },
         changeNotes = changeNotes.ifBlank { cached.changeNotes },
         changeNotesUrl = changeNotesUrl.ifBlank { cached.changeNotesUrl },
         dependencies = if (useCachedDependencies) cached.dependencies else dependencies,

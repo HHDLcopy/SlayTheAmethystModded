@@ -896,6 +896,12 @@ private const val STEAM_CLOUD_AUTO_RETRY_INITIAL_DELAY_SECONDS = 5
 private const val STEAM_CLOUD_AUTO_RETRY_MAX_DELAY_SECONDS = 300
 private const val STEAM_CLOUD_AUTO_RETRY_STORED_ATTEMPT_CAP = 7
 
+private data class SteamCloudAutoRetryUiState(
+    val inProgress: Boolean = false,
+    val delaySeconds: Int = STEAM_CLOUD_AUTO_RETRY_INITIAL_DELAY_SECONDS,
+    val countdownSeconds: Int = STEAM_CLOUD_AUTO_RETRY_INITIAL_DELAY_SECONDS,
+)
+
 internal fun steamCloudAutoRetryDelaySeconds(attemptIndex: Int): Int {
     var delaySeconds = STEAM_CLOUD_AUTO_RETRY_INITIAL_DELAY_SECONDS
     repeat(attemptIndex.coerceAtLeast(0)) {
@@ -1428,6 +1434,21 @@ private fun LauncherMainScreenContent(
         enabledModSizeItems.map { it.name }
     }
     val steamCloudIndicator = uiState.steamCloudIndicator
+    var steamCloudAutoRetryAttemptIndex by remember { mutableIntStateOf(0) }
+    var steamCloudAutoRetryCurrentDelaySeconds by remember {
+        mutableIntStateOf(STEAM_CLOUD_AUTO_RETRY_INITIAL_DELAY_SECONDS)
+    }
+    var steamCloudAutoRetryCountdownSeconds by remember {
+        mutableIntStateOf(STEAM_CLOUD_AUTO_RETRY_INITIAL_DELAY_SECONDS)
+    }
+    val steamCloudAutoRetryInProgress =
+        steamCloudIndicator.state == MainScreenViewModel.SteamCloudIndicatorState.CONNECTION_FAILED &&
+            !showSteamCloudLaunchWarning
+    val steamCloudAutoRetryState = SteamCloudAutoRetryUiState(
+        inProgress = steamCloudAutoRetryInProgress,
+        delaySeconds = steamCloudAutoRetryCurrentDelaySeconds,
+        countdownSeconds = steamCloudAutoRetryCountdownSeconds,
+    )
     val steamCloudBottomSheetVisible =
         showSteamCloudBottomSheetHost && showSteamCloudBottomSheet && steamCloudIndicator.visible
     val steamCloudBottomSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -1453,6 +1474,46 @@ private fun LauncherMainScreenContent(
         }
     }
 
+    LaunchedEffect(steamCloudIndicator.state) {
+        when (steamCloudIndicator.state) {
+            MainScreenViewModel.SteamCloudIndicatorState.HIDDEN,
+            MainScreenViewModel.SteamCloudIndicatorState.UP_TO_DATE,
+            MainScreenViewModel.SteamCloudIndicatorState.CONFLICT -> {
+                steamCloudAutoRetryAttemptIndex = 0
+                steamCloudAutoRetryCurrentDelaySeconds = STEAM_CLOUD_AUTO_RETRY_INITIAL_DELAY_SECONDS
+                steamCloudAutoRetryCountdownSeconds = STEAM_CLOUD_AUTO_RETRY_INITIAL_DELAY_SECONDS
+            }
+
+            MainScreenViewModel.SteamCloudIndicatorState.CHECKING,
+            MainScreenViewModel.SteamCloudIndicatorState.SYNCING,
+            MainScreenViewModel.SteamCloudIndicatorState.CONNECTION_FAILED -> Unit
+        }
+    }
+
+    LaunchedEffect(
+        steamCloudIndicator.state,
+        steamCloudIndicator.errorSummary,
+        steamCloudIndicator.lastCheckedAtMs,
+        showSteamCloudLaunchWarning
+    ) {
+        if (steamCloudIndicator.state != MainScreenViewModel.SteamCloudIndicatorState.CONNECTION_FAILED ||
+            showSteamCloudLaunchWarning
+        ) {
+            return@LaunchedEffect
+        }
+        val nextRetryDelaySeconds = steamCloudAutoRetryDelaySeconds(steamCloudAutoRetryAttemptIndex)
+        steamCloudAutoRetryAttemptIndex = (steamCloudAutoRetryAttemptIndex + 1)
+            .coerceAtMost(STEAM_CLOUD_AUTO_RETRY_STORED_ATTEMPT_CAP)
+        steamCloudAutoRetryCurrentDelaySeconds = nextRetryDelaySeconds
+        steamCloudAutoRetryCountdownSeconds = nextRetryDelaySeconds
+        repeat(nextRetryDelaySeconds) {
+            delay(1000L)
+            steamCloudAutoRetryCountdownSeconds =
+                (steamCloudAutoRetryCountdownSeconds - 1).coerceAtLeast(0)
+        }
+        requestSteamCloudNetworkAction(SteamCloudNetworkPromptAction.REFRESH)
+    }
+
     LaunchedEffect(batchSelectionMode) {
         onBatchSelectionModeChange(batchSelectionMode)
     }
@@ -1472,14 +1533,6 @@ private fun LauncherMainScreenContent(
     LaunchedEffect(steamCloudIndicator.state) {
         if (steamCloudIndicator.state != MainScreenViewModel.SteamCloudIndicatorState.CONFLICT) {
             pendingSteamCloudConflictChoice = null
-        }
-    }
-
-    LaunchedEffect(steamCloudIndicator.state, steamCloudIndicator.errorSummary) {
-        if (steamCloudIndicator.visible &&
-            steamCloudIndicator.state == MainScreenViewModel.SteamCloudIndicatorState.CONNECTION_FAILED
-        ) {
-            showSteamCloudBottomSheet = true
         }
     }
 
@@ -1693,7 +1746,7 @@ private fun LauncherMainScreenContent(
                 onUseCloud = {
                     pendingSteamCloudConflictChoice = SteamCloudConflictResolutionChoice.USE_CLOUD
                 },
-                autoRetryError = !showSteamCloudLaunchWarning,
+                autoRetryState = steamCloudAutoRetryState,
             )
         }
     }
@@ -2652,22 +2705,15 @@ private fun SteamCloudBottomSheetContent(
     onCancelSync: () -> Unit,
     onUseLocal: () -> Unit,
     onUseCloud: () -> Unit,
-    autoRetryError: Boolean,
+    autoRetryState: SteamCloudAutoRetryUiState,
 ) {
     val tint = steamCloudIndicatorTint(indicator.state)
     val title = steamCloudActionBarTitle(indicator.state)
     val summary = steamCloudActionBarSummary(indicator)
-    var autoRetryAttemptIndex by remember { mutableIntStateOf(0) }
-    var retryDelaySeconds by remember {
-        mutableIntStateOf(STEAM_CLOUD_AUTO_RETRY_INITIAL_DELAY_SECONDS)
-    }
-    var retryCountdownSeconds by remember {
-        mutableIntStateOf(STEAM_CLOUD_AUTO_RETRY_INITIAL_DELAY_SECONDS)
-    }
-    val autoRetryInProgress = indicator.state ==
-        MainScreenViewModel.SteamCloudIndicatorState.CONNECTION_FAILED && autoRetryError
+    val autoRetryInProgress = autoRetryState.inProgress
     val retryProgressFraction = if (autoRetryInProgress) {
-        (retryDelaySeconds - retryCountdownSeconds)
+        val retryDelaySeconds = autoRetryState.delaySeconds.coerceAtLeast(1)
+        (retryDelaySeconds - autoRetryState.countdownSeconds)
             .coerceIn(0, retryDelaySeconds) /
             retryDelaySeconds.toFloat()
     } else {
@@ -2690,38 +2736,6 @@ private fun SteamCloudBottomSheetContent(
         indicator.plan?.takeIf { it.conflicts.isNotEmpty() }?.let {
             buildSteamCloudConflictCardSummaries(it)
         }
-    }
-
-    LaunchedEffect(indicator.state) {
-        when (indicator.state) {
-            MainScreenViewModel.SteamCloudIndicatorState.HIDDEN,
-            MainScreenViewModel.SteamCloudIndicatorState.UP_TO_DATE,
-            MainScreenViewModel.SteamCloudIndicatorState.CONFLICT -> {
-                autoRetryAttemptIndex = 0
-                retryDelaySeconds = STEAM_CLOUD_AUTO_RETRY_INITIAL_DELAY_SECONDS
-                retryCountdownSeconds = STEAM_CLOUD_AUTO_RETRY_INITIAL_DELAY_SECONDS
-            }
-
-            MainScreenViewModel.SteamCloudIndicatorState.CHECKING,
-            MainScreenViewModel.SteamCloudIndicatorState.SYNCING,
-            MainScreenViewModel.SteamCloudIndicatorState.CONNECTION_FAILED -> Unit
-        }
-    }
-
-    LaunchedEffect(indicator.state, indicator.errorSummary, indicator.lastCheckedAtMs, autoRetryError) {
-        if (indicator.state != MainScreenViewModel.SteamCloudIndicatorState.CONNECTION_FAILED || !autoRetryError) {
-            return@LaunchedEffect
-        }
-        val nextRetryDelaySeconds = steamCloudAutoRetryDelaySeconds(autoRetryAttemptIndex)
-        autoRetryAttemptIndex = (autoRetryAttemptIndex + 1)
-            .coerceAtMost(STEAM_CLOUD_AUTO_RETRY_STORED_ATTEMPT_CAP)
-        retryDelaySeconds = nextRetryDelaySeconds
-        retryCountdownSeconds = nextRetryDelaySeconds
-        repeat(nextRetryDelaySeconds) {
-            delay(1000L)
-            retryCountdownSeconds = (retryCountdownSeconds - 1).coerceAtLeast(0)
-        }
-        onRefresh()
     }
 
     Column(
@@ -2833,7 +2847,7 @@ private fun SteamCloudBottomSheetContent(
                         Text(
                             text = stringResource(
                                 R.string.main_steam_cloud_action_retry_auto,
-                                retryCountdownSeconds,
+                                autoRetryState.countdownSeconds,
                             )
                         )
                     }

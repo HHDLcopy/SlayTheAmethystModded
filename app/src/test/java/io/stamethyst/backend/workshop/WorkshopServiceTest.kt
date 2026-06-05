@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flowOf
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -188,6 +189,7 @@ class WorkshopServiceTest {
 
         assertEquals("Detailed Mod", details.summary.title)
         assertEquals("Localized Details", details.summary.description)
+        assertFalse(details.fullDescriptionUnavailable)
         assertEquals("Author", details.summary.authorName)
         assertEquals(42L, details.summary.downloadCount)
         assertEquals(downloadServer.url("/mod.jar").toString(), details.fileUrl)
@@ -488,7 +490,7 @@ class WorkshopServiceTest {
     }
 
     @Test
-    fun getDetailsKeepsCardSummaryWhenCommunityPageFails() {
+    fun getDetailsUsesApiDescriptionBeforeCardSummaryWhenCommunityPageFails() {
         detailsServer.enqueue(
             MockResponse.Builder()
                 .code(200)
@@ -534,7 +536,66 @@ class WorkshopServiceTest {
 
         assertEquals("Caffé In-Spire", details.summary.title)
         assertEquals("https://cdn.example/preview.jpg", details.summary.previewUrl)
+        assertEquals("Caffé In-Spire.", details.summary.description)
+        assertFalse(details.fullDescriptionUnavailable)
+        assertEquals("tldyl", details.summary.authorName)
+        assertEquals(1234L, details.summary.fileSizeBytes)
+        assertEquals(1710000000L, details.summary.updatedAtMillis)
+        assertEquals(42L, details.summary.downloadCount)
+        assertEquals(null, details.commentThreadContext)
+        assertEquals(2, browseServer.requestCount)
+        assertEquals(1, detailsServer.requestCount)
+    }
+
+    @Test
+    fun getDetailsKeepsCardSummaryWhenCommunityPageAndApiDescriptionsFail() {
+        detailsServer.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    {
+                      "response": {
+                        "publishedfiledetails": [
+                          {
+                            "publishedfileid": "2906539837",
+                            "title": "Caffé In-Spire",
+                            "consumer_app_id": 646570,
+                            "description": ""
+                          }
+                        ]
+                      }
+                    }
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+        browseServer.enqueue(MockResponse.Builder().code(500).body("temporary failure").build())
+        browseServer.enqueue(MockResponse.Builder().code(500).body("temporary failure").build())
+
+        val service = newService()
+        val details = runBlocking {
+            service.getDetails(
+                appId = 646570u,
+                publishedFileId = 2906539837uL,
+                fallbackSummary = WorkshopItemSummary(
+                    publishedFileId = 2906539837uL,
+                    appId = 646570u,
+                    title = "咖啡厅皮肤",
+                    previewUrl = "https://cdn.example/preview.jpg",
+                    description = "一个皮肤mod",
+                    authorName = "tldyl",
+                    fileSizeBytes = 1234L,
+                    updatedAtMillis = 1710000000L,
+                    downloadCount = 42L,
+                ),
+            )
+        }
+
+        assertEquals("Caffé In-Spire", details.summary.title)
+        assertEquals("https://cdn.example/preview.jpg", details.summary.previewUrl)
         assertEquals("一个皮肤mod", details.summary.description)
+        assertTrue(details.fullDescriptionUnavailable)
         assertEquals("tldyl", details.summary.authorName)
         assertEquals(1234L, details.summary.fileSizeBytes)
         assertEquals(1710000000L, details.summary.updatedAtMillis)

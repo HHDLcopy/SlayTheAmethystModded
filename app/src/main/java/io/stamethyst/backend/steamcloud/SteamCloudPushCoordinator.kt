@@ -1,6 +1,6 @@
 package io.stamethyst.backend.steamcloud
 
-import android.app.Activity
+import android.content.Context
 import `in`.dragonbra.javasteam.enums.EResult
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
@@ -39,7 +39,7 @@ internal object SteamCloudPushCoordinator {
 
     @Throws(Exception::class)
     fun buildUploadPlan(
-        host: Activity,
+        host: Context,
         authMaterial: SteamCloudAuthStore.SavedAuthMaterial,
         shouldContinue: () -> Boolean = { true },
     ): SteamCloudUploadPlan {
@@ -61,7 +61,11 @@ internal object SteamCloudPushCoordinator {
                 client.start()
                 telemetry.connectMs = elapsedMs(connectStartedAtNs)
                 val logOnStartedAtNs = System.nanoTime()
-                client.logOnWithRefreshToken(authMaterial.accountName, authMaterial.refreshToken)
+                client.logOnWithRefreshToken(
+                    authMaterial.accountName,
+                    authMaterial.refreshToken,
+                    authMaterial.steamId64,
+                )
                 telemetry.logOnMs = elapsedMs(logOnStartedAtNs)
 
                 val manifestRpcStartedAtNs = System.nanoTime()
@@ -169,7 +173,7 @@ internal object SteamCloudPushCoordinator {
 
     @Throws(Exception::class)
     fun pushLocalChanges(
-        host: Activity,
+        host: Context,
         authMaterial: SteamCloudAuthStore.SavedAuthMaterial,
         plan: SteamCloudUploadPlan,
         progressCallback: ((SteamCloudSyncProgress) -> Unit)? = null,
@@ -216,7 +220,11 @@ internal object SteamCloudPushCoordinator {
                     progressPercent = 12,
                 )
             )
-            client.logOnWithRefreshToken(authMaterial.accountName, authMaterial.refreshToken)
+            client.logOnWithRefreshToken(
+                authMaterial.accountName,
+                authMaterial.refreshToken,
+                authMaterial.steamId64,
+            )
             ensureNotCancelled(shouldContinue)
             reportProgress(
                 progressCallback,
@@ -419,7 +427,7 @@ internal object SteamCloudPushCoordinator {
 
     @Throws(Exception::class)
     fun overwriteRemoteWithLocal(
-        host: Activity,
+        host: Context,
         authMaterial: SteamCloudAuthStore.SavedAuthMaterial,
         sourceRoot: File = RuntimePaths.stsRoot(host),
         progressCallback: ((SteamCloudSyncProgress) -> Unit)? = null,
@@ -456,7 +464,11 @@ internal object SteamCloudPushCoordinator {
                     progressPercent = 12,
                 )
             )
-            client.logOnWithRefreshToken(authMaterial.accountName, authMaterial.refreshToken)
+            client.logOnWithRefreshToken(
+                authMaterial.accountName,
+                authMaterial.refreshToken,
+                authMaterial.steamId64,
+            )
             ensureNotCancelled(shouldContinue)
             reportProgress(
                 progressCallback,
@@ -704,7 +716,7 @@ internal object SteamCloudPushCoordinator {
     }
 
     private fun writePushSummary(
-        host: Activity,
+        host: Context,
         plan: SteamCloudUploadPlan,
         snapshot: SteamCloudManifestSnapshot,
         result: SteamCloudPushResult,
@@ -745,7 +757,7 @@ internal object SteamCloudPushCoordinator {
     }
 
     private fun writeMirrorPushSummary(
-        host: Activity,
+        host: Context,
         plan: SteamCloudMirrorPlan,
         snapshot: SteamCloudManifestSnapshot,
         result: SteamCloudPushResult,

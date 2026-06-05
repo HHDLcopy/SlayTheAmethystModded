@@ -113,7 +113,7 @@ internal fun resolveOriginalModDisplayName(mod: ModItemUi): String {
 
 internal fun resolveModExportFileName(mod: ModItemUi, fallbackFileName: String): String {
     return normalizeModExportFileName(
-        preferredName = mod.alias.ifBlank { fallbackFileName },
+        preferredName = resolveModDisplayName(mod).ifBlank { fallbackFileName },
         fallbackFileName = fallbackFileName
     )
 }

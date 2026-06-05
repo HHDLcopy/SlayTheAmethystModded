@@ -22,6 +22,7 @@ import io.stamethyst.backend.workshop.BaiduTranslationCredentialsRepository
 import io.stamethyst.backend.workshop.SteamLanguagePreference
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.BootOverlayAnimation
+import io.stamethyst.config.BootOverlayStyle
 import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeMode
@@ -36,6 +37,7 @@ internal object SettingsRepository {
     data class SettingsSnapshot(
         val themeMode: LauncherThemeMode,
         val themeColor: LauncherThemeColor,
+        val bootOverlayStyle: BootOverlayStyle,
         val bootOverlayAnimation: BootOverlayAnimation,
         val playerName: String,
         val rendering: RenderingSnapshot,
@@ -144,6 +146,10 @@ internal object SettingsRepository {
         return LauncherPreferences.readBootOverlayAnimation(context)
     }
 
+    fun loadBootOverlayStyle(context: Context): BootOverlayStyle {
+        return LauncherPreferences.readBootOverlayStyle(context)
+    }
+
     fun loadSettingsSnapshot(context: Context): SettingsSnapshot {
         val renderSurfaceBackend = LauncherPreferences.readRenderSurfaceBackend(context)
         val rendererSelectionMode = LauncherPreferences.readRendererSelectionMode(context)
@@ -159,6 +165,7 @@ internal object SettingsRepository {
         return SettingsSnapshot(
             themeMode = LauncherPreferences.readThemeMode(context),
             themeColor = LauncherPreferences.readThemeColor(context),
+            bootOverlayStyle = LauncherPreferences.readBootOverlayStyle(context),
             bootOverlayAnimation = LauncherPreferences.readBootOverlayAnimation(context),
             playerName = LauncherPreferences.readPlayerName(context),
             rendering = RenderingSnapshot(
@@ -265,6 +272,10 @@ internal object SettingsRepository {
     fun resetLauncherSettingsToDefaults(context: Context) {
         LauncherPreferences.saveThemeMode(context, LauncherPreferences.DEFAULT_THEME_MODE)
         LauncherPreferences.saveThemeColor(context, LauncherPreferences.DEFAULT_THEME_COLOR)
+        LauncherPreferences.saveBootOverlayStyle(
+            context,
+            LauncherPreferences.DEFAULT_BOOT_OVERLAY_STYLE
+        )
         LauncherPreferences.saveBootOverlayAnimation(
             context,
             LauncherPreferences.DEFAULT_BOOT_OVERLAY_ANIMATION

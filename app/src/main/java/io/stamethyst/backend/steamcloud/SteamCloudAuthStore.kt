@@ -25,6 +25,7 @@ internal object SteamCloudAuthStore {
         val accountName: String,
         val refreshToken: String,
         val guardData: String,
+        val steamId64: String,
     )
 
     data class AuthSnapshot(
@@ -39,19 +40,26 @@ internal object SteamCloudAuthStore {
         val lastPullAtMs: Long?,
         val lastPushAtMs: Long?,
         val lastError: String,
-    )
+    ) {
+        val isComplete: Boolean
+            get() = accountName.isNotBlank() &&
+                refreshTokenConfigured &&
+                isValidSteamId64(steamId64)
+    }
 
     fun readAuthMaterial(context: Context): SavedAuthMaterial? {
         return readSafely(context, "read Steam Cloud auth material") { prefs ->
             val accountName = prefs.getString(KEY_ACCOUNT_NAME, null)?.trim().orEmpty()
             val refreshToken = prefs.getString(KEY_REFRESH_TOKEN, null)?.trim().orEmpty()
-            if (accountName.isBlank() || refreshToken.isBlank()) {
+            val steamId64 = prefs.getString(KEY_STEAM_ID_64, null)?.trim().orEmpty()
+            if (accountName.isBlank() || refreshToken.isBlank() || !isValidSteamId64(steamId64)) {
                 return@readSafely null
             }
             SavedAuthMaterial(
                 accountName = accountName,
                 refreshToken = refreshToken,
                 guardData = prefs.getString(KEY_GUARD_DATA, null)?.trim().orEmpty(),
+                steamId64 = steamId64,
             )
         }
     }
@@ -83,6 +91,9 @@ internal object SteamCloudAuthStore {
         guardData: String,
         steamId64: String,
     ) {
+        require(isValidSteamId64(steamId64)) {
+            "SteamID64 is required before Steam Cloud auth can be saved."
+        }
         writeSafely(context, "record Steam Cloud auth success") { prefs ->
             prefs.edit()
                 .putString(KEY_ACCOUNT_NAME, accountName.trim())
@@ -241,6 +252,9 @@ internal object SteamCloudAuthStore {
         lastPushAtMs = null,
         lastError = "",
     )
+
+    private fun isValidSteamId64(value: String): Boolean =
+        value.toULongOrNull()?.let { it > 0uL } == true
 
     private fun SharedPreferences.optionalLong(key: String): Long? {
         if (!contains(key)) {

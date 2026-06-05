@@ -19,18 +19,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -72,7 +66,6 @@ internal fun ModCardBodyContent(
     headerLeading: @Composable RowScope.() -> Unit = {},
     headerTrailing: @Composable RowScope.() -> Unit
 ) {
-    var showWorkshopBadgeDialog by remember(mod.storagePath) { mutableStateOf(false) }
     val resolvedName = resolveModDisplayName(mod, showModFileName = showModFileName)
     val resolvedModId = mod.manifestModId.ifBlank { mod.modId }
     val resolvedVersion = mod.version.ifBlank { stringResource(R.string.main_mod_unknown_version) }
@@ -111,7 +104,7 @@ internal fun ModCardBodyContent(
                 onImportPatchClick = onImportPatchClick,
                 updateBadgeEnabled = updateBadgeEnabled,
                 onUpdateBadgeClick = onUpdateBadgeClick,
-                onWorkshopBadgeClick = { showWorkshopBadgeDialog = true }
+                onWorkshopBadgeClick = { onOpenWorkshopDetails(mod) }
             )
         }
         headerTrailing()
@@ -162,32 +155,6 @@ internal fun ModCardBodyContent(
                 Text(text = stringResource(R.string.main_mod_actions))
             }
         }
-    }
-
-    if (showWorkshopBadgeDialog) {
-        AlertDialog(
-            onDismissRequest = { showWorkshopBadgeDialog = false },
-            text = { Text(stringResource(R.string.main_mod_workshop_origin_message)) },
-            confirmButton = {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    TextButton(
-                        onClick = {
-                            showWorkshopBadgeDialog = false
-                            onOpenWorkshopDetails(mod)
-                        }
-                    ) {
-                        Text(text = stringResource(R.string.main_mod_workshop_origin_open_details))
-                    }
-                    TextButton(onClick = { showWorkshopBadgeDialog = false }) {
-                        Text(text = stringResource(R.string.common_action_confirm))
-                    }
-                }
-            }
-        )
     }
 }
 

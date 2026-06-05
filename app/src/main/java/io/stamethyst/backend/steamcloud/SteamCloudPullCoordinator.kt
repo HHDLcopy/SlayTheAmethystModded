@@ -1,6 +1,6 @@
 package io.stamethyst.backend.steamcloud
 
-import android.app.Activity
+import android.content.Context
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.ui.settings.SettingsSaveBackupService
@@ -31,7 +31,7 @@ internal object SteamCloudPullCoordinator {
 
     @Throws(Exception::class)
     fun refreshManifest(
-        host: Activity,
+        host: Context,
         authMaterial: SteamCloudAuthStore.SavedAuthMaterial,
     ): SteamCloudManifestSnapshot {
         val startedAtMs = System.currentTimeMillis()
@@ -44,7 +44,11 @@ internal object SteamCloudPullCoordinator {
                     authMaterial.guardData.isNotBlank(),
                 )
                 client.start()
-                client.logOnWithRefreshToken(authMaterial.accountName, authMaterial.refreshToken)
+                client.logOnWithRefreshToken(
+                    authMaterial.accountName,
+                    authMaterial.refreshToken,
+                    authMaterial.steamId64,
+                )
                 val rawEntries = client.listFiles(STEAM_CLOUD_APP_ID)
                 val snapshot = SteamCloudPathMapper.buildManifestSnapshot(
                     fetchedAtMs = System.currentTimeMillis(),
@@ -92,7 +96,7 @@ internal object SteamCloudPullCoordinator {
 
     @Throws(Exception::class)
     fun downloadAllToDirectory(
-        host: Activity,
+        host: Context,
         authMaterial: SteamCloudAuthStore.SavedAuthMaterial,
         outputRoot: File,
         progressCallback: ((SteamCloudSyncProgress) -> Unit)? = null,
@@ -128,7 +132,11 @@ internal object SteamCloudPullCoordinator {
                         progressPercent = 12,
                     )
                 )
-                client.logOnWithRefreshToken(authMaterial.accountName, authMaterial.refreshToken)
+                client.logOnWithRefreshToken(
+                    authMaterial.accountName,
+                    authMaterial.refreshToken,
+                    authMaterial.steamId64,
+                )
                 reportProgress(
                     progressCallback,
                     SteamCloudSyncProgress(
@@ -192,7 +200,7 @@ internal object SteamCloudPullCoordinator {
 
     @Throws(Exception::class)
     fun pullAll(
-        host: Activity,
+        host: Context,
         authMaterial: SteamCloudAuthStore.SavedAuthMaterial,
         progressCallback: ((SteamCloudSyncProgress) -> Unit)? = null,
     ): SteamCloudPullResult {
@@ -235,7 +243,11 @@ internal object SteamCloudPullCoordinator {
                     )
                 )
                 val logOnStartedAtNs = System.nanoTime()
-                client.logOnWithRefreshToken(authMaterial.accountName, authMaterial.refreshToken)
+                client.logOnWithRefreshToken(
+                    authMaterial.accountName,
+                    authMaterial.refreshToken,
+                    authMaterial.steamId64,
+                )
                 val logOnMs = elapsedMs(logOnStartedAtNs)
                 reportProgress(
                     progressCallback,
@@ -433,7 +445,7 @@ internal object SteamCloudPullCoordinator {
 
     @Throws(Exception::class)
     fun mergeRemoteOnlyChanges(
-        host: Activity,
+        host: Context,
         authMaterial: SteamCloudAuthStore.SavedAuthMaterial,
         plan: SteamCloudUploadPlan,
         progressCallback: ((SteamCloudSyncProgress) -> Unit)? = null,
@@ -484,7 +496,11 @@ internal object SteamCloudPullCoordinator {
                         progressPercent = 12,
                     )
                 )
-                client.logOnWithRefreshToken(authMaterial.accountName, authMaterial.refreshToken)
+                client.logOnWithRefreshToken(
+                    authMaterial.accountName,
+                    authMaterial.refreshToken,
+                    authMaterial.steamId64,
+                )
                 if (downloads.isNotEmpty()) {
                     reportProgress(
                         progressCallback,
@@ -600,7 +616,7 @@ internal object SteamCloudPullCoordinator {
     }
 
     private fun writePullSummary(
-        host: Activity,
+        host: Context,
         snapshot: SteamCloudManifestSnapshot,
         result: SteamCloudPullResult,
         telemetry: PullExecutionTelemetry,
@@ -653,7 +669,7 @@ internal object SteamCloudPullCoordinator {
     }
 
     private fun writePullDownloadDetails(
-        host: Activity,
+        host: Context,
         downloadResults: List<SteamCloudClient.DownloadResult>,
     ): String {
         val file = SteamCloudManifestStore.pullDownloadDetailsFile(host)

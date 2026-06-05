@@ -650,6 +650,8 @@ internal fun ModCard(
         deleteEnabled = actionsEnabled,
         onFavoriteChange = { favorite -> callbacks.onSetFavorite(mod, favorite) },
         onEditPriority = { showPriorityDialog = true },
+        showOpenWorkshopDetails = mod.workshop != null,
+        onOpenWorkshopDetails = { callbacks.onOpenWorkshopDetails(mod) },
         onExport = { callbacks.onExportMod(mod) },
         onShare = { callbacks.onShareMod(mod) },
         onRename = { showRenameDialog = true },
@@ -677,6 +679,7 @@ internal fun ModCard(
         visible = showRenameDialog,
         value = mod.alias.ifBlank { resolveOriginalModDisplayName(mod) },
         controlsEnabled = fileActionsEnabled,
+        showRestoreOriginal = mod.alias.isNotBlank(),
         onDismiss = { showRenameDialog = false },
         onRestoreOriginal = {
             showRenameDialog = false

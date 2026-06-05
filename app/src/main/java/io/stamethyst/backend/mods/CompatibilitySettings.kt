@@ -21,6 +21,46 @@ object CompatibilitySettings {
             context,
             LauncherConfig.DEFAULT_MAIN_MENU_PREVIEW_REUSE_COMPAT_ENABLED
         )
+        setRoomContextHandLayoutRescueCompatEnabled(
+            context,
+            LauncherConfig.DEFAULT_ROOM_CONTEXT_HAND_LAYOUT_RESCUE_COMPAT_ENABLED
+        )
+        setRoomTransitionRescueCompatEnabled(
+            context,
+            LauncherConfig.DEFAULT_ROOM_TRANSITION_RESCUE_COMPAT_ENABLED
+        )
+        setEventRoomRescueCompatEnabled(
+            context,
+            LauncherConfig.DEFAULT_EVENT_ROOM_RESCUE_COMPAT_ENABLED
+        )
+        setShopRoomRescueCompatEnabled(
+            context,
+            LauncherConfig.DEFAULT_SHOP_ROOM_RESCUE_COMPAT_ENABLED
+        )
+        setBaseModSaveLoadRescueCompatEnabled(
+            context,
+            LauncherConfig.DEFAULT_BASEMOD_SAVE_LOAD_RESCUE_COMPAT_ENABLED
+        )
+        setRelicEnterRoomRescueCompatEnabled(
+            context,
+            LauncherConfig.DEFAULT_RELIC_ENTER_ROOM_RESCUE_COMPAT_ENABLED
+        )
+        setDungeonRenderRoomContextRescueCompatEnabled(
+            context,
+            LauncherConfig.DEFAULT_DUNGEON_RENDER_ROOM_CONTEXT_RESCUE_COMPAT_ENABLED
+        )
+        setPowerIconRenderRescueCompatEnabled(
+            context,
+            LauncherConfig.DEFAULT_POWER_ICON_RENDER_RESCUE_COMPAT_ENABLED
+        )
+        setBaseModCustomMonsterRenderRescueCompatEnabled(
+            context,
+            LauncherConfig.DEFAULT_BASEMOD_CUSTOM_MONSTER_RENDER_RESCUE_COMPAT_ENABLED
+        )
+        setNonCombatPlayerRenderRescueCompatEnabled(
+            context,
+            LauncherConfig.DEFAULT_NON_COMBAT_PLAYER_RENDER_RESCUE_COMPAT_ENABLED
+        )
         setNativeTouchscreenAllowlistCompatEnabled(
             context,
             LauncherConfig.DEFAULT_NATIVE_TOUCHSCREEN_ALLOWLIST_COMPAT_ENABLED
@@ -159,6 +199,106 @@ object CompatibilitySettings {
     @JvmStatic
     fun setMainMenuPreviewReuseCompatEnabled(context: Context, enabled: Boolean) {
         LauncherConfig.setMainMenuPreviewReuseCompatEnabled(context, enabled)
+    }
+
+    @JvmStatic
+    fun isRoomContextHandLayoutRescueCompatEnabled(context: Context): Boolean {
+        return LauncherConfig.isRoomContextHandLayoutRescueCompatEnabled(context)
+    }
+
+    @JvmStatic
+    fun setRoomContextHandLayoutRescueCompatEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setRoomContextHandLayoutRescueCompatEnabled(context, enabled)
+    }
+
+    @JvmStatic
+    fun isRoomTransitionRescueCompatEnabled(context: Context): Boolean {
+        return LauncherConfig.isRoomTransitionRescueCompatEnabled(context)
+    }
+
+    @JvmStatic
+    fun setRoomTransitionRescueCompatEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setRoomTransitionRescueCompatEnabled(context, enabled)
+    }
+
+    @JvmStatic
+    fun isEventRoomRescueCompatEnabled(context: Context): Boolean {
+        return LauncherConfig.isEventRoomRescueCompatEnabled(context)
+    }
+
+    @JvmStatic
+    fun setEventRoomRescueCompatEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setEventRoomRescueCompatEnabled(context, enabled)
+    }
+
+    @JvmStatic
+    fun isShopRoomRescueCompatEnabled(context: Context): Boolean {
+        return LauncherConfig.isShopRoomRescueCompatEnabled(context)
+    }
+
+    @JvmStatic
+    fun setShopRoomRescueCompatEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setShopRoomRescueCompatEnabled(context, enabled)
+    }
+
+    @JvmStatic
+    fun isBaseModSaveLoadRescueCompatEnabled(context: Context): Boolean {
+        return LauncherConfig.isBaseModSaveLoadRescueCompatEnabled(context)
+    }
+
+    @JvmStatic
+    fun setBaseModSaveLoadRescueCompatEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setBaseModSaveLoadRescueCompatEnabled(context, enabled)
+    }
+
+    @JvmStatic
+    fun isRelicEnterRoomRescueCompatEnabled(context: Context): Boolean {
+        return LauncherConfig.isRelicEnterRoomRescueCompatEnabled(context)
+    }
+
+    @JvmStatic
+    fun setRelicEnterRoomRescueCompatEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setRelicEnterRoomRescueCompatEnabled(context, enabled)
+    }
+
+    @JvmStatic
+    fun isDungeonRenderRoomContextRescueCompatEnabled(context: Context): Boolean {
+        return LauncherConfig.isDungeonRenderRoomContextRescueCompatEnabled(context)
+    }
+
+    @JvmStatic
+    fun setDungeonRenderRoomContextRescueCompatEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setDungeonRenderRoomContextRescueCompatEnabled(context, enabled)
+    }
+
+    @JvmStatic
+    fun isPowerIconRenderRescueCompatEnabled(context: Context): Boolean {
+        return LauncherConfig.isPowerIconRenderRescueCompatEnabled(context)
+    }
+
+    @JvmStatic
+    fun setPowerIconRenderRescueCompatEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setPowerIconRenderRescueCompatEnabled(context, enabled)
+    }
+
+    @JvmStatic
+    fun isBaseModCustomMonsterRenderRescueCompatEnabled(context: Context): Boolean {
+        return LauncherConfig.isBaseModCustomMonsterRenderRescueCompatEnabled(context)
+    }
+
+    @JvmStatic
+    fun setBaseModCustomMonsterRenderRescueCompatEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setBaseModCustomMonsterRenderRescueCompatEnabled(context, enabled)
+    }
+
+    @JvmStatic
+    fun isNonCombatPlayerRenderRescueCompatEnabled(context: Context): Boolean {
+        return LauncherConfig.isNonCombatPlayerRenderRescueCompatEnabled(context)
+    }
+
+    @JvmStatic
+    fun setNonCombatPlayerRenderRescueCompatEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setNonCombatPlayerRenderRescueCompatEnabled(context, enabled)
     }
 
     @JvmStatic

@@ -8,6 +8,7 @@ import io.stamethyst.backend.mods.DuplicateZipEntryNormalizer
 import io.stamethyst.backend.mods.ImportedModPatchInfo
 import io.stamethyst.backend.mods.ImportedModPatchRegistry
 import io.stamethyst.backend.mods.ModManager
+import io.stamethyst.backend.mods.ModManifestNameRewriter
 import io.stamethyst.backend.mods.MtsLaunchManifestValidator
 import io.stamethyst.backend.mods.OptionalModStorageCoordinator
 import io.stamethyst.backend.mods.importing.patches.AtlasFilterPatchModule
@@ -432,7 +433,16 @@ internal object ModImportExecutor {
             ModAliasStore.setAlias(context, sourcePath, "")
         }
         if (alias.isNotEmpty()) {
-            ModAliasStore.setAlias(context, targetPath, alias)
+            val targetFile = File(targetPath)
+            val rewritten = targetFile.isFile &&
+                runCatching {
+                    ModManifestNameRewriter.rewriteNameInPlace(targetFile, alias)
+                }.isSuccess
+            if (rewritten) {
+                ModAliasStore.setAlias(context, targetPath, "")
+            } else {
+                ModAliasStore.setAlias(context, targetPath, alias)
+            }
         }
     }
 

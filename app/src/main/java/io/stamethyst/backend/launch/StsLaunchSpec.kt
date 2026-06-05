@@ -184,6 +184,7 @@ object StsLaunchSpec {
         args.add("-Damethyst.in_game_keyboard_request=${RuntimePaths.inGameKeyboardRequestFile(context).absolutePath}")
         args.add("-Damethyst.in_game_file_picker_request=${RuntimePaths.inGameFilePickerRequestFile(context).absolutePath}")
         args.add("-Damethyst.in_game_file_picker_result=${RuntimePaths.inGameFilePickerResultFile(context).absolutePath}")
+        args.add("-Damethyst.runtime_rescue_toast_request=${RuntimePaths.runtimeRescueToastRequestFile(context).absolutePath}")
         val touchscreenInputMode = LauncherConfig.readTouchscreenInputMode(context)
         args.add(
             "-Damethyst.touchscreen_enabled=" +
@@ -325,6 +326,58 @@ object StsLaunchSpec {
         args.add(
             "-Damethyst.runtime_compat.main_menu_preview_reuse=" +
                 if (CompatibilitySettings.isMainMenuPreviewReuseCompatEnabled(context)) {
+                    "true"
+                } else {
+                    "false"
+                }
+        )
+        args.add(
+            "-Damethyst.runtime_compat.rescue.hand_layout_room_context=" +
+                if (CompatibilitySettings.isRoomContextHandLayoutRescueCompatEnabled(context)) "true" else "false"
+        )
+        args.add(
+            "-Damethyst.runtime_compat.rescue.room_transition=" +
+                if (CompatibilitySettings.isRoomTransitionRescueCompatEnabled(context)) "true" else "false"
+        )
+        args.add(
+            "-Damethyst.runtime_compat.rescue.event_room=" +
+                if (CompatibilitySettings.isEventRoomRescueCompatEnabled(context)) "true" else "false"
+        )
+        args.add(
+            "-Damethyst.runtime_compat.rescue.shop_room=" +
+                if (CompatibilitySettings.isShopRoomRescueCompatEnabled(context)) "true" else "false"
+        )
+        args.add(
+            "-Damethyst.runtime_compat.rescue.basemod_save_load=" +
+                if (CompatibilitySettings.isBaseModSaveLoadRescueCompatEnabled(context)) "true" else "false"
+        )
+        args.add(
+            "-Damethyst.runtime_compat.rescue.relic_enter_room=" +
+                if (CompatibilitySettings.isRelicEnterRoomRescueCompatEnabled(context)) "true" else "false"
+        )
+        args.add(
+            "-Damethyst.runtime_compat.rescue.dungeon_render_room_context=" +
+                if (CompatibilitySettings.isDungeonRenderRoomContextRescueCompatEnabled(context)) {
+                    "true"
+                } else {
+                    "false"
+                }
+        )
+        args.add(
+            "-Damethyst.runtime_compat.rescue.power_icon_render=" +
+                if (CompatibilitySettings.isPowerIconRenderRescueCompatEnabled(context)) "true" else "false"
+        )
+        args.add(
+            "-Damethyst.runtime_compat.rescue.basemod_custom_monster_render=" +
+                if (CompatibilitySettings.isBaseModCustomMonsterRenderRescueCompatEnabled(context)) {
+                    "true"
+                } else {
+                    "false"
+                }
+        )
+        args.add(
+            "-Damethyst.runtime_compat.rescue.non_combat_player_render=" +
+                if (CompatibilitySettings.isNonCombatPlayerRenderRescueCompatEnabled(context)) {
                     "true"
                 } else {
                     "false"

@@ -15,6 +15,7 @@ import io.stamethyst.backend.render.RendererSelectionMode
 import io.stamethyst.backend.render.VirtualResolutionMode
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.BootOverlayAnimation
+import io.stamethyst.config.BootOverlayStyle
 import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.LauncherThemeColor
@@ -33,6 +34,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_MANUAL_DISMISS_BOOT_OVERLAY
     val DEFAULT_BOOT_OVERLAY_ANIMATION: BootOverlayAnimation
         get() = LauncherConfig.DEFAULT_BOOT_OVERLAY_ANIMATION
+    val DEFAULT_BOOT_OVERLAY_STYLE: BootOverlayStyle
+        get() = LauncherConfig.DEFAULT_BOOT_OVERLAY_STYLE
     val DEFAULT_TARGET_FPS: Int
         get() = LauncherConfig.DEFAULT_TARGET_FPS
     val TARGET_FPS_OPTIONS: IntArray
@@ -195,6 +198,14 @@ object LauncherPreferences {
 
     fun saveManualDismissBootOverlay(context: Context, enabled: Boolean) {
         LauncherConfig.saveManualDismissBootOverlay(context, enabled)
+    }
+
+    fun readBootOverlayStyle(context: Context): BootOverlayStyle {
+        return LauncherConfig.readBootOverlayStyle(context)
+    }
+
+    fun saveBootOverlayStyle(context: Context, style: BootOverlayStyle) {
+        LauncherConfig.saveBootOverlayStyle(context, style)
     }
 
     fun readBootOverlayAnimation(context: Context): BootOverlayAnimation {

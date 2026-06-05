@@ -68,7 +68,7 @@ internal class WorkshopService(
         .protocols(listOf(Protocol.HTTP_1_1))
         .build()
 
-    fun hasSteamAuth(): Boolean = SteamCloudAuthStore.readAuthMaterial(context) != null
+    fun hasSteamAuth(): Boolean = SteamCloudAuthStore.readSnapshot(context).isComplete
 
     fun cancelActiveCalls() {
         listOf(client, workshopClient, browseDetailClient).forEach { httpClient ->
@@ -337,14 +337,24 @@ internal class WorkshopService(
                     summary.updatedAtMillis <= 0L ||
                     summary.updatedAtMillis == apiUpdatedAtMillis
             } == true
+            val localizedDescription = localizedDetail?.description.orEmpty()
+            val fallbackDescription = cardSummary?.description.orEmpty()
+                .takeIf { fallbackMatchesApiVersion }
+                .orEmpty()
+            val apiDescription = detail.description.orEmpty()
+            val description = localizedDescription
+                .ifBlank { apiDescription }
+                .ifBlank { fallbackDescription }
+            val fullDescriptionUnavailable = localizedDescription.isBlank() &&
+                apiDescription.isBlank() &&
+                fallbackDescription.isNotBlank() &&
+                description == fallbackDescription
             val summary = WorkshopItemSummary(
                 publishedFileId = publishedFileId,
                 appId = appId,
                 title = detail.title.ifBlank { cardSummary?.title.orEmpty().ifBlank { "Workshop $publishedFileId" } },
                 previewUrl = detail.previewUrl.orEmpty().ifBlank { cardSummary?.previewUrl.orEmpty() },
-                description = localizedDetail?.description.orEmpty()
-                    .ifBlank { cardSummary?.description.orEmpty().takeIf { fallbackMatchesApiVersion }.orEmpty() }
-                    .ifBlank { detail.description.orEmpty() },
+                description = description,
                 authorName = detail.creatorName.orEmpty()
                     .ifBlank { localizedDetail?.authorName.orEmpty() }
                     .ifBlank { cardSummary?.authorName.orEmpty() },
@@ -366,6 +376,7 @@ internal class WorkshopService(
                 hcontentFile = detail.hcontentFile?.takeIf { it > 0L }?.toULong(),
                 depotId = detail.consumerAppId?.takeIf { it > 0 }?.toUInt(),
                 jsonMetadata = payload,
+                fullDescriptionUnavailable = fullDescriptionUnavailable,
                 changeNotesUrl = buildWorkshopChangeNotesUrl(publishedFileId, languagePreference.requestValue),
                 dependencies = dependencyIds.map { dependencyId ->
                     dependencyDetailsById[dependencyId]?.toSummary(appId, dependencyId)

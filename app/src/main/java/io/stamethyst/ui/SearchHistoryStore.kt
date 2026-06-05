@@ -17,6 +17,10 @@ internal object SearchHistoryStore {
         return record(context, KEY_MODS, query)
     }
 
+    fun deleteModSearch(context: Context, query: String): List<String> {
+        return delete(context, KEY_MODS, query)
+    }
+
     fun loadWorkshopSearchHistory(context: Context): List<String> {
         return load(context, KEY_WORKSHOP)
     }
@@ -25,8 +29,18 @@ internal object SearchHistoryStore {
         return record(context, KEY_WORKSHOP, query)
     }
 
+    fun deleteWorkshopSearch(context: Context, query: String): List<String> {
+        return delete(context, KEY_WORKSHOP, query)
+    }
+
     private fun record(context: Context, key: String, query: String): List<String> {
         val updated = mergeSearchHistory(load(context, key), query)
+        save(context, key, updated)
+        return updated
+    }
+
+    private fun delete(context: Context, key: String, query: String): List<String> {
+        val updated = removeSearchHistoryEntry(load(context, key), query)
         save(context, key, updated)
         return updated
     }
@@ -81,4 +95,22 @@ internal fun mergeSearchHistory(
             }
         }
     }
+}
+
+internal fun removeSearchHistoryEntry(
+    existing: List<String>,
+    query: String,
+    limit: Int = SearchHistoryStore.MAX_ENTRIES,
+): List<String> {
+    val normalized = query.trim()
+    if (normalized.isEmpty()) {
+        return existing.take(limit)
+    }
+    return existing
+        .asSequence()
+        .map(String::trim)
+        .filter { it.isNotEmpty() && !it.equals(normalized, ignoreCase = true) }
+        .distinctBy { it.lowercase() }
+        .take(limit)
+        .toList()
 }

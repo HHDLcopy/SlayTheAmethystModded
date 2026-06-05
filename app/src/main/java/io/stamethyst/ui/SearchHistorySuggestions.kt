@@ -3,14 +3,20 @@ package io.stamethyst.ui
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -21,6 +27,7 @@ internal fun SearchHistorySuggestions(
     history: List<String>,
     modifier: Modifier = Modifier,
     onSelect: (String) -> Unit,
+    onDelete: ((String) -> Unit)? = null,
 ) {
     Column(
         modifier = modifier
@@ -44,17 +51,36 @@ internal fun SearchHistorySuggestions(
             )
         } else {
             history.forEach { entry ->
-                TextButton(
-                    onClick = { onSelect(entry) },
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        text = entry,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                    TextButton(
+                        onClick = { onSelect(entry) },
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp),
+                    ) {
+                        Text(
+                            text = entry,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    if (onDelete != null) {
+                        IconButton(
+                            onClick = { onDelete(entry) },
+                            modifier = Modifier.size(40.dp),
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_delete),
+                                contentDescription = stringResource(
+                                    R.string.search_history_delete_content_description,
+                                    entry,
+                                ),
+                            )
+                        }
+                    }
                 }
             }
         }

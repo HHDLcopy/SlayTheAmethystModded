@@ -61,6 +61,8 @@ internal fun ModActionsDialog(
     deleteEnabled: Boolean = controlsEnabled,
     onFavoriteChange: (Boolean) -> Unit,
     onEditPriority: () -> Unit,
+    showOpenWorkshopDetails: Boolean = false,
+    onOpenWorkshopDetails: () -> Unit = {},
     onExport: () -> Unit,
     onShare: () -> Unit,
     onRename: () -> Unit,
@@ -111,6 +113,15 @@ internal fun ModActionsDialog(
                     ) {
                         onDismiss()
                         onEditPriority()
+                    }
+                    if (showOpenWorkshopDetails) {
+                        ModActionDialogListItem(
+                            text = stringResource(R.string.main_mod_open_market_page),
+                            enabled = true
+                        ) {
+                            onDismiss()
+                            onOpenWorkshopDetails()
+                        }
                     }
                     ModActionDialogListItem(
                         text = stringResource(R.string.main_mod_export),
@@ -285,6 +296,7 @@ internal fun RenameModAliasDialog(
     visible: Boolean,
     value: String,
     controlsEnabled: Boolean,
+    showRestoreOriginal: Boolean,
     onDismiss: () -> Unit,
     onRestoreOriginal: () -> Unit,
     onConfirm: (String) -> Unit
@@ -329,11 +341,13 @@ internal fun RenameModAliasDialog(
         },
         dismissButton = {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(
-                    onClick = onRestoreOriginal,
-                    enabled = controlsEnabled
-                ) {
-                    Text(stringResource(R.string.main_mod_alias_restore_original))
+                if (showRestoreOriginal) {
+                    TextButton(
+                        onClick = onRestoreOriginal,
+                        enabled = controlsEnabled
+                    ) {
+                        Text(stringResource(R.string.main_mod_alias_restore_original))
+                    }
                 }
                 PillCancelButton(onClick = onDismiss) {
                     Text(stringResource(R.string.main_folder_dialog_cancel))

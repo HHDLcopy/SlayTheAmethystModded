@@ -1,6 +1,8 @@
 package io.stamethyst.backend.steamcloud;
 
 import in.dragonbra.javasteam.enums.EResult;
+import in.dragonbra.javasteam.steam.handlers.steamuser.LogOnDetails;
+import in.dragonbra.javasteam.types.SteamID;
 
 import org.junit.Assert;
 import org.junit.Test;
@@ -134,6 +136,29 @@ public final class SteamCloudClientTest {
         Assert.assertEquals(10_000L, invokeDownloadRetryDelayMs(10));
     }
 
+    @Test
+    public void resolveSteamId64FromAuthSession_readsCredentialsAuthSessionField() {
+        String steamId64 = "76561198883607238";
+
+        Assert.assertEquals(
+            steamId64,
+            SteamCloudClient.resolveSteamId64FromAuthSession(new FakeCredentialsAuthSession(steamId64))
+        );
+    }
+
+    @Test
+    public void applySteamId64ToLogOnDetails_setsAccountIdAndInstance() {
+        String steamId64 = "76561198883607238";
+        SteamID steamID = new SteamID();
+        steamID.setFromUInt64String(steamId64);
+        LogOnDetails details = new LogOnDetails();
+
+        SteamCloudClient.applySteamId64ToLogOnDetails(details, steamId64);
+
+        Assert.assertEquals(steamID.getAccountID(), details.getAccountID());
+        Assert.assertEquals(steamID.getAccountInstance(), details.getAccountInstance());
+    }
+
     private static void invokeValidateDownloadedBytes(
         byte[] rawBytes,
         long expectedRawSize,
@@ -207,6 +232,16 @@ public final class SteamCloudClientTest {
             "downloading",
             "%GameInstall%preferences/STSPlayer"
         );
+    }
+
+    private static final class FakeCredentialsAuthSession {
+        @SuppressWarnings("FieldCanBeLocal")
+        private final SteamID steamID;
+
+        private FakeCredentialsAuthSession(String steamId64) {
+            this.steamID = new SteamID();
+            this.steamID.setFromUInt64String(steamId64);
+        }
     }
 
     private static final class SequencedDirectoryFile extends File {

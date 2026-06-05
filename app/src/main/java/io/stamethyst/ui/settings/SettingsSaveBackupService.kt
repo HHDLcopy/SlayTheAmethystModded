@@ -1,7 +1,7 @@
 package io.stamethyst.ui.settings
 
-import android.app.Activity
 import android.content.ContentValues
+import android.content.Context
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
@@ -21,7 +21,7 @@ import java.util.zip.ZipOutputStream
 
 internal object SettingsSaveBackupService {
     @Throws(IOException::class)
-    fun backupExistingSavesToDownloads(host: Activity, stsRoot: File): String? {
+    fun backupExistingSavesToDownloads(host: Context, stsRoot: File): String? {
         val sourceRoots = SaveArchiveLayout.existingSourceDirectories(stsRoot)
         if (sourceRoots.isEmpty() || sourceRoots.none(::containsRegularFiles)) {
             return null
@@ -38,7 +38,7 @@ internal object SettingsSaveBackupService {
 
     @Throws(IOException::class)
     fun backupSaveProfileToDownloads(
-        host: Activity,
+        host: Context,
         sourceRoot: File,
         backupFileName: String,
         relativeSubdirectory: String,
@@ -94,7 +94,7 @@ internal object SettingsSaveBackupService {
     @Throws(IOException::class)
     @RequiresApi(Build.VERSION_CODES.Q)
     private fun backupExistingSavesToScopedDownloads(
-        host: Activity,
+        host: Context,
         sourceRoots: List<File>,
         backupFileName: String,
         relativeSubdirectory: String?,

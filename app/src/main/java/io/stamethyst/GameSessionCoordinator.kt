@@ -5,6 +5,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.view.KeyEvent
 import android.widget.TextView
+import android.widget.Toast
 import io.stamethyst.backend.audio.ForegroundAudioPolicy
 import io.stamethyst.backend.diag.MemoryDiagnosticsLogger
 import io.stamethyst.backend.launch.progressText
@@ -20,6 +21,7 @@ import io.stamethyst.backend.runtime.RuntimePackInstaller
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.input.GameInputHandler
+import io.stamethyst.ui.LauncherTransientNoticeBus
 import net.kdt.pojavlaunch.LwjglGlfwKeycode
 import org.lwjgl.glfw.CallbackBridge
 import java.io.File
@@ -37,6 +39,7 @@ internal class GameSessionCoordinator(
         private const val CRASH_LAUNCHER_RESTART_DELAY_MS = 320L
         private const val KEYBOARD_REQUEST_POLL_MS = 120L
         private const val FILE_PICKER_REQUEST_POLL_MS = 120L
+        private const val RESCUE_TOAST_REQUEST_POLL_MS = 120L
         private val FOREGROUND_AUDIO_RESTORE_DELAYS_MS = longArrayOf(150L, 400L, 1000L, 2200L)
     }
 
@@ -59,8 +62,11 @@ internal class GameSessionCoordinator(
     private var startCheckPosted = false
     private var lastKeyboardRequestPayload = ""
     private var lastFilePickerRequestPayload = ""
+    private var lastRescueToastRequestPayload = ""
     private var keyboardRequestPollStarted = false
     private var filePickerRequestPollStarted = false
+    private var rescueToastRequestPollStarted = false
+    private var rescueToastShown = false
     @Volatile
     private var destroyed = false
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -89,6 +95,14 @@ internal class GameSessionCoordinator(
             pollInGameFilePickerRequest()
             if (!destroyed && filePickerRequestPollStarted) {
                 mainHandler.postDelayed(this, FILE_PICKER_REQUEST_POLL_MS)
+            }
+        }
+    }
+    private val rescueToastRequestPollRunnable = object : Runnable {
+        override fun run() {
+            pollRuntimeRescueToastRequest()
+            if (!destroyed && rescueToastRequestPollStarted) {
+                mainHandler.postDelayed(this, RESCUE_TOAST_REQUEST_POLL_MS)
             }
         }
     }
@@ -134,6 +148,7 @@ internal class GameSessionCoordinator(
                 updateFloatingMouseVisibility()
                 startKeyboardRequestPolling()
                 startFilePickerRequestPolling()
+                startRescueToastRequestPolling()
                 updatePerformanceOverlayVisibility()
                 updateSystemGameState()
                 trySchedulePostBootSurfaceSoftRefresh("runtime_ready")
@@ -178,6 +193,7 @@ internal class GameSessionCoordinator(
         cancelBackExitForceRestart()
         stopKeyboardRequestPolling()
         stopFilePickerRequestPolling()
+        stopRescueToastRequestPolling()
         cancelForegroundAudioRestoreRetries()
         activityResumed = false
         pendingAudioDeviceRecovery = false
@@ -838,6 +854,17 @@ internal class GameSessionCoordinator(
         mainHandler.post(filePickerRequestPollRunnable)
     }
 
+    private fun startRescueToastRequestPolling() {
+        if (rescueToastRequestPollStarted) {
+            return
+        }
+        rescueToastRequestPollStarted = true
+        rescueToastShown = false
+        lastRescueToastRequestPayload = ""
+        RuntimePaths.runtimeRescueToastRequestFile(activity).delete()
+        mainHandler.post(rescueToastRequestPollRunnable)
+    }
+
     private fun stopKeyboardRequestPolling() {
         keyboardRequestPollStarted = false
         mainHandler.removeCallbacks(keyboardRequestPollRunnable)
@@ -846,6 +873,11 @@ internal class GameSessionCoordinator(
     private fun stopFilePickerRequestPolling() {
         filePickerRequestPollStarted = false
         mainHandler.removeCallbacks(filePickerRequestPollRunnable)
+    }
+
+    private fun stopRescueToastRequestPolling() {
+        rescueToastRequestPollStarted = false
+        mainHandler.removeCallbacks(rescueToastRequestPollRunnable)
     }
 
     private fun pollInGameKeyboardRequest() {
@@ -885,6 +917,28 @@ internal class GameSessionCoordinator(
         if (requestId.isNotEmpty()) {
             activity.requestInGameFileSelection(requestId, mimeType)
         }
+    }
+
+    private fun pollRuntimeRescueToastRequest() {
+        if (!jvmLaunchController.runtimeLifecycleReady || backExitRequested || rescueToastShown) {
+            return
+        }
+        val requestFile = RuntimePaths.runtimeRescueToastRequestFile(activity)
+        val payload = try {
+            if (requestFile.isFile) requestFile.readText().trim() else ""
+        } catch (_: Throwable) {
+            ""
+        }
+        if (payload.isEmpty() || payload == lastRescueToastRequestPayload) {
+            return
+        }
+        lastRescueToastRequestPayload = payload
+        rescueToastShown = true
+        LauncherTransientNoticeBus.show(
+            activity,
+            R.string.runtime_save_rescue_toast,
+            Toast.LENGTH_LONG
+        )
     }
 
     private fun trySchedulePostBootSurfaceSoftRefresh(triggerReason: String) {

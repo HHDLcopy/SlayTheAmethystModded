@@ -1,5 +1,6 @@
 package io.stamethyst.backend.steamcloud
 
+import java.io.Serializable as JavaSerializable
 import kotlinx.serialization.Serializable
 
 internal const val STEAM_CLOUD_APP_ID: Int = 646570
@@ -32,7 +33,7 @@ data class SteamCloudManifestEntry(
     val machineName: String,
     val persistState: String,
     val sha1: String = "",
-)
+) : JavaSerializable
 
 @Serializable
 data class SteamCloudManifestSnapshot(
@@ -42,7 +43,7 @@ data class SteamCloudManifestSnapshot(
     val savesCount: Int,
     val entries: List<SteamCloudManifestEntry>,
     val warnings: List<String>,
-)
+) : JavaSerializable
 
 data class SteamCloudPullResult(
     val appliedFileCount: Int,
@@ -50,7 +51,7 @@ data class SteamCloudPullResult(
     val completedAtMs: Long,
     val summaryPath: String,
     val warnings: List<String>,
-)
+) : JavaSerializable
 
 enum class SteamCloudSyncDirection {
     PUSH_LOCAL_TO_CLOUD,

@@ -3,6 +3,7 @@ package io.stamethyst.ui
 enum class UiBusyOperation {
     NONE,
     MOD_IMPORT,
+    MOD_NAME_MIGRATION,
     NATIVE_LIBRARY_INSTALL,
     GAME_PROCESS_CLEANUP,
     STEAM_CLOUD_SYNC,
@@ -13,6 +14,7 @@ enum class UiBusyOperation {
     fun usesBlockingOverlay(): Boolean {
         return when (this) {
             MOD_IMPORT,
+            MOD_NAME_MIGRATION,
             NATIVE_LIBRARY_INSTALL,
             GAME_PROCESS_CLEANUP,
             STEAM_CLOUD_SYNC -> true

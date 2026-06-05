@@ -9,7 +9,6 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -20,7 +19,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -36,6 +35,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -157,7 +157,9 @@ internal fun WorkshopScreen(
     val coroutineScope = rememberCoroutineScope()
     val density = LocalDensity.current
     val headerHazeState = rememberHazeState()
-    var headerHeightPx by remember { mutableIntStateOf(0) }
+    var headerBaseHeightPx by remember { mutableIntStateOf(0) }
+    var headerSearchExpandedHeightPx by remember { mutableIntStateOf(0) }
+    var headerSearchHistoryExpanded by remember { mutableStateOf(false) }
     val headerCollapseOffsetPx = with(density) { 24.dp.roundToPx() }
     val backToTopButtonScrollThresholdPx = with(density) {
         WorkshopBackToTopButtonScrollThreshold.roundToPx()
@@ -177,10 +179,22 @@ internal fun WorkshopScreen(
                 listState.firstVisibleItemScrollOffset > backToTopButtonScrollThresholdPx
         }
     }
-    val measuredHeaderHeight = with(density) { headerHeightPx.toDp() }
+    val effectiveHeaderHeightPx = if (
+        headerSearchHistoryExpanded &&
+        headerSearchExpandedHeightPx > 0
+    ) {
+        headerSearchExpandedHeightPx
+    } else {
+        headerBaseHeightPx
+    }
     val headerPlaceholderHeight = if (useFloatingHeader && state.listMode == WorkshopListMode.Browse) 250.dp else 102.dp
-    val headerContentTopInset = (if (headerHeightPx == 0) headerPlaceholderHeight else measuredHeaderHeight) + 16.dp
-    val refreshIndicatorTopInset = (if (headerHeightPx == 0) headerPlaceholderHeight else measuredHeaderHeight) + 8.dp
+    val headerMeasuredHeight = if (effectiveHeaderHeightPx == 0) {
+        headerPlaceholderHeight
+    } else {
+        with(density) { effectiveHeaderHeightPx.toDp() }
+    }
+    val headerContentTopInset = headerMeasuredHeight + 16.dp
+    val refreshIndicatorTopInset = headerMeasuredHeight + 8.dp
     val pullToRefreshState = rememberPullToRefreshState()
     val downloadTaskStatuses = WorkshopDownloadCenterStore.taskStatuses
     val activeDownloadTaskCount by remember {
@@ -302,7 +316,7 @@ internal fun WorkshopScreen(
                 if (state.errorMessage != null) {
                     item(key = "workshop-error") {
                         ErrorPanel(
-                            modifier = Modifier.animateItem(),
+                            modifier = workshopListPlacementAnimation(enabled = !useFloatingHeader),
                             message = state.errorMessage,
                             onRetry = {
                                 when (state.listMode) {
@@ -332,7 +346,7 @@ internal fun WorkshopScreen(
                     state.browseLoading && state.items.isEmpty() -> {
                         item(key = "workshop-loading") {
                             LoadingPanel(
-                                modifier = Modifier.animateItem(),
+                                modifier = workshopListPlacementAnimation(enabled = !useFloatingHeader),
                                 text = when (state.listMode) {
                                     WorkshopListMode.Browse -> stringResource(R.string.workshop_loading_browse)
                                     WorkshopListMode.Subscriptions -> stringResource(R.string.workshop_loading_subscriptions)
@@ -343,7 +357,7 @@ internal fun WorkshopScreen(
                     state.items.isEmpty() && state.errorMessage == null -> {
                         item(key = "workshop-empty") {
                             EmptyPanel(
-                                modifier = Modifier.animateItem(),
+                                modifier = workshopListPlacementAnimation(enabled = !useFloatingHeader),
                                 title = when (state.listMode) {
                                     WorkshopListMode.Browse -> stringResource(R.string.workshop_empty_title)
                                     WorkshopListMode.Subscriptions -> stringResource(R.string.workshop_empty_subscriptions_title)
@@ -373,7 +387,7 @@ internal fun WorkshopScreen(
                                 downloadTaskStatuses = downloadTaskStatuses,
                             )
                             WorkshopItemCard(
-                                modifier = Modifier.animateItem(),
+                                modifier = workshopListPlacementAnimation(enabled = !useFloatingHeader),
                                 item = item,
                                 downloadState = downloadState,
                                 onClick = { onOpenDetails(item) },
@@ -385,7 +399,7 @@ internal fun WorkshopScreen(
                         }
                         item(key = "workshop-pagination-footer") {
                             BrowsePaginationFooter(
-                                modifier = Modifier.animateItem(),
+                                modifier = workshopListPlacementAnimation(enabled = !useFloatingHeader),
                                 loading = state.loadingMore,
                                 hasMorePages = state.hasMorePages,
                                 itemCount = state.items.size,
@@ -405,10 +419,16 @@ internal fun WorkshopScreen(
                 collapsed = headerCollapsed,
                 shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp),
                 contentPadding = PaddingValues(0.dp),
-                expandedContentTopPadding = 0.dp,
                 onHeightChanged = {
                     if (!headerCollapsed) {
-                        headerHeightPx = it
+                        when {
+                            headerSearchHistoryExpanded -> {
+                                headerSearchExpandedHeightPx = it
+                            }
+                            headerBaseHeightPx == 0 || headerSearchExpandedHeightPx == 0 -> {
+                                headerBaseHeightPx = maxOf(headerBaseHeightPx, it)
+                            }
+                        }
                     }
                 },
                 pinnedContent = {
@@ -448,6 +468,12 @@ internal fun WorkshopScreen(
                             onCategoryChange = { selectedCategory ->
                                 category = selectedCategory
                                 viewModel.search(context.applicationContext, query, sort, timeFilter, selectedCategory)
+                            },
+                            onSearchHistoryExpandedChange = { expanded ->
+                                if (expanded) {
+                                    headerSearchExpandedHeightPx = 0
+                                }
+                                headerSearchHistoryExpanded = expanded
                             },
                             contained = false,
                         )
@@ -518,6 +544,11 @@ internal fun WorkshopScreen(
         )
     }
 }
+
+private fun LazyItemScope.workshopListPlacementAnimation(
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+): Modifier = if (enabled) modifier.animateItem() else modifier
 
 @Composable
 internal fun WorkshopSubscriptionsScreen(
@@ -771,6 +802,7 @@ private fun SearchPanel(
     onSortChange: (WorkshopBrowseSort) -> Unit,
     onTimeFilterChange: (WorkshopBrowseTimeFilter) -> Unit,
     onCategoryChange: (WorkshopModCategory) -> Unit,
+    onSearchHistoryExpandedChange: (Boolean) -> Unit = {},
     contained: Boolean = true,
 ) {
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -790,6 +822,12 @@ private fun SearchPanel(
     }
     val invalidWorkshopIdMessage = stringResource(R.string.workshop_download_by_id_invalid)
     val searchKeyboardVisible = WindowInsets.ime.getBottom(density) > 0
+    fun setSearchHistoryExpanded(expanded: Boolean) {
+        if (searchHistoryExpanded != expanded) {
+            searchHistoryExpanded = expanded
+            onSearchHistoryExpandedChange(expanded)
+        }
+    }
     LaunchedEffect(searchKeyboardVisible) {
         if (
             wasSearchKeyboardVisible &&
@@ -797,18 +835,21 @@ private fun SearchPanel(
             searchHistoryExpanded
         ) {
             focusManager.clearFocus(force = true)
-            searchHistoryExpanded = false
+            setSearchHistoryExpanded(false)
         }
         wasSearchKeyboardVisible = searchKeyboardVisible
     }
     fun submitSearch(searchQuery: String = query) {
         val normalizedQuery = searchQuery.trim()
         keyboardController?.hide()
-        searchHistoryExpanded = false
+        setSearchHistoryExpanded(false)
         if (normalizedQuery.isNotEmpty()) {
             searchHistory = SearchHistoryStore.recordWorkshopSearch(context, normalizedQuery)
         }
         onSearch(normalizedQuery)
+    }
+    fun deleteSearchHistory(entry: String) {
+        searchHistory = SearchHistoryStore.deleteWorkshopSearch(context, entry)
     }
     fun submitOpenDetailsById() {
         val publishedFileId = parseWorkshopPublishedFileId(openDetailsByIdText)
@@ -838,11 +879,12 @@ private fun SearchPanel(
                 searchHistoryExpanded = searchHistoryExpanded,
                 onQueryChange = onQueryChange,
                 onSearch = ::submitSearch,
-                onSearchHistoryExpandedChange = { searchHistoryExpanded = it },
+                onSearchHistoryExpandedChange = ::setSearchHistoryExpanded,
                 onSearchHistorySelected = { selected ->
                     onQueryChange(selected)
                     submitSearch(selected)
                 },
+                onSearchHistoryDeleted = ::deleteSearchHistory,
                 onOpenDetailsByIdClick = { openDetailsByIdDialogVisible = true },
                 onSortMenuExpandedChange = { sortMenuExpanded = it },
                 onTimeMenuExpandedChange = { timeMenuExpanded = it },
@@ -867,11 +909,12 @@ private fun SearchPanel(
             searchHistoryExpanded = searchHistoryExpanded,
             onQueryChange = onQueryChange,
             onSearch = ::submitSearch,
-            onSearchHistoryExpandedChange = { searchHistoryExpanded = it },
+            onSearchHistoryExpandedChange = ::setSearchHistoryExpanded,
             onSearchHistorySelected = { selected ->
                 onQueryChange(selected)
                 submitSearch(selected)
             },
+            onSearchHistoryDeleted = ::deleteSearchHistory,
             onOpenDetailsByIdClick = { openDetailsByIdDialogVisible = true },
             onSortMenuExpandedChange = { sortMenuExpanded = it },
             onTimeMenuExpandedChange = { timeMenuExpanded = it },
@@ -916,6 +959,7 @@ private fun SearchPanelContent(
     onSearch: (String) -> Unit,
     onSearchHistoryExpandedChange: (Boolean) -> Unit,
     onSearchHistorySelected: (String) -> Unit,
+    onSearchHistoryDeleted: (String) -> Unit,
     onOpenDetailsByIdClick: () -> Unit,
     onSortMenuExpandedChange: (Boolean) -> Unit,
     onTimeMenuExpandedChange: (Boolean) -> Unit,
@@ -925,7 +969,7 @@ private fun SearchPanelContent(
     onCategoryChange: (WorkshopModCategory) -> Unit,
 ) {
     Column(
-        modifier.animateContentSize(),
+        modifier,
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         DockedSearchBar(
@@ -954,17 +998,29 @@ private fun SearchPanelContent(
             SearchHistorySuggestions(
                 history = searchHistory,
                 onSelect = onSearchHistorySelected,
+                onDelete = onSearchHistoryDeleted,
             )
         }
-        FlowRow(
+        val filterButtonContentPadding = PaddingValues(horizontal = 8.dp)
+        Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            itemVerticalAlignment = Alignment.CenterVertically,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box {
-                OutlinedButton(enabled = !loading, onClick = { onCategoryMenuExpandedChange(true) }) {
-                    Text(category.displayName())
+            Box(modifier = Modifier.weight(1f)) {
+                OutlinedButton(
+                    enabled = !loading,
+                    onClick = { onCategoryMenuExpandedChange(true) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .defaultMinSize(minWidth = 0.dp),
+                    contentPadding = filterButtonContentPadding,
+                ) {
+                    Text(
+                        text = category.displayName(),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
                 DropdownMenu(
                     expanded = categoryMenuExpanded,
@@ -983,35 +1039,52 @@ private fun SearchPanelContent(
                     }
                 }
             }
-            if (sort.usesTimeFilter) {
-                Box {
-                    OutlinedButton(
-                        enabled = !loading,
-                        onClick = { onTimeMenuExpandedChange(true) }
-                    ) {
-                        Text(timeFilter.displayName())
-                    }
-                    DropdownMenu(
-                        expanded = timeMenuExpanded,
-                        onDismissRequest = { onTimeMenuExpandedChange(false) }
-                    ) {
-                        WorkshopBrowseTimeFilter.entries.forEach { option ->
-                            DropdownMenuItem(
-                                text = { Text(option.displayName()) },
-                                onClick = {
-                                    onTimeMenuExpandedChange(false)
-                                    if (option != timeFilter) {
-                                        onTimeFilterChange(option)
-                                    }
+            Box(modifier = Modifier.weight(1f)) {
+                OutlinedButton(
+                    enabled = !loading && sort.usesTimeFilter,
+                    onClick = { onTimeMenuExpandedChange(true) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .defaultMinSize(minWidth = 0.dp),
+                    contentPadding = filterButtonContentPadding,
+                ) {
+                    Text(
+                        text = timeFilter.displayName(),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                DropdownMenu(
+                    expanded = timeMenuExpanded,
+                    onDismissRequest = { onTimeMenuExpandedChange(false) }
+                ) {
+                    WorkshopBrowseTimeFilter.entries.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(option.displayName()) },
+                            onClick = {
+                                onTimeMenuExpandedChange(false)
+                                if (option != timeFilter) {
+                                    onTimeFilterChange(option)
                                 }
-                            )
-                        }
+                            }
+                        )
                     }
                 }
             }
-            Box {
-                OutlinedButton(enabled = !loading, onClick = { onSortMenuExpandedChange(true) }) {
-                    Text(sort.displayName())
+            Box(modifier = Modifier.weight(1f)) {
+                OutlinedButton(
+                    enabled = !loading,
+                    onClick = { onSortMenuExpandedChange(true) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .defaultMinSize(minWidth = 0.dp),
+                    contentPadding = filterButtonContentPadding,
+                ) {
+                    Text(
+                        text = sort.displayName(),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
                 DropdownMenu(
                     expanded = sortMenuExpanded,
@@ -1030,8 +1103,18 @@ private fun SearchPanelContent(
                     }
                 }
             }
-            TextButton(onClick = onOpenDetailsByIdClick) {
-                Text(stringResource(R.string.workshop_download_by_id_action))
+            TextButton(
+                onClick = onOpenDetailsByIdClick,
+                modifier = Modifier
+                    .weight(1f)
+                    .defaultMinSize(minWidth = 0.dp),
+                contentPadding = filterButtonContentPadding,
+            ) {
+                Text(
+                    text = stringResource(R.string.workshop_download_by_id_action),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }

@@ -57,6 +57,9 @@ internal object LauncherSettingsDiagnosticsFormatter {
                     entries = listOf(
                         "player.name" to LauncherConfig.readPlayerName(context),
                         "theme.mode" to formatThemeMode(LauncherConfig.readThemeMode(context)),
+                        "bootOverlayStyle" to LauncherConfig.readBootOverlayStyle(context).persistedValue,
+                        "bootOverlayAnimation" to
+                            LauncherConfig.readBootOverlayAnimation(context).persistedValue,
                         "back.behavior" to formatBackBehavior(LauncherConfig.readBackBehavior(context)),
                         "targetFps" to LauncherConfig.readTargetFps(context).toString(),
                         "render.scale" to LauncherConfig.formatRenderScale(
@@ -241,6 +244,15 @@ internal object LauncherSettingsDiagnosticsFormatter {
                         ),
                         "mainMenuPreviewReuseCompat" to formatBoolean(
                             CompatibilitySettings.isMainMenuPreviewReuseCompatEnabled(context)
+                        ),
+                        "powerIconRenderRescueCompat" to formatBoolean(
+                            CompatibilitySettings.isPowerIconRenderRescueCompatEnabled(context)
+                        ),
+                        "baseModCustomMonsterRenderRescueCompat" to formatBoolean(
+                            CompatibilitySettings.isBaseModCustomMonsterRenderRescueCompatEnabled(context)
+                        ),
+                        "nonCombatPlayerRenderRescueCompat" to formatBoolean(
+                            CompatibilitySettings.isNonCombatPlayerRenderRescueCompatEnabled(context)
                         ),
                         "nativeTouchscreenAllowlistCompat" to formatBoolean(
                             nativeTouchscreenAllowlistCompatEnabled

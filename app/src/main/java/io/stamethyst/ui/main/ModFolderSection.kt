@@ -721,6 +721,9 @@ internal fun ModFolderSection(
                                         interactionState.filterText = selected
                                         submitModSearch(selected)
                                     },
+                                    onDelete = { entry ->
+                                        modSearchHistory = SearchHistoryStore.deleteModSearch(context, entry)
+                                    },
                                 )
                             }
                         }

@@ -26,6 +26,26 @@ public final class CompatRuntimeState {
         "amethyst.touch_indicator_enabled";
     private static final String TOUCHSCREEN_STATE_CLEANUP_PROP =
         "amethyst.runtime_compat.touchscreen_state_cleanup";
+    private static final String HAND_LAYOUT_ROOM_CONTEXT_RESCUE_PROP =
+        "amethyst.runtime_compat.rescue.hand_layout_room_context";
+    private static final String ROOM_TRANSITION_RESCUE_PROP =
+        "amethyst.runtime_compat.rescue.room_transition";
+    private static final String EVENT_ROOM_RESCUE_PROP =
+        "amethyst.runtime_compat.rescue.event_room";
+    private static final String SHOP_ROOM_RESCUE_PROP =
+        "amethyst.runtime_compat.rescue.shop_room";
+    private static final String BASEMOD_SAVE_LOAD_RESCUE_PROP =
+        "amethyst.runtime_compat.rescue.basemod_save_load";
+    private static final String RELIC_ENTER_ROOM_RESCUE_PROP =
+        "amethyst.runtime_compat.rescue.relic_enter_room";
+    private static final String DUNGEON_RENDER_ROOM_CONTEXT_RESCUE_PROP =
+        "amethyst.runtime_compat.rescue.dungeon_render_room_context";
+    private static final String POWER_ICON_RENDER_RESCUE_PROP =
+        "amethyst.runtime_compat.rescue.power_icon_render";
+    private static final String BASEMOD_CUSTOM_MONSTER_RENDER_RESCUE_PROP =
+        "amethyst.runtime_compat.rescue.basemod_custom_monster_render";
+    private static final String NON_COMBAT_PLAYER_RENDER_RESCUE_PROP =
+        "amethyst.runtime_compat.rescue.non_combat_player_render";
     private static final float DEFAULT_TEXT_SCALE = 1.0f;
     private static final float BIG_TEXT_SCALE = 1.2f;
     private static final float DEFAULT_UI_SCALE = 1.0f;
@@ -42,6 +62,26 @@ public final class CompatRuntimeState {
         readBooleanSystemProperty(TOUCH_INDICATOR_ENABLED_PROP, NATIVE_TOUCHSCREEN_ENABLED);
     private static final boolean TOUCHSCREEN_STATE_CLEANUP_ENABLED =
         readBooleanSystemProperty(TOUCHSCREEN_STATE_CLEANUP_PROP, true);
+    private static final boolean HAND_LAYOUT_ROOM_CONTEXT_RESCUE_ENABLED =
+        readBooleanSystemProperty(HAND_LAYOUT_ROOM_CONTEXT_RESCUE_PROP, true);
+    private static final boolean ROOM_TRANSITION_RESCUE_ENABLED =
+        readBooleanSystemProperty(ROOM_TRANSITION_RESCUE_PROP, true);
+    private static final boolean EVENT_ROOM_RESCUE_ENABLED =
+        readBooleanSystemProperty(EVENT_ROOM_RESCUE_PROP, true);
+    private static final boolean SHOP_ROOM_RESCUE_ENABLED =
+        readBooleanSystemProperty(SHOP_ROOM_RESCUE_PROP, true);
+    private static final boolean BASEMOD_SAVE_LOAD_RESCUE_ENABLED =
+        readBooleanSystemProperty(BASEMOD_SAVE_LOAD_RESCUE_PROP, true);
+    private static final boolean RELIC_ENTER_ROOM_RESCUE_ENABLED =
+        readBooleanSystemProperty(RELIC_ENTER_ROOM_RESCUE_PROP, true);
+    private static final boolean DUNGEON_RENDER_ROOM_CONTEXT_RESCUE_ENABLED =
+        readBooleanSystemProperty(DUNGEON_RENDER_ROOM_CONTEXT_RESCUE_PROP, true);
+    private static final boolean POWER_ICON_RENDER_RESCUE_ENABLED =
+        readBooleanSystemProperty(POWER_ICON_RENDER_RESCUE_PROP, true);
+    private static final boolean BASEMOD_CUSTOM_MONSTER_RENDER_RESCUE_ENABLED =
+        readBooleanSystemProperty(BASEMOD_CUSTOM_MONSTER_RENDER_RESCUE_PROP, true);
+    private static final boolean NON_COMBAT_PLAYER_RENDER_RESCUE_ENABLED =
+        readBooleanSystemProperty(NON_COMBAT_PLAYER_RENDER_RESCUE_PROP, true);
     private static final float CONFIGURED_FONT_SCALE =
         readFloatSystemProperty(FONT_SCALE_PROP, Float.NaN);
     private static final float CONFIGURED_UI_SCALE =
@@ -73,7 +113,7 @@ public final class CompatRuntimeState {
             }
             startupConfigurationLogged = true;
             System.out.println(
-                "[amethyst-runtime-compat] init version=1.0.28 guardedDynamicCache=true "
+                "[amethyst-runtime-compat] init version=1.0.29 guardedDynamicCache=true "
                     + "duelistBaseValueShortcuts=true "
                     + "fontScale="
                     + (hasConfiguredFontScale()
@@ -91,6 +131,26 @@ public final class CompatRuntimeState {
                     + Boolean.toString(TOUCH_INDICATOR_ENABLED)
                     + " touchStateCleanup="
                     + Boolean.toString(TOUCHSCREEN_STATE_CLEANUP_ENABLED)
+                    + " rescueHandLayoutRoom="
+                    + Boolean.toString(HAND_LAYOUT_ROOM_CONTEXT_RESCUE_ENABLED)
+                    + " rescueRoomTransition="
+                    + Boolean.toString(ROOM_TRANSITION_RESCUE_ENABLED)
+                    + " rescueEventRoom="
+                    + Boolean.toString(EVENT_ROOM_RESCUE_ENABLED)
+                    + " rescueShopRoom="
+                    + Boolean.toString(SHOP_ROOM_RESCUE_ENABLED)
+                    + " rescueBaseModSaveLoad="
+                    + Boolean.toString(BASEMOD_SAVE_LOAD_RESCUE_ENABLED)
+                    + " rescueRelicEnterRoom="
+                    + Boolean.toString(RELIC_ENTER_ROOM_RESCUE_ENABLED)
+                    + " rescueDungeonRenderRoom="
+                    + Boolean.toString(DUNGEON_RENDER_ROOM_CONTEXT_RESCUE_ENABLED)
+                    + " rescuePowerIconRender="
+                    + Boolean.toString(POWER_ICON_RENDER_RESCUE_ENABLED)
+                    + " rescueBaseModCustomMonsterRender="
+                    + Boolean.toString(BASEMOD_CUSTOM_MONSTER_RENDER_RESCUE_ENABLED)
+                    + " rescueNonCombatPlayerRender="
+                    + Boolean.toString(NON_COMBAT_PLAYER_RENDER_RESCUE_ENABLED)
             );
             System.out.println(
                 "[amethyst-runtime-compat] guarded dynamic cache active: "
@@ -169,6 +229,46 @@ public final class CompatRuntimeState {
 
     public static boolean isTouchscreenStateCleanupEnabled() {
         return TOUCHSCREEN_STATE_CLEANUP_ENABLED;
+    }
+
+    public static boolean isHandLayoutRoomContextRescueEnabled() {
+        return HAND_LAYOUT_ROOM_CONTEXT_RESCUE_ENABLED;
+    }
+
+    public static boolean isRoomTransitionRescueEnabled() {
+        return ROOM_TRANSITION_RESCUE_ENABLED;
+    }
+
+    public static boolean isEventRoomRescueEnabled() {
+        return EVENT_ROOM_RESCUE_ENABLED;
+    }
+
+    public static boolean isShopRoomRescueEnabled() {
+        return SHOP_ROOM_RESCUE_ENABLED;
+    }
+
+    public static boolean isBaseModSaveLoadRescueEnabled() {
+        return BASEMOD_SAVE_LOAD_RESCUE_ENABLED;
+    }
+
+    public static boolean isRelicEnterRoomRescueEnabled() {
+        return RELIC_ENTER_ROOM_RESCUE_ENABLED;
+    }
+
+    public static boolean isDungeonRenderRoomContextRescueEnabled() {
+        return DUNGEON_RENDER_ROOM_CONTEXT_RESCUE_ENABLED;
+    }
+
+    public static boolean isPowerIconRenderRescueEnabled() {
+        return POWER_ICON_RENDER_RESCUE_ENABLED;
+    }
+
+    public static boolean isBaseModCustomMonsterRenderRescueEnabled() {
+        return BASEMOD_CUSTOM_MONSTER_RENDER_RESCUE_ENABLED;
+    }
+
+    public static boolean isNonCombatPlayerRenderRescueEnabled() {
+        return NON_COMBAT_PLAYER_RENDER_RESCUE_ENABLED;
     }
 
     public static boolean resolveTouchIndicatorFlag(boolean originalValue) {

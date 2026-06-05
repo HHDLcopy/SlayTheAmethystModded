@@ -1,5 +1,6 @@
 package io.stamethyst.backend.steamcloud
 
+import java.io.Serializable as JavaSerializable
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -10,14 +11,14 @@ data class SteamCloudLocalFileSnapshotEntry(
     val lastModifiedMs: Long,
     val sha256: String,
     val sha1: String = "",
-)
+) : JavaSerializable
 
 @Serializable
 data class SteamCloudSyncBaseline(
     val syncedAtMs: Long,
     val localEntries: List<SteamCloudLocalFileSnapshotEntry>,
     val remoteEntries: List<SteamCloudManifestEntry>,
-)
+) : JavaSerializable
 
 enum class SteamCloudUploadCandidateKind {
     NEW_FILE,
@@ -33,7 +34,7 @@ data class SteamCloudUploadCandidate(
     val sha256: String,
     val sha1: String = "",
     val kind: SteamCloudUploadCandidateKind,
-)
+) : JavaSerializable
 
 enum class SteamCloudConflictKind {
     BASELINE_REQUIRED,
@@ -48,7 +49,7 @@ data class SteamCloudConflict(
     val currentRemote: SteamCloudManifestEntry?,
     val baselineLocal: SteamCloudLocalFileSnapshotEntry?,
     val baselineRemote: SteamCloudManifestEntry?,
-)
+) : JavaSerializable
 
 enum class SteamCloudRemoteOnlyChangeKind {
     NEW_REMOTE_FILE,
@@ -62,13 +63,13 @@ data class SteamCloudRemoteOnlyChange(
     val kind: SteamCloudRemoteOnlyChangeKind,
     val currentRemote: SteamCloudManifestEntry?,
     val baselineRemote: SteamCloudManifestEntry?,
-)
+) : JavaSerializable
 
 data class SteamCloudRemoteDeleteCandidate(
     val remotePath: String,
     val localRelativePath: String,
     val rootKind: SteamCloudRootKind,
-)
+) : JavaSerializable
 
 data class SteamCloudUploadPlan(
     val plannedAtMs: Long,
@@ -79,7 +80,7 @@ data class SteamCloudUploadPlan(
     val remoteOnlyChanges: List<SteamCloudRemoteOnlyChange>,
     val remoteDeleteCandidates: List<SteamCloudRemoteDeleteCandidate>,
     val warnings: List<String>,
-) {
+) : JavaSerializable {
     val uploadBytes: Long
         get() = uploadCandidates.sumOf { it.fileSize }
 }

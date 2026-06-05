@@ -19,6 +19,7 @@ import java.net.InetSocketAddress;
 import java.net.Proxy;
 import java.net.SocketTimeoutException;
 import java.net.URI;
+import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.time.Instant;
@@ -128,6 +129,7 @@ public final class SteamCloudClient implements AutoCloseable {
     private volatile boolean guardDataConfigured = false;
     private volatile boolean guardDataUpdated = false;
     private volatile String currentSteamId64 = "";
+    private volatile String credentialsAuthSteamId64 = "";
     private volatile String loggedOnCallbackSteamId64 = "";
     private volatile String steamClientSteamId64 = "";
     private volatile long cmServerSelectionMs = -1L;
@@ -230,6 +232,7 @@ public final class SteamCloudClient implements AutoCloseable {
         lastAuthPromptDescription = "<not requested>";
         loggedOnResultDescription = "<not received>";
         currentSteamId64 = "";
+        credentialsAuthSteamId64 = "";
         loggedOnCallbackSteamId64 = "";
         steamClientSteamId64 = "";
         disconnectedDescription = "<not observed>";
@@ -361,7 +364,17 @@ public final class SteamCloudClient implements AutoCloseable {
                 AUTH_START_TIMEOUT_MS,
                 "Steam auth session start"
             );
-            recordDiagnosticEvent("credentials_auth session_started");
+            String authSessionSteamId64 = resolveSteamId64FromAuthSession(authSession);
+            credentialsAuthSteamId64 = authSessionSteamId64;
+            if (!isBlank(authSessionSteamId64)) {
+                currentSteamId64 = authSessionSteamId64;
+            }
+            recordDiagnosticEvent(
+                "credentials_auth session_started steamIdResolved="
+                    + !isBlank(authSessionSteamId64)
+                    + " steamId64="
+                    + (isBlank(authSessionSteamId64) ? "<blank>" : authSessionSteamId64)
+            );
             maybeValidateSupportedChallenges(authSession);
 
             AuthPollResult pollResult = waitForStage(
@@ -397,7 +410,8 @@ public final class SteamCloudClient implements AutoCloseable {
             return new AuthMaterial(
                 pollResult.getAccountName(),
                 pollResult.getRefreshToken(),
-                effectiveGuardData
+                effectiveGuardData,
+                authSessionSteamId64
             );
         } catch (Exception error) {
             recordDiagnosticEvent(
@@ -414,6 +428,10 @@ public final class SteamCloudClient implements AutoCloseable {
     }
 
     public void logOnWithRefreshToken(String accountName, String refreshToken) throws Exception {
+        logOnWithRefreshToken(accountName, refreshToken, "");
+    }
+
+    public void logOnWithRefreshToken(String accountName, String refreshToken, String steamId64) throws Exception {
         try {
             recordDiagnosticEvent(
                 "refresh_token_logon begin account="
@@ -422,6 +440,8 @@ public final class SteamCloudClient implements AutoCloseable {
                     + !isBlank(refreshToken)
                     + " tokenLength="
                     + (refreshToken == null ? 0 : refreshToken.length())
+                    + " steamIdProvided="
+                    + !isBlank(steamId64)
             );
             Log.i(
                 TAG,
@@ -433,6 +453,7 @@ public final class SteamCloudClient implements AutoCloseable {
             details.setAccessToken(refreshToken);
             details.setShouldRememberPassword(true);
             details.setLoginID(149);
+            applySteamId64ToLogOnDetails(details, steamId64);
             steamUser.logOn(details);
 
             LoggedOnCallback callback = waitForStage(loggedOnFuture, LOGON_TIMEOUT_MS, "Steam logon");
@@ -462,6 +483,57 @@ public final class SteamCloudClient implements AutoCloseable {
 
     public String getCurrentSteamId64() {
         return currentSteamId64;
+    }
+
+    static String resolveSteamId64FromAuthSession(Object authSession) {
+        if (authSession == null) {
+            return "";
+        }
+        try {
+            Field field = findField(authSession.getClass(), "steamID");
+            if (field == null) {
+                return "";
+            }
+            field.setAccessible(true);
+            Object value = field.get(authSession);
+            if (!(value instanceof SteamID)) {
+                return "";
+            }
+            SteamID steamID = (SteamID) value;
+            return steamID.isValid() ? String.valueOf(steamID.convertToUInt64()) : "";
+        } catch (Throwable error) {
+            Log.w(TAG, "Unable to read SteamID64 from credentials auth session.", error);
+            return "";
+        }
+    }
+
+    private static Field findField(Class<?> type, String name) {
+        Class<?> current = type;
+        while (current != null) {
+            try {
+                return current.getDeclaredField(name);
+            } catch (NoSuchFieldException ignored) {
+                current = current.getSuperclass();
+            }
+        }
+        return null;
+    }
+
+    static void applySteamId64ToLogOnDetails(LogOnDetails details, String steamId64) {
+        if (details == null || isBlank(steamId64)) {
+            return;
+        }
+        try {
+            SteamID steamID = new SteamID();
+            steamID.setFromUInt64String(steamId64.trim());
+            if (!steamID.isValid()) {
+                return;
+            }
+            details.setAccountID(steamID.getAccountID());
+            details.setAccountInstance(steamID.getAccountInstance());
+        } catch (Throwable error) {
+            Log.w(TAG, "Unable to apply SteamID64 to refresh-token logon details.", error);
+        }
     }
 
     public List<RemoteFileRecord> listFiles(int appId) throws Exception {
@@ -891,6 +963,7 @@ public final class SteamCloudClient implements AutoCloseable {
             javaSteamLogCollector.snapshotErrorStackLines(),
             snapshotDiagnosticEvents(),
             wattAccelerationEnabled ? "enabled" : "disabled",
+            credentialsAuthSteamId64,
             loggedOnCallbackSteamId64,
             steamClientSteamId64,
             cmServerSelectionMs,
@@ -1853,11 +1926,13 @@ public final class SteamCloudClient implements AutoCloseable {
         private final String accountName;
         private final String refreshToken;
         private final String guardData;
+        private final String steamId64;
 
-        private AuthMaterial(String accountName, String refreshToken, String guardData) {
+        private AuthMaterial(String accountName, String refreshToken, String guardData, String steamId64) {
             this.accountName = accountName;
             this.refreshToken = refreshToken;
             this.guardData = guardData;
+            this.steamId64 = steamId64;
         }
 
         public String getAccountName() {
@@ -1870,6 +1945,10 @@ public final class SteamCloudClient implements AutoCloseable {
 
         public String getGuardData() {
             return guardData;
+        }
+
+        public String getSteamId64() {
+            return steamId64;
         }
     }
 
@@ -1891,6 +1970,7 @@ public final class SteamCloudClient implements AutoCloseable {
         private final List<String> javaSteamErrorStackLines;
         private final List<String> diagnosticEventLines;
         private final String wattAccelerationDescription;
+        private final String credentialsAuthSteamId64;
         private final String loggedOnCallbackSteamId64;
         private final String steamClientSteamId64;
         private final long cmServerSelectionMs;
@@ -1914,6 +1994,7 @@ public final class SteamCloudClient implements AutoCloseable {
             List<String> javaSteamErrorStackLines,
             List<String> diagnosticEventLines,
             String wattAccelerationDescription,
+            String credentialsAuthSteamId64,
             String loggedOnCallbackSteamId64,
             String steamClientSteamId64,
             long cmServerSelectionMs,
@@ -1936,6 +2017,7 @@ public final class SteamCloudClient implements AutoCloseable {
             this.javaSteamErrorStackLines = Collections.unmodifiableList(new ArrayList<>(javaSteamErrorStackLines));
             this.diagnosticEventLines = Collections.unmodifiableList(new ArrayList<>(diagnosticEventLines));
             this.wattAccelerationDescription = wattAccelerationDescription;
+            this.credentialsAuthSteamId64 = credentialsAuthSteamId64;
             this.loggedOnCallbackSteamId64 = loggedOnCallbackSteamId64;
             this.steamClientSteamId64 = steamClientSteamId64;
             this.cmServerSelectionMs = cmServerSelectionMs;
@@ -2008,6 +2090,10 @@ public final class SteamCloudClient implements AutoCloseable {
 
         public String getWattAccelerationDescription() {
             return wattAccelerationDescription;
+        }
+
+        public String getCredentialsAuthSteamId64() {
+            return credentialsAuthSteamId64;
         }
 
         public String getLoggedOnCallbackSteamId64() {

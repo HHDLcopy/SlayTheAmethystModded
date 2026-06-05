@@ -22,6 +22,16 @@ class CompatibilityScreenViewModel : ViewModel() {
         val fragmentShaderPrecisionCompatEnabled: Boolean = true,
         val runtimeTextureCompatEnabled: Boolean = false,
         val mainMenuPreviewReuseCompatEnabled: Boolean = true,
+        val roomContextHandLayoutRescueCompatEnabled: Boolean = true,
+        val roomTransitionRescueCompatEnabled: Boolean = true,
+        val eventRoomRescueCompatEnabled: Boolean = true,
+        val shopRoomRescueCompatEnabled: Boolean = true,
+        val baseModSaveLoadRescueCompatEnabled: Boolean = true,
+        val relicEnterRoomRescueCompatEnabled: Boolean = true,
+        val dungeonRenderRoomContextRescueCompatEnabled: Boolean = true,
+        val powerIconRenderRescueCompatEnabled: Boolean = true,
+        val baseModCustomMonsterRenderRescueCompatEnabled: Boolean = true,
+        val nonCombatPlayerRenderRescueCompatEnabled: Boolean = true,
         val nativeTouchscreenAllowlistCompatEnabled: Boolean = true,
         val largeTextureDownscaleCompatEnabled: Boolean = false,
         val textureResidencyManagerCompatEnabled: Boolean = false,
@@ -58,6 +68,24 @@ class CompatibilityScreenViewModel : ViewModel() {
             fragmentShaderPrecisionCompatEnabled = CompatibilitySettings.isFragmentShaderPrecisionCompatEnabled(host),
             runtimeTextureCompatEnabled = CompatibilitySettings.isRuntimeTextureCompatEnabled(host),
             mainMenuPreviewReuseCompatEnabled = CompatibilitySettings.isMainMenuPreviewReuseCompatEnabled(host),
+            roomContextHandLayoutRescueCompatEnabled =
+                CompatibilitySettings.isRoomContextHandLayoutRescueCompatEnabled(host),
+            roomTransitionRescueCompatEnabled =
+                CompatibilitySettings.isRoomTransitionRescueCompatEnabled(host),
+            eventRoomRescueCompatEnabled = CompatibilitySettings.isEventRoomRescueCompatEnabled(host),
+            shopRoomRescueCompatEnabled = CompatibilitySettings.isShopRoomRescueCompatEnabled(host),
+            baseModSaveLoadRescueCompatEnabled =
+                CompatibilitySettings.isBaseModSaveLoadRescueCompatEnabled(host),
+            relicEnterRoomRescueCompatEnabled =
+                CompatibilitySettings.isRelicEnterRoomRescueCompatEnabled(host),
+            dungeonRenderRoomContextRescueCompatEnabled =
+                CompatibilitySettings.isDungeonRenderRoomContextRescueCompatEnabled(host),
+            powerIconRenderRescueCompatEnabled =
+                CompatibilitySettings.isPowerIconRenderRescueCompatEnabled(host),
+            baseModCustomMonsterRenderRescueCompatEnabled =
+                CompatibilitySettings.isBaseModCustomMonsterRenderRescueCompatEnabled(host),
+            nonCombatPlayerRenderRescueCompatEnabled =
+                CompatibilitySettings.isNonCombatPlayerRenderRescueCompatEnabled(host),
             nativeTouchscreenAllowlistCompatEnabled =
                 CompatibilitySettings.isNativeTouchscreenAllowlistCompatEnabled(host),
             largeTextureDownscaleCompatEnabled = CompatibilitySettings.isLargeTextureDownscaleCompatEnabled(host),
@@ -148,6 +176,86 @@ class CompatibilityScreenViewModel : ViewModel() {
         }
         CompatibilitySettings.setNativeTouchscreenAllowlistCompatEnabled(host, enabled)
         uiState = uiState.copy(nativeTouchscreenAllowlistCompatEnabled = enabled)
+    }
+
+    fun onRoomContextHandLayoutRescueCompatToggled(host: Context, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        CompatibilitySettings.setRoomContextHandLayoutRescueCompatEnabled(host, enabled)
+        uiState = uiState.copy(roomContextHandLayoutRescueCompatEnabled = enabled)
+    }
+
+    fun onEventRoomRescueCompatToggled(host: Context, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        CompatibilitySettings.setEventRoomRescueCompatEnabled(host, enabled)
+        uiState = uiState.copy(eventRoomRescueCompatEnabled = enabled)
+    }
+
+    fun onRoomTransitionRescueCompatToggled(host: Context, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        CompatibilitySettings.setRoomTransitionRescueCompatEnabled(host, enabled)
+        uiState = uiState.copy(roomTransitionRescueCompatEnabled = enabled)
+    }
+
+    fun onShopRoomRescueCompatToggled(host: Context, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        CompatibilitySettings.setShopRoomRescueCompatEnabled(host, enabled)
+        uiState = uiState.copy(shopRoomRescueCompatEnabled = enabled)
+    }
+
+    fun onBaseModSaveLoadRescueCompatToggled(host: Context, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        CompatibilitySettings.setBaseModSaveLoadRescueCompatEnabled(host, enabled)
+        uiState = uiState.copy(baseModSaveLoadRescueCompatEnabled = enabled)
+    }
+
+    fun onRelicEnterRoomRescueCompatToggled(host: Context, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        CompatibilitySettings.setRelicEnterRoomRescueCompatEnabled(host, enabled)
+        uiState = uiState.copy(relicEnterRoomRescueCompatEnabled = enabled)
+    }
+
+    fun onDungeonRenderRoomContextRescueCompatToggled(host: Context, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        CompatibilitySettings.setDungeonRenderRoomContextRescueCompatEnabled(host, enabled)
+        uiState = uiState.copy(dungeonRenderRoomContextRescueCompatEnabled = enabled)
+    }
+
+    fun onPowerIconRenderRescueCompatToggled(host: Context, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        CompatibilitySettings.setPowerIconRenderRescueCompatEnabled(host, enabled)
+        uiState = uiState.copy(powerIconRenderRescueCompatEnabled = enabled)
+    }
+
+    fun onBaseModCustomMonsterRenderRescueCompatToggled(host: Context, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        CompatibilitySettings.setBaseModCustomMonsterRenderRescueCompatEnabled(host, enabled)
+        uiState = uiState.copy(baseModCustomMonsterRenderRescueCompatEnabled = enabled)
+    }
+
+    fun onNonCombatPlayerRenderRescueCompatToggled(host: Context, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        CompatibilitySettings.setNonCombatPlayerRenderRescueCompatEnabled(host, enabled)
+        uiState = uiState.copy(nonCombatPlayerRenderRescueCompatEnabled = enabled)
     }
 
     fun onLargeTextureDownscaleCompatToggled(host: Context, enabled: Boolean) {

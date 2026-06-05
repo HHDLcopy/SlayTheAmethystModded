@@ -297,8 +297,17 @@ internal fun WorkshopDetailScreen(
                         } else {
                             details.summary.description
                         },
+                        fullDescriptionUnavailable = details.fullDescriptionUnavailable,
                         isTranslating = isTranslatingDetails,
+                        isReloading = state.detailLoadingId == details.summary.publishedFileId,
                         translationErrorMessage = state.detailTranslationErrorMessage,
+                        onRetryFullDescription = {
+                            viewModel.retryDetailsLoad(
+                                context = context.applicationContext,
+                                appId = appId,
+                                publishedFileId = publishedFileId,
+                            )
+                        },
                     )
                 }
                 item(key = "workshop-detail-comments") {
@@ -764,8 +773,11 @@ private fun DetailDescriptionCard(
     modifier: Modifier = Modifier,
     publishedFileId: ULong,
     text: String,
+    fullDescriptionUnavailable: Boolean,
     isTranslating: Boolean,
+    isReloading: Boolean,
     translationErrorMessage: String?,
+    onRetryFullDescription: () -> Unit,
 ) {
     var expanded by rememberSaveable(publishedFileId.toString()) { mutableStateOf(false) }
     val description = text.ifBlank { stringResource(R.string.workshop_description_empty) }
@@ -808,6 +820,30 @@ private fun DetailDescriptionCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                }
+            }
+            if (fullDescriptionUnavailable && !isReloading) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    shape = RoundedCornerShape(16.dp),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.workshop_description_fallback_notice),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        OutlinedButton(
+                            onClick = onRetryFullDescription,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(stringResource(R.string.workshop_action_retry_detail))
+                        }
+                    }
                 }
             }
             translationErrorMessage?.let { message ->

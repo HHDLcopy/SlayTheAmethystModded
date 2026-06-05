@@ -24,6 +24,7 @@ object RuntimePaths {
     private const val IN_GAME_FILE_PICKER_REQUEST_FILE_NAME = ".in_game_file_picker_request"
     private const val IN_GAME_FILE_PICKER_RESULT_FILE_NAME = ".in_game_file_picker_result"
     private const val IN_GAME_FILE_PICKER_SELECTION_FILE_NAME = ".in_game_file_picker_selection"
+    private const val RUNTIME_RESCUE_TOAST_REQUEST_FILE_NAME = ".runtime_rescue_toast_request"
     private const val JVM_HISTOGRAM_DIR_NAME = "jvm_histograms"
     private const val LOGCAT_DIR_NAME = "logcat"
     private const val LEGACY_LOGCAT_CAPTURE_FILE_NAME = "logcat_capture.log"
@@ -189,6 +190,10 @@ object RuntimePaths {
     @JvmStatic
     fun inGameFilePickerSelectionFile(context: Context): File =
         File(stsRoot(context), IN_GAME_FILE_PICKER_SELECTION_FILE_NAME)
+
+    @JvmStatic
+    fun runtimeRescueToastRequestFile(context: Context): File =
+        File(stsRoot(context), RUNTIME_RESCUE_TOAST_REQUEST_FILE_NAME)
 
     @JvmStatic
     fun latestLog(context: Context): File = File(stsRoot(context), LATEST_LOG_FILE_NAME)

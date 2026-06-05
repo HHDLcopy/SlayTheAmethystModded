@@ -73,6 +73,39 @@ Provides a reusable launcher bridge from JVM-side compatibility patches to Andro
 23. `CardImageReplacerFileDialogMimePatches`
 Specializes the generic Android file-picker bridge for CardImageReplacer's in-game "Replace the card image" button by requesting `image/*` from Android's native document picker and then calling CardImageReplacer's own `FileChooserCallBack`, preserving its original resize, mask, save, reload, and popup-refresh behavior without modifying the third-party jar. This addresses CardImageReplacer's image replacement workflow while keeping the underlying file-picker bridge reusable for future mod-specific file-picker integrations. Type: mod-specific integration on top of the generic file-picker bridge implemented by `CardImageReplacerFileDialogMimePatches`.
 
+24. `HandLayoutRoomContextRescuePatches`
+Skips only `CardGroup.refreshHandLayout` when the current map node or current room is unavailable. This addresses null-context crashes seen during continue/start/reward flows where a card release refreshes hand layout before the room context has been restored. Normal hand-layout behavior is unchanged when a current room exists. Type: save-rescue crash fallback implemented by `HandLayoutRoomContextRescuePatches`.
+
+25. `RoomTransitionRescuePatches`
+Lets `AbstractDungeon.nextRoomTransition(SaveFile)` keep advancing toward the selected next room when the previous current-room context is already missing, and handles `AbstractDungeon.setCurrMapNode` without transferring souls from a missing previous room. This addresses crashes while entering the next room from corrupted current map-node or room state, while preserving the original transition path whenever the previous room is valid. Type: save-rescue crash fallback implemented by `RoomTransitionRescuePatches`.
+
+26. `EventRoomRescuePatches`
+Runs `EventRoom.onPlayerEntry` through the original event-generation sequence under a narrow null-context guard, and marks the room complete with the proceed button shown if event creation returns null or throws a null-context failure. It also prevents a later `EventRoom.update` crash when the room's event field is already null. This addresses corrupted or exhausted event-room state that would otherwise crash on entering or updating the event room. Type: save-rescue crash fallback implemented by `EventRoomRescuePatches`.
+
+27. `ShopRoomRescuePatches`
+Runs the normal shop-entry setup and merchant creation under a narrow null-context guard, then marks the shop room complete and shows the proceed button if `Merchant` construction fails because card-pool or room context is missing. This addresses corrupted shop saves where entering the shop would crash before the player can leave. Type: save-rescue crash fallback implemented by `ShopRoomRescuePatches`.
+
+28. `BaseModSaveLoadRescuePatches`
+Wraps BaseMod `CustomSavableRaw.onLoadRaw` calls during player-save loading and catches only `NullPointerException` from an individual custom save field. This addresses continue/load-save crashes caused by one mod's bad custom save payload while letting the rest of the save-load flow continue. Type: save-rescue crash fallback implemented by `BaseModSaveLoadRescuePatches`.
+
+29. `RelicEnterRoomRescuePatches`
+Wraps relic `onEnterRoom(AbstractRoom)` calls during room transitions and catches only `NullPointerException` from an individual relic hook. This addresses saves or mod states where one relic crashes while entering the next room, while allowing the transition and remaining relic hooks to continue. Type: save-rescue crash fallback implemented by `RelicEnterRoomRescuePatches`.
+
+30. `DungeonRenderRoomContextRescuePatches`
+Skips only dungeon/player rendering frames while the current map node or room is unavailable. This addresses repeated render-loop null-context crashes from corrupted room state, without changing rendering once a valid current room is restored. Type: save-rescue crash fallback implemented by `DungeonRenderRoomContextRescuePatches`.
+
+31. `PowerIconRenderRescuePatches`
+Wraps `AbstractPower.renderIcons` calls from creature power-icon rendering and catches only `NullPointerException` when the power has neither `img` nor `region48`. This addresses power icon render crashes from broken or incompletely loaded power icon resources, while leaving power logic and amount rendering unchanged. Type: save-rescue crash fallback implemented by `PowerIconRenderRescuePatches`.
+
+32. `BaseModCustomMonsterRenderRescuePatches`
+Wraps BaseMod `CustomMonster.render(SpriteBatch)` texture dimension and texture draw calls so a monster with missing `img` and no atlas skips only the missing image draw. This addresses BaseMod custom monster render crashes caused by absent monster image files, while preserving the remaining render path such as intent, hitboxes, health, and name rendering. Type: save-rescue crash fallback implemented by `BaseModCustomMonsterRenderRescuePatches`.
+
+33. `NonCombatPlayerRenderRescuePatches`
+Wraps `AbstractPlayer.render(SpriteBatch)` calls made from `AbstractRoom.render(SpriteBatch)` and catches `NullPointerException` only outside combat rooms. This addresses non-combat room render crashes where player sprite context is corrupted or missing, while combat rooms keep the original behavior to avoid hiding battle-state bugs. Type: save-rescue crash fallback implemented by `NonCombatPlayerRenderRescuePatches`.
+
+34. `RoomStateRescueNoticeBridge`
+Provides the JVM-side notification bridge shared by the save-rescue fallbacks. When any rescue fallback triggers, it logs the first detail for each rescue key and writes one launcher toast request per game session so Android can show a system toast without making the ModTheSpire patch code depend on Android APIs. Type: support bridge implemented by `RoomStateRescueNoticeBridge` with Android-side polling in the launcher.
+
 ## Maintenance rule
 
 If you add another fix through this mod, update this README in the same change and describe:

@@ -6,6 +6,7 @@ import androidx.annotation.StringRes
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,14 +22,19 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,9 +47,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -51,6 +62,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.stamethyst.config.BootOverlayAnimation
+import io.stamethyst.config.BootOverlayStyle
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.ui.loading.BootLoadingAnimation
@@ -208,6 +220,7 @@ class BootOverlayController(
         bootOverlay?.setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
         val themeMode = LauncherConfig.readThemeMode(activity)
         val themeColor = LauncherConfig.readThemeColor(activity)
+        val bootOverlayStyle = LauncherConfig.readBootOverlayStyle(activity)
         val loadingAnimation = LauncherConfig.readBootOverlayAnimation(activity)
         bootOverlay?.setContent {
             LauncherTheme(
@@ -216,6 +229,7 @@ class BootOverlayController(
             ) {
                 BootOverlayPanel(
                     uiState = overlayUiState,
+                    overlayStyle = bootOverlayStyle,
                     loadingAnimation = loadingAnimation,
                     manualDismissBootOverlay = manualDismissBootOverlay,
                     onDismissClick = {
@@ -643,6 +657,7 @@ private data class BootOverlayUiState(
 @Composable
 private fun BootOverlayPanel(
     uiState: BootOverlayUiState,
+    overlayStyle: BootOverlayStyle,
     loadingAnimation: BootOverlayAnimation,
     manualDismissBootOverlay: Boolean,
     onDismissClick: () -> Unit
@@ -657,6 +672,460 @@ private fun BootOverlayPanel(
         label = "boot_overlay_progress"
     )
 
+    when (overlayStyle) {
+        BootOverlayStyle.MODERN -> ModernBootOverlayPanel(
+            uiState = uiState,
+            animatedProgress = animatedProgress,
+            manualDismissBootOverlay = manualDismissBootOverlay,
+            onDismissClick = onDismissClick
+        )
+        BootOverlayStyle.LEGACY -> LegacyBootOverlayPanel(
+            uiState = uiState,
+            loadingAnimation = loadingAnimation,
+            animatedProgress = animatedProgress,
+            manualDismissBootOverlay = manualDismissBootOverlay,
+            onDismissClick = onDismissClick
+        )
+        BootOverlayStyle.CLASSIC_LOG -> ClassicLogBootOverlayPanel(
+            uiState = uiState,
+            animatedProgress = animatedProgress,
+            manualDismissBootOverlay = manualDismissBootOverlay,
+            onDismissClick = onDismissClick
+        )
+        BootOverlayStyle.MATERIAL_LOG -> MaterialLogBootOverlayPanel(
+            uiState = uiState,
+            animatedProgress = animatedProgress,
+            manualDismissBootOverlay = manualDismissBootOverlay,
+            onDismissClick = onDismissClick
+        )
+    }
+}
+
+@Composable
+private fun ModernBootOverlayPanel(
+    uiState: BootOverlayUiState,
+    animatedProgress: Float,
+    manualDismissBootOverlay: Boolean,
+    onDismissClick: () -> Unit
+) {
+    val consumeBackgroundTapModifier = if (manualDismissBootOverlay) {
+        Modifier.clickable(
+            interactionSource = remember { MutableInteractionSource() },
+            indication = null
+        ) {}
+    } else {
+        Modifier
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .then(consumeBackgroundTapModifier)
+    ) {
+        var artHintExpanded by remember { mutableStateOf(false) }
+        val revealProgress = animatedProgress.coerceIn(0f, 1f)
+        Image(
+            painter = painterResource(R.drawable.boot_overlay_background_dark),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            alignment = Alignment.TopStart,
+            modifier = Modifier.fillMaxSize()
+        )
+        Image(
+            painter = painterResource(R.drawable.boot_overlay_background_bright),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            alignment = Alignment.TopStart,
+            modifier = Modifier
+                .fillMaxSize()
+                .drawWithContent {
+                    clipRect(right = size.width * revealProgress) {
+                        this@drawWithContent.drawContent()
+                    }
+                }
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        colorStops = arrayOf(
+                            0.00f to Color.Black.copy(alpha = 0.18f),
+                            0.48f to Color.Black.copy(alpha = 0.12f),
+                            0.76f to Color.Black.copy(alpha = 0.64f),
+                            1.00f to Color.Black.copy(alpha = 0.92f)
+                        )
+                    )
+                )
+        )
+        BootOverlayArtHint(
+            expanded = artHintExpanded,
+            onToggle = { artHintExpanded = !artHintExpanded },
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+                .padding(top = 12.dp, end = 12.dp)
+        )
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+                .padding(horizontal = 28.dp, vertical = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.boot_overlay_title_starting),
+                color = Color.White,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(18.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = uiState.statusText,
+                    color = Color.White.copy(alpha = 0.88f),
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    text = "${uiState.progress.coerceIn(0, 100)}%",
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.End,
+                    maxLines = 1
+                )
+            }
+            BootProgressBar(
+                progress = animatedProgress,
+                modifier = Modifier.fillMaxWidth()
+            )
+            if (manualDismissBootOverlay) {
+                val dismissButtonText = if (uiState.enterGameReady) {
+                    stringResource(R.string.boot_overlay_button_enter_game)
+                } else {
+                    stringResource(R.string.boot_overlay_button_close)
+                }
+                Button(
+                    onClick = onDismissClick,
+                    enabled = true,
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    Text(text = dismissButtonText)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BootOverlayArtHint(
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.End
+    ) {
+        IconButton(
+            onClick = onToggle,
+            modifier = Modifier
+                .size(40.dp)
+                .background(
+                    color = Color.Black.copy(alpha = if (expanded) 0.36f else 0.16f),
+                    shape = RoundedCornerShape(999.dp)
+                )
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_info_outline),
+                contentDescription = stringResource(R.string.boot_overlay_art_hint_button),
+                tint = Color.White.copy(alpha = if (expanded) 0.86f else 0.48f),
+                modifier = Modifier.size(18.dp)
+            )
+        }
+        if (expanded) {
+            Text(
+                text = stringResource(R.string.boot_overlay_art_hint_message),
+                color = Color.White.copy(alpha = 0.88f),
+                style = MaterialTheme.typography.bodySmall,
+                textAlign = TextAlign.End,
+                modifier = Modifier
+                    .padding(top = 6.dp)
+                    .widthIn(max = 280.dp)
+                    .background(
+                        color = Color.Black.copy(alpha = 0.46f),
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                    .border(
+                        width = 1.dp,
+                        color = Color.White.copy(alpha = 0.14f),
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun ClassicLogBootOverlayPanel(
+    uiState: BootOverlayUiState,
+    animatedProgress: Float,
+    manualDismissBootOverlay: Boolean,
+    onDismissClick: () -> Unit
+) {
+    val consumeBackgroundTapModifier = if (manualDismissBootOverlay) {
+        Modifier.clickable(
+            interactionSource = remember { MutableInteractionSource() },
+            indication = null
+        ) {}
+    } else {
+        Modifier
+    }
+    val colorScheme = MaterialTheme.colorScheme
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xCC000000))
+            .then(consumeBackgroundTapModifier)
+            .padding(24.dp)
+    ) {
+        val contentBottomPadding = if (manualDismissBootOverlay) 72.dp else 0.dp
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.Center)
+                .padding(bottom = contentBottomPadding),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = stringResource(R.string.boot_overlay_title_starting),
+                color = Color.White,
+                fontWeight = FontWeight.Bold
+            )
+            LinearProgressIndicator(
+                progress = { animatedProgress },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 24.dp),
+                color = colorScheme.primary,
+                trackColor = colorScheme.primary.copy(alpha = 0.28f)
+            )
+            Text(
+                text = bootOverlayStatusWithProgress(uiState),
+                color = Color.White,
+                modifier = Modifier.padding(top = 12.dp)
+            )
+            Text(
+                text = stringResource(R.string.boot_overlay_logs_title),
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 14.dp)
+            )
+            ClassicBootLogPane(
+                uiState = uiState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 120.dp, max = 220.dp)
+                    .padding(top = 8.dp)
+            )
+        }
+        if (manualDismissBootOverlay) {
+            val dismissButtonText = if (uiState.enterGameReady) {
+                stringResource(R.string.boot_overlay_button_enter_game)
+            } else {
+                stringResource(R.string.boot_overlay_button_close)
+            }
+            Button(
+                onClick = onDismissClick,
+                enabled = true,
+                modifier = Modifier.align(Alignment.BottomEnd)
+            ) {
+                Text(text = dismissButtonText)
+            }
+        }
+    }
+}
+
+@Composable
+private fun MaterialLogBootOverlayPanel(
+    uiState: BootOverlayUiState,
+    animatedProgress: Float,
+    manualDismissBootOverlay: Boolean,
+    onDismissClick: () -> Unit
+) {
+    val consumeBackgroundTapModifier = if (manualDismissBootOverlay) {
+        Modifier.clickable(
+            interactionSource = remember { MutableInteractionSource() },
+            indication = null
+        ) {}
+    } else {
+        Modifier
+    }
+    val colorScheme = MaterialTheme.colorScheme
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(colorScheme.surface)
+            .then(consumeBackgroundTapModifier)
+            .windowInsetsPadding(WindowInsets.safeDrawing)
+            .padding(24.dp)
+    ) {
+        val contentBottomPadding = if (manualDismissBootOverlay) 72.dp else 0.dp
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(bottom = contentBottomPadding),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = stringResource(R.string.boot_overlay_title_starting),
+                color = colorScheme.onSurface,
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+            LinearProgressIndicator(
+                progress = { animatedProgress },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(999.dp)),
+                color = colorScheme.primary,
+                trackColor = colorScheme.primaryContainer.copy(alpha = 0.42f)
+            )
+            Text(
+                text = bootOverlayStatusWithProgress(uiState),
+                color = colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+            MaterialBootLogPane(
+                uiState = uiState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .padding(top = 6.dp)
+            )
+        }
+        if (manualDismissBootOverlay) {
+            val dismissButtonText = if (uiState.enterGameReady) {
+                stringResource(R.string.boot_overlay_button_enter_game)
+            } else {
+                stringResource(R.string.boot_overlay_button_close)
+            }
+            Button(
+                onClick = onDismissClick,
+                enabled = true,
+                modifier = Modifier.align(Alignment.BottomEnd)
+            ) {
+                Text(text = dismissButtonText)
+            }
+        }
+    }
+}
+
+@Composable
+private fun bootOverlayStatusWithProgress(uiState: BootOverlayUiState): String {
+    return stringResource(
+        R.string.boot_overlay_status_with_progress,
+        uiState.statusText,
+        uiState.progress.coerceIn(0, 100)
+    )
+}
+
+@Composable
+private fun ClassicBootLogPane(
+    uiState: BootOverlayUiState,
+    modifier: Modifier = Modifier
+) {
+    val logScrollState = rememberScrollState()
+    val logText = uiState.jvmLogText.ifBlank {
+        stringResource(R.string.boot_overlay_logs_placeholder)
+    }
+    LaunchedEffect(logText, logScrollState.maxValue) {
+        val target = logScrollState.maxValue
+        if (target > 0 && target != logScrollState.value) {
+            logScrollState.animateScrollTo(
+                value = target,
+                animationSpec = tween(
+                    durationMillis = 240,
+                    easing = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
+                )
+            )
+        }
+    }
+    Box(
+        modifier = modifier
+            .background(Color(0x22000000))
+            .verticalScroll(logScrollState)
+            .padding(10.dp)
+    ) {
+        Text(
+            text = logText,
+            color = Color.White,
+            fontFamily = FontFamily.Monospace
+        )
+    }
+}
+
+@Composable
+private fun MaterialBootLogPane(
+    uiState: BootOverlayUiState,
+    modifier: Modifier = Modifier
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    val logScrollState = rememberScrollState()
+    val logText = uiState.jvmLogText.ifBlank {
+        stringResource(R.string.boot_overlay_logs_placeholder)
+    }
+    LaunchedEffect(logText, logScrollState.maxValue) {
+        val target = logScrollState.maxValue
+        if (target > 0 && target != logScrollState.value) {
+            logScrollState.animateScrollTo(
+                value = target,
+                animationSpec = tween(
+                    durationMillis = 240,
+                    easing = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
+                )
+            )
+        }
+    }
+    Text(
+        text = logText,
+        color = if (uiState.hasJvmLogOutput) {
+            colorScheme.onSurfaceVariant.copy(alpha = 0.88f)
+        } else {
+            colorScheme.onSurfaceVariant.copy(alpha = 0.62f)
+        },
+        style = MaterialTheme.typography.bodySmall,
+        fontFamily = FontFamily.Monospace,
+        modifier = modifier.verticalScroll(logScrollState)
+    )
+}
+
+@Composable
+private fun LegacyBootOverlayPanel(
+    uiState: BootOverlayUiState,
+    loadingAnimation: BootOverlayAnimation,
+    animatedProgress: Float,
+    manualDismissBootOverlay: Boolean,
+    onDismissClick: () -> Unit
+) {
     val consumeBackgroundTapModifier = if (manualDismissBootOverlay) {
         Modifier.clickable(
             interactionSource = remember { MutableInteractionSource() },

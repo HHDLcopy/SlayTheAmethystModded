@@ -54,6 +54,15 @@ internal object ModJarManifestParser {
         return readModManifest(modJar).modId
     }
 
+    fun clearCacheFor(modJar: File?) {
+        if (modJar == null) {
+            return
+        }
+        synchronized(manifestCache) {
+            manifestCache.remove(modJar.absolutePath)
+        }
+    }
+
     fun normalizeModId(modId: String?): String {
         return modId?.trim()?.lowercase(Locale.ROOT) ?: ""
     }

@@ -89,6 +89,7 @@ import io.stamethyst.backend.workshop.WorkshopPreviewCacheStore
 import io.stamethyst.R
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.BootOverlayAnimation
+import io.stamethyst.config.BootOverlayStyle
 import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeController
@@ -102,8 +103,10 @@ import io.stamethyst.config.TouchscreenInputMode
 import io.stamethyst.backend.mods.StsJarValidator
 import io.stamethyst.ui.LauncherTransientNoticeBus
 import io.stamethyst.ui.UiText
-import io.stamethyst.ui.main.ModAliasStore
-import io.stamethyst.ui.main.resolveModFileNameWithoutJar
+import io.stamethyst.ui.main.ModManifestNameMigration
+import io.stamethyst.ui.main.ModManifestNameMigrationProgress
+import io.stamethyst.ui.main.ModManifestNameMigrationSpaceCheck
+import io.stamethyst.ui.main.ModManifestNameMigrationStorageException
 import io.stamethyst.ui.resolve
 import io.stamethyst.ui.UiBusyOperation
 import io.stamethyst.ui.preferences.LauncherPreferences
@@ -248,6 +251,8 @@ class SettingsScreenViewModel : ViewModel() {
             LauncherPreferences.DEFAULT_GPU_RESOURCE_GUARDIAN_PRESSURE_DOWNSCALE_ENABLED,
         val themeMode: LauncherThemeMode = LauncherPreferences.DEFAULT_THEME_MODE,
         val themeColor: LauncherThemeColor = LauncherPreferences.DEFAULT_THEME_COLOR,
+        val bootOverlayStyle: BootOverlayStyle =
+            LauncherPreferences.DEFAULT_BOOT_OVERLAY_STYLE,
         val bootOverlayAnimation: BootOverlayAnimation =
             LauncherPreferences.DEFAULT_BOOT_OVERLAY_ANIMATION,
         val selectedJvmHeapMaxMb: Int = LauncherPreferences.DEFAULT_JVM_HEAP_MAX_MB,
@@ -455,6 +460,7 @@ class SettingsScreenViewModel : ViewModel() {
         uiState = uiState.copy(
             themeMode = SettingsRepository.loadThemeMode(host),
             themeColor = SettingsRepository.loadThemeColor(host),
+            bootOverlayStyle = SettingsRepository.loadBootOverlayStyle(host),
             bootOverlayAnimation = SettingsRepository.loadBootOverlayAnimation(host)
         )
     }
@@ -475,6 +481,15 @@ class SettingsScreenViewModel : ViewModel() {
         }
         uiState = uiState.copy(bootOverlayAnimation = animation)
         saveBootOverlayAnimationSelection(host, animation)
+        refreshStatus(host)
+    }
+
+    fun onBootOverlayStyleChanged(host: Activity, style: BootOverlayStyle) {
+        if (uiState.busy || uiState.bootOverlayStyle == style) {
+            return
+        }
+        uiState = uiState.copy(bootOverlayStyle = style)
+        saveBootOverlayStyleSelection(host, style)
         refreshStatus(host)
     }
     fun onPreferredUpdateMirrorChanged(host: Activity, source: UpdateSource) {
@@ -1001,7 +1016,7 @@ class SettingsScreenViewModel : ViewModel() {
                     }.getOrElse {
                         steamCloudSyncBlacklistPaths.toList().sorted()
                     }
-                if (!steamCloudAuthSnapshot.refreshTokenConfigured &&
+                if (!steamCloudAuthSnapshot.isComplete &&
                     steamCloudSaveMode == SteamCloudSaveMode.STEAM_CLOUD
                 ) {
                     runCatching {
@@ -1052,7 +1067,7 @@ class SettingsScreenViewModel : ViewModel() {
                         statusText = status,
                         logPathText = buildLogPathText(host),
                         steamCloudAccountName = steamCloudAuthSnapshot.accountName,
-                        steamCloudRefreshTokenConfigured = steamCloudAuthSnapshot.refreshTokenConfigured,
+                        steamCloudRefreshTokenConfigured = steamCloudAuthSnapshot.isComplete,
                         steamCloudGuardDataConfigured = steamCloudAuthSnapshot.guardDataConfigured,
                         steamCloudPersonaName = steamCloudAuthSnapshot.personaName,
                         steamCloudAvatarUrl = steamCloudAuthSnapshot.avatarUrl,
@@ -1135,6 +1150,15 @@ class SettingsScreenViewModel : ViewModel() {
                 val existingGuardData = runCatching {
                     SteamCloudAuthStore.readAuthMaterial(host)?.guardData.orEmpty()
                 }.getOrDefault("")
+                val hadIncompleteAuth = runCatching {
+                    val snapshot = SteamCloudAuthStore.readSnapshot(host)
+                    snapshot.refreshTokenConfigured && !snapshot.isComplete
+                }.getOrDefault(false)
+                if (hadIncompleteAuth) {
+                    runCatching { SteamCloudAuthStore.clear(host) }
+                    runCatching { SteamCloudManifestStore.clear(host) }
+                    runCatching { SteamCloudBaselineStore.clear(host) }
+                }
                 val authResult = SteamCloudAuthCoordinator.authenticateWithCredentials(
                     context = host,
                     username = normalizedUsername,
@@ -1655,7 +1679,7 @@ class SettingsScreenViewModel : ViewModel() {
         val targetMode = mode
         if (targetMode == SteamCloudSaveMode.STEAM_CLOUD) {
             val loggedIn = runCatching {
-                SteamCloudAuthStore.readSnapshot(host).refreshTokenConfigured
+                SteamCloudAuthStore.readSnapshot(host).isComplete
             }.getOrDefault(false)
             if (!loggedIn) {
                 showToast(host, UiText.StringResource(R.string.settings_steam_cloud_save_mode_cloud_requires_login))
@@ -2550,21 +2574,84 @@ class SettingsScreenViewModel : ViewModel() {
         if (uiState.busy) {
             return
         }
-        val aliasesByPath = LinkedHashMap<String, String>()
-        ModManager.listInstalledMods(host).forEach { mod ->
-            if (mod.required || !mod.installed || !mod.jarFile.isFile) {
-                return@forEach
-            }
-            val alias = resolveModFileNameWithoutJar(mod.jarFile.absolutePath).orEmpty().trim()
-            if (alias.isNotEmpty()) {
-                aliasesByPath[mod.jarFile.absolutePath] = alias
+        val spaceCheck = runCatching {
+            ModManifestNameMigration.evaluateFileNameMigrationSpace(host)
+        }.getOrNull()
+        if (spaceCheck != null &&
+            spaceCheck.hasPendingMigration &&
+            !spaceCheck.hasEnoughSpace
+        ) {
+            showModNameMigrationStorageInsufficientDialog(host, spaceCheck)
+            return
+        }
+        setBusy(
+            busy = true,
+            message = UiText.StringResource(R.string.main_mod_name_migration_busy),
+            operation = UiBusyOperation.MOD_NAME_MIGRATION,
+            progressPercent = 0
+        )
+        executor.execute {
+            try {
+                val result = ModManifestNameMigration.applyFileNamesToInstalledOptionalMods(
+                    context = host,
+                    requireSufficientSpace = true,
+                    onProgress = { progress ->
+                        host.runOnUiThread {
+                            if (host.isFinishing || host.isDestroyed) {
+                                return@runOnUiThread
+                            }
+                            if (!uiState.busy ||
+                                uiState.busyOperation != UiBusyOperation.MOD_NAME_MIGRATION
+                            ) {
+                                return@runOnUiThread
+                            }
+                            setBusy(
+                                busy = true,
+                                message = buildModNameMigrationProgressText(progress),
+                                operation = UiBusyOperation.MOD_NAME_MIGRATION,
+                                progressPercent = progress.progressPercent
+                            )
+                        }
+                    }
+                )
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    showToast(
+                        host,
+                        UiText.StringResource(
+                            R.string.settings_mod_alias_apply_file_names_done,
+                            result.appliedCount
+                        ),
+                        Toast.LENGTH_SHORT
+                    )
+                    refreshStatus(host)
+                }
+            } catch (error: Throwable) {
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    if (error is ModManifestNameMigrationStorageException) {
+                        showModNameMigrationStorageInsufficientDialog(host, error.spaceCheck)
+                    } else {
+                        showToast(
+                            host,
+                            UiText.StringResource(
+                                R.string.main_mod_rename_failed,
+                                error.message ?: host.getString(R.string.feedback_unknown_error)
+                            ),
+                            Toast.LENGTH_LONG
+                        )
+                    }
+                }
             }
         }
-        ModAliasStore.setAliases(host, aliasesByPath)
-        showToast(
-            host,
-            UiText.StringResource(R.string.settings_mod_alias_apply_file_names_done, aliasesByPath.size),
-            Toast.LENGTH_SHORT
+    }
+
+    private fun buildModNameMigrationProgressText(progress: ModManifestNameMigrationProgress): UiText {
+        return UiText.StringResource(
+            R.string.main_mod_name_migration_progress,
+            progress.currentIndex,
+            progress.totalCount,
+            progress.currentModName
         )
     }
 
@@ -3157,6 +3244,7 @@ class SettingsScreenViewModel : ViewModel() {
         uiState = uiState.copy(
             themeMode = snapshot.themeMode,
             themeColor = snapshot.themeColor,
+            bootOverlayStyle = snapshot.bootOverlayStyle,
             bootOverlayAnimation = snapshot.bootOverlayAnimation,
             playerName = snapshot.playerName,
             selectedRenderScale = rendering.renderScale,
@@ -3397,6 +3485,23 @@ class SettingsScreenViewModel : ViewModel() {
                 busyProgressPercent = null
             )
         }
+    }
+
+    private fun showModNameMigrationStorageInsufficientDialog(
+        host: Activity,
+        spaceCheck: ModManifestNameMigrationSpaceCheck
+    ) {
+        AlertDialog.Builder(host)
+            .setTitle(R.string.main_mod_name_migration_storage_insufficient_title)
+            .setMessage(
+                host.getString(
+                    R.string.main_mod_name_migration_storage_insufficient_message,
+                    formatMigrationBytes(spaceCheck.requiredExtraBytes),
+                    formatMigrationBytes(spaceCheck.availableBytes)
+                )
+            )
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
     }
 
     private fun updateQuickStartSteamDownloadProgress(progress: SteamStsJarDownloadProgress) {
@@ -4041,6 +4146,21 @@ class SettingsScreenViewModel : ViewModel() {
         }
     }
 
+    private fun formatMigrationBytes(bytes: Long): String {
+        val units = arrayOf("B", "KB", "MB", "GB", "TB")
+        var value = bytes.coerceAtLeast(0L).toDouble()
+        var unitIndex = 0
+        while (value >= 1024.0 && unitIndex < units.lastIndex) {
+            value /= 1024.0
+            unitIndex++
+        }
+        return if (unitIndex == 0) {
+            "${value.toLong()} ${units[unitIndex]}"
+        } else {
+            String.format(Locale.US, "%.1f %s", value, units[unitIndex])
+        }
+    }
+
     private fun displayInfoValue(host: Activity, value: String): String {
         return if (value.equals("unknown", ignoreCase = true)) {
             host.getString(R.string.settings_status_unknown)
@@ -4504,6 +4624,13 @@ class SettingsScreenViewModel : ViewModel() {
     ) {
         LauncherPreferences.saveBootOverlayAnimation(host, animation)
     }
+
+    private fun saveBootOverlayStyleSelection(
+        host: Activity,
+        style: BootOverlayStyle
+    ) {
+        LauncherPreferences.saveBootOverlayStyle(host, style)
+    }
     private fun saveJvmHeapMaxSelection(host: Activity, heapMaxMb: Int) {
         LauncherPreferences.saveJvmHeapMaxMb(host, heapMaxMb)
     }
@@ -4749,7 +4876,7 @@ class SettingsScreenViewModel : ViewModel() {
         baselineSnapshot: SteamCloudSyncBaseline?,
     ): String {
         val lines = mutableListOf<String>()
-        if (!authSnapshot.refreshTokenConfigured) {
+        if (!authSnapshot.isComplete) {
             lines += host.getString(R.string.settings_steam_cloud_status_not_logged_in)
         } else {
             lines += host.getString(
@@ -4782,7 +4909,7 @@ class SettingsScreenViewModel : ViewModel() {
                 formatSettingsTimestamp(it)
             )
         }
-        if (baselineSnapshot == null && authSnapshot.refreshTokenConfigured) {
+        if (baselineSnapshot == null && authSnapshot.isComplete) {
             lines += host.getString(R.string.settings_steam_cloud_status_baseline_missing)
         }
         baselineSnapshot?.let {

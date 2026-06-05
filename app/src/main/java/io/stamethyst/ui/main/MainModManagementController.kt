@@ -11,6 +11,8 @@ import io.stamethyst.backend.file_interactive.SafFileExporter
 import io.stamethyst.backend.mods.AtlasOfflineDownscaleStrategy
 import io.stamethyst.backend.mods.ImportedModPatchRegistry
 import io.stamethyst.backend.mods.ModManager
+import io.stamethyst.backend.mods.ModJarSupport
+import io.stamethyst.backend.mods.ModManifestNameRewriter
 import io.stamethyst.backend.mods.MtsLaunchManifestValidator
 import io.stamethyst.backend.workshop.WorkshopDownloadProcessService
 import io.stamethyst.backend.workshop.WorkshopDownloadTaskRecord
@@ -787,10 +789,7 @@ internal class MainModManagementController(
                     showToast(
                         host.getString(
                             R.string.main_mod_export_success,
-                            normalizeModExportFileName(
-                                preferredName = ModAliasStore.resolveAlias(host, sourceFile.absolutePath),
-                                fallbackFileName = sourceFile.name
-                            )
+                            resolveExportedModFileName(host, sourceFile)
                         ),
                         Toast.LENGTH_SHORT
                     )
@@ -860,28 +859,47 @@ internal class MainModManagementController(
         if (hostCallbacks.isBusy() || mod.required || !mod.installed) {
             return
         }
-        if (mod.storagePath.isBlank()) {
+        val storageFile = File(mod.storagePath)
+        if (mod.storagePath.isBlank() || !storageFile.isFile) {
             emitSnackbar(host.getString(R.string.main_mod_rename_missing))
             return
         }
-        val normalizedAlias = aliasInput.trim()
-        if (normalizedAlias.isEmpty()) {
+        val normalizedName = aliasInput.trim()
+        if (normalizedName.isEmpty()) {
             emitSnackbar(UiText.StringResource(R.string.main_mod_alias_error_empty))
             return
         }
-        if (normalizedAlias.contains('/') || normalizedAlias.contains('\\')) {
+        if (normalizedName.contains('/') || normalizedName.contains('\\')) {
             emitSnackbar(UiText.StringResource(R.string.main_mod_alias_error_separator))
             return
         }
         val originalName = resolveOriginalModDisplayName(mod)
-        val aliasToSave = if (normalizedAlias == originalName) "" else normalizedAlias
-        if (aliasToSave == mod.alias.trim()) {
+        if (normalizedName == originalName && mod.alias.isBlank()) {
             return
         }
-        ModAliasStore.setAlias(host, mod.storagePath, aliasToSave)
-        refresh(host, storageAccessible = true)
-        emitSnackbar(host.getString(R.string.main_mod_renamed, aliasToSave.ifBlank { originalName }))
-        hostCallbacks.republish(host)
+        setBusy(true, UiText.StringResource(R.string.main_mod_rename_busy))
+        executor.execute {
+            try {
+                ModManifestNameRewriter.rewriteNameInPlace(storageFile, normalizedName)
+                ModAliasStore.setAlias(host, storageFile.absolutePath, "")
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    refresh(host, storageAccessible = true)
+                    emitSnackbar(host.getString(R.string.main_mod_renamed, normalizedName))
+                    hostCallbacks.republish(host)
+                }
+            } catch (error: Throwable) {
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    emitSnackbar(
+                        host.getString(
+                            R.string.main_mod_rename_failed,
+                            error.message ?: host.getString(R.string.feedback_unknown_error)
+                        )
+                    )
+                }
+            }
+        }
     }
 
     fun onRestoreModOriginalName(host: Activity, mod: ModItemUi) {
@@ -892,23 +910,6 @@ internal class MainModManagementController(
         refresh(host, storageAccessible = true)
         emitSnackbar(host.getString(R.string.main_mod_alias_restored, resolveOriginalModDisplayName(mod)))
         hostCallbacks.republish(host)
-    }
-
-    fun applyFileNameAliasesForInstalledOptionalMods(host: Activity): Int {
-        val aliasesByPath = LinkedHashMap<String, String>()
-        ModManager.listInstalledMods(host).forEach { mod ->
-            if (mod.required || !mod.installed || !mod.jarFile.isFile) {
-                return@forEach
-            }
-            val alias = resolveModFileNameWithoutJar(mod.jarFile.absolutePath).orEmpty().trim()
-            if (alias.isNotEmpty()) {
-                aliasesByPath[mod.jarFile.absolutePath] = alias
-            }
-        }
-        ModAliasStore.setAliases(host, aliasesByPath)
-        refresh(host, storageAccessible = true)
-        hostCallbacks.republish(host)
-        return aliasesByPath.size
     }
 
     fun onToggleMod(host: Activity, mod: ModItemUi, enabled: Boolean) {
@@ -1130,6 +1131,19 @@ internal class MainModManagementController(
         val resolvedPath = resolveExistingModStoragePath(mod.storagePath) ?: return null
         val file = File(resolvedPath)
         return file.takeIf { it.isFile }
+    }
+
+    private fun resolveExportedModFileName(host: Activity, sourceFile: File): String {
+        val alias = ModAliasStore.resolveAlias(host, sourceFile.absolutePath)
+        val manifestName = if (alias.isBlank()) {
+            runCatching { ModJarSupport.readModManifest(sourceFile).name }.getOrDefault("")
+        } else {
+            ""
+        }
+        return normalizeModExportFileName(
+            preferredName = alias.ifBlank { manifestName.ifBlank { sourceFile.name } },
+            fallbackFileName = sourceFile.name
+        )
     }
 
     @Throws(IOException::class)

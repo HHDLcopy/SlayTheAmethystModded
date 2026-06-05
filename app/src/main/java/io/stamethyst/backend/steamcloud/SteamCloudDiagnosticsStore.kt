@@ -91,6 +91,11 @@ internal object SteamCloudDiagnosticsStore {
                 }"
             )
             add(
+                "Credentials Auth SteamID64: ${
+                    diagnostics?.credentialsAuthSteamId64?.trim()?.takeIf { it.isNotEmpty() } ?: "<not resolved>"
+                }"
+            )
+            add(
                 "LoggedOn Callback SteamID64: ${
                     diagnostics?.loggedOnCallbackSteamId64?.trim()?.takeIf { it.isNotEmpty() } ?: "<not resolved>"
                 }"

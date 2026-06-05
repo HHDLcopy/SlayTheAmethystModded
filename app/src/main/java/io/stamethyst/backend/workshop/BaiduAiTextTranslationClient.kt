@@ -65,7 +65,7 @@ internal class BaiduAiTextTranslationClient(
             val payload = response.body.string()
             val root = parsePayload(payload)
             val errorCode = root["error_code"]?.jsonPrimitive?.contentOrNull
-            if (!response.isSuccessful || !errorCode.isNullOrBlank() && errorCode != "0") {
+            if (!response.isSuccessful || !isSuccessfulErrorCode(errorCode)) {
                 throw BaiduTranslationApiException(
                     errorCode = errorCode,
                     errorMessage = root["error_msg"]?.jsonPrimitive?.contentOrNull,
@@ -103,6 +103,9 @@ internal class BaiduAiTextTranslationClient(
             "百度大模型文本翻译失败：$normalizedMessage（错误码：$errorCode）。"
         }
     }
+
+    private fun isSuccessfulErrorCode(errorCode: String?): Boolean =
+        errorCode.isNullOrBlank() || errorCode == "0" || errorCode == "52000"
 
     private fun extractTranslatedText(root: JsonObject): String? {
         val data = root["data"]

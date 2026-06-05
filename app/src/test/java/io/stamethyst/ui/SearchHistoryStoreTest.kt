@@ -24,4 +24,25 @@ class SearchHistoryStoreTest {
 
         assertEquals(listOf("a", "b"), result)
     }
+
+    @Test
+    fun removeSearchHistoryEntry_removesQueryIgnoringCase() {
+        val result = removeSearchHistoryEntry(
+            existing = listOf("Downfall", "Replay", "QoL"),
+            query = "downfall",
+        )
+
+        assertEquals(listOf("Replay", "QoL"), result)
+    }
+
+    @Test
+    fun removeSearchHistoryEntry_trimsDedupesAndKeepsLimit() {
+        val result = removeSearchHistoryEntry(
+            existing = listOf("  Replay  ", "QoL", "replay", "Downfall"),
+            query = "missing",
+            limit = 2,
+        )
+
+        assertEquals(listOf("Replay", "QoL"), result)
+    }
 }

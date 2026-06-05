@@ -77,6 +77,7 @@ object LauncherConfig {
         "mobileglues_fsr1_quality_preset"
     private const val PREF_KEY_THEME_MODE = "theme_mode"
     private const val PREF_KEY_THEME_COLOR = "theme_color"
+    private const val PREF_KEY_BOOT_OVERLAY_STYLE = "boot_overlay_style"
     private const val PREF_KEY_BOOT_OVERLAY_ANIMATION = "boot_overlay_animation"
     private const val PREF_KEY_SHOW_MOD_FILE_NAME = "show_mod_file_name"
     private const val PREF_KEY_MOBILE_HUD_ENABLED = "mobile_hud_enabled"
@@ -105,6 +106,26 @@ object LauncherConfig {
     private const val PREF_KEY_RUNTIME_TEXTURE_COMPAT = "compat_runtime_texture_compat"
     private const val PREF_KEY_MAIN_MENU_PREVIEW_REUSE_COMPAT =
         "compat_main_menu_preview_reuse"
+    private const val PREF_KEY_ROOM_CONTEXT_HAND_LAYOUT_RESCUE_COMPAT =
+        "compat_room_context_hand_layout_rescue"
+    private const val PREF_KEY_ROOM_TRANSITION_RESCUE_COMPAT =
+        "compat_room_transition_rescue"
+    private const val PREF_KEY_EVENT_ROOM_RESCUE_COMPAT =
+        "compat_event_room_rescue"
+    private const val PREF_KEY_SHOP_ROOM_RESCUE_COMPAT =
+        "compat_shop_room_rescue"
+    private const val PREF_KEY_BASEMOD_SAVE_LOAD_RESCUE_COMPAT =
+        "compat_basemod_save_load_rescue"
+    private const val PREF_KEY_RELIC_ENTER_ROOM_RESCUE_COMPAT =
+        "compat_relic_enter_room_rescue"
+    private const val PREF_KEY_DUNGEON_RENDER_ROOM_CONTEXT_RESCUE_COMPAT =
+        "compat_dungeon_render_room_context_rescue"
+    private const val PREF_KEY_POWER_ICON_RENDER_RESCUE_COMPAT =
+        "compat_power_icon_render_rescue"
+    private const val PREF_KEY_BASEMOD_CUSTOM_MONSTER_RENDER_RESCUE_COMPAT =
+        "compat_basemod_custom_monster_render_rescue"
+    private const val PREF_KEY_NON_COMBAT_PLAYER_RENDER_RESCUE_COMPAT =
+        "compat_non_combat_player_render_rescue"
     // Keep the legacy stored key so existing users do not lose their toggle state
     // when the old relic direct-pick switch is replaced by the touchscreen allowlist.
     private const val PREF_KEY_NATIVE_TOUCHSCREEN_ALLOWLIST_COMPAT =
@@ -218,6 +239,7 @@ object LauncherConfig {
         MobileGluesFsr1QualityPreset.DISABLED
     val DEFAULT_THEME_MODE: LauncherThemeMode = LauncherThemeMode.FOLLOW_SYSTEM
     val DEFAULT_THEME_COLOR: LauncherThemeColor = LauncherThemeColor.COLORLESS
+    val DEFAULT_BOOT_OVERLAY_STYLE: BootOverlayStyle = BootOverlayStyle.MODERN
     val DEFAULT_BOOT_OVERLAY_ANIMATION: BootOverlayAnimation =
         BootOverlayAnimation.CARD_SHUFFLE
     const val DEFAULT_SHOW_FLOATING_MOUSE_WINDOW = true
@@ -272,6 +294,16 @@ object LauncherConfig {
     const val DEFAULT_JVM_STRING_DEDUPLICATION_ENABLED = false
     const val DEFAULT_FRAGMENT_SHADER_PRECISION_COMPAT_ENABLED = true
     const val DEFAULT_MAIN_MENU_PREVIEW_REUSE_COMPAT_ENABLED = true
+    const val DEFAULT_ROOM_CONTEXT_HAND_LAYOUT_RESCUE_COMPAT_ENABLED = true
+    const val DEFAULT_ROOM_TRANSITION_RESCUE_COMPAT_ENABLED = true
+    const val DEFAULT_EVENT_ROOM_RESCUE_COMPAT_ENABLED = true
+    const val DEFAULT_SHOP_ROOM_RESCUE_COMPAT_ENABLED = true
+    const val DEFAULT_BASEMOD_SAVE_LOAD_RESCUE_COMPAT_ENABLED = true
+    const val DEFAULT_RELIC_ENTER_ROOM_RESCUE_COMPAT_ENABLED = true
+    const val DEFAULT_DUNGEON_RENDER_ROOM_CONTEXT_RESCUE_COMPAT_ENABLED = true
+    const val DEFAULT_POWER_ICON_RENDER_RESCUE_COMPAT_ENABLED = true
+    const val DEFAULT_BASEMOD_CUSTOM_MONSTER_RENDER_RESCUE_COMPAT_ENABLED = true
+    const val DEFAULT_NON_COMBAT_PLAYER_RENDER_RESCUE_COMPAT_ENABLED = true
     const val DEFAULT_NATIVE_TOUCHSCREEN_ALLOWLIST_COMPAT_ENABLED = true
     val DEFAULT_TOUCHSCREEN_INPUT_MODE: TouchscreenInputMode = TouchscreenInputMode.HYBRID
     const val DEFAULT_LARGE_TEXTURE_DOWNSCALE_COMPAT_ENABLED = false
@@ -391,6 +423,20 @@ object LauncherConfig {
     fun saveManualDismissBootOverlay(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_MANUAL_DISMISS_BOOT_OVERLAY, enabled)
+        }
+    }
+
+    fun readBootOverlayStyle(context: Context): BootOverlayStyle {
+        val stored = prefs(context).getString(
+            PREF_KEY_BOOT_OVERLAY_STYLE,
+            DEFAULT_BOOT_OVERLAY_STYLE.persistedValue
+        )
+        return BootOverlayStyle.fromPersistedValue(stored) ?: DEFAULT_BOOT_OVERLAY_STYLE
+    }
+
+    fun saveBootOverlayStyle(context: Context, style: BootOverlayStyle) {
+        prefs(context).edit {
+            putString(PREF_KEY_BOOT_OVERLAY_STYLE, style.persistedValue)
         }
     }
 
@@ -1021,6 +1067,136 @@ object LauncherConfig {
     fun setMainMenuPreviewReuseCompatEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_MAIN_MENU_PREVIEW_REUSE_COMPAT, enabled)
+        }
+    }
+
+    fun isRoomContextHandLayoutRescueCompatEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_ROOM_CONTEXT_HAND_LAYOUT_RESCUE_COMPAT,
+            DEFAULT_ROOM_CONTEXT_HAND_LAYOUT_RESCUE_COMPAT_ENABLED
+        )
+    }
+
+    fun setRoomContextHandLayoutRescueCompatEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_ROOM_CONTEXT_HAND_LAYOUT_RESCUE_COMPAT, enabled)
+        }
+    }
+
+    fun isRoomTransitionRescueCompatEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_ROOM_TRANSITION_RESCUE_COMPAT,
+            DEFAULT_ROOM_TRANSITION_RESCUE_COMPAT_ENABLED
+        )
+    }
+
+    fun setRoomTransitionRescueCompatEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_ROOM_TRANSITION_RESCUE_COMPAT, enabled)
+        }
+    }
+
+    fun isEventRoomRescueCompatEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_EVENT_ROOM_RESCUE_COMPAT,
+            DEFAULT_EVENT_ROOM_RESCUE_COMPAT_ENABLED
+        )
+    }
+
+    fun setEventRoomRescueCompatEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_EVENT_ROOM_RESCUE_COMPAT, enabled)
+        }
+    }
+
+    fun isShopRoomRescueCompatEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_SHOP_ROOM_RESCUE_COMPAT,
+            DEFAULT_SHOP_ROOM_RESCUE_COMPAT_ENABLED
+        )
+    }
+
+    fun setShopRoomRescueCompatEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_SHOP_ROOM_RESCUE_COMPAT, enabled)
+        }
+    }
+
+    fun isBaseModSaveLoadRescueCompatEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_BASEMOD_SAVE_LOAD_RESCUE_COMPAT,
+            DEFAULT_BASEMOD_SAVE_LOAD_RESCUE_COMPAT_ENABLED
+        )
+    }
+
+    fun setBaseModSaveLoadRescueCompatEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_BASEMOD_SAVE_LOAD_RESCUE_COMPAT, enabled)
+        }
+    }
+
+    fun isRelicEnterRoomRescueCompatEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_RELIC_ENTER_ROOM_RESCUE_COMPAT,
+            DEFAULT_RELIC_ENTER_ROOM_RESCUE_COMPAT_ENABLED
+        )
+    }
+
+    fun setRelicEnterRoomRescueCompatEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_RELIC_ENTER_ROOM_RESCUE_COMPAT, enabled)
+        }
+    }
+
+    fun isDungeonRenderRoomContextRescueCompatEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_DUNGEON_RENDER_ROOM_CONTEXT_RESCUE_COMPAT,
+            DEFAULT_DUNGEON_RENDER_ROOM_CONTEXT_RESCUE_COMPAT_ENABLED
+        )
+    }
+
+    fun setDungeonRenderRoomContextRescueCompatEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_DUNGEON_RENDER_ROOM_CONTEXT_RESCUE_COMPAT, enabled)
+        }
+    }
+
+    fun isPowerIconRenderRescueCompatEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_POWER_ICON_RENDER_RESCUE_COMPAT,
+            DEFAULT_POWER_ICON_RENDER_RESCUE_COMPAT_ENABLED
+        )
+    }
+
+    fun setPowerIconRenderRescueCompatEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_POWER_ICON_RENDER_RESCUE_COMPAT, enabled)
+        }
+    }
+
+    fun isBaseModCustomMonsterRenderRescueCompatEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_BASEMOD_CUSTOM_MONSTER_RENDER_RESCUE_COMPAT,
+            DEFAULT_BASEMOD_CUSTOM_MONSTER_RENDER_RESCUE_COMPAT_ENABLED
+        )
+    }
+
+    fun setBaseModCustomMonsterRenderRescueCompatEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_BASEMOD_CUSTOM_MONSTER_RENDER_RESCUE_COMPAT, enabled)
+        }
+    }
+
+    fun isNonCombatPlayerRenderRescueCompatEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_NON_COMBAT_PLAYER_RENDER_RESCUE_COMPAT,
+            DEFAULT_NON_COMBAT_PLAYER_RENDER_RESCUE_COMPAT_ENABLED
+        )
+    }
+
+    fun setNonCombatPlayerRenderRescueCompatEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_NON_COMBAT_PLAYER_RENDER_RESCUE_COMPAT, enabled)
         }
     }
 

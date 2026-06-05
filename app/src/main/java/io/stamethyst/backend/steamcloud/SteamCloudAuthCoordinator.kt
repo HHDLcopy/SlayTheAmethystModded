@@ -39,10 +39,10 @@ internal object SteamCloudAuthCoordinator {
                     normalizedGuardData,
                     prompt,
                 )
-                val steamId64 = runCatching {
-                    client.logOnWithRefreshToken(authMaterial.accountName, authMaterial.refreshToken)
-                    client.currentSteamId64
-                }.getOrDefault("")
+                val steamId64 = authMaterial.steamId64.trim()
+                if (!isValidSteamId64(steamId64)) {
+                    throw IllegalStateException("Steam 登录成功，但未能解析 SteamID64。请重新登录后再试。")
+                }
                 val completedAtMs = System.currentTimeMillis()
                 val diagnosticsSnapshot = client.snapshotDiagnostics()
                 SteamCloudDiagnosticsStore.writeSummary(
@@ -90,4 +90,7 @@ internal object SteamCloudAuthCoordinator {
             throw error
         }
     }
+
+    private fun isValidSteamId64(value: String): Boolean =
+        value.toULongOrNull()?.let { it > 0uL } == true
 }

@@ -230,6 +230,7 @@ private fun WorkshopDownloadTaskRecord.toJson(): JSONObject = JSONObject()
     .put("hcontentFile", details.hcontentFile?.toString().orEmpty())
     .put("depotId", details.depotId?.toString().orEmpty())
     .put("jsonMetadata", details.jsonMetadata)
+    .put("fullDescriptionUnavailable", details.fullDescriptionUnavailable)
     .put("dependencies", details.dependencies.toJsonArray())
 
 private fun JSONObject.toTask(): WorkshopDownloadTaskRecord {
@@ -251,6 +252,7 @@ private fun JSONObject.toTask(): WorkshopDownloadTaskRecord {
         hcontentFile = optString("hcontentFile").toULongOrNull(),
         depotId = optString("depotId").toUIntOrNull(),
         jsonMetadata = optString("jsonMetadata"),
+        fullDescriptionUnavailable = optBoolean("fullDescriptionUnavailable", false),
         dependencies = optJSONArray("dependencies").toWorkshopSummaries(),
     )
     return WorkshopDownloadTaskRecord(

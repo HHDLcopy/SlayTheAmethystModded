@@ -88,6 +88,11 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <service
+            android:name="io.stamethyst.backend.steamcloud.SteamCloudSyncProcessService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
         <activity
             android:name="net.kdt.pojavlaunch.ExitActivity"
             android:exported="false"

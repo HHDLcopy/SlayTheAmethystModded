@@ -67,6 +67,36 @@ fun LauncherCompatibilityScreen(
         onMainMenuPreviewReuseCompatToggled = { enabled ->
             viewModel.onMainMenuPreviewReuseCompatToggled(context, enabled)
         },
+        onRoomContextHandLayoutRescueCompatToggled = { enabled ->
+            viewModel.onRoomContextHandLayoutRescueCompatToggled(context, enabled)
+        },
+        onRoomTransitionRescueCompatToggled = { enabled ->
+            viewModel.onRoomTransitionRescueCompatToggled(context, enabled)
+        },
+        onEventRoomRescueCompatToggled = { enabled ->
+            viewModel.onEventRoomRescueCompatToggled(context, enabled)
+        },
+        onShopRoomRescueCompatToggled = { enabled ->
+            viewModel.onShopRoomRescueCompatToggled(context, enabled)
+        },
+        onBaseModSaveLoadRescueCompatToggled = { enabled ->
+            viewModel.onBaseModSaveLoadRescueCompatToggled(context, enabled)
+        },
+        onRelicEnterRoomRescueCompatToggled = { enabled ->
+            viewModel.onRelicEnterRoomRescueCompatToggled(context, enabled)
+        },
+        onDungeonRenderRoomContextRescueCompatToggled = { enabled ->
+            viewModel.onDungeonRenderRoomContextRescueCompatToggled(context, enabled)
+        },
+        onPowerIconRenderRescueCompatToggled = { enabled ->
+            viewModel.onPowerIconRenderRescueCompatToggled(context, enabled)
+        },
+        onBaseModCustomMonsterRenderRescueCompatToggled = { enabled ->
+            viewModel.onBaseModCustomMonsterRenderRescueCompatToggled(context, enabled)
+        },
+        onNonCombatPlayerRenderRescueCompatToggled = { enabled ->
+            viewModel.onNonCombatPlayerRenderRescueCompatToggled(context, enabled)
+        },
         onLargeTextureDownscaleCompatToggled = { enabled ->
             viewModel.onLargeTextureDownscaleCompatToggled(context, enabled)
         },
@@ -155,6 +185,16 @@ private fun LauncherCompatibilityScreenContent(
     onFragmentShaderPrecisionCompatToggled: (Boolean) -> Unit = {},
     onRuntimeTextureCompatToggled: (Boolean) -> Unit = {},
     onMainMenuPreviewReuseCompatToggled: (Boolean) -> Unit = {},
+    onRoomContextHandLayoutRescueCompatToggled: (Boolean) -> Unit = {},
+    onRoomTransitionRescueCompatToggled: (Boolean) -> Unit = {},
+    onEventRoomRescueCompatToggled: (Boolean) -> Unit = {},
+    onShopRoomRescueCompatToggled: (Boolean) -> Unit = {},
+    onBaseModSaveLoadRescueCompatToggled: (Boolean) -> Unit = {},
+    onRelicEnterRoomRescueCompatToggled: (Boolean) -> Unit = {},
+    onDungeonRenderRoomContextRescueCompatToggled: (Boolean) -> Unit = {},
+    onPowerIconRenderRescueCompatToggled: (Boolean) -> Unit = {},
+    onBaseModCustomMonsterRenderRescueCompatToggled: (Boolean) -> Unit = {},
+    onNonCombatPlayerRenderRescueCompatToggled: (Boolean) -> Unit = {},
     onLargeTextureDownscaleCompatToggled: (Boolean) -> Unit = {},
     onTextureResidencyManagerCompatToggled: (Boolean) -> Unit = {},
     onTexturePressureDownscaleDivisorChanged: (Int) -> Unit = {},
@@ -313,6 +353,91 @@ private fun LauncherCompatibilityScreenContent(
                     checked = uiState.fboPressureDownscaleCompatEnabled,
                     enabled = false,
                     onCheckedChange = onFboPressureDownscaleCompatToggled
+                )
+            }
+
+            CompatibilitySectionCard(
+                title = stringResource(R.string.compat_save_rescue_section_title),
+                description = stringResource(R.string.compat_save_rescue_section_desc)
+            ) {
+                CompatibilitySwitchRow(
+                    title = stringResource(R.string.compat_room_context_hand_layout_rescue_title),
+                    description = stringResource(R.string.compat_room_context_hand_layout_rescue_desc),
+                    checked = uiState.roomContextHandLayoutRescueCompatEnabled,
+                    enabled = !uiState.busy,
+                    onCheckedChange = onRoomContextHandLayoutRescueCompatToggled
+                )
+
+                CompatibilitySwitchRow(
+                    title = stringResource(R.string.compat_room_transition_rescue_title),
+                    description = stringResource(R.string.compat_room_transition_rescue_desc),
+                    checked = uiState.roomTransitionRescueCompatEnabled,
+                    enabled = !uiState.busy,
+                    onCheckedChange = onRoomTransitionRescueCompatToggled
+                )
+
+                CompatibilitySwitchRow(
+                    title = stringResource(R.string.compat_event_room_rescue_title),
+                    description = stringResource(R.string.compat_event_room_rescue_desc),
+                    checked = uiState.eventRoomRescueCompatEnabled,
+                    enabled = !uiState.busy,
+                    onCheckedChange = onEventRoomRescueCompatToggled
+                )
+
+                CompatibilitySwitchRow(
+                    title = stringResource(R.string.compat_shop_room_rescue_title),
+                    description = stringResource(R.string.compat_shop_room_rescue_desc),
+                    checked = uiState.shopRoomRescueCompatEnabled,
+                    enabled = !uiState.busy,
+                    onCheckedChange = onShopRoomRescueCompatToggled
+                )
+
+                CompatibilitySwitchRow(
+                    title = stringResource(R.string.compat_basemod_save_load_rescue_title),
+                    description = stringResource(R.string.compat_basemod_save_load_rescue_desc),
+                    checked = uiState.baseModSaveLoadRescueCompatEnabled,
+                    enabled = !uiState.busy,
+                    onCheckedChange = onBaseModSaveLoadRescueCompatToggled
+                )
+
+                CompatibilitySwitchRow(
+                    title = stringResource(R.string.compat_relic_enter_room_rescue_title),
+                    description = stringResource(R.string.compat_relic_enter_room_rescue_desc),
+                    checked = uiState.relicEnterRoomRescueCompatEnabled,
+                    enabled = !uiState.busy,
+                    onCheckedChange = onRelicEnterRoomRescueCompatToggled
+                )
+
+                CompatibilitySwitchRow(
+                    title = stringResource(R.string.compat_dungeon_render_room_context_rescue_title),
+                    description = stringResource(R.string.compat_dungeon_render_room_context_rescue_desc),
+                    checked = uiState.dungeonRenderRoomContextRescueCompatEnabled,
+                    enabled = !uiState.busy,
+                    onCheckedChange = onDungeonRenderRoomContextRescueCompatToggled
+                )
+
+                CompatibilitySwitchRow(
+                    title = stringResource(R.string.compat_power_icon_render_rescue_title),
+                    description = stringResource(R.string.compat_power_icon_render_rescue_desc),
+                    checked = uiState.powerIconRenderRescueCompatEnabled,
+                    enabled = !uiState.busy,
+                    onCheckedChange = onPowerIconRenderRescueCompatToggled
+                )
+
+                CompatibilitySwitchRow(
+                    title = stringResource(R.string.compat_basemod_custom_monster_render_rescue_title),
+                    description = stringResource(R.string.compat_basemod_custom_monster_render_rescue_desc),
+                    checked = uiState.baseModCustomMonsterRenderRescueCompatEnabled,
+                    enabled = !uiState.busy,
+                    onCheckedChange = onBaseModCustomMonsterRenderRescueCompatToggled
+                )
+
+                CompatibilitySwitchRow(
+                    title = stringResource(R.string.compat_non_combat_player_render_rescue_title),
+                    description = stringResource(R.string.compat_non_combat_player_render_rescue_desc),
+                    checked = uiState.nonCombatPlayerRenderRescueCompatEnabled,
+                    enabled = !uiState.busy,
+                    onCheckedChange = onNonCombatPlayerRenderRescueCompatToggled
                 )
             }
 

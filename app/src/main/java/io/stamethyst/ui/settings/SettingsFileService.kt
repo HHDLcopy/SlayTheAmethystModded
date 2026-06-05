@@ -26,6 +26,7 @@ import io.stamethyst.backend.mods.JacketNoAnoKoModCompatPatcher
 import io.stamethyst.backend.mods.ModAtlasFilterCompatPatcher
 import io.stamethyst.backend.mods.ModAtlasOfflineDownscalePatcher
 import io.stamethyst.backend.mods.MtsLaunchManifestValidator
+import io.stamethyst.backend.mods.ModManifestNameRewriter
 import io.stamethyst.backend.mods.OptionalModStorageCoordinator
 import io.stamethyst.backend.mods.VupShionModCompatPatcher
 import io.stamethyst.config.RuntimePaths
@@ -1713,7 +1714,16 @@ internal object SettingsFileService {
             ModAliasStore.setAlias(host, sourcePath, "")
         }
         if (alias.isNotEmpty()) {
-            ModAliasStore.setAlias(host, targetStoragePath, alias)
+            val targetFile = File(targetStoragePath)
+            val rewritten = targetFile.isFile &&
+                runCatching {
+                    ModManifestNameRewriter.rewriteNameInPlace(targetFile, alias)
+                }.isSuccess
+            if (rewritten) {
+                ModAliasStore.setAlias(host, targetStoragePath, "")
+            } else {
+                ModAliasStore.setAlias(host, targetStoragePath, alias)
+            }
         }
     }
 
@@ -2212,10 +2222,10 @@ internal object SettingsFileService {
                 )
             )
             .forEach { mod ->
+                val alias = ModAliasStore.resolveAlias(mod.jarFile.absolutePath, aliases)
                 addFile(
                     file = mod.jarFile,
-                    preferredEntryName = ModAliasStore.resolveAlias(mod.jarFile.absolutePath, aliases)
-                        .ifBlank { mod.jarFile.name }
+                    preferredEntryName = alias.ifBlank { mod.name.ifBlank { mod.jarFile.name } }
                 )
             }
 

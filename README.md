@@ -14,7 +14,7 @@
 
 <p align="center">
   <a href="https://github.com/ModinMobileSTS/SlayTheAmethystModded/releases">
-    <img alt="Download Latest APK" src="https://img.shields.io/badge/Download-Latest%20APK-3fb950?style=for-the-badge&logo=android&logoColor=white" />
+    <img alt="Downloads" src="https://img.shields.io/github/downloads/ModinMobileSTS/SlayTheAmethystModded/total?label=Downloads&style=for-the-badge" />
   </a>
   <a href="#quick-start">
     <img alt="Quick Start" src="https://img.shields.io/badge/Build-Quick%20Start-6f42c1?style=for-the-badge&logo=gradle&logoColor=white" />

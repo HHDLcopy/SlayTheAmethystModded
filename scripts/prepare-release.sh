@@ -54,15 +54,36 @@ confirm_yes_no() {
   done
 }
 
-read_secret_value() {
-  local prompt="$1"
-  local value=""
-  read -r -s -p "$prompt: " value || exit 1
-  echo
-  if [[ -z "$value" ]]; then
-    echo "Secret cannot be empty: $prompt" >&2
-    exit 1
+resolve_env_value() {
+  local name="$1"
+  local value="${!name:-}"
+
+  if [[ -n "$value" ]]; then
+    printf '%s' "$value"
+    return 0
   fi
+
+  local powershell_bin=""
+  if command -v pwsh >/dev/null 2>&1; then
+    powershell_bin="$(command -v pwsh)"
+  elif command -v powershell.exe >/dev/null 2>&1; then
+    powershell_bin="$(command -v powershell.exe)"
+  fi
+
+  if [[ -n "$powershell_bin" ]]; then
+    value="$("$powershell_bin" -NoProfile -NonInteractive -Command '& {
+      param([string]$Name)
+      foreach ($target in @("Process", "User", "Machine")) {
+        $value = [Environment]::GetEnvironmentVariable($Name, $target)
+        if (-not [string]::IsNullOrWhiteSpace($value)) {
+          [Console]::Out.Write($value)
+          exit 0
+        }
+      }
+    }' "$name" 2>/dev/null || true)"
+    value="${value//$'\r'/}"
+  fi
+
   printf '%s' "$value"
 }
 
@@ -123,9 +144,12 @@ run_gradle_wrapper() {
 run_local_release_preflight() {
   local default_store_file="$REPO_ROOT/signing/stamethyst-upload.jks"
   local resolved_store_file="${RELEASE_STORE_FILE:-$default_store_file}"
-  local resolved_store_password="${RELEASE_STORE_PASSWORD:-}"
+  local resolved_store_password
   local resolved_key_alias="${RELEASE_KEY_ALIAS:-upload}"
-  local resolved_key_password="${RELEASE_KEY_PASSWORD:-}"
+  local resolved_key_password
+
+  resolved_store_password="$(resolve_env_value RELEASE_STORE_PASSWORD)"
+  resolved_key_password="$(resolve_env_value RELEASE_KEY_PASSWORD)"
 
   if [[ ! -f "$resolved_store_file" ]]; then
     echo "Missing release keystore: $resolved_store_file" >&2
@@ -133,10 +157,12 @@ run_local_release_preflight() {
   fi
 
   if [[ -z "$resolved_store_password" ]]; then
-    resolved_store_password="$(read_secret_value 'RELEASE_STORE_PASSWORD')"
+    echo "Missing environment variable: RELEASE_STORE_PASSWORD" >&2
+    exit 1
   fi
   if [[ -z "$resolved_key_password" ]]; then
-    resolved_key_password="$(read_secret_value 'RELEASE_KEY_PASSWORD')"
+    echo "Missing environment variable: RELEASE_KEY_PASSWORD" >&2
+    exit 1
   fi
 
   echo

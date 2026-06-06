@@ -2,40 +2,11 @@
 param(
     [string]$StoreFile,
     [string]$KeyAlias = 'upload',
-    [string]$StorePassword,
-    [string]$KeyPassword,
     [switch]$SkipLintCheck
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 3.0
-
-function ConvertTo-PlainText {
-    param(
-        [Parameter(Mandatory = $true)]
-        [Security.SecureString]$SecureString
-    )
-
-    $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($SecureString)
-    try {
-        return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr)
-    } finally {
-        [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
-    }
-}
-
-function Read-SecretValue {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Prompt
-    )
-
-    $value = ConvertTo-PlainText -SecureString (Read-Host -Prompt $Prompt -AsSecureString)
-    if ([string]::IsNullOrWhiteSpace($value)) {
-        throw "Secret cannot be empty: $Prompt"
-    }
-    return $value
-}
 
 function Set-OrRestoreEnv {
     param(
@@ -50,6 +21,26 @@ function Set-OrRestoreEnv {
             Remove-Item "Env:$($entry.Key)" -ErrorAction SilentlyContinue
         }
     }
+}
+
+function Resolve-RequiredEnvValue {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    foreach ($target in @(
+            [System.EnvironmentVariableTarget]::Process,
+            [System.EnvironmentVariableTarget]::User,
+            [System.EnvironmentVariableTarget]::Machine
+        )) {
+        $value = [Environment]::GetEnvironmentVariable($Name, $target)
+        if (-not [string]::IsNullOrWhiteSpace($value)) {
+            return $value
+        }
+    }
+
+    throw "Missing environment variable: $Name"
 }
 
 function Resolve-GradleUserHome {
@@ -143,23 +134,8 @@ function Main {
         throw "Missing release keystore: $resolvedStoreFile"
     }
 
-    $resolvedStorePassword = if ([string]::IsNullOrWhiteSpace($StorePassword)) {
-        $env:RELEASE_STORE_PASSWORD
-    } else {
-        $StorePassword
-    }
-    $resolvedKeyPassword = if ([string]::IsNullOrWhiteSpace($KeyPassword)) {
-        $env:RELEASE_KEY_PASSWORD
-    } else {
-        $KeyPassword
-    }
-
-    if ([string]::IsNullOrWhiteSpace($resolvedStorePassword)) {
-        $resolvedStorePassword = Read-SecretValue -Prompt 'RELEASE_STORE_PASSWORD'
-    }
-    if ([string]::IsNullOrWhiteSpace($resolvedKeyPassword)) {
-        $resolvedKeyPassword = Read-SecretValue -Prompt 'RELEASE_KEY_PASSWORD'
-    }
+    $resolvedStorePassword = Resolve-RequiredEnvValue -Name 'RELEASE_STORE_PASSWORD'
+    $resolvedKeyPassword = Resolve-RequiredEnvValue -Name 'RELEASE_KEY_PASSWORD'
 
     $envSnapshot = @{
         GRADLE_USER_HOME = @{

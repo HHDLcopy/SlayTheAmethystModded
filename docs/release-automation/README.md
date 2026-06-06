@@ -116,7 +116,7 @@ What the script does:
 
 Notes:
 - The script intentionally does not include unrelated working tree changes in the release commit.
-- The local preflight uses the same signing inputs as local release builds. If passwords are not already present in environment variables, the script will prompt for them.
+- The local preflight uses the same signing inputs as local release builds. `RELEASE_STORE_PASSWORD` and `RELEASE_KEY_PASSWORD` must be configured as environment variables before running the script. On Windows, the scripts can read process, user, or machine-level environment variables.
 - On Windows, run it from Git Bash or another Bash environment.
 - On Windows Command Prompt or PowerShell, you can use `scripts\prepare-release.bat`.
 - If you explicitly want to skip the preflight, use `scripts\prepare-release.bat -SkipLocalCheck` or `bash scripts/prepare-release.sh --skip-local-check`.
@@ -147,6 +147,14 @@ Optional local verification:
 ```bash
 apksigner verify --verbose --print-certs SlayTheAmethyst-dev-<version>.APK
 ```
+
+Fast local package:
+
+```powershell
+.\scripts\build-fast-release.ps1
+```
+
+This builds `:app:assembleFastRelease` with release signing inputs, but skips release preflight lint, lint vital, R8 minification, resource shrinking, and release native cache cleanup. Use it for local smoke testing only; official releases should still use `scripts\build-release.ps1` or the tag-based workflow.
 
 ## Troubleshooting
 

@@ -2,8 +2,6 @@
 param(
     [string]$StoreFile,
     [string]$KeyAlias = 'upload',
-    [string]$StorePassword,
-    [string]$KeyPassword,
     [switch]$SkipLocalCheck
 )
 
@@ -97,9 +95,7 @@ function Invoke-LocalReleaseCheck {
         [Parameter(Mandatory = $true)]
         [string]$RepoRoot,
         [string]$StoreFile,
-        [string]$KeyAlias,
-        [string]$StorePassword,
-        [string]$KeyPassword
+        [string]$KeyAlias
     )
 
     $buildScript = Join-Path $RepoRoot 'scripts\build-release.ps1'
@@ -113,12 +109,6 @@ function Invoke-LocalReleaseCheck {
     }
     if (-not [string]::IsNullOrWhiteSpace($KeyAlias)) {
         $buildArgs.KeyAlias = $KeyAlias
-    }
-    if (-not [string]::IsNullOrWhiteSpace($StorePassword)) {
-        $buildArgs.StorePassword = $StorePassword
-    }
-    if (-not [string]::IsNullOrWhiteSpace($KeyPassword)) {
-        $buildArgs.KeyPassword = $KeyPassword
     }
 
     Write-Host ''
@@ -196,9 +186,7 @@ function Main {
             Invoke-LocalReleaseCheck `
                 -RepoRoot $repoRoot `
                 -StoreFile $StoreFile `
-                -KeyAlias $KeyAlias `
-                -StorePassword $StorePassword `
-                -KeyPassword $KeyPassword
+                -KeyAlias $KeyAlias
         }
 
         New-ReleaseNoteTemplate -NoteFile $noteFile -NoteFileRelative $noteFileRelative -TagName $tagName

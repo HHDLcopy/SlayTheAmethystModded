@@ -254,6 +254,9 @@ internal object LauncherSettingsDiagnosticsFormatter {
                         "nonCombatPlayerRenderRescueCompat" to formatBoolean(
                             CompatibilitySettings.isNonCombatPlayerRenderRescueCompatEnabled(context)
                         ),
+                        "cardTooltipKeywordRescueCompat" to formatBoolean(
+                            CompatibilitySettings.isCardTooltipKeywordRescueCompatEnabled(context)
+                        ),
                         "nativeTouchscreenAllowlistCompat" to formatBoolean(
                             nativeTouchscreenAllowlistCompatEnabled
                         ),

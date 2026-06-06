@@ -128,7 +128,7 @@
     <string name="compat_main_menu_preview_reuse_title">主選單角色預覽複用</string>
     <string name="compat_main_menu_preview_reuse_desc">開啟後，主選單角色預覽在安全情況下會複用已存在的角色例項，並快取 modded 角色選項用到的按鈕/立繪紋理，避免每次回到主選單都重複重建和重複載入。這能降低迴主選單時的抖動，也讓相關診斷日誌更容易看。若你要排查角色選擇頁的相容性迴歸，可臨時關閉，讓行為更接近原始模組棧。</string>
     <string name="compat_save_rescue_section_title">救檔兜底</string>
-    <string name="compat_save_rescue_section_desc">針對當前房間或存檔上下文損壞的窄範圍執行時兜底。正常遊戲和 Mod 路徑保持原始行為。兜底觸發時，每次遊戲只顯示一次系統 toast，並把詳情寫入執行日誌。</string>
+    <string name="compat_save_rescue_section_desc">針對部分空指標崩潰的窄範圍執行時救檔。正常遊戲和 Mod 路徑保持原始行為。兜底觸發時，每次遊戲只顯示一次系統 toast，並把詳情寫入執行日誌。</string>
     <string name="compat_room_context_hand_layout_rescue_title">當前房間手牌佈局保護</string>
     <string name="compat_room_context_hand_layout_rescue_desc">僅在當前地圖節點或房間缺失時跳過 CardGroup.refreshHandLayout，避免繼續遊戲、開局或獎勵結算流程在房間尚未建立時 releaseCard 崩潰。</string>
     <string name="compat_room_transition_rescue_title">房間切換上下文兜底</string>
@@ -149,6 +149,8 @@
     <string name="compat_basemod_custom_monster_render_rescue_desc">當 BaseMod CustomMonster 沒有 atlas 且圖片紋理為空時，僅跳過缺失貼圖的 draw 呼叫，讓怪物其餘渲染流程繼續執行。</string>
     <string name="compat_non_combat_player_render_rescue_title">非戰鬥玩家渲染兜底</string>
     <string name="compat_non_combat_player_render_rescue_desc">僅在非戰鬥房間渲染中捕獲 AbstractPlayer.render 丟擲的 NullPointerException；戰鬥房間仍保持原始崩潰行為，避免隱藏戰鬥邏輯問題。</string>
+    <string name="compat_card_tooltip_keyword_rescue_title">卡牌提示關鍵詞兜底</string>
+    <string name="compat_card_tooltip_keyword_rescue_desc">在 TipHelper 渲染卡牌提示前過濾關鍵詞列表裡的空項，避免異常 Mod 卡牌關鍵詞導致崩潰，同時不改變卡牌效果和獎勵選擇邏輯。</string>
     <string name="compat_native_touchscreen_allowlist_title">原生觸屏相容白名單</string>
     <string name="compat_native_touchscreen_allowlist_desc">開啟後，啟動器不會把原生觸屏語義全域性暴露給模組，只會在已驗證的原版介面裡按需恢復觸屏確認路徑，例如商店確認和 Boss 遺物/烙印確認，同時繼續顯示觸控小圓點。這樣可以減少模組介面誤入未適配的觸屏狀態機。關閉後會恢復原版那種全域性原生觸屏語義。這是執行時相容開關。</string>
     <string name="compat_large_texture_downscale_title">執行時紋理壓力降取樣</string>
@@ -2240,6 +2242,7 @@
     <string name="workshop_action_view_log">查看日誌</string>
     <string name="workshop_action_view_change_notes">查看更新日誌</string>
     <string name="workshop_action_subscribe_mod">訂閱模組</string>
+    <string name="workshop_action_unsubscribe_mod">取消訂閱</string>
     <string name="workshop_action_subscribed_mod">已訂閱</string>
     <string name="workshop_subscribe_confirm_title">是否訂閱該模組</string>
     <string name="workshop_subscribe_confirm_message">訂閱 %1$s 後，將同步訂閱到 Steam 帳號，電腦上會自動下載該模組。</string>
@@ -2248,6 +2251,11 @@
     <string name="workshop_subscribe_success">已訂閱 %1$s。</string>
     <string name="workshop_subscribe_not_confirmed">Steam 已接受訂閱請求，但該模組未出現在訂閱清單中，請稍後重試。</string>
     <string name="workshop_subscribe_failed">訂閱失敗：%1$s</string>
+    <string name="workshop_unsubscribe_confirm_title">是否取消訂閱該模組</string>
+    <string name="workshop_unsubscribe_confirm_message">取消訂閱 %1$s 後，將同步到 Steam 帳號。</string>
+    <string name="workshop_unsubscribe_success">已取消訂閱 %1$s。</string>
+    <string name="workshop_unsubscribe_not_confirmed">Steam 已接受取消訂閱請求，但該模組仍在訂閱清單中，請稍後重試。</string>
+    <string name="workshop_unsubscribe_failed">取消訂閱失敗：%1$s</string>
     <string name="workshop_change_notes_title">更新日誌</string>
     <string name="workshop_change_notes_latest_title">最新更新內容</string>
     <string name="workshop_change_notes_loading">正在載入更新日誌…</string>

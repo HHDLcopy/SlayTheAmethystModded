@@ -386,6 +386,16 @@ message CPublishedFile_Subscribe_Request {
 message CPublishedFile_Subscribe_Response {
 }
 
+message CPublishedFile_Unsubscribe_Request {
+  optional uint64 publishedfileid = 1;
+  optional uint32 list_type = 2;
+  optional uint32 appid = 3;
+  optional bool notify_client = 4;
+}
+
+message CPublishedFile_Unsubscribe_Response {
+}
+
 message CAuthentication_RefreshToken_Revoke_Request {
   optional fixed64 token_id = 1;
   optional fixed64 steamid = 2;

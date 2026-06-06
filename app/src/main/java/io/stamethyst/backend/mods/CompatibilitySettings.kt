@@ -61,6 +61,10 @@ object CompatibilitySettings {
             context,
             LauncherConfig.DEFAULT_NON_COMBAT_PLAYER_RENDER_RESCUE_COMPAT_ENABLED
         )
+        setCardTooltipKeywordRescueCompatEnabled(
+            context,
+            LauncherConfig.DEFAULT_CARD_TOOLTIP_KEYWORD_RESCUE_COMPAT_ENABLED
+        )
         setNativeTouchscreenAllowlistCompatEnabled(
             context,
             LauncherConfig.DEFAULT_NATIVE_TOUCHSCREEN_ALLOWLIST_COMPAT_ENABLED
@@ -299,6 +303,16 @@ object CompatibilitySettings {
     @JvmStatic
     fun setNonCombatPlayerRenderRescueCompatEnabled(context: Context, enabled: Boolean) {
         LauncherConfig.setNonCombatPlayerRenderRescueCompatEnabled(context, enabled)
+    }
+
+    @JvmStatic
+    fun isCardTooltipKeywordRescueCompatEnabled(context: Context): Boolean {
+        return LauncherConfig.isCardTooltipKeywordRescueCompatEnabled(context)
+    }
+
+    @JvmStatic
+    fun setCardTooltipKeywordRescueCompatEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setCardTooltipKeywordRescueCompatEnabled(context, enabled)
     }
 
     @JvmStatic

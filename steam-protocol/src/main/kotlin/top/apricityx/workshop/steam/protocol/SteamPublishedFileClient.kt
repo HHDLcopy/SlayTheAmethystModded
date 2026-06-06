@@ -8,6 +8,8 @@ import top.apricityx.workshop.steam.proto.CPublishedFile_GetUserFiles_Request
 import top.apricityx.workshop.steam.proto.CPublishedFile_GetUserFiles_Response
 import top.apricityx.workshop.steam.proto.CPublishedFile_Subscribe_Request
 import top.apricityx.workshop.steam.proto.CPublishedFile_Subscribe_Response
+import top.apricityx.workshop.steam.proto.CPublishedFile_Unsubscribe_Request
+import top.apricityx.workshop.steam.proto.CPublishedFile_Unsubscribe_Response
 
 data class SteamPublishedFileQuery(
     val appId: UInt,
@@ -157,6 +159,34 @@ class SteamPublishedFileClient(
                 throw when (error) {
                     is SteamProtocolException -> error
                     else -> SteamProtocolException("Failed to subscribe Steam published file", error)
+                }
+            }
+        }
+    }
+
+    suspend fun unsubscribe(
+        account: SteamAccountSession,
+        appId: UInt,
+        publishedFileId: ULong,
+    ) {
+        val cmServers = directoryClient.loadServers()
+        sessionFactory().use { session ->
+            try {
+                session.connectWithRefreshToken(cmServers, account)
+                session.callServiceMethod(
+                    methodName = "PublishedFile.Unsubscribe#1",
+                    request = CPublishedFile_Unsubscribe_Request.newBuilder()
+                        .setPublishedfileid(publishedFileId.toLong())
+                        .setListType(STEAM_PUBLISHED_FILE_LIST_TYPE_SUBSCRIBED)
+                        .setAppid(appId.toInt())
+                        .setNotifyClient(true)
+                        .build(),
+                    parser = CPublishedFile_Unsubscribe_Response.parser(),
+                )
+            } catch (error: Throwable) {
+                throw when (error) {
+                    is SteamProtocolException -> error
+                    else -> SteamProtocolException("Failed to unsubscribe Steam published file", error)
                 }
             }
         }

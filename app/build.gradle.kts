@@ -113,6 +113,12 @@ android {
                 "proguard-rules.pro"
             )
         }
+        create("fastRelease") {
+            initWith(getByName("release"))
+            isMinifyEnabled = false
+            isShrinkResources = false
+            matchingFallbacks += "release"
+        }
         debug {
             isMinifyEnabled = false
         }
@@ -153,6 +159,17 @@ kotlin {
     compilerOptions {
         jvmTarget = JvmTarget.JVM_1_8
     }
+}
+
+tasks.matching {
+    it.name in setOf(
+        "generateFastReleaseLintVitalReportModel",
+        "lintVitalAnalyzeFastRelease",
+        "lintVitalReportFastRelease",
+        "lintVitalFastRelease"
+    )
+}.configureEach {
+    enabled = false
 }
 
 dependencies {

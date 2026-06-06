@@ -32,6 +32,7 @@ class CompatibilityScreenViewModel : ViewModel() {
         val powerIconRenderRescueCompatEnabled: Boolean = true,
         val baseModCustomMonsterRenderRescueCompatEnabled: Boolean = true,
         val nonCombatPlayerRenderRescueCompatEnabled: Boolean = true,
+        val cardTooltipKeywordRescueCompatEnabled: Boolean = true,
         val nativeTouchscreenAllowlistCompatEnabled: Boolean = true,
         val largeTextureDownscaleCompatEnabled: Boolean = false,
         val textureResidencyManagerCompatEnabled: Boolean = false,
@@ -86,6 +87,8 @@ class CompatibilityScreenViewModel : ViewModel() {
                 CompatibilitySettings.isBaseModCustomMonsterRenderRescueCompatEnabled(host),
             nonCombatPlayerRenderRescueCompatEnabled =
                 CompatibilitySettings.isNonCombatPlayerRenderRescueCompatEnabled(host),
+            cardTooltipKeywordRescueCompatEnabled =
+                CompatibilitySettings.isCardTooltipKeywordRescueCompatEnabled(host),
             nativeTouchscreenAllowlistCompatEnabled =
                 CompatibilitySettings.isNativeTouchscreenAllowlistCompatEnabled(host),
             largeTextureDownscaleCompatEnabled = CompatibilitySettings.isLargeTextureDownscaleCompatEnabled(host),
@@ -256,6 +259,14 @@ class CompatibilityScreenViewModel : ViewModel() {
         }
         CompatibilitySettings.setNonCombatPlayerRenderRescueCompatEnabled(host, enabled)
         uiState = uiState.copy(nonCombatPlayerRenderRescueCompatEnabled = enabled)
+    }
+
+    fun onCardTooltipKeywordRescueCompatToggled(host: Context, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        CompatibilitySettings.setCardTooltipKeywordRescueCompatEnabled(host, enabled)
+        uiState = uiState.copy(cardTooltipKeywordRescueCompatEnabled = enabled)
     }
 
     fun onLargeTextureDownscaleCompatToggled(host: Context, enabled: Boolean) {

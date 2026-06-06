@@ -131,6 +131,7 @@ internal fun WorkshopDetailScreen(
     } == true
     var showChangeNotesDialog by rememberSaveable(publishedFileId.toString()) { mutableStateOf(false) }
     var showSubscribeConfirmDialog by rememberSaveable(publishedFileId.toString()) { mutableStateOf(false) }
+    var showUnsubscribeConfirmDialog by rememberSaveable(publishedFileId.toString()) { mutableStateOf(false) }
     var dontRemindSubscribeWarning by rememberSaveable(publishedFileId.toString()) { mutableStateOf(false) }
     val primaryContentState = when {
         state.detailLoadingId == publishedFileId && selectedDetails == null -> DetailPrimaryContentState.Loading
@@ -229,6 +230,13 @@ internal fun WorkshopDetailScreen(
                         )
                         DetailPrimaryContentState.Content -> selectedDetails?.let { details ->
                             val subscriptionStatus = state.detailSubscriptionStatusFor(details.summary.publishedFileId)
+                            val detailSubscribed = when (subscriptionStatus) {
+                                WorkshopDetailSubscriptionStatus.Subscribed -> true
+                                WorkshopDetailSubscriptionStatus.NotSubscribed,
+                                WorkshopDetailSubscriptionStatus.Checking -> false
+                                WorkshopDetailSubscriptionStatus.Unknown ->
+                                    state.subscribedWorkshopIds.contains(details.summary.publishedFileId)
+                            }
                             DetailModCard(
                                 details = details,
                                 downloadState = resolveWorkshopModDownloadState(
@@ -238,13 +246,7 @@ internal fun WorkshopDetailScreen(
                                 ),
                                 subscriptionLoading = state.detailSubscriptionLoadingId == details.summary.publishedFileId ||
                                     subscriptionStatus == WorkshopDetailSubscriptionStatus.Checking,
-                                subscribed = when (subscriptionStatus) {
-                                    WorkshopDetailSubscriptionStatus.Subscribed -> true
-                                    WorkshopDetailSubscriptionStatus.NotSubscribed,
-                                    WorkshopDetailSubscriptionStatus.Checking -> false
-                                    WorkshopDetailSubscriptionStatus.Unknown ->
-                                        state.subscribedWorkshopIds.contains(details.summary.publishedFileId)
-                                },
+                                subscribed = detailSubscribed,
                                 onDownload = {
                                     requestNotificationPermissionIfNeeded()
                                     viewModel.downloadSelected(context.applicationContext)
@@ -253,9 +255,11 @@ internal fun WorkshopDetailScreen(
                                     showChangeNotesDialog = true
                                     viewModel.loadSelectedChangeNotes(context.applicationContext)
                                 },
-                                onSubscribe = {
+                                onSubscriptionClick = {
                                     if (!state.steamLoggedIn) {
-                                        viewModel.showWorkshopSubscribeSteamLoginRequired(context.applicationContext)
+                                        viewModel.showWorkshopSubscriptionSteamLoginRequired(context.applicationContext)
+                                    } else if (detailSubscribed) {
+                                        showUnsubscribeConfirmDialog = true
                                     } else if (LauncherPreferences.isWorkshopSubscribeWarningDismissed(context.applicationContext)) {
                                         viewModel.subscribeSelected(context.applicationContext)
                                     } else {
@@ -368,6 +372,17 @@ internal fun WorkshopDetailScreen(
         )
     }
 
+    if (showUnsubscribeConfirmDialog && selectedDetails != null) {
+        WorkshopUnsubscribeConfirmDialog(
+            modTitle = selectedDetails.summary.title.ifBlank { selectedDetails.summary.publishedFileId.toString() },
+            onDismiss = { showUnsubscribeConfirmDialog = false },
+            onConfirm = {
+                showUnsubscribeConfirmDialog = false
+                viewModel.unsubscribeSelected(context.applicationContext)
+            },
+        )
+    }
+
     state.detailSubscriptionMessage?.let { message ->
         WorkshopSubscribeMessageDialog(
             message = message,
@@ -408,6 +423,29 @@ private fun WorkshopSubscribeConfirmDialog(
         confirmButton = {
             Button(onClick = onConfirm) {
                 Text(stringResource(R.string.workshop_action_subscribe_mod))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.main_folder_dialog_cancel))
+            }
+        },
+    )
+}
+
+@Composable
+private fun WorkshopUnsubscribeConfirmDialog(
+    modTitle: String,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.workshop_unsubscribe_confirm_title)) },
+        text = { Text(stringResource(R.string.workshop_unsubscribe_confirm_message, modTitle)) },
+        confirmButton = {
+            Button(onClick = onConfirm) {
+                Text(stringResource(R.string.workshop_action_unsubscribe_mod))
             }
         },
         dismissButton = {
@@ -532,7 +570,7 @@ private fun DetailModCard(
     subscribed: Boolean,
     onDownload: () -> Unit,
     onViewChangeNotes: () -> Unit,
-    onSubscribe: () -> Unit,
+    onSubscriptionClick: () -> Unit,
 ) {
     Card(
         colors = workshopDetailCardColors(),
@@ -585,8 +623,8 @@ private fun DetailModCard(
                     Text(stringResource(R.string.workshop_action_view_log))
                 }
                 Button(
-                    onClick = onSubscribe,
-                    enabled = !subscriptionLoading && !subscribed,
+                    onClick = onSubscriptionClick,
+                    enabled = !subscriptionLoading,
                     modifier = Modifier
                         .weight(1f)
                         .heightIn(min = 48.dp),
@@ -601,7 +639,7 @@ private fun DetailModCard(
                         Text(
                             stringResource(
                                 if (subscribed) {
-                                    R.string.workshop_action_subscribed_mod
+                                    R.string.workshop_action_unsubscribe_mod
                                 } else {
                                     R.string.workshop_action_subscribe_mod
                                 },

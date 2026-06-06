@@ -77,7 +77,7 @@ private fun WorkshopItemSummary.isInstalledOrQueued(
 }
 
 private fun WorkshopItemSummary.isDefaultInstalledWorkshopDependency(): Boolean {
-    if (WorkshopDownloadBlocklist.isBlocked(publishedFileId)) return true
+    if (WorkshopDownloadBlocklist.isBlocked(this)) return true
     val tokens = listOf(title, description, authorName)
         .map { it.normalizedWorkshopDependencyToken() }
     return tokens.any { it in defaultInstalledWorkshopDependencyTokens }
@@ -94,4 +94,12 @@ private val defaultInstalledWorkshopDependencyTokens = setOf(
     "modthespire",
     "basemod",
     "stslib",
+    "amethystruntimecompat",
+    "amethystruntimecompatjar",
+    "amethystruntimecompatibility",
+    "amethystcompat",
+    "amethystcompatjar",
+    "amethystruntimecompatmod",
+    "ramsaver",
+    "ramsaverjar",
 )

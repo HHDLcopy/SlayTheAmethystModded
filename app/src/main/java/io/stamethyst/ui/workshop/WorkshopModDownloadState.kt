@@ -54,7 +54,7 @@ private fun resolveWorkshopModDownloadState(
     taskStatus: WorkshopDownloadTaskStatus?,
     taskMessage: String = "",
 ): WorkshopModDownloadState {
-    if (WorkshopDownloadBlocklist.isBlocked(item.publishedFileId)) return WorkshopModDownloadState.Unavailable
+    if (WorkshopDownloadBlocklist.isBlocked(item)) return WorkshopModDownloadState.Unavailable
     val installed = installedMods.firstOrNull {
         it.appId == item.appId && it.publishedFileId == item.publishedFileId
     }

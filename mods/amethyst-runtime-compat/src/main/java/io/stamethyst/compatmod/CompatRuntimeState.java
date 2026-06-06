@@ -46,6 +46,8 @@ public final class CompatRuntimeState {
         "amethyst.runtime_compat.rescue.basemod_custom_monster_render";
     private static final String NON_COMBAT_PLAYER_RENDER_RESCUE_PROP =
         "amethyst.runtime_compat.rescue.non_combat_player_render";
+    private static final String CARD_TOOLTIP_KEYWORD_RESCUE_PROP =
+        "amethyst.runtime_compat.rescue.card_tooltip_keyword";
     private static final float DEFAULT_TEXT_SCALE = 1.0f;
     private static final float BIG_TEXT_SCALE = 1.2f;
     private static final float DEFAULT_UI_SCALE = 1.0f;
@@ -82,6 +84,8 @@ public final class CompatRuntimeState {
         readBooleanSystemProperty(BASEMOD_CUSTOM_MONSTER_RENDER_RESCUE_PROP, true);
     private static final boolean NON_COMBAT_PLAYER_RENDER_RESCUE_ENABLED =
         readBooleanSystemProperty(NON_COMBAT_PLAYER_RENDER_RESCUE_PROP, true);
+    private static final boolean CARD_TOOLTIP_KEYWORD_RESCUE_ENABLED =
+        readBooleanSystemProperty(CARD_TOOLTIP_KEYWORD_RESCUE_PROP, true);
     private static final float CONFIGURED_FONT_SCALE =
         readFloatSystemProperty(FONT_SCALE_PROP, Float.NaN);
     private static final float CONFIGURED_UI_SCALE =
@@ -151,6 +155,8 @@ public final class CompatRuntimeState {
                     + Boolean.toString(BASEMOD_CUSTOM_MONSTER_RENDER_RESCUE_ENABLED)
                     + " rescueNonCombatPlayerRender="
                     + Boolean.toString(NON_COMBAT_PLAYER_RENDER_RESCUE_ENABLED)
+                    + " rescueCardTooltipKeyword="
+                    + Boolean.toString(CARD_TOOLTIP_KEYWORD_RESCUE_ENABLED)
             );
             System.out.println(
                 "[amethyst-runtime-compat] guarded dynamic cache active: "
@@ -269,6 +275,10 @@ public final class CompatRuntimeState {
 
     public static boolean isNonCombatPlayerRenderRescueEnabled() {
         return NON_COMBAT_PLAYER_RENDER_RESCUE_ENABLED;
+    }
+
+    public static boolean isCardTooltipKeywordRescueEnabled() {
+        return CARD_TOOLTIP_KEYWORD_RESCUE_ENABLED;
     }
 
     public static boolean resolveTouchIndicatorFlag(boolean originalValue) {

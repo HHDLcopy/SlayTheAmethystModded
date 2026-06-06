@@ -126,6 +126,8 @@ object LauncherConfig {
         "compat_basemod_custom_monster_render_rescue"
     private const val PREF_KEY_NON_COMBAT_PLAYER_RENDER_RESCUE_COMPAT =
         "compat_non_combat_player_render_rescue"
+    private const val PREF_KEY_CARD_TOOLTIP_KEYWORD_RESCUE_COMPAT =
+        "compat_card_tooltip_keyword_rescue"
     // Keep the legacy stored key so existing users do not lose their toggle state
     // when the old relic direct-pick switch is replaced by the touchscreen allowlist.
     private const val PREF_KEY_NATIVE_TOUCHSCREEN_ALLOWLIST_COMPAT =
@@ -304,6 +306,7 @@ object LauncherConfig {
     const val DEFAULT_POWER_ICON_RENDER_RESCUE_COMPAT_ENABLED = true
     const val DEFAULT_BASEMOD_CUSTOM_MONSTER_RENDER_RESCUE_COMPAT_ENABLED = true
     const val DEFAULT_NON_COMBAT_PLAYER_RENDER_RESCUE_COMPAT_ENABLED = true
+    const val DEFAULT_CARD_TOOLTIP_KEYWORD_RESCUE_COMPAT_ENABLED = true
     const val DEFAULT_NATIVE_TOUCHSCREEN_ALLOWLIST_COMPAT_ENABLED = true
     val DEFAULT_TOUCHSCREEN_INPUT_MODE: TouchscreenInputMode = TouchscreenInputMode.HYBRID
     const val DEFAULT_LARGE_TEXTURE_DOWNSCALE_COMPAT_ENABLED = false
@@ -1197,6 +1200,19 @@ object LauncherConfig {
     fun setNonCombatPlayerRenderRescueCompatEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_NON_COMBAT_PLAYER_RENDER_RESCUE_COMPAT, enabled)
+        }
+    }
+
+    fun isCardTooltipKeywordRescueCompatEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_CARD_TOOLTIP_KEYWORD_RESCUE_COMPAT,
+            DEFAULT_CARD_TOOLTIP_KEYWORD_RESCUE_COMPAT_ENABLED
+        )
+    }
+
+    fun setCardTooltipKeywordRescueCompatEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_CARD_TOOLTIP_KEYWORD_RESCUE_COMPAT, enabled)
         }
     }
 

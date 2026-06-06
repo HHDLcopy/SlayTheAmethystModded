@@ -97,6 +97,9 @@ fun LauncherCompatibilityScreen(
         onNonCombatPlayerRenderRescueCompatToggled = { enabled ->
             viewModel.onNonCombatPlayerRenderRescueCompatToggled(context, enabled)
         },
+        onCardTooltipKeywordRescueCompatToggled = { enabled ->
+            viewModel.onCardTooltipKeywordRescueCompatToggled(context, enabled)
+        },
         onLargeTextureDownscaleCompatToggled = { enabled ->
             viewModel.onLargeTextureDownscaleCompatToggled(context, enabled)
         },
@@ -195,6 +198,7 @@ private fun LauncherCompatibilityScreenContent(
     onPowerIconRenderRescueCompatToggled: (Boolean) -> Unit = {},
     onBaseModCustomMonsterRenderRescueCompatToggled: (Boolean) -> Unit = {},
     onNonCombatPlayerRenderRescueCompatToggled: (Boolean) -> Unit = {},
+    onCardTooltipKeywordRescueCompatToggled: (Boolean) -> Unit = {},
     onLargeTextureDownscaleCompatToggled: (Boolean) -> Unit = {},
     onTextureResidencyManagerCompatToggled: (Boolean) -> Unit = {},
     onTexturePressureDownscaleDivisorChanged: (Int) -> Unit = {},
@@ -438,6 +442,14 @@ private fun LauncherCompatibilityScreenContent(
                     checked = uiState.nonCombatPlayerRenderRescueCompatEnabled,
                     enabled = !uiState.busy,
                     onCheckedChange = onNonCombatPlayerRenderRescueCompatToggled
+                )
+
+                CompatibilitySwitchRow(
+                    title = stringResource(R.string.compat_card_tooltip_keyword_rescue_title),
+                    description = stringResource(R.string.compat_card_tooltip_keyword_rescue_desc),
+                    checked = uiState.cardTooltipKeywordRescueCompatEnabled,
+                    enabled = !uiState.busy,
+                    onCheckedChange = onCardTooltipKeywordRescueCompatToggled
                 )
             }
 

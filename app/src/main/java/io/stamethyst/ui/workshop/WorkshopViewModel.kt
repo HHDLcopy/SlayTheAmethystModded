@@ -34,6 +34,7 @@ import io.stamethyst.backend.workshop.WorkshopModCardState
 import io.stamethyst.backend.workshop.WorkshopService
 import io.stamethyst.backend.workshop.WorkshopSteamLoginRequiredException
 import io.stamethyst.backend.workshop.WorkshopSubscriptionVerificationException
+import io.stamethyst.backend.workshop.WorkshopUnsubscriptionVerificationException
 import io.stamethyst.backend.workshop.WorkshopUpdateCheckResult
 import io.stamethyst.backend.workshop.WorkshopUpdateChecker
 import io.stamethyst.backend.workshop.buildBaiduModDescriptionReference
@@ -752,8 +753,8 @@ internal class WorkshopViewModel : ViewModel() {
         startDownloadAfterDependencyCheck(context, details.summary, details)
     }
 
-    fun showWorkshopSubscribeSteamLoginRequired(context: Context) {
-        Log.w(WORKSHOP_SUBSCRIPTION_LOG_TAG, "subscribeSelected blocked reason=steamLoginRequired")
+    fun showWorkshopSubscriptionSteamLoginRequired(context: Context) {
+        Log.w(WORKSHOP_SUBSCRIPTION_LOG_TAG, "workshop subscription action blocked reason=steamLoginRequired")
         uiState = uiState.copy(
             detailSubscriptionLoadingId = null,
             detailSubscriptionMessage = context.getString(R.string.workshop_subscribe_requires_steam_login),
@@ -861,7 +862,7 @@ internal class WorkshopViewModel : ViewModel() {
             return
         }
         if (!currentService.hasSteamAuth()) {
-            showWorkshopSubscribeSteamLoginRequired(context)
+            showWorkshopSubscriptionSteamLoginRequired(context)
             return
         }
         uiState = uiState.copy(
@@ -895,7 +896,7 @@ internal class WorkshopViewModel : ViewModel() {
                         "subscribeSelected failed appId=${summary.appId} publishedFileId=${summary.publishedFileId} reason=steamLoginRequired",
                         error,
                     )
-                    showWorkshopSubscribeSteamLoginRequired(context)
+                    showWorkshopSubscriptionSteamLoginRequired(context)
                     return@onFailure
                 }
                 Log.e(
@@ -915,6 +916,90 @@ internal class WorkshopViewModel : ViewModel() {
                     detailSubscriptionStatus = WorkshopDetailSubscriptionStatus.NotSubscribed,
                     detailSubscriptionMessage = context.getString(
                         R.string.workshop_subscribe_failed,
+                        errorMessage,
+                    ),
+                )
+            }
+        }
+    }
+
+    fun unsubscribeSelected(context: Context) {
+        val currentService = service ?: return
+        val details = uiState.selected ?: return
+        val summary = details.summary
+        val subscriptionStatus = uiState.detailSubscriptionStatusFor(summary.publishedFileId)
+        val subscribed = subscriptionStatus == WorkshopDetailSubscriptionStatus.Subscribed ||
+            (subscriptionStatus == WorkshopDetailSubscriptionStatus.Unknown && uiState.subscribedWorkshopIds.contains(summary.publishedFileId))
+        if (uiState.detailSubscriptionLoadingId == summary.publishedFileId ||
+            subscriptionStatus == WorkshopDetailSubscriptionStatus.Checking ||
+            !subscribed
+        ) {
+            Log.i(
+                WORKSHOP_SUBSCRIPTION_LOG_TAG,
+                "unsubscribeSelected skipped appId=${summary.appId} publishedFileId=${summary.publishedFileId} loading=${uiState.detailSubscriptionLoadingId == summary.publishedFileId} status=$subscriptionStatus subscribed=$subscribed",
+            )
+            return
+        }
+        if (!currentService.hasSteamAuth()) {
+            showWorkshopSubscriptionSteamLoginRequired(context)
+            return
+        }
+        uiState = uiState.copy(
+            detailSubscriptionLoadingId = summary.publishedFileId,
+            detailSubscriptionMessage = null,
+        )
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    currentService.unsubscribeFromPublishedFile(summary.appId, summary.publishedFileId)
+                }
+            }.onSuccess {
+                Log.i(
+                    WORKSHOP_SUBSCRIPTION_LOG_TAG,
+                    "unsubscribeSelected success appId=${summary.appId} publishedFileId=${summary.publishedFileId} title=${summary.title}",
+                )
+                uiState = uiState.copy(
+                    detailSubscriptionLoadingId = null,
+                    items = if (activeListMode == WorkshopListMode.Subscriptions) {
+                        uiState.items.filterNot { item -> item.publishedFileId == summary.publishedFileId }
+                    } else {
+                        uiState.items
+                    },
+                    subscribedWorkshopIds = uiState.subscribedWorkshopIds - summary.publishedFileId,
+                    detailSubscriptionStatusId = summary.publishedFileId,
+                    detailSubscriptionStatus = WorkshopDetailSubscriptionStatus.NotSubscribed,
+                    detailSubscriptionMessage = context.getString(
+                        R.string.workshop_unsubscribe_success,
+                        summary.title.ifBlank { summary.publishedFileId.toString() },
+                    ),
+                )
+            }.onFailure { error ->
+                if (error is WorkshopSteamLoginRequiredException) {
+                    Log.w(
+                        WORKSHOP_SUBSCRIPTION_LOG_TAG,
+                        "unsubscribeSelected failed appId=${summary.appId} publishedFileId=${summary.publishedFileId} reason=steamLoginRequired",
+                        error,
+                    )
+                    showWorkshopSubscriptionSteamLoginRequired(context)
+                    return@onFailure
+                }
+                Log.e(
+                    WORKSHOP_SUBSCRIPTION_LOG_TAG,
+                    "unsubscribeSelected failed appId=${summary.appId} publishedFileId=${summary.publishedFileId}",
+                    error,
+                )
+                val errorMessage = if (error is WorkshopUnsubscriptionVerificationException) {
+                    context.getString(R.string.workshop_unsubscribe_not_confirmed)
+                } else {
+                    error.message ?: error.javaClass.simpleName
+                }
+                uiState = uiState.copy(
+                    detailSubscriptionLoadingId = null,
+                    subscribedWorkshopIds = uiState.subscribedWorkshopIds + summary.publishedFileId,
+                    detailSubscriptionStatusId = summary.publishedFileId,
+                    detailSubscriptionStatus = WorkshopDetailSubscriptionStatus.Subscribed,
+                    detailSubscriptionMessage = context.getString(
+                        R.string.workshop_unsubscribe_failed,
                         errorMessage,
                     ),
                 )
@@ -1309,7 +1394,7 @@ internal class WorkshopViewModel : ViewModel() {
         summary: WorkshopItemSummary,
         task: WorkshopDownloadTaskUi?,
     ): Boolean {
-        if (!WorkshopDownloadBlocklist.isBlocked(summary.publishedFileId)) return false
+        if (!WorkshopDownloadBlocklist.isBlocked(summary)) return false
         val message = context.getString(
             R.string.workshop_status_download_blocked,
             summary.title.ifBlank { summary.publishedFileId.toString() },

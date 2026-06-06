@@ -302,6 +302,102 @@ internal class WorkshopService(
         return false
     }
 
+    suspend fun unsubscribeFromPublishedFile(
+        appId: UInt,
+        publishedFileId: ULong,
+    ): WorkshopUnsubscriptionResult = withContext(Dispatchers.IO) {
+        var failureLogged = false
+        fun logFailure(message: String, error: Throwable? = null) {
+            failureLogged = true
+            if (error != null) {
+                Log.e(TAG, message, error)
+            } else {
+                Log.e(TAG, message)
+            }
+        }
+        try {
+            unsubscribeFromPublishedFileInternal(appId, publishedFileId, ::logFailure)
+        } catch (error: Throwable) {
+            if (!failureLogged) {
+                Log.e(TAG, "unsubscribeFromPublishedFile failed appId=$appId publishedFileId=$publishedFileId", error)
+            }
+            throw error
+        }
+    }
+
+    private suspend fun unsubscribeFromPublishedFileInternal(
+        appId: UInt,
+        publishedFileId: ULong,
+        logFailure: (String, Throwable?) -> Unit,
+    ): WorkshopUnsubscriptionResult {
+        Log.i(TAG, "unsubscribeFromPublishedFile start appId=$appId publishedFileId=$publishedFileId")
+        val account = readSteamAccountSession(identity)
+            ?: run {
+                logFailure(
+                    "unsubscribeFromPublishedFile failed appId=$appId publishedFileId=$publishedFileId reason=missingSteamAuth",
+                    null,
+                )
+                throw WorkshopSteamLoginRequiredException()
+            }
+        runCatching {
+            val publishedFileClient = SteamPublishedFileClient(
+                directoryClient = SteamDirectoryClient(client),
+                sessionFactory = { identity.createSession(client) },
+            )
+            publishedFileClient.unsubscribe(
+                account = account,
+                appId = appId,
+                publishedFileId = publishedFileId,
+            )
+        }.onFailure { error ->
+            logFailure(
+                "unsubscribeFromPublishedFile failed appId=$appId publishedFileId=$publishedFileId reason=steamProtocol",
+                error,
+            )
+        }.getOrThrow()
+        Log.i(TAG, "unsubscribeFromPublishedFile protocolAccepted appId=$appId publishedFileId=$publishedFileId transport=steamProtocol")
+        if (!verifyUnsubscribedAfterUnsubscribe(appId, publishedFileId)) {
+            logFailure(
+                "unsubscribeFromPublishedFile failed appId=$appId publishedFileId=$publishedFileId reason=verificationFailed",
+                null,
+            )
+            throw WorkshopUnsubscriptionVerificationException()
+        }
+        Log.i(TAG, "unsubscribeFromPublishedFile success appId=$appId publishedFileId=$publishedFileId transport=steamProtocol verified=true")
+        return WorkshopUnsubscriptionResult(
+            publishedFileId = publishedFileId,
+            appId = appId,
+            unsubscribedAtMillis = System.currentTimeMillis(),
+        )
+    }
+
+    private suspend fun verifyUnsubscribedAfterUnsubscribe(
+        appId: UInt,
+        publishedFileId: ULong,
+    ): Boolean {
+        repeat(SUBSCRIPTION_VERIFY_ATTEMPTS) { attempt ->
+            if (attempt > 0) {
+                delay(SUBSCRIPTION_VERIFY_DELAY_MS)
+            }
+            val attemptNumber = attempt + 1
+            val subscribed = runCatching {
+                isSubscribedToPublishedFile(appId, publishedFileId)
+            }.onFailure { error ->
+                Log.w(
+                    TAG,
+                    "unsubscribeFromPublishedFile verificationCheckFailed appId=$appId publishedFileId=$publishedFileId attempt=$attemptNumber",
+                    error,
+                )
+            }.getOrDefault(true)
+            Log.i(
+                TAG,
+                "unsubscribeFromPublishedFile verificationResult subscribed=$subscribed appId=$appId publishedFileId=$publishedFileId attempt=$attemptNumber",
+            )
+            if (!subscribed) return true
+        }
+        return false
+    }
+
     suspend fun getDetails(
         appId: UInt,
         publishedFileId: ULong,

@@ -103,7 +103,10 @@ Wraps BaseMod `CustomMonster.render(SpriteBatch)` texture dimension and texture 
 33. `NonCombatPlayerRenderRescuePatches`
 Wraps `AbstractPlayer.render(SpriteBatch)` calls made from `AbstractRoom.render(SpriteBatch)` and catches `NullPointerException` only outside combat rooms. This addresses non-combat room render crashes where player sprite context is corrupted or missing, while combat rooms keep the original behavior to avoid hiding battle-state bugs. Type: save-rescue crash fallback implemented by `NonCombatPlayerRenderRescuePatches`.
 
-34. `RoomStateRescueNoticeBridge`
+34. `CardTooltipKeywordRescuePatches`
+Filters `null` entries from the keyword list passed to `TipHelper.renderTipForCard` before BaseMod and the base-game tooltip renderer inspect it. This addresses card reward or card hover crashes where a modded card produces a malformed tooltip keyword list, such as `TreeMap.containsKey(null)` failures in BaseMod's fake keyword tooltip patch, while preserving card effects, reward selection, and normal non-null keyword rendering. Type: save-rescue crash fallback implemented by `CardTooltipKeywordRescuePatches`.
+
+35. `RoomStateRescueNoticeBridge`
 Provides the JVM-side notification bridge shared by the save-rescue fallbacks. When any rescue fallback triggers, it logs the first detail for each rescue key and writes one launcher toast request per game session so Android can show a system toast without making the ModTheSpire patch code depend on Android APIs. Type: support bridge implemented by `RoomStateRescueNoticeBridge` with Android-side polling in the launcher.
 
 ## Maintenance rule

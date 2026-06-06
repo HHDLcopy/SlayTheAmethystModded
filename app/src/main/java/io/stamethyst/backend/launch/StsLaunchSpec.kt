@@ -383,6 +383,14 @@ object StsLaunchSpec {
                     "false"
                 }
         )
+        args.add(
+            "-Damethyst.runtime_compat.rescue.card_tooltip_keyword=" +
+                if (CompatibilitySettings.isCardTooltipKeywordRescueCompatEnabled(context)) {
+                    "true"
+                } else {
+                    "false"
+                }
+        )
         val runtimeDownscalePolicy = CompatibilitySettings.readRuntimeDownscaleMaterialPolicy(context)
         val texturePressureDownscaleEnabled = resolveTexturePressureDownscaleEnabled(
             ramSaverEnabled = ramSaverEnabled,

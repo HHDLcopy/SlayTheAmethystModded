@@ -128,7 +128,7 @@
     <string name="compat_main_menu_preview_reuse_title">Main-menu character preview reuse</string>
     <string name="compat_main_menu_preview_reuse_desc">When enabled, main-menu character previews reuse existing character instances when safe, and cache the button/portrait textures used by modded character options to avoid rebuilding and reloading them every time you return to the main menu. This reduces return-to-menu stutter and makes related diagnostics easier to read. If you are investigating character-select compatibility regressions, temporarily disable it to keep behavior closer to the original mod stack.</string>
     <string name="compat_save_rescue_section_title">Save rescue fallbacks</string>
-    <string name="compat_save_rescue_section_desc">Narrow runtime fallbacks for corrupted room or save context. Normal game and mod paths keep their original behavior. If a fallback triggers, a system toast is shown once per game and details are written to the runtime log.</string>
+    <string name="compat_save_rescue_section_desc">Narrow runtime fallbacks for selected null-pointer crashes. Normal game and mod paths keep their original behavior. If a fallback triggers, a system toast is shown once per game and details are written to the runtime log.</string>
     <string name="compat_room_context_hand_layout_rescue_title">Current-room hand layout guard</string>
     <string name="compat_room_context_hand_layout_rescue_desc">Skips only CardGroup.refreshHandLayout when the current map node or room is missing, avoiding crashes from continue/start/reward flows that release cards before a room exists.</string>
     <string name="compat_room_transition_rescue_title">Room transition context rescue</string>
@@ -149,6 +149,8 @@
     <string name="compat_basemod_custom_monster_render_rescue_desc">When BaseMod CustomMonster has neither atlas nor image texture, skips only the missing texture draw so the rest of the monster render path can continue.</string>
     <string name="compat_non_combat_player_render_rescue_title">Non-combat player render rescue</string>
     <string name="compat_non_combat_player_render_rescue_desc">Catches NullPointerException from AbstractPlayer.render only in non-combat room rendering. Combat rooms keep the original crash behavior so battle logic is not hidden.</string>
+    <string name="compat_card_tooltip_keyword_rescue_title">Card tooltip keyword rescue</string>
+    <string name="compat_card_tooltip_keyword_rescue_desc">Filters null entries from a card tooltip keyword list before TipHelper renders it, avoiding crashes from malformed modded card keywords while leaving card effects and reward selection unchanged.</string>
     <string name="compat_native_touchscreen_allowlist_title">Native touchscreen compatibility allowlist</string>
     <string name="compat_native_touchscreen_allowlist_desc">When enabled, the launcher stops exposing native touchscreen semantics globally to mods and only re-enables verified vanilla touchscreen confirm flows such as the shop and boss relic confirm paths, while keeping the touch indicator visible. This reduces modded screens getting trapped in untested touchscreen state machines. Disable it if you want to restore the original global native touchscreen semantics. This is a runtime compatibility switch.</string>
     <string name="compat_large_texture_downscale_title">Runtime texture pressure downscale</string>
@@ -2240,6 +2242,7 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="workshop_action_view_log">View log</string>
     <string name="workshop_action_view_change_notes">View changelog</string>
     <string name="workshop_action_subscribe_mod">Subscribe mod</string>
+    <string name="workshop_action_unsubscribe_mod">Unsubscribe</string>
     <string name="workshop_action_subscribed_mod">Subscribed</string>
     <string name="workshop_subscribe_confirm_title">Subscribe to this mod?</string>
     <string name="workshop_subscribe_confirm_message">After subscribing to %1$s, the subscription will be synced to your Steam account and Steam on your computer will automatically download this mod.</string>
@@ -2248,6 +2251,11 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="workshop_subscribe_success">Subscribed to %1$s.</string>
     <string name="workshop_subscribe_not_confirmed">Steam accepted the request, but the mod was not found in your subscription list. Please try again later.</string>
     <string name="workshop_subscribe_failed">Subscription failed: %1$s</string>
+    <string name="workshop_unsubscribe_confirm_title">Unsubscribe from this mod?</string>
+    <string name="workshop_unsubscribe_confirm_message">After unsubscribing from %1$s, the change will be synced to your Steam account.</string>
+    <string name="workshop_unsubscribe_success">Unsubscribed from %1$s.</string>
+    <string name="workshop_unsubscribe_not_confirmed">Steam accepted the request, but the mod is still in your subscription list. Please try again later.</string>
+    <string name="workshop_unsubscribe_failed">Unsubscribe failed: %1$s</string>
     <string name="workshop_change_notes_title">Changelog</string>
     <string name="workshop_change_notes_latest_title">Latest update</string>
     <string name="workshop_change_notes_loading">Loading changelog...</string>

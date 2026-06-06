@@ -189,7 +189,7 @@ class WorkshopDownloadProcessService : Service() {
             safeIntent.publishedFileIdOrNull()?.let { publishedFileId ->
                 val deferredTaskStore = WorkshopDownloadTaskStore(applicationContext)
                 val deferredTask = deferredTaskStore.find(publishedFileId)
-                if (deferredTask != null && WorkshopDownloadBlocklist.isBlocked(publishedFileId)) {
+                if (deferredTask != null && WorkshopDownloadBlocklist.isBlocked(deferredTask.details.summary)) {
                     cancelBlockedTask(deferredTaskStore, deferredTask, receiver)
                     if (workerThreads.isEmpty()) {
                         stopForegroundCompat()
@@ -244,7 +244,7 @@ class WorkshopDownloadProcessService : Service() {
             }
             return START_NOT_STICKY
         }
-        if (WorkshopDownloadBlocklist.isBlocked(startingTask.publishedFileId)) {
+        if (WorkshopDownloadBlocklist.isBlocked(startingTask.details.summary)) {
             cancelBlockedTask(startingTaskStore, startingTask, receiver)
             if (workerThreads.isEmpty()) {
                 stopForegroundCompat()

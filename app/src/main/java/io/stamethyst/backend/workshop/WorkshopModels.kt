@@ -130,10 +130,19 @@ data class WorkshopSubscriptionResult(
     val subscribedAtMillis: Long,
 )
 
+data class WorkshopUnsubscriptionResult(
+    val publishedFileId: ULong,
+    val appId: UInt,
+    val unsubscribedAtMillis: Long,
+)
+
 class WorkshopSteamLoginRequiredException : IllegalStateException("Steam login is required for this workshop action.")
 
 class WorkshopSubscriptionVerificationException :
     IllegalStateException("Steam accepted the subscribe request but did not add the file to subscriptions.")
+
+class WorkshopUnsubscriptionVerificationException :
+    IllegalStateException("Steam accepted the unsubscribe request but kept the file in subscriptions.")
 
 data class WorkshopCommentThreadContext(
     val ownerId: String,

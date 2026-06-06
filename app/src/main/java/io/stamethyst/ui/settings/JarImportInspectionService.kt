@@ -9,6 +9,7 @@ import io.stamethyst.backend.mods.JarFileIoUtils
 import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.backend.mods.ModManifestRootCompatPatcher
+import io.stamethyst.backend.mods.ReservedCoreModComponents
 import java.io.File
 import java.io.IOException
 import java.util.Locale
@@ -24,11 +25,12 @@ internal data class ModJarInspection(
 )
 
 internal object JarImportInspectionService {
-    internal const val RESERVED_COMPONENT_BASEMOD = "BaseMod"
-    internal const val RESERVED_COMPONENT_STSLIB = "StSLib"
-    internal const val RESERVED_COMPONENT_MTS = "ModTheSpire"
-    internal const val RESERVED_COMPONENT_AMETHYST_RUNTIME_COMPAT = "Amethyst Runtime Compat"
-    internal const val RESERVED_COMPONENT_RAM_SAVER = "Ram Saver"
+    internal const val RESERVED_COMPONENT_BASEMOD = ReservedCoreModComponents.BASEMOD
+    internal const val RESERVED_COMPONENT_STSLIB = ReservedCoreModComponents.STSLIB
+    internal const val RESERVED_COMPONENT_MTS = ReservedCoreModComponents.MTS
+    internal const val RESERVED_COMPONENT_AMETHYST_RUNTIME_COMPAT =
+        ReservedCoreModComponents.AMETHYST_RUNTIME_COMPAT
+    internal const val RESERVED_COMPONENT_RAM_SAVER = ReservedCoreModComponents.RAM_SAVER
     private const val MTS_LOADER_ENTRY = "com/evacipated/cardcrawl/modthespire/Loader.class"
 
     @Throws(IOException::class)
@@ -89,14 +91,7 @@ internal object JarImportInspectionService {
     }
 
     fun resolveReservedComponent(modId: String): String? {
-        return when (ModManager.normalizeModId(modId)) {
-            ModManager.MOD_ID_BASEMOD -> RESERVED_COMPONENT_BASEMOD
-            ModManager.MOD_ID_STSLIB -> RESERVED_COMPONENT_STSLIB
-            "modthespire" -> RESERVED_COMPONENT_MTS
-            ModManager.MOD_ID_AMETHYST_RUNTIME_COMPAT -> RESERVED_COMPONENT_AMETHYST_RUNTIME_COMPAT
-            ModManager.MOD_ID_RAM_SAVER -> RESERVED_COMPONENT_RAM_SAVER
-            else -> null
-        }
+        return ReservedCoreModComponents.resolveDisplayName(modId)
     }
 
     fun isLikelyModTheSpireJar(jarFile: File, displayName: String): Boolean {

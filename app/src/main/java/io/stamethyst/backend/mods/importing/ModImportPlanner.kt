@@ -14,6 +14,7 @@ import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.backend.mods.ModManifestRootCompatPatcher
 import io.stamethyst.backend.mods.MtsLaunchManifestValidator
+import io.stamethyst.backend.mods.ReservedCoreModComponents
 import io.stamethyst.backend.mods.importing.patches.AtlasFilterPatchModule
 import io.stamethyst.backend.mods.importing.patches.DuplicateZipEntryPatchModule
 import io.stamethyst.backend.mods.importing.patches.ImportPatchRegistry
@@ -615,13 +616,7 @@ internal object ModImportPlanner {
     }
 
     private fun resolveReservedComponent(normalizedModId: String): String {
-        return when (ModManager.normalizeModId(normalizedModId)) {
-            ModManager.MOD_ID_BASEMOD -> "BaseMod"
-            ModManager.MOD_ID_STSLIB -> "StSLib"
-            ModManager.MOD_ID_AMETHYST_RUNTIME_COMPAT -> "Amethyst Runtime Compat"
-            "modthespire" -> "ModTheSpire"
-            else -> ""
-        }
+        return ReservedCoreModComponents.resolveDisplayName(normalizedModId).orEmpty()
     }
 
     private fun isLikelyModTheSpireJar(file: File): Boolean {

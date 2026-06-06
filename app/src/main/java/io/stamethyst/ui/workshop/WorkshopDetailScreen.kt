@@ -873,8 +873,10 @@ private fun DetailCommentsCard(
     onPreviousPage: () -> Unit,
     onNextPage: () -> Unit,
 ) {
-    val showInlineLoading = isLoading && details.comments.isEmpty()
-    val showOverlayLoading = isLoading && details.comments.isNotEmpty()
+    val hasNoComments = details.commentCount == 0L
+    val effectiveErrorMessage = errorMessage.takeUnless { hasNoComments }
+    val showInlineLoading = isLoading && details.comments.isEmpty() && !hasNoComments
+    val showOverlayLoading = isLoading && details.comments.isNotEmpty() && !hasNoComments
     val overlayAlpha by animateFloatAsState(
         targetValue = if (showOverlayLoading) 1f else 0f,
         animationSpec = tween(durationMillis = 120),
@@ -901,7 +903,7 @@ private fun DetailCommentsCard(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                errorMessage?.let { message ->
+                effectiveErrorMessage?.let { message ->
                     Surface(
                         color = MaterialTheme.colorScheme.errorContainer,
                         contentColor = MaterialTheme.colorScheme.onErrorContainer,

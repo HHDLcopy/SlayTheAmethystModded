@@ -404,7 +404,13 @@ class WorkshopDownloadProcessService : Service() {
                     }
                     taskStore.appendLog(details.summary.publishedFileId, "正在通过 Steam 创意工坊解析下载内容")
                     sendProgress(receiver, "正在解析下载内容", "Resolving")
-                    details = service.getDetails(details.summary.appId, details.summary.publishedFileId, details.summary)
+                    details = service.getDetails(
+                        appId = details.summary.appId,
+                        publishedFileId = details.summary.publishedFileId,
+                        fallbackSummary = details.summary,
+                        includeCommunityData = false,
+                        includeDependencyData = false,
+                    )
                     taskStore.update(details.summary.publishedFileId) { it.copy(details = details) }
                     taskStore.appendLog(
                         details.summary.publishedFileId,
@@ -524,31 +530,44 @@ class WorkshopDownloadProcessService : Service() {
                                     "下载完成"
                                 }
                                 val autoImportEnabled = LauncherPreferences.isWorkshopAutoImportEnabled(applicationContext)
-                                val preserveExistingUntilAutoImportFinishes = autoImportEnabled && existingRecord.hasInstalledJar()
+                                val hasMultipleJarCandidates = jarArtifacts.size > 1
+                                val canAutoImportDownloadedJars = autoImportEnabled && !hasMultipleJarCandidates
+                                val preserveExistingUntilAutoImportFinishes =
+                                    canAutoImportDownloadedJars && existingRecord.hasInstalledJar()
                                 val downloadedJarPaths = jarArtifacts.map { it.relativePath }
                                 var downloadedRecord = service.createInstalledRecord(details, jarArtifacts.first())
                                     .copy(localJarPaths = downloadedJarPaths)
+                                if (hasMultipleJarCandidates) {
+                                    downloadedRecord = downloadedRecord.copy(
+                                        statusText = "检测到 ${jarArtifacts.size} 个 jar，请选择要导入的文件",
+                                    )
+                                }
                                 if (!preserveExistingUntilAutoImportFinishes) {
                                     metadataStore.upsert(downloadedRecord)
+                                }
+                                val importStageMessage = when {
+                                    canAutoImportDownloadedJars -> "下载完成，准备导入修补"
+                                    hasMultipleJarCandidates -> "下载完成，检测到 ${jarArtifacts.size} 个 jar，等待选择导入文件"
+                                    else -> "下载完成，等待手动导入修补"
                                 }
                                 taskStore.update(details.summary.publishedFileId) {
                                     it.copy(
                                         status = WorkshopDownloadTaskStatus.Downloading,
-                                        message = if (autoImportEnabled) "下载完成，准备导入修补" else "下载完成，正在处理导入修补",
-                                        progressPercent = if (autoImportEnabled) 0 else 100,
+                                        message = importStageMessage,
+                                        progressPercent = if (canAutoImportDownloadedJars) 0 else 100,
                                         downloadedBytes = (it.totalBytes ?: it.downloadedBytes).coerceAtLeast(it.downloadedBytes),
                                         completedFiles = it.totalFiles ?: it.completedFiles,
                                         updatedAtMillis = System.currentTimeMillis(),
                                         preservePartialDownload = false,
                                     )
                                 }
-                                taskStore.appendLog(details.summary.publishedFileId, "下载文件已落盘，进入导入修补阶段")
+                                taskStore.appendLog(details.summary.publishedFileId, importStageMessage)
                                 val previewImagePath = downloadPreviewImageIfNeeded(service, metadataStore, details)
                                 downloadedRecord = downloadedRecord.copy(localPreviewImagePath = previewImagePath)
                                 if (!preserveExistingUntilAutoImportFinishes) {
                                     metadataStore.upsert(downloadedRecord)
                                 }
-                                if (autoImportEnabled) {
+                                if (canAutoImportDownloadedJars) {
                                     val jarFiles = jarArtifacts.map { artifact -> File(outputDir, artifact.relativePath) }
                                     var lastAutoImportProgressMessage = ""
                                     when (val importResult = WorkshopAutoImporter.importDownloadedJars(
@@ -604,7 +623,11 @@ class WorkshopDownloadProcessService : Service() {
                                         }
                                     }
                                 } else {
-                                    message = downloadedMessage
+                                    message = if (hasMultipleJarCandidates) {
+                                        "下载完成，检测到 ${jarArtifacts.size} 个 jar，请在模组页选择要导入的文件"
+                                    } else {
+                                        downloadedMessage
+                                    }
                                     downloadedRecord
                                 }
                             } else {
@@ -945,22 +968,35 @@ class WorkshopDownloadProcessService : Service() {
         if (existingRecord?.allLocalJarPaths()?.any { path -> File(path).isAbsolute && File(path).isFile } == true) {
             return
         }
+        val statusText = if (jarArtifacts.size > 1) {
+            "检测到 ${jarArtifacts.size} 个 jar，请选择要导入的文件"
+        } else {
+            "等待修补"
+        }
         metadataStore.upsert(
             service.createInstalledRecord(details, jarArtifacts.first())
-                .copy(localJarPaths = jarArtifacts.map { it.relativePath })
+                .copy(
+                    localJarPaths = jarArtifacts.map { it.relativePath },
+                    statusText = statusText,
+                )
         )
+        val message = if (jarArtifacts.size > 1) {
+            "下载完成，检测到 ${jarArtifacts.size} 个 jar，等待选择导入文件"
+        } else {
+            "下载完成，准备导入修补"
+        }
         taskStore.update(details.summary.publishedFileId) {
             it.copy(
                 status = WorkshopDownloadTaskStatus.Downloading,
-                message = "下载完成，准备导入修补",
-                progressPercent = 0,
+                message = message,
+                progressPercent = if (jarArtifacts.size > 1) 100 else 0,
                 downloadedBytes = (it.totalBytes ?: it.downloadedBytes).coerceAtLeast(it.downloadedBytes),
                 completedFiles = it.totalFiles ?: it.completedFiles,
                 updatedAtMillis = System.currentTimeMillis(),
                 preservePartialDownload = false,
             )
         }
-        taskStore.appendLog(details.summary.publishedFileId, "下载文件已落盘，进入导入修补阶段")
+        taskStore.appendLog(details.summary.publishedFileId, message)
     }
 
     private fun WorkshopAutoImportProgress.toDownloadStatusMessage(): String {

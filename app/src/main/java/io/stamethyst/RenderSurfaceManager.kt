@@ -614,9 +614,24 @@ class RenderSurfaceManager(
         applyDisplayCutoutMode()
         WindowCompat.setDecorFitsSystemWindows(activity.window, false)
         val controller = WindowCompat.getInsetsController(activity.window, activity.window.decorView)
-        controller.hide(WindowInsetsCompat.Type.statusBars() or WindowInsetsCompat.Type.navigationBars())
         controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        controller.hide(WindowInsetsCompat.Type.systemBars())
+        applyLegacyImmersiveMode()
         renderRoot?.let { ViewCompat.requestApplyInsets(it) }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun applyLegacyImmersiveMode() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            return
+        }
+        activity.window.decorView.systemUiVisibility =
+            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                View.SYSTEM_UI_FLAG_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
     }
 
     private fun applyViewportLayout(insets: WindowInsetsCompat? = lastWindowInsets) {

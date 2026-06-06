@@ -53,6 +53,10 @@ import io.stamethyst.backend.update.UpdateMirrorManager
 import io.stamethyst.backend.workshop.WorkshopDownloadTaskRecord
 import io.stamethyst.backend.workshop.WorkshopDownloadTaskStatus
 import io.stamethyst.backend.workshop.WorkshopDownloadTaskStore
+import io.stamethyst.backend.workshop.WorkshopAutoImporter
+import io.stamethyst.backend.workshop.WorkshopAutoImportProgress
+import io.stamethyst.backend.workshop.WorkshopAutoImportResult
+import io.stamethyst.backend.workshop.WorkshopInstalledContentKind
 import io.stamethyst.backend.workshop.WorkshopInstalledModRecord
 import io.stamethyst.backend.workshop.WorkshopItemDetails
 import io.stamethyst.backend.workshop.WorkshopItemSummary
@@ -103,6 +107,22 @@ class MainScreenViewModel : ViewModel() {
         val title: String,
         val message: String,
         val recovery: String
+    )
+
+    data class WorkshopJarSelectionCandidate(
+        val id: String,
+        val displayPath: String,
+        val absolutePath: String,
+        val sizeBytes: Long,
+    )
+
+    data class PendingWorkshopJarSelection(
+        val requestId: Long,
+        val appId: UInt,
+        val publishedFileId: ULong,
+        val title: String,
+        val candidates: List<WorkshopJarSelectionCandidate>,
+        val details: WorkshopItemDetails? = null,
     )
 
     data class CrashRecoveryState(
@@ -176,6 +196,7 @@ class MainScreenViewModel : ViewModel() {
         val favoriteModKeys: Set<String> = emptySet(),
         val showModFileNameRemovalNotice: Boolean = false,
         val steamCloudIndicator: SteamCloudIndicatorUi = SteamCloudIndicatorUi(),
+        val pendingWorkshopJarSelection: PendingWorkshopJarSelection? = null,
     )
 
     sealed interface Effect {
@@ -227,6 +248,7 @@ class MainScreenViewModel : ViewModel() {
     private var modNameMigrationInFlight = false
     private var modNameMigrationInsufficientNoticeShown = false
     private var modNameMigrationFailureSuppressed = false
+    private var nextWorkshopJarSelectionRequestId = 1L
 
     var uiState by mutableStateOf(UiState())
         private set
@@ -284,6 +306,7 @@ class MainScreenViewModel : ViewModel() {
         )
         lastFullRefreshAtElapsedMs = SystemClock.elapsedRealtime()
         maybeStartStoredModNameMigration(host)
+        maybePromptPendingWorkshopJarSelection(host)
     }
 
     fun refreshIfStale(host: Activity) {
@@ -612,27 +635,355 @@ class MainScreenViewModel : ViewModel() {
     fun onPatchWorkshopMod(host: Activity, mod: ModItemUi) {
         val workshop = mod.workshop ?: return
         val record = WorkshopMetadataStore(host).findByPublishedFileId(workshop.appId, workshop.publishedFileId)
-        val jars = (record?.allLocalJarPaths().orEmpty().ifEmpty { listOf(workshop.localJarPath) })
-            .map { path ->
-                val file = File(path)
-                if (file.isAbsolute) file else File(host.filesDir, "workshop/${workshop.appId}/${workshop.publishedFileId}/$path")
-            }
-            .filter { it.isFile }
-            .distinctBy { it.absolutePath }
-        if (jars.isEmpty()) {
+        val jarCandidates = resolveWorkshopJarCandidates(host, workshop, record)
+        val details = WorkshopDownloadTaskStore(host).find(workshop.publishedFileId)?.details
+            ?: record?.toWorkshopItemDetails()
+        if (jarCandidates.isEmpty()) {
             _effects.tryEmit(Effect.ShowSnackbar(UiText.DynamicString("未找到已下载的工坊 jar 文件")))
             return
         }
-        val uris = jars.map { jar ->
-            androidx.core.content.FileProvider.getUriForFile(host, "${host.packageName}.fileprovider", jar)
+        if (jarCandidates.size > 1) {
+            uiState = uiState.copy(
+                pendingWorkshopJarSelection = createPendingWorkshopJarSelection(
+                    appId = workshop.appId,
+                    publishedFileId = workshop.publishedFileId,
+                    title = mod.name.ifBlank { record?.title ?: workshop.publishedFileId.toString() },
+                    candidates = jarCandidates,
+                    details = details,
+                )
+            )
+            return
         }
-        io.stamethyst.ui.modimport.ModImportRequestBus.requestImport(
-            uris = uris,
-            workshopSource = io.stamethyst.ui.modimport.WorkshopImportSource(
+        startWorkshopJarMarketImport(
+            host = host,
+            pending = createPendingWorkshopJarSelection(
                 appId = workshop.appId,
                 publishedFileId = workshop.publishedFileId,
-            )
+                title = mod.name.ifBlank { record?.title ?: workshop.publishedFileId.toString() },
+                candidates = jarCandidates,
+                details = details,
+            ),
+            selectedFiles = jarCandidates.map { it.file },
         )
+    }
+
+    fun confirmWorkshopJarSelection(
+        host: Activity,
+        requestId: Long,
+        selectedCandidateIds: Set<String>,
+    ) {
+        val pending = uiState.pendingWorkshopJarSelection
+            ?.takeIf { it.requestId == requestId }
+            ?: return
+        if (selectedCandidateIds.isEmpty()) {
+            _effects.tryEmit(Effect.ShowSnackbar(UiText.DynamicString("请选择至少一个 jar 文件")))
+            return
+        }
+        val selectedCandidates = pending.candidates.filter { candidate -> candidate.id in selectedCandidateIds }
+        val selectedFiles = selectedCandidates
+            .map { candidate -> File(candidate.absolutePath) }
+            .distinctBy { file -> file.absolutePath }
+        if (selectedCandidates.size != selectedCandidateIds.size || selectedFiles.isEmpty() || selectedFiles.any { file -> !file.isFile }) {
+            markWorkshopJarSelectionNotImported(
+                host = host,
+                pending = pending,
+                statusText = "已下载但未导入：选择的 jar 文件不可用",
+            )
+            return
+        }
+        startWorkshopJarMarketImport(
+            host = host,
+            pending = pending,
+            selectedFiles = selectedFiles,
+        )
+    }
+
+    private data class ResolvedWorkshopJarCandidate(
+        val file: File,
+        val displayPath: String,
+        val sizeBytes: Long,
+    ) {
+        val id: String = file.absolutePath
+    }
+
+    private fun resolveWorkshopJarCandidates(
+        host: Activity,
+        workshop: WorkshopModUi,
+        record: WorkshopInstalledModRecord?,
+    ): List<ResolvedWorkshopJarCandidate> {
+        return resolveWorkshopJarCandidates(
+            host = host,
+            appId = workshop.appId,
+            publishedFileId = workshop.publishedFileId,
+            localJarPaths = record?.allLocalJarPaths().orEmpty().ifEmpty { listOf(workshop.localJarPath) },
+        )
+    }
+
+    private fun resolveWorkshopJarCandidates(
+        host: Activity,
+        record: WorkshopInstalledModRecord,
+    ): List<ResolvedWorkshopJarCandidate> {
+        return resolveWorkshopJarCandidates(
+            host = host,
+            appId = record.appId,
+            publishedFileId = record.publishedFileId,
+            localJarPaths = record.allLocalJarPaths(),
+        )
+    }
+
+    private fun resolveWorkshopJarCandidates(
+        host: Activity,
+        appId: UInt,
+        publishedFileId: ULong,
+        localJarPaths: List<String>,
+    ): List<ResolvedWorkshopJarCandidate> {
+        val outputDir = File(host.filesDir, "workshop/$appId/$publishedFileId")
+        return localJarPaths
+            .asSequence()
+            .map { path -> path.trim() }
+            .filter { path -> path.isNotEmpty() }
+            .mapNotNull { path ->
+                val pathFile = File(path)
+                val file = if (pathFile.isAbsolute) {
+                    pathFile
+                } else {
+                    File(outputDir, path)
+                }.absoluteFile
+                if (!file.isFile) {
+                    null
+                } else {
+                    ResolvedWorkshopJarCandidate(
+                        file = file,
+                        displayPath = if (pathFile.isAbsolute) file.name else path,
+                        sizeBytes = file.length().coerceAtLeast(0L),
+                    )
+                }
+            }
+            .distinctBy { candidate -> candidate.file.absolutePath }
+            .toList()
+    }
+
+    private fun createPendingWorkshopJarSelection(
+        appId: UInt,
+        publishedFileId: ULong,
+        title: String,
+        candidates: List<ResolvedWorkshopJarCandidate>,
+        details: WorkshopItemDetails?,
+    ): PendingWorkshopJarSelection {
+        return PendingWorkshopJarSelection(
+            requestId = nextWorkshopJarSelectionRequestId++,
+            appId = appId,
+            publishedFileId = publishedFileId,
+            title = title,
+            candidates = candidates.map { candidate ->
+                WorkshopJarSelectionCandidate(
+                    id = candidate.id,
+                    displayPath = candidate.displayPath,
+                    absolutePath = candidate.file.absolutePath,
+                    sizeBytes = candidate.sizeBytes,
+                )
+            },
+            details = details,
+        )
+    }
+
+    private fun maybePromptPendingWorkshopJarSelection(host: Activity) {
+        if (uiState.pendingWorkshopJarSelection != null || uiState.busy) return
+        val metadataStore = WorkshopMetadataStore(host)
+        val records = metadataStore.load()
+        val taskStore = WorkshopDownloadTaskStore(host)
+        records.firstNotNullOfOrNull { record ->
+            if (!record.shouldAutoPromptWorkshopJarSelection()) return@firstNotNullOfOrNull null
+            val candidates = resolveWorkshopJarCandidates(host, record)
+            if (candidates.size <= 1) return@firstNotNullOfOrNull null
+            val details = taskStore.find(record.publishedFileId)?.details ?: record.toWorkshopItemDetails()
+            createPendingWorkshopJarSelection(
+                appId = record.appId,
+                publishedFileId = record.publishedFileId,
+                title = record.title.ifBlank { record.publishedFileId.toString() },
+                candidates = candidates,
+                details = details,
+            )
+        }?.let { pending ->
+            uiState = uiState.copy(pendingWorkshopJarSelection = pending)
+        }
+    }
+
+    private fun startWorkshopJarMarketImport(
+        host: Activity,
+        pending: PendingWorkshopJarSelection,
+        selectedFiles: List<File>,
+    ) {
+        val importFiles = selectedFiles
+            .filter { file -> file.isFile }
+            .distinctBy { file -> file.absolutePath }
+        if (importFiles.isEmpty()) {
+            markWorkshopJarSelectionNotImported(
+                host = host,
+                pending = pending,
+                statusText = "已下载但未导入：选择的 jar 文件不可用",
+            )
+            return
+        }
+        uiState = uiState.copy(pendingWorkshopJarSelection = null)
+        setBusy(
+            busy = true,
+            message = UiText.DynamicString("正在导入市场模组：${pending.title}"),
+            operation = UiBusyOperation.MOD_IMPORT,
+            progressPercent = 0,
+        )
+        workshopUpdateExecutor.execute {
+            val appContext = host.applicationContext
+            val metadataStore = WorkshopMetadataStore(appContext)
+            val taskStore = WorkshopDownloadTaskStore(appContext)
+            try {
+            val existingRecord = metadataStore.findByPublishedFileId(
+                appId = pending.appId,
+                publishedFileId = pending.publishedFileId,
+            )
+            val existingTask = taskStore.find(pending.publishedFileId)
+            val details = pending.details
+                ?: existingTask?.details
+                ?: existingRecord?.toWorkshopItemDetails()
+                ?: pending.toWorkshopItemDetails()
+            val startMessage = "正在导入修补（0%）：等待开始"
+            metadataStore.updateState(
+                appId = pending.appId,
+                publishedFileId = pending.publishedFileId,
+                state = WorkshopModCardState.Downloading,
+                statusText = startMessage,
+            )
+            taskStore.upsertOrUpdateWorkshopImportTask(
+                details = details,
+                status = WorkshopDownloadTaskStatus.Downloading,
+                message = startMessage,
+                progressPercent = 0,
+            )
+            taskStore.appendLog(pending.publishedFileId, "用户已选择 ${importFiles.size} 个 jar，进入市场导入修补")
+            host.runOnUiThread { refresh(host) }
+            var lastProgressMessage = ""
+            val importResult = WorkshopAutoImporter.importDownloadedJars(
+                context = appContext,
+                details = details,
+                jarFiles = importFiles,
+                onProgress = { progress ->
+                    val progressMessage = progress.toWorkshopImportStatusMessage()
+                    taskStore.upsertOrUpdateWorkshopImportTask(
+                        details = details,
+                        status = WorkshopDownloadTaskStatus.Downloading,
+                        message = progressMessage,
+                        progressPercent = progress.percent.coerceIn(0, 100),
+                    )
+                    metadataStore.updateState(
+                        appId = pending.appId,
+                        publishedFileId = pending.publishedFileId,
+                        state = WorkshopModCardState.Downloading,
+                        statusText = progressMessage,
+                    )
+                    if (progressMessage != lastProgressMessage) {
+                        taskStore.appendLog(pending.publishedFileId, progressMessage)
+                        lastProgressMessage = progressMessage
+                    }
+                    host.runOnUiThread {
+                        setBusy(
+                            busy = true,
+                            message = UiText.DynamicString(progressMessage),
+                            operation = UiBusyOperation.MOD_IMPORT,
+                            progressPercent = progress.percent.coerceIn(0, 100),
+                        )
+                    }
+                },
+            )
+            when (importResult) {
+                is WorkshopAutoImportResult.Imported -> {
+                    val importedSummary = importResult.formatImportedSummary()
+                    val message = "下载完成，已导入 $importedSummary"
+                    metadataStore.markPatched(
+                        appId = pending.appId,
+                        publishedFileId = pending.publishedFileId,
+                        localJarPaths = importResult.storagePaths,
+                        statusText = "已安装 $importedSummary",
+                    )
+                    cleanWorkshopDownloadedContent(appContext.filesDir, pending.appId, pending.publishedFileId)
+                    taskStore.upsertOrUpdateWorkshopImportTask(
+                        details = details,
+                        status = WorkshopDownloadTaskStatus.Completed,
+                        message = message,
+                        progressPercent = 100,
+                    )
+                    taskStore.appendLog(pending.publishedFileId, message)
+                    host.runOnUiThread {
+                        setBusy(false, null)
+                        _effects.tryEmit(Effect.ShowSnackbar(UiText.DynamicString("已导入 $importedSummary")))
+                        refresh(host)
+                    }
+                }
+                is WorkshopAutoImportResult.Failed -> {
+                    val message = "已下载但未导入：市场导入失败：${importResult.message}"
+                    metadataStore.updateState(
+                        appId = pending.appId,
+                        publishedFileId = pending.publishedFileId,
+                        state = WorkshopModCardState.ImportedUnpatched,
+                        statusText = message,
+                    )
+                    taskStore.upsertOrUpdateWorkshopImportTask(
+                        details = details,
+                        status = WorkshopDownloadTaskStatus.Completed,
+                        message = message,
+                        progressPercent = 100,
+                    )
+                    taskStore.appendLog(pending.publishedFileId, message)
+                    host.runOnUiThread {
+                        setBusy(false, null)
+                        _effects.tryEmit(Effect.ShowSnackbar(UiText.DynamicString(message)))
+                        refresh(host)
+                    }
+                }
+            }
+            } catch (error: Throwable) {
+                val message = "已下载但未导入：市场导入异常：${error.message ?: error.javaClass.simpleName}"
+                val details = pending.details
+                    ?: taskStore.find(pending.publishedFileId)?.details
+                    ?: pending.toWorkshopItemDetails()
+                runCatching {
+                    metadataStore.updateState(
+                        appId = pending.appId,
+                        publishedFileId = pending.publishedFileId,
+                        state = WorkshopModCardState.ImportedUnpatched,
+                        statusText = message,
+                    )
+                    taskStore.upsertOrUpdateWorkshopImportTask(
+                        details = details,
+                        status = WorkshopDownloadTaskStatus.Completed,
+                        message = message,
+                        progressPercent = 100,
+                    )
+                    taskStore.appendLog(pending.publishedFileId, message)
+                    taskStore.appendLog(pending.publishedFileId, error.stackTraceToString())
+                }
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    _effects.tryEmit(Effect.ShowSnackbar(UiText.DynamicString(message)))
+                    refresh(host)
+                }
+            }
+        }
+    }
+
+    private fun markWorkshopJarSelectionNotImported(
+        host: Activity,
+        pending: PendingWorkshopJarSelection,
+        statusText: String,
+    ) {
+        WorkshopMetadataStore(host).updateState(
+            appId = pending.appId,
+            publishedFileId = pending.publishedFileId,
+            state = WorkshopModCardState.ImportedUnpatched,
+            statusText = statusText,
+        )
+        uiState = uiState.copy(pendingWorkshopJarSelection = null)
+        _effects.tryEmit(Effect.ShowSnackbar(UiText.DynamicString(statusText)))
+        refresh(host)
     }
 
     fun onRetryWorkshopDownload(host: Activity, mod: ModItemUi) {
@@ -703,7 +1054,12 @@ class MainScreenViewModel : ViewModel() {
             try {
                 val details = runBlocking {
                     WorkshopService(host.applicationContext)
-                        .getDetails(record.appId, record.publishedFileId)
+                        .getDetails(
+                            appId = record.appId,
+                            publishedFileId = record.publishedFileId,
+                            includeCommunityData = false,
+                            includeDependencyData = false,
+                        )
                 }
                 val task = details.toWorkshopDownloadTaskRecord(message = "等待更新")
                 taskStore.upsert(task)
@@ -804,6 +1160,111 @@ class MainScreenViewModel : ViewModel() {
             errorMessage = "",
             errorStackTrace = "",
         )
+    }
+
+    private fun WorkshopInstalledModRecord.toWorkshopItemDetails(): WorkshopItemDetails {
+        return WorkshopItemDetails(
+            summary = WorkshopItemSummary(
+                appId = appId,
+                publishedFileId = publishedFileId,
+                title = title,
+                previewUrl = previewUrl,
+                description = description,
+                fileSizeBytes = 0L,
+                updatedAtMillis = updatedAtMillis,
+            ),
+            dependencies = dependencies,
+        )
+    }
+
+    private fun PendingWorkshopJarSelection.toWorkshopItemDetails(): WorkshopItemDetails {
+        return WorkshopItemDetails(
+            summary = WorkshopItemSummary(
+                appId = appId,
+                publishedFileId = publishedFileId,
+                title = title,
+                previewUrl = "",
+                description = "",
+            ),
+        )
+    }
+
+    private fun WorkshopInstalledModRecord.shouldAutoPromptWorkshopJarSelection(): Boolean {
+        return contentKind == WorkshopInstalledContentKind.JarMod &&
+            cardState == WorkshopModCardState.ImportedUnpatched &&
+            statusText.contains("选择要导入")
+    }
+
+    private fun WorkshopDownloadTaskStore.upsertOrUpdateWorkshopImportTask(
+        details: WorkshopItemDetails,
+        status: WorkshopDownloadTaskStatus,
+        message: String,
+        progressPercent: Int?,
+    ) {
+        val publishedFileId = details.summary.publishedFileId
+        val existing = find(publishedFileId)
+        if (existing == null) {
+            upsert(
+                WorkshopDownloadTaskRecord(
+                    publishedFileId = publishedFileId,
+                    title = details.summary.title,
+                    status = status,
+                    message = message,
+                    details = details,
+                    progressPercent = progressPercent,
+                    downloadedBytes = details.summary.fileSizeBytes.coerceAtLeast(0L),
+                    totalBytes = details.summary.fileSizeBytes.takeIf { it > 0L },
+                    completedFiles = null,
+                    completedChunks = null,
+                    preservePartialDownload = false,
+                )
+            )
+        } else {
+            update(publishedFileId) { task ->
+                task.copy(
+                    status = status,
+                    message = message,
+                    progressPercent = progressPercent,
+                    downloadedBytes = (task.totalBytes ?: task.downloadedBytes).coerceAtLeast(task.downloadedBytes),
+                    completedFiles = task.totalFiles ?: task.completedFiles,
+                    updatedAtMillis = System.currentTimeMillis(),
+                    preservePartialDownload = false,
+                )
+            }
+        }
+    }
+
+    private fun WorkshopAutoImportProgress.toWorkshopImportStatusMessage(): String {
+        val progressText = if (totalSteps > 0) {
+            val step = when {
+                percent >= 100 -> totalSteps
+                currentStep < totalSteps -> currentStep + 1
+                else -> currentStep
+            }.coerceIn(1, totalSteps)
+            "（$step/$totalSteps，${percent.coerceIn(0, 100)}%）"
+        } else {
+            "（${percent.coerceIn(0, 100)}%）"
+        }
+        return "正在导入修补$progressText：$message"
+    }
+
+    private fun WorkshopAutoImportResult.Imported.formatImportedSummary(): String {
+        val names = modNames
+        return when {
+            names.isEmpty() -> "${storagePaths.size} 个模组"
+            names.size == 1 -> names.single()
+            else -> "${names.size} 个模组：${names.joinToString("、")}"
+        }
+    }
+
+    private fun cleanWorkshopDownloadedContent(filesDir: File, appId: UInt, publishedFileId: ULong) {
+        val outputDir = File(filesDir, "workshop/$appId/$publishedFileId")
+        if (!outputDir.isDirectory) return
+        outputDir.listFiles().orEmpty().forEach { file ->
+            if (!file.name.startsWith("preview.", ignoreCase = true)) {
+                file.deleteRecursively()
+            }
+        }
     }
 
     fun addModLaunchProfile(host: Activity, name: String) {

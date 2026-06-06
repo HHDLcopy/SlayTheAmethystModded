@@ -2271,7 +2271,7 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="workshop_action_retry_detail">Retry loading</string>
     <string name="workshop_detail_loading">Loading mod details</string>
     <string name="workshop_comments_summary_loading">Comments are loading. 5 comments are shown per page.</string>
-    <string name="workshop_comments_summary_empty">This mod has no public comments yet.</string>
+    <string name="workshop_comments_summary_empty">No comments yet.</string>
     <string name="workshop_comments_summary_pages">Page %1$d / %2$d. Steam has %3$s comments.</string>
     <string name="workshop_comments_summary_page">Page %1$d. Steam has %2$s comments.</string>
     <string name="workshop_comments_summary_loaded">Page %1$d. Loaded %2$d public comments.</string>
@@ -2299,6 +2299,10 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="main_mod_workshop_origin_message">This mod was downloaded from the market and will be checked for updates automatically.</string>
     <string name="main_mod_workshop_origin_open_details">View market details</string>
     <string name="main_mod_update_available">Update available</string>
+    <string name="main_mod_workshop_jar_selection_title">Choose jars to import</string>
+    <string name="main_mod_workshop_jar_selection_message">%1$s contains multiple jar files. Select the files to import.</string>
+    <string name="main_mod_workshop_jar_selection_empty">Select at least one jar file.</string>
+    <string name="main_mod_workshop_jar_selection_confirm">Import selected</string>
     <string name="main_mod_workshop_action_install">Install</string>
     <string name="main_mod_workshop_action_continue_download">Continue download</string>
     <string name="main_mod_workshop_action_redownload">Download again</string>

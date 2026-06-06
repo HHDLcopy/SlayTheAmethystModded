@@ -371,6 +371,100 @@ class WorkshopServiceTest {
     }
 
     @Test
+    fun getDetailsTreatsZeroCommentCountWithoutThreadContextAsEmptyComments() {
+        detailsServer.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    {
+                      "response": {
+                        "publishedfiledetails": [
+                          {
+                            "publishedfileid": "2906539837",
+                            "title": "Caffé In-Spire",
+                            "consumer_app_id": 646570,
+                            "description": "Caffé In-Spire."
+                          }
+                        ]
+                      }
+                    }
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+        browseServer.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    <div class="workshopItemDescription" id="highlightContent">No comments yet</div>
+                    <span id="commentthread_PublishedFile_Public_76561198808881876_2906539837_totalcount">0 条留言</span>
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+
+        val service = newService()
+        val details = runBlocking { service.getDetails(646570u, 2906539837uL) }
+
+        assertEquals("No comments yet", details.summary.description)
+        assertEquals(0L, details.commentCount)
+        assertEquals(null, details.commentThreadContext)
+        assertEquals(1, details.commentTotalPages)
+        assertFalse(details.hasNextCommentPage)
+    }
+
+    @Test
+    fun getDetailsParsesZeroCommentCountFromWorkshopTab() {
+        detailsServer.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    {
+                      "response": {
+                        "publishedfiledetails": [
+                          {
+                            "publishedfileid": "3736782029",
+                            "title": "Removed Mod",
+                            "consumer_app_id": 646570,
+                            "description": "This item has been removed."
+                          }
+                        ]
+                      }
+                    }
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+        browseServer.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    <div class="sectionTabs item responsive_hidden">
+                        <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=3736782029" class="sectionTab active description"><span>Description</span></a>
+                        <a href="https://steamcommunity.com/sharedfiles/filedetails/discussions/3736782029" class="sectionTab discussions"><span>Discussions<span class="tabCount">0</span></span></a>
+                        <a href="https://steamcommunity.com/sharedfiles/filedetails/comments/3736782029" class="sectionTab comments"><span>Comments<span class="tabCount">0</span></span></a>
+                        <a href="https://steamcommunity.com/sharedfiles/filedetails/changelog/3736782029" class="sectionTab changelog"><span>Change Notes</span></a>
+                    </div>
+                    <div class="workshopItemDescription" id="highlightContent">Removed workshop item</div>
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+
+        val service = newService()
+        val details = runBlocking { service.getDetails(646570u, 3736782029uL) }
+
+        assertEquals(0L, details.commentCount)
+        assertEquals(null, details.commentThreadContext)
+        assertEquals(1, details.commentTotalPages)
+        assertFalse(details.hasNextCommentPage)
+    }
+
+    @Test
     fun getDetailsKeepsFullDescriptionAroundNestedMarkup() {
         detailsServer.enqueue(
             MockResponse.Builder()
@@ -487,6 +581,179 @@ class WorkshopServiceTest {
         assertEquals("76561198808881876", details.commentThreadContext?.ownerId)
         assertEquals("2906539837", details.commentThreadContext?.featureId)
         assertEquals(2, browseServer.requestCount)
+    }
+
+    @Test
+    fun getDetailsDoesNotRetryRateLimitedCommunityPageButKeepsLaterRequests() {
+        detailsServer.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    {
+                      "response": {
+                        "publishedfiledetails": [
+                          {
+                            "publishedfileid": "2906539837",
+                            "title": "Caffé In-Spire",
+                            "consumer_app_id": 646570,
+                            "description": "API description"
+                          }
+                        ]
+                      }
+                    }
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+        detailsServer.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    {
+                      "response": {
+                        "publishedfiledetails": [
+                          {
+                            "publishedfileid": "2906539838",
+                            "title": "Second Mod",
+                            "consumer_app_id": 646570,
+                            "description": "Second API description"
+                          }
+                        ]
+                      }
+                    }
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+        browseServer.enqueue(MockResponse.Builder().code(429).body("too many requests").build())
+        browseServer.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    <script>
+                      InitializeCommentThread( "PublishedFile_Public", "PublishedFile_Public_76561198808881876_2906539838", {"feature":"2906539838","feature2":-1,"owner":"76561198808881876","total_count":34,"start":0,"pagesize":10}, 'https://steamcommunity.com/comment/PublishedFile_Public/', 40 );
+                    </script>
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+
+        val service = newService()
+        val first = runBlocking { service.getDetails(646570u, 2906539837uL) }
+        val second = runBlocking { service.getDetails(646570u, 2906539838uL) }
+
+        assertEquals(null, first.commentThreadContext)
+        assertEquals("76561198808881876", second.commentThreadContext?.ownerId)
+        assertEquals("2906539838", second.commentThreadContext?.featureId)
+        assertEquals(2, browseServer.requestCount)
+        assertEquals(2, detailsServer.requestCount)
+    }
+
+    @Test
+    fun getDetailsReusesCommunityPageForRepeatedDetailsLoads() {
+        repeat(2) {
+            detailsServer.enqueue(
+                MockResponse.Builder()
+                    .code(200)
+                    .body(
+                        """
+                        {
+                          "response": {
+                            "publishedfiledetails": [
+                              {
+                                "publishedfileid": "2906539837",
+                                "title": "Caffé In-Spire",
+                                "consumer_app_id": 646570,
+                                "description": "API description"
+                              }
+                            ]
+                          }
+                        }
+                        """.trimIndent(),
+                    )
+                    .build(),
+            )
+        }
+        browseServer.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    <script>
+                      InitializeCommentThread( "PublishedFile_Public", "PublishedFile_Public_76561198808881876_2906539837", {"feature":"2906539837","feature2":-1,"owner":"76561198808881876","total_count":34,"start":0,"pagesize":10}, 'https://steamcommunity.com/comment/PublishedFile_Public/', 40 );
+                    </script>
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+
+        val service = newService()
+        val first = runBlocking { service.getDetails(646570u, 2906539837uL) }
+        val second = runBlocking { service.getDetails(646570u, 2906539837uL) }
+
+        assertEquals("76561198808881876", first.commentThreadContext?.ownerId)
+        assertEquals("76561198808881876", second.commentThreadContext?.ownerId)
+        assertEquals(1, browseServer.requestCount)
+        assertEquals(2, detailsServer.requestCount)
+    }
+
+    @Test
+    fun getDetailsCanSkipCommunityPageForMetadataOnlyCalls() {
+        detailsServer.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    {
+                      "response": {
+                        "publishedfiledetails": [
+                          {
+                            "publishedfileid": "2906539837",
+                            "title": "Caffé In-Spire",
+                            "consumer_app_id": 646570,
+                            "description": "API description",
+                            "children": [
+                              { "publishedfileid": "1605833019" }
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+        browseServer.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    <script>
+                      InitializeCommentThread( "PublishedFile_Public", "PublishedFile_Public_76561198808881876_2906539837", {"feature":"2906539837","feature2":-1,"owner":"76561198808881876","total_count":34,"start":0,"pagesize":10}, 'https://steamcommunity.com/comment/PublishedFile_Public/', 40 );
+                    </script>
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+
+        val service = newService()
+        val details = runBlocking {
+            service.getDetails(
+                appId = 646570u,
+                publishedFileId = 2906539837uL,
+                includeCommunityData = false,
+                includeDependencyData = false,
+            )
+        }
+
+        assertEquals("API description", details.summary.description)
+        assertEquals(null, details.commentThreadContext)
+        assertEquals(emptyList<WorkshopItemSummary>(), details.dependencies)
+        assertEquals(0, browseServer.requestCount)
+        assertEquals(1, detailsServer.requestCount)
     }
 
     @Test

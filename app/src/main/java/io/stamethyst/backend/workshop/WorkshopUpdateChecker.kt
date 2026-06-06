@@ -11,7 +11,12 @@ internal class WorkshopUpdateChecker(context: Context) {
         var failedCount = 0
         store.list().forEach { record ->
             runCatching {
-                val details = service.getDetails(record.appId, record.publishedFileId)
+                val details = service.getDetails(
+                    appId = record.appId,
+                    publishedFileId = record.publishedFileId,
+                    includeCommunityData = false,
+                    includeDependencyData = false,
+                )
                 WorkshopUpdateCheckResult(
                     appId = record.appId,
                     publishedFileId = record.publishedFileId,

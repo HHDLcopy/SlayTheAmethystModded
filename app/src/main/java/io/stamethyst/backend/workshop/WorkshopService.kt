@@ -9,8 +9,10 @@ import io.stamethyst.ui.preferences.LauncherPreferences
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.util.LinkedHashMap
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -67,6 +69,9 @@ internal class WorkshopService(
         .callTimeout(8, TimeUnit.SECONDS)
         .protocols(listOf(Protocol.HTTP_1_1))
         .build()
+    private val communityDetailCacheLock = Any()
+    private val communityDetailCache = LinkedHashMap<CommunityDetailCacheKey, CachedCommunityDetail>(16, 0.75f, true)
+    private val communityDetailInFlight = mutableMapOf<CommunityDetailCacheKey, CompletableDeferred<LocalizedWorkshopDetail>>()
 
     fun hasSteamAuth(): Boolean = SteamCloudAuthStore.readSnapshot(context).isComplete
 
@@ -301,6 +306,8 @@ internal class WorkshopService(
         appId: UInt,
         publishedFileId: ULong,
         fallbackSummary: WorkshopItemSummary? = null,
+        includeCommunityData: Boolean = true,
+        includeDependencyData: Boolean = true,
     ): WorkshopItemDetails = withContext(Dispatchers.IO) {
         val languagePreference = steamLanguagePreference
         val requestBody = FormBody.Builder()
@@ -317,17 +324,21 @@ internal class WorkshopService(
             val payload = response.body?.string().orEmpty()
             val envelope = json.decodeFromString<PublishedFileDetailsEnvelope>(payload)
             val detail = envelope.response.publishedFileDetails.firstOrNull() ?: error("No workshop detail returned")
-            val localizedDetail = runCatching {
-                loadLocalizedDetailPageWithRetry(
-                    publishedFileId = publishedFileId,
-                    languageRequestValue = languagePreference.requestValue,
-                )
-            }.onFailure { error ->
-                logWarning(
-                    "getDetails community detail failed appId=$appId publishedFileId=$publishedFileId",
-                    error,
-                )
-            }.getOrNull()
+            val localizedDetail = if (includeCommunityData) {
+                runCatching {
+                    loadLocalizedDetailPageWithCache(
+                        publishedFileId = publishedFileId,
+                        languageRequestValue = languagePreference.requestValue,
+                    )
+                }.onFailure { error ->
+                    logWarning(
+                        "getDetails community detail failed appId=$appId publishedFileId=$publishedFileId",
+                        error,
+                    )
+                }.getOrNull()
+            } else {
+                null
+            }
             val cardSummary = fallbackSummary?.takeIf { summary ->
                 summary.appId == appId && summary.publishedFileId == publishedFileId
             }
@@ -363,12 +374,20 @@ internal class WorkshopService(
                 downloadCount = detail.subscriptions ?: cardSummary?.downloadCount ?: 0L,
                 rating = normalizedWorkshopRating(detail.voteData?.score) ?: cardSummary?.rating,
             )
-            val dependencyIds = (
-                detail.children.mapNotNull { child -> child.publishedFileId.toULongOrNull() } +
-                    localizedDetail?.requiredItemIds.orEmpty()
-                ).distinct()
-            val dependencyDetailsById = loadDependencyDetails(appId, dependencyIds).associateBy { childDetail ->
-                childDetail.publishedFileId.toULongOrNull()
+            val dependencyIds = if (includeDependencyData) {
+                (
+                    detail.children.mapNotNull { child -> child.publishedFileId.toULongOrNull() } +
+                        localizedDetail?.requiredItemIds.orEmpty()
+                    ).distinct()
+            } else {
+                emptyList()
+            }
+            val dependencyDetailsById = if (dependencyIds.isNotEmpty()) {
+                loadDependencyDetails(appId, dependencyIds).associateBy { childDetail ->
+                    childDetail.publishedFileId.toULongOrNull()
+                }
+            } else {
+                emptyMap()
             }
             WorkshopItemDetails(
                 summary = summary,
@@ -460,6 +479,9 @@ internal class WorkshopService(
             .build()
 
         return workshopClient.newCall(request).execute().use { response ->
+            if (response.code == HTTP_TOO_MANY_REQUESTS) {
+                throw SteamCommunityRateLimitException(response.code)
+            }
             if (!response.isSuccessful) error("Steam workshop community detail failed: ${response.code}")
             val payload = response.body?.string().orEmpty()
             if (looksLikeCaptivePortal(payload)) {
@@ -495,6 +517,9 @@ internal class WorkshopService(
             }.onFailure { error ->
                 if (error is CancellationException) throw error
                 lastError = error
+                if (error is SteamCommunityRateLimitException) {
+                    throw error
+                }
                 if (attempt == COMMUNITY_DETAIL_ATTEMPTS - 1) {
                     throw error
                 }
@@ -502,6 +527,72 @@ internal class WorkshopService(
             delay(COMMUNITY_DETAIL_RETRY_DELAY_MS * (attempt + 1L))
         }
         return lastDetail ?: throw (lastError ?: IllegalStateException("Steam workshop community detail did not return content"))
+    }
+
+    private suspend fun loadLocalizedDetailPageWithCache(
+        publishedFileId: ULong,
+        languageRequestValue: String,
+    ): LocalizedWorkshopDetail {
+        val key = CommunityDetailCacheKey(publishedFileId, languageRequestValue)
+        var cachedDetail: LocalizedWorkshopDetail? = null
+        var shouldFetch = false
+        val deferred = synchronized(communityDetailCacheLock) {
+            val nowMillis = System.currentTimeMillis()
+            communityDetailCache[key]?.let { cached ->
+                if (nowMillis - cached.loadedAtMillis <= COMMUNITY_DETAIL_CACHE_TTL_MS) {
+                    cachedDetail = cached.detail
+                } else {
+                    communityDetailCache.remove(key)
+                }
+            }
+            if (cachedDetail != null) {
+                null
+            } else {
+                communityDetailInFlight[key] ?: CompletableDeferred<LocalizedWorkshopDetail>().also { created ->
+                    communityDetailInFlight[key] = created
+                    shouldFetch = true
+                }
+            }
+        }
+        cachedDetail?.let { return it }
+        val pending = requireNotNull(deferred)
+        if (!shouldFetch) {
+            return pending.await()
+        }
+
+        try {
+            val detail = loadLocalizedDetailPageWithRetry(
+                publishedFileId = publishedFileId,
+                languageRequestValue = languageRequestValue,
+            )
+            if (detail.hasUsefulContent()) {
+                synchronized(communityDetailCacheLock) {
+                    communityDetailCache[key] = CachedCommunityDetail(
+                        detail = detail,
+                        loadedAtMillis = System.currentTimeMillis(),
+                    )
+                    trimCommunityDetailCacheLocked()
+                }
+            }
+            pending.complete(detail)
+            return detail
+        } catch (error: Throwable) {
+            pending.completeExceptionally(error)
+            throw error
+        } finally {
+            synchronized(communityDetailCacheLock) {
+                if (communityDetailInFlight[key] === pending) {
+                    communityDetailInFlight.remove(key)
+                }
+            }
+        }
+    }
+
+    private fun trimCommunityDetailCacheLocked() {
+        while (communityDetailCache.size > COMMUNITY_DETAIL_CACHE_MAX_ENTRIES) {
+            val eldestKey = communityDetailCache.keys.firstOrNull() ?: return
+            communityDetailCache.remove(eldestKey)
+        }
     }
 
     private fun loadChangeNotesMarkdownBlocks(
@@ -894,6 +985,12 @@ internal class WorkshopService(
                 ?.value
                 ?.replace(",", "")
                 ?.toLongOrNull()
+            ?: workshopTabCommentCountRegex.find(payload)
+                ?.groups
+                ?.get("count")
+                ?.value
+                ?.replace(",", "")
+                ?.toLongOrNull()
 
     private fun extractCommentThreadContext(payload: String): WorkshopCommentThreadContext? {
         val commentInit = extractCommentInitObject(payload) ?: return null
@@ -1186,38 +1283,44 @@ internal class WorkshopService(
     }
 
     private companion object {
-        const val TAG = "WorkshopService"
-        const val COMMENT_PAGE_SIZE = 5
-        const val STEAM_COMMENTS_PAGE_SIZE = 50
-        const val COMMUNITY_DETAIL_ATTEMPTS = 2
-        const val COMMUNITY_DETAIL_RETRY_DELAY_MS = 350L
-        const val MAX_SUBSCRIPTION_STATUS_CHECK_PAGES = 50
-        const val SUBSCRIPTION_VERIFY_ATTEMPTS = 4
-        const val SUBSCRIPTION_VERIFY_DELAY_MS = 750L
-        const val USER_AGENT = "SlayTheAmethyst/Workshop"
-        const val COMMENT_INIT_CALL = "InitializeCommentThread"
-        val sessionIdRegex = Regex(
+        private const val TAG = "WorkshopService"
+        private const val COMMENT_PAGE_SIZE = 5
+        private const val STEAM_COMMENTS_PAGE_SIZE = 50
+        private const val COMMUNITY_DETAIL_ATTEMPTS = 2
+        private const val COMMUNITY_DETAIL_RETRY_DELAY_MS = 350L
+        private const val COMMUNITY_DETAIL_CACHE_TTL_MS = 5 * 60_000L
+        private const val COMMUNITY_DETAIL_CACHE_MAX_ENTRIES = 64
+        private const val MAX_SUBSCRIPTION_STATUS_CHECK_PAGES = 50
+        private const val SUBSCRIPTION_VERIFY_ATTEMPTS = 4
+        private const val SUBSCRIPTION_VERIFY_DELAY_MS = 750L
+        private const val HTTP_TOO_MANY_REQUESTS = 429
+        private const val USER_AGENT = "SlayTheAmethyst/Workshop"
+        private const val COMMENT_INIT_CALL = "InitializeCommentThread"
+        private val sessionIdRegex = Regex(
             """g_sessionID\s*=\s*"([^"]+)"""",
             RegexOption.IGNORE_CASE,
         )
-        val totalCommentCountRegex = Regex(
+        private val totalCommentCountRegex = Regex(
             """"total_count"\s*:\s*(\d+)""",
             RegexOption.IGNORE_CASE,
         )
-        val totalCommentCountLabelRegex = Regex(
+        private val totalCommentCountLabelRegex = Regex(
             """id="commentthread_[^"]*_totalcount">([^<]+)<""",
             RegexOption.IGNORE_CASE,
         )
-        val commentCountLabelDigitsRegex = Regex("""\d[\d,]*""")
-        val commentBlockOpeningRegex = Regex(
+        private val workshopTabCommentCountRegex = Regex(
+            """(?is)<a\b[^>]*class="[^"]*\bcomments\b[^"]*"[^>]*>\s*<span\b[^>]*>\s*(?:Comments|留言|评论)\s*<span\b[^>]*class="[^"]*\b(?:tabCount|general_btn_count)\b[^"]*"[^>]*>\s*(?<count>[\d,]+)\s*</span>""",
+        )
+        private val commentCountLabelDigitsRegex = Regex("""\d[\d,]*""")
+        private val commentBlockOpeningRegex = Regex(
             """<div\b[^>]*class="[^"]*\bcommentthread_comment\b[^"]*"[^>]*id="comment_([^"]+)"[^>]*>""",
             RegexOption.IGNORE_CASE,
         )
-        val commentAuthorLinkRegex = Regex(
+        private val commentAuthorLinkRegex = Regex(
             """<a\b(?=[^>]*class="[^"]*\bcommentthread_author_link\b[^"]*")(?=[^>]*href="([^"]*)")[^>]*>(.*?)</a>""",
             setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE),
         )
-        val commentTimestampRegexes = listOf(
+        private val commentTimestampRegexes = listOf(
             Regex(
                 """<(?:span|div)\b(?=[^>]*class="[^"]*\bcommentthread_comment_timestamp\b[^"]*")(?=[^>]*\bdata-timestamp="(?<timestamp>\d+)")[^>]*>(?<text>.*?)</(?:span|div)>""",
                 setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE),
@@ -1231,55 +1334,55 @@ internal class WorkshopService(
                 setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE),
             ),
         )
-        val commentTextRegex = Regex(
+        private val commentTextRegex = Regex(
             """<div\b[^>]*class="[^"]*\bcommentthread_comment_text\b[^"]*"[^>]*>(.*?)</div>""",
             setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE),
         )
-        val changeLogBlockOpeningRegex = Regex(
+        private val changeLogBlockOpeningRegex = Regex(
             """<div\b[^>]*class="[^"]*\bchangeLogCtn\b[^"]*"[^>]*>""",
             RegexOption.IGNORE_CASE,
         )
-        val changeLogHeadlineRegex = Regex(
+        private val changeLogHeadlineRegex = Regex(
             """<div\b[^>]*class="[^"]*\bheadline\b[^"]*"[^>]*>(.*?)</div>""",
             setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE),
         )
-        val changeLogBodyRegex = Regex(
+        private val changeLogBodyRegex = Regex(
             """<p\b[^>]*>(.*?)</p>""",
             setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE),
         )
-        val requiredItemsContainerOpeningRegex = Regex(
+        private val requiredItemsContainerOpeningRegex = Regex(
             """<div\b[^>]*\bid="RequiredItems"[^>]*>""",
             RegexOption.IGNORE_CASE,
         )
-        val requiredItemLinkRegex = Regex(
+        private val requiredItemLinkRegex = Regex(
             """<a\b[^>]*href="[^"]*(?:sharedfiles|workshop)/filedetails/\?id=(\d+)[^"]*"[^>]*>""",
             RegexOption.IGNORE_CASE,
         )
-        val workshopAuthorAnchorRegex = Regex(
+        private val workshopAuthorAnchorRegex = Regex(
             """<div\b[^>]*class="[^"]*\bworkshopItemAuthorName\b[^"]*"[^>]*>.*?<a\b[^>]*>(.*?)</a>""",
             setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE),
         )
-        val workshopAuthorTextRegex = Regex(
+        private val workshopAuthorTextRegex = Regex(
             """<div\b[^>]*class="[^"]*\bworkshopItemAuthorName\b[^"]*"[^>]*>(.*?)</div>""",
             setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE),
         )
-        val creatorsBlockOpeningRegex = Regex(
+        private val creatorsBlockOpeningRegex = Regex(
             """<div\b[^>]*class="[^"]*\bcreatorsBlock\b[^"]*"[^>]*>""",
             RegexOption.IGNORE_CASE,
         )
-        val creatorFriendBlockContentRegex = Regex(
+        private val creatorFriendBlockContentRegex = Regex(
             """<div\b[^>]*class="[^"]*\bfriendBlockContent\b[^"]*"[^>]*>\s*(.*?)(?:<br\s*/?>|<span\b[^>]*class="[^"]*\bfriendSmallText\b)""",
             setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE),
         )
-        val workshopBreadcrumbAuthorRegex = Regex(
+        private val workshopBreadcrumbAuthorRegex = Regex(
             """<div\b[^>]*class="[^"]*\bbreadcrumbs\b[^"]*"[^>]*>.*?<a\b[^>]*myworkshopfiles/\?appid=\d+[^>]*>(.*?)</a>""",
             setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE),
         )
-        val workshopDescriptionOpeningRegex = Regex(
+        private val workshopDescriptionOpeningRegex = Regex(
             """<div\b(?=[^>]*\bclass="[^"]*\bworkshopItemDescription\b[^"]*")(?=[^>]*\bid="highlightContent")[^>]*>""",
             RegexOption.IGNORE_CASE,
         )
-        val workshopDescriptionEndMarkerRegex = Regex(
+        private val workshopDescriptionEndMarkerRegex = Regex(
             """(?is)</div>\s*</div>\s*(?:<script\b|<div\b[^>]*class="[^"]*\bdetailBox\b|$)""",
         )
     }
@@ -1381,6 +1484,19 @@ private data class LocalizedWorkshopDetail(
     val commentThreadContext: WorkshopCommentThreadContext? = null,
     val commentCount: Long? = null,
 )
+
+private data class CommunityDetailCacheKey(
+    val publishedFileId: ULong,
+    val languageRequestValue: String,
+)
+
+private data class CachedCommunityDetail(
+    val detail: LocalizedWorkshopDetail,
+    val loadedAtMillis: Long,
+)
+
+private class SteamCommunityRateLimitException(statusCode: Int) :
+    IllegalStateException("Steam workshop community detail rate limited: $statusCode")
 
 private fun LocalizedWorkshopDetail.hasUsefulContent(): Boolean =
     description.isNotBlank() ||

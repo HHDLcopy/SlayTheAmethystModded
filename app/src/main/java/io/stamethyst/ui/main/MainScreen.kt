@@ -50,6 +50,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -97,6 +98,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -1227,6 +1229,22 @@ internal fun LauncherMainRoute(
         )
     }
 
+    uiState.pendingWorkshopJarSelection?.let { selection ->
+        val activity = hostActivity
+        if (activity != null && selection.candidates.isNotEmpty()) {
+            WorkshopJarSelectionDialog(
+                selection = selection,
+                onConfirm = { selectedCandidateIds ->
+                    viewModel.confirmWorkshopJarSelection(
+                        host = activity,
+                        requestId = selection.requestId,
+                        selectedCandidateIds = selectedCandidateIds,
+                    )
+                },
+            )
+        }
+    }
+
     content(
         modifier,
         uiState,
@@ -1834,6 +1852,111 @@ private fun LauncherMainScreenContent(
             }
         )
     }
+}
+
+@Composable
+private fun WorkshopJarSelectionDialog(
+    selection: MainScreenViewModel.PendingWorkshopJarSelection,
+    onConfirm: (Set<String>) -> Unit,
+) {
+    var selectedCandidateIds by remember(selection.requestId) {
+        mutableStateOf<Set<String>>(emptySet())
+    }
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = {},
+        properties = DialogProperties(
+            dismissOnBackPress = false,
+            dismissOnClickOutside = false,
+        ),
+        title = {
+            Text(text = stringResource(R.string.main_mod_workshop_jar_selection_title))
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = stringResource(
+                        R.string.main_mod_workshop_jar_selection_message,
+                        selection.title,
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 320.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    selection.candidates.forEach { candidate ->
+                        val checked = candidate.id in selectedCandidateIds
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable {
+                                    selectedCandidateIds = if (checked) {
+                                        selectedCandidateIds - candidate.id
+                                    } else {
+                                        selectedCandidateIds + candidate.id
+                                    }
+                                }
+                                .padding(horizontal = 4.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(
+                                checked = checked,
+                                onCheckedChange = { isChecked ->
+                                    selectedCandidateIds = if (isChecked) {
+                                        selectedCandidateIds + candidate.id
+                                    } else {
+                                        selectedCandidateIds - candidate.id
+                                    }
+                                },
+                            )
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(start = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(2.dp),
+                            ) {
+                                Text(
+                                    text = candidate.displayPath,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    text = formatLauncherByteSize(candidate.sizeBytes),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.outline,
+                                )
+                            }
+                        }
+                    }
+                }
+                if (selectedCandidateIds.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.main_mod_workshop_jar_selection_empty),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onConfirm(selectedCandidateIds) },
+                enabled = selectedCandidateIds.isNotEmpty(),
+            ) {
+                Text(text = stringResource(R.string.main_mod_workshop_jar_selection_confirm))
+            }
+        },
+    )
 }
 
 @Composable

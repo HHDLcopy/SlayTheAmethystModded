@@ -2,10 +2,15 @@
 
 const { firstNonEmpty, httpError } = require('./utils');
 
-const DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 240;
-const DEFAULT_OFFLINE_TIMEOUT_SECONDS = 500;
+const DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 600;
+const DEFAULT_OFFLINE_TIMEOUT_SECONDS = 1500;
+const STATS_WINDOW_SECONDS = 7 * 24 * 60 * 60;
+const DEFAULT_STATS_BUCKET_SECONDS = 60 * 60;
+const MIN_STATS_BUCKET_SECONDS = 60 * 60;
+const MAX_STATS_BUCKET_SECONDS = 60 * 60;
 const MAX_CLIENT_ID_LENGTH = 128;
 const presenceSessions = new Map();
+const presenceHeartbeatHistory = [];
 
 function parsePresenceHeartbeatRequest(req) {
   const body = req.body && typeof req.body === 'object' ? req.body : {};
@@ -29,8 +34,7 @@ function parsePresenceHeartbeatRequest(req) {
   };
 }
 
-function recordPresenceHeartbeat(heartbeat, currentConfig) {
-  const nowMs = Date.now();
+function recordPresenceHeartbeat(heartbeat, currentConfig, nowMs = Date.now()) {
   const offlineTimeoutMs = resolveOfflineTimeoutMs(currentConfig);
   pruneExpiredPresenceSessions(nowMs, offlineTimeoutMs);
 
@@ -46,6 +50,7 @@ function recordPresenceHeartbeat(heartbeat, currentConfig) {
     lastSeenAtMs: nowMs
   };
   presenceSessions.set(heartbeat.clientId, session);
+  recordPresenceHeartbeatHistory(heartbeat, nowMs, currentConfig);
 
   return buildPresenceSummary(currentConfig, nowMs);
 }
@@ -65,7 +70,8 @@ function buildPresenceSummary(currentConfig, nowMs = Date.now()) {
     byState,
     heartbeatIntervalSeconds: resolveHeartbeatIntervalSeconds(currentConfig),
     offlineTimeoutSeconds: Math.floor(offlineTimeoutMs / 1000),
-    checkedAt: new Date(nowMs).toISOString()
+    checkedAt: new Date(nowMs).toISOString(),
+    storageBackend: 'memory'
   };
 }
 
@@ -99,11 +105,84 @@ function buildPresenceSnapshot(currentConfig, nowMs = Date.now()) {
   };
 }
 
+function buildPresenceStats(currentConfig, options = {}, nowMs = Date.now()) {
+  const offlineTimeoutMs = resolveOfflineTimeoutMs(currentConfig);
+  const bucketSeconds = resolveStatsBucketSeconds(options);
+  const bucketMs = bucketSeconds * 1000;
+  const windowMs = STATS_WINDOW_SECONDS * 1000;
+  const sinceMs = nowMs - windowMs;
+  pruneExpiredPresenceSessions(nowMs, offlineTimeoutMs);
+  prunePresenceHeartbeatHistory(nowMs, windowMs + offlineTimeoutMs);
+
+  const windowEvents = presenceHeartbeatHistory.filter((event) =>
+    event.atMs >= sinceMs && event.atMs <= nowMs
+  );
+  const uniqueClients = new Set(windowEvents.map((event) => event.clientId));
+  const buckets = [];
+  let peakOnline = 0;
+
+  for (let bucketStartMs = sinceMs; bucketStartMs < nowMs; bucketStartMs += bucketMs) {
+    const bucketEndMs = Math.min(nowMs, bucketStartMs + bucketMs);
+    const isLastBucket = bucketEndMs >= nowMs;
+    const bucketEvents = windowEvents.filter((event) =>
+      event.atMs >= bucketStartMs &&
+      (event.atMs < bucketEndMs || (isLastBucket && event.atMs <= bucketEndMs))
+    );
+    const bucketUniqueClients = new Set(bucketEvents.map((event) => event.clientId));
+    const onlineClients = new Set();
+    for (const event of presenceHeartbeatHistory) {
+      if (event.atMs <= bucketEndMs && event.atMs > bucketEndMs - offlineTimeoutMs) {
+        onlineClients.add(event.clientId);
+      }
+    }
+    peakOnline = Math.max(peakOnline, onlineClients.size);
+    buckets.push({
+      bucketStart: new Date(bucketStartMs).toISOString(),
+      bucketEnd: new Date(bucketEndMs).toISOString(),
+      online: onlineClients.size,
+      uniqueClients: bucketUniqueClients.size,
+      heartbeats: bucketEvents.length
+    });
+  }
+
+  return {
+    windowSeconds: STATS_WINDOW_SECONDS,
+    bucketSeconds,
+    since: new Date(sinceMs).toISOString(),
+    until: new Date(nowMs).toISOString(),
+    currentOnline: presenceSessions.size,
+    peakOnline,
+    uniqueClients: uniqueClients.size,
+    totalHeartbeats: windowEvents.length,
+    buckets
+  };
+}
+
 function pruneExpiredPresenceSessions(nowMs, offlineTimeoutMs) {
   for (const [clientId, session] of presenceSessions.entries()) {
     if (!session || nowMs - Number(session.lastSeenAtMs || 0) >= offlineTimeoutMs) {
       presenceSessions.delete(clientId);
     }
+  }
+}
+
+function recordPresenceHeartbeatHistory(heartbeat, nowMs, currentConfig) {
+  const offlineTimeoutMs = resolveOfflineTimeoutMs(currentConfig);
+  presenceHeartbeatHistory.push({
+    clientId: heartbeat.clientId,
+    state: heartbeat.state || 'unknown',
+    atMs: nowMs
+  });
+  prunePresenceHeartbeatHistory(nowMs, (STATS_WINDOW_SECONDS * 1000) + offlineTimeoutMs);
+}
+
+function prunePresenceHeartbeatHistory(nowMs, retentionMs) {
+  const cutoffMs = nowMs - retentionMs;
+  while (
+    presenceHeartbeatHistory.length > 0 &&
+    Number(presenceHeartbeatHistory[0].atMs || 0) < cutoffMs
+  ) {
+    presenceHeartbeatHistory.shift();
   }
 }
 
@@ -116,6 +195,18 @@ function resolveOfflineTimeoutMs(currentConfig) {
   const seconds = Number(currentConfig && currentConfig.presenceOfflineTimeoutSeconds) ||
     DEFAULT_OFFLINE_TIMEOUT_SECONDS;
   return seconds * 1000;
+}
+
+function resolveStatsBucketSeconds(options) {
+  const rawValue = options && firstNonEmpty(options.bucket_seconds, options.bucketSeconds);
+  const parsed = Number.parseInt(String(rawValue || '').trim(), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_STATS_BUCKET_SECONDS;
+  }
+  return Math.max(
+    MIN_STATS_BUCKET_SECONDS,
+    Math.min(MAX_STATS_BUCKET_SECONDS, parsed)
+  );
 }
 
 function normalizeClientId(value) {
@@ -132,6 +223,7 @@ function normalizeOptionalString(value) {
 
 function resetPresenceStoreForTest() {
   presenceSessions.clear();
+  presenceHeartbeatHistory.length = 0;
 }
 
 module.exports = {
@@ -141,5 +233,6 @@ module.exports = {
   recordPresenceHeartbeat,
   buildPresenceSummary,
   buildPresenceSnapshot,
+  buildPresenceStats,
   resetPresenceStoreForTest
 };

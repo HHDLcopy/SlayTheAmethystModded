@@ -55,7 +55,13 @@ function loadConfig() {
       process.env.PRESENCE_OFFLINE_TIMEOUT_SECONDS,
       DEFAULT_OFFLINE_TIMEOUT_SECONDS
     ),
-    presencePanelToken: readOptionalEnv('PRESENCE_PANEL_TOKEN')
+    presencePanelToken: readOptionalEnv('PRESENCE_PANEL_TOKEN'),
+    presenceStorageUrl: readOptionalEnv('PRESENCE_STORAGE_URL'),
+    presenceStorageSecret: readOptionalEnv('PRESENCE_STORAGE_SECRET'),
+    presenceStorageTimeoutMs: parsePositiveInteger(
+      process.env.PRESENCE_STORAGE_TIMEOUT_MS,
+      3000
+    )
   };
 }
 

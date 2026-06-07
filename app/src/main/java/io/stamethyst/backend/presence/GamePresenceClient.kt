@@ -25,8 +25,8 @@ data class GamePresenceSummary(
 )
 
 object GamePresenceClient {
-    const val HEARTBEAT_INTERVAL_MS = 240_000L
-    const val OFFLINE_TIMEOUT_MS = 500_000L
+    const val HEARTBEAT_INTERVAL_MS = 600_000L
+    const val OFFLINE_TIMEOUT_MS = 1_500_000L
 
     private const val RESPONSE_PREVIEW_LIMIT = 320
     private const val CONNECT_TIMEOUT_MS = 8_000

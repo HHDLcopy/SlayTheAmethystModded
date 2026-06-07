@@ -235,8 +235,8 @@ public final class JREUtils {
         dlopenResolved(javaHome, "libnio.so");
         dlopenResolved(javaHome, "libawt.so");
         dlopenResolved(javaHome, "libawt_headless.so");
-        dlopenResolved(javaHome, "libfontmanager.so");
         dlopenResolved(javaHome, "libfreetype.so");
+        dlopenResolved(javaHome, "libfontmanager.so");
         loadGraphicsLibrary();
         dlopen(findInLdLibPath("libopenal.so"));
     }

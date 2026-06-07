@@ -156,6 +156,7 @@ object RuntimePackInstaller {
                     ARCHIVE_AARCH64 == archArchive)
             val javaHome = locateJavaHome(runtimeRoot)
             if (markerMatched && javaHome != null && isRuntimeReady(javaHome)) {
+                postPrepareRuntime(context, javaHome)
                 reportProgress(
                     progressCallback,
                     100,

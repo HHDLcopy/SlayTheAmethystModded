@@ -8,6 +8,9 @@ const {
   httpError
 } = require('./utils');
 
+const PRESENCE_PUBLIC_BASE_URL = 'https://1315061624-boxfc2p5fb.ap-guangzhou.tencentscf.com';
+const ECHARTS_SCRIPT_URL = `${PRESENCE_PUBLIC_BASE_URL}/api/presence/assets/echarts.min.js`;
+
 function enforcePresencePanelAccess(req, currentConfig) {
   const requiredToken = resolvePresencePanelToken(currentConfig);
   if (!requiredToken) {
@@ -25,11 +28,22 @@ function enforcePresencePanelAccess(req, currentConfig) {
   }
 }
 
-function renderPresencePanel(snapshot, currentConfig, req) {
+function renderPresencePanel(snapshot, currentConfig, req, dataSource = 'cf') {
   const token = firstNonEmpty(req.query && req.query.token, req.query && req.query.key);
+  const initialDataSource = dataSource === 'memory' ? 'memory' : 'cf';
+  const panelQuery = new URLSearchParams();
+  if (token) {
+    panelQuery.set('token', token);
+  }
+  panelQuery.set('source', initialDataSource);
   const tokenQuery = token ? `?token=${encodeURIComponent(token)}` : '';
-  const panelUrl = `${escapeHtmlAttribute(req.path || '/presence')}${escapeHtmlAttribute(tokenQuery)}`;
-  const sessionsApiUrl = buildAbsoluteRequestUrl(req, `/api/presence/sessions${tokenQuery}`);
+  const statsQuery = token
+    ? `?token=${encodeURIComponent(token)}&bucket_seconds=3600`
+    : '?bucket_seconds=3600';
+  const panelUrl = `${escapeHtmlAttribute(req.path || '/presence')}${escapeHtmlAttribute(`?${panelQuery.toString()}`)}`;
+  const sessionsApiUrl = `${PRESENCE_PUBLIC_BASE_URL}/api/presence/sessions${tokenQuery}`;
+  const statsApiUrl = `${PRESENCE_PUBLIC_BASE_URL}/api/presence/stats${statsQuery}`;
+  const echartsScriptUrl = ECHARTS_SCRIPT_URL;
   const initialSnapshotJson = escapeJsonForScript(snapshot);
   const stateRows = Object.entries(snapshot.byState || {})
     .sort(([left], [right]) => left.localeCompare(right))
@@ -62,6 +76,8 @@ function renderPresencePanel(snapshot, currentConfig, req) {
       --line: #d9dee7;
       --accent: #1664d9;
       --accent-soft: #e8f0ff;
+      --chart-fill: rgba(22, 100, 217, .13);
+      --chart-grid: rgba(95, 104, 120, .24);
     }
     @media (prefers-color-scheme: dark) {
       :root {
@@ -72,6 +88,8 @@ function renderPresencePanel(snapshot, currentConfig, req) {
         --line: #2b3442;
         --accent: #7aa7ff;
         --accent-soft: #1d2b45;
+        --chart-fill: rgba(122, 167, 255, .16);
+        --chart-grid: rgba(169, 179, 194, .22);
       }
     }
     * { box-sizing: border-box; }
@@ -116,6 +134,32 @@ function renderPresencePanel(snapshot, currentConfig, req) {
       color: var(--text);
       background: var(--panel);
       text-decoration: none;
+    }
+    .source-switch {
+      display: inline-flex;
+      min-height: 36px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      overflow: hidden;
+      background: var(--panel);
+    }
+    .source-button {
+      min-width: 76px;
+      border: 0;
+      border-right: 1px solid var(--line);
+      padding: 0 12px;
+      color: var(--muted);
+      background: transparent;
+      font: inherit;
+      cursor: pointer;
+    }
+    .source-button:last-child {
+      border-right: 0;
+    }
+    .source-button[aria-pressed="true"] {
+      color: var(--text);
+      background: var(--accent-soft);
+      font-weight: 650;
     }
     .grid {
       display: grid;
@@ -194,6 +238,23 @@ function renderPresencePanel(snapshot, currentConfig, req) {
     .table-wrap {
       overflow-x: auto;
     }
+    .chart-tools {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+      padding: 12px 16px 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .chart-tools strong {
+      color: var(--text);
+      font-size: 16px;
+    }
+    .chart-frame {
+      height: 300px;
+      padding: 10px 14px 16px;
+    }
     @media (max-width: 820px) {
       header {
         align-items: flex-start;
@@ -217,6 +278,10 @@ function renderPresencePanel(snapshot, currentConfig, req) {
       th, td {
         padding: 9px 10px;
       }
+      .chart-frame {
+        height: 250px;
+        padding: 8px 8px 14px;
+      }
     }
   </style>
 </head>
@@ -225,9 +290,13 @@ function renderPresencePanel(snapshot, currentConfig, req) {
     <header>
       <div>
         <h1>在线情况面板</h1>
-        <div class="subtle" id="panel-subtitle">${escapeHtml(APP_NAME)} · 自动每 15 秒同步 · ${escapeHtml(snapshot.checkedAt || '')}</div>
+        <div class="subtle" id="panel-subtitle">${escapeHtml(APP_NAME)} · 自动每 60 秒同步 · ${escapeHtml(snapshot.checkedAt || '')}</div>
       </div>
       <div class="actions">
+        <div class="source-switch" role="group" aria-label="数据源">
+          <button class="source-button" type="button" data-source="cf" aria-pressed="${initialDataSource === 'cf' ? 'true' : 'false'}">CF</button>
+          <button class="source-button" type="button" data-source="memory" aria-pressed="${initialDataSource === 'memory' ? 'true' : 'false'}">Memory</button>
+        </div>
         <a class="button" id="refresh-now" href="${panelUrl}">刷新</a>
       </div>
     </header>
@@ -247,7 +316,22 @@ function renderPresencePanel(snapshot, currentConfig, req) {
       </div>
       <div class="metric">
         <div class="metric-label">存储后端</div>
-        <div class="metric-value">Memory</div>
+        <div class="metric-value" id="metric-storage">${escapeHtml(snapshot.storageBackend || 'memory')}</div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-header">
+        <div class="section-title">一周在线趋势</div>
+        <div class="subtle" id="chart-range">每小时快照</div>
+      </div>
+      <div class="chart-tools">
+        <span>峰值 <strong id="chart-peak">-</strong></span>
+        <span>当前 <strong id="chart-current">-</strong></span>
+        <span>样本 <strong id="chart-samples">-</strong></span>
+      </div>
+      <div class="chart-frame" id="online-chart" role="img" aria-label="最近一周在线人数折线图">
+        <div class="empty">Loading weekly presence data.</div>
       </div>
     </section>
 
@@ -296,20 +380,32 @@ ${sessionRows}
       </div>
     </section>
   </main>
+  <script src="${escapeHtmlAttribute(echartsScriptUrl)}"></script>
   <script>
     (function () {
       'use strict';
 
       var appName = ${JSON.stringify(APP_NAME)};
       var sessionsApiUrl = ${JSON.stringify(sessionsApiUrl)};
+      var statsApiUrl = ${JSON.stringify(statsApiUrl)};
+      var selectedDataSource = ${JSON.stringify(initialDataSource)};
       var refreshButton = document.getElementById('refresh-now');
+      var sourceButtons = Array.prototype.slice.call(document.querySelectorAll('.source-button'));
       var stateRows = document.getElementById('state-rows');
       var sessionRows = document.getElementById('session-rows');
       var subtitle = document.getElementById('panel-subtitle');
       var metricOnline = document.getElementById('metric-online');
       var metricHeartbeat = document.getElementById('metric-heartbeat');
       var metricTimeout = document.getElementById('metric-timeout');
-      var refreshTimer = null;
+      var metricStorage = document.getElementById('metric-storage');
+      var onlineChart = document.getElementById('online-chart');
+      var chartRange = document.getElementById('chart-range');
+      var chartPeak = document.getElementById('chart-peak');
+      var chartCurrent = document.getElementById('chart-current');
+      var chartSamples = document.getElementById('chart-samples');
+      var onlineChartInstance = null;
+      var snapshotTimer = null;
+      var statsTimer = null;
 
       function escapeHtml(value) {
         return String(value || '')
@@ -354,6 +450,51 @@ ${sessionRows}
         return Math.max(0, seconds) + 's ago';
       }
 
+      function formatShortDateTime(value) {
+        var date = new Date(value);
+        if (Number.isNaN(date.getTime())) {
+          return '-';
+        }
+        var month = String(date.getMonth() + 1);
+        var day = String(date.getDate());
+        var hour = String(date.getHours()).padStart(2, '0');
+        return month + '/' + day + ' ' + hour + ':00';
+      }
+
+      function readCssVariable(name, fallback) {
+        var value = window.getComputedStyle(document.documentElement).getPropertyValue(name);
+        return String(value || '').trim() || fallback;
+      }
+
+      function getChartColors() {
+        return {
+          panel: readCssVariable('--panel', '#ffffff'),
+          text: readCssVariable('--text', '#151922'),
+          muted: readCssVariable('--muted', '#5f6878'),
+          line: readCssVariable('--line', '#d9dee7'),
+          accent: readCssVariable('--accent', '#1664d9'),
+          fill: readCssVariable('--chart-fill', 'rgba(22, 100, 217, .13)'),
+          grid: readCssVariable('--chart-grid', 'rgba(95, 104, 120, .24)')
+        };
+      }
+
+      function buildDataSourceUrl(baseUrl, extraParams) {
+        var url = new URL(baseUrl, window.location.href);
+        url.searchParams.set('source', selectedDataSource);
+        Object.entries(extraParams || {}).forEach(function (entry) {
+          if (entry[1] !== null && entry[1] !== undefined && String(entry[1]).trim()) {
+            url.searchParams.set(entry[0], String(entry[1]));
+          }
+        });
+        return url.toString();
+      }
+
+      function updateSourceButtons() {
+        sourceButtons.forEach(function (button) {
+          button.setAttribute('aria-pressed', button.getAttribute('data-source') === selectedDataSource ? 'true' : 'false');
+        });
+      }
+
       function renderStateRows(byState) {
         var entries = Object.entries(byState || {})
           .sort(function (left, right) {
@@ -392,13 +533,148 @@ ${sessionRows}
         metricOnline.textContent = String(Number(snapshot.online) || 0);
         metricHeartbeat.textContent = String(Number(snapshot.heartbeatIntervalSeconds) || 0) + 's';
         metricTimeout.textContent = String(Number(snapshot.offlineTimeoutSeconds) || 0) + 's';
-        subtitle.textContent = appName + ' · 自动每 15 秒同步 · ' + (snapshot.checkedAt || '');
+        metricStorage.textContent = String(snapshot.storageBackend || 'memory');
+        subtitle.textContent = appName + ' · 自动每 60 秒同步 · ' + (snapshot.checkedAt || '');
         stateRows.innerHTML = renderStateRows(snapshot.byState || {});
         sessionRows.innerHTML = renderSessionRows(snapshot.sessions || []);
       }
 
+      function renderStats(stats) {
+        var buckets = Array.isArray(stats.buckets) ? stats.buckets : [];
+        chartPeak.textContent = String(Number(stats.peakOnline) || 0);
+        chartCurrent.textContent = String(Number(stats.currentOnline) || 0);
+        chartSamples.textContent = String(Number(stats.snapshotCount) || 0) + '/' + String(buckets.length || 0);
+        chartRange.textContent = formatShortDateTime(stats.since) + ' - ' + formatShortDateTime(stats.until);
+        renderOnlineChart(buckets);
+      }
+
+      function renderOnlineChart(buckets) {
+        var seriesData = buckets
+          .filter(function (bucket) {
+            return bucket && !Number.isNaN(new Date(bucket.bucketStart).getTime());
+          })
+          .map(function (bucket) {
+            return [
+              bucket.bucketStart,
+              bucket.hasSnapshot === false ? null : Math.max(0, Number(bucket.online) || 0)
+            ];
+          });
+        var hasSamples = seriesData.some(function (item) {
+          return item[1] !== null;
+        });
+
+        if (!hasSamples) {
+          if (onlineChartInstance) {
+            onlineChartInstance.dispose();
+            onlineChartInstance = null;
+          }
+          onlineChart.innerHTML = '<div class="empty">No weekly presence snapshots yet.</div>';
+          return;
+        }
+
+        if (!window.echarts || typeof window.echarts.init !== 'function') {
+          onlineChart.innerHTML = '<div class="empty">ECharts failed to load.</div>';
+          return;
+        }
+
+        var colors = getChartColors();
+        if (!onlineChartInstance) {
+          onlineChart.innerHTML = '';
+          onlineChartInstance = window.echarts.init(onlineChart, null, {
+            renderer: 'canvas'
+          });
+        }
+
+        onlineChartInstance.setOption({
+          animation: false,
+          color: [colors.accent],
+          grid: {
+            left: 10,
+            right: 16,
+            top: 18,
+            bottom: 14,
+            containLabel: true
+          },
+          tooltip: {
+            trigger: 'axis',
+            confine: true,
+            backgroundColor: colors.panel,
+            borderColor: colors.line,
+            borderWidth: 1,
+            textStyle: {
+              color: colors.text
+            },
+            formatter: function (params) {
+              var item = Array.isArray(params) ? params[0] : null;
+              var value = item && Array.isArray(item.value) ? item.value[1] : null;
+              return '<div>' + escapeHtml(formatShortDateTime(item ? item.axisValue : '')) + '</div>' +
+                '<div>在线人数：' + (value === null || value === undefined ? '-' : Number(value) || 0) + '</div>';
+            }
+          },
+          xAxis: {
+            type: 'time',
+            boundaryGap: false,
+            axisLine: {
+              lineStyle: { color: colors.line }
+            },
+            axisTick: {
+              show: false
+            },
+            axisLabel: {
+              color: colors.muted,
+              hideOverlap: true,
+              formatter: function (value) {
+                return formatShortDateTime(value);
+              }
+            }
+          },
+          yAxis: {
+            type: 'value',
+            min: 0,
+            minInterval: 1,
+            splitNumber: 4,
+            axisLine: {
+              show: false
+            },
+            axisTick: {
+              show: false
+            },
+            axisLabel: {
+              color: colors.muted
+            },
+            splitLine: {
+              lineStyle: {
+                color: colors.grid
+              }
+            }
+          },
+          series: [{
+            name: '在线人数',
+            type: 'line',
+            data: seriesData,
+            showSymbol: false,
+            symbolSize: 7,
+            connectNulls: false,
+            smooth: false,
+            lineStyle: {
+              color: colors.accent,
+              width: 3
+            },
+            itemStyle: {
+              color: colors.accent
+            },
+            areaStyle: {
+              color: colors.fill
+            },
+            emphasis: {
+              focus: 'series'
+            }
+          }]
+        }, true);
+      }
+
       function loadSnapshot() {
-        return fetch(sessionsApiUrl, {
+        return fetch(buildDataSourceUrl(sessionsApiUrl), {
           cache: 'no-store',
           headers: {
             Accept: 'application/json'
@@ -418,18 +694,71 @@ ${sessionRows}
           });
       }
 
+      function loadStats() {
+        return fetch(buildDataSourceUrl(statsApiUrl, { bucket_seconds: 3600 }), {
+          cache: 'no-store',
+          headers: {
+            Accept: 'application/json'
+          }
+        })
+          .then(function (response) {
+            if (!response.ok) {
+              throw new Error('HTTP ' + response.status);
+            }
+            return response.json();
+          })
+          .then(function (stats) {
+            renderStats(stats);
+          })
+          .catch(function (error) {
+            chartRange.textContent = '趋势同步失败 · ' + (error && error.message ? error.message : 'unknown');
+          });
+      }
+
+      function loadAll() {
+        loadSnapshot();
+        loadStats();
+      }
+
       if (refreshButton) {
         refreshButton.addEventListener('click', function (event) {
           event.preventDefault();
-          loadSnapshot();
+          loadAll();
         });
       }
 
+      sourceButtons.forEach(function (button) {
+        button.addEventListener('click', function () {
+          var nextSource = button.getAttribute('data-source') === 'memory' ? 'memory' : 'cf';
+          if (nextSource === selectedDataSource) {
+            return;
+          }
+          selectedDataSource = nextSource;
+          updateSourceButtons();
+          chartRange.textContent = selectedDataSource === 'memory' ? 'Memory · 每小时心跳估算' : 'CF · 每小时快照';
+          loadAll();
+        });
+      });
+
+      updateSourceButtons();
       renderSnapshot(${initialSnapshotJson});
-      refreshTimer = window.setInterval(loadSnapshot, 15000);
+      loadStats();
+      snapshotTimer = window.setInterval(loadSnapshot, 60000);
+      statsTimer = window.setInterval(loadStats, 300000);
+      window.addEventListener('resize', function () {
+        if (onlineChartInstance) {
+          onlineChartInstance.resize();
+        }
+      });
       window.addEventListener('beforeunload', function () {
-        if (refreshTimer) {
-          window.clearInterval(refreshTimer);
+        if (snapshotTimer) {
+          window.clearInterval(snapshotTimer);
+        }
+        if (statsTimer) {
+          window.clearInterval(statsTimer);
+        }
+        if (onlineChartInstance) {
+          onlineChartInstance.dispose();
         }
       });
     }());
@@ -534,36 +863,6 @@ function escapeJsonForScript(value) {
     .replace(/&/g, '\\u0026')
     .replace(/\u2028/g, '\\u2028')
     .replace(/\u2029/g, '\\u2029');
-}
-
-function buildAbsoluteRequestUrl(req, pathAndQuery) {
-  const host = firstForwardedHeader(req, 'x-forwarded-host') ||
-    firstForwardedHeader(req, 'host');
-  if (!host) {
-    return pathAndQuery;
-  }
-
-  const protocol = normalizeProtocol(
-    firstForwardedHeader(req, 'x-forwarded-proto') ||
-    firstForwardedHeader(req, 'x-forwarded-protocol') ||
-    firstForwardedHeader(req, 'x-forwarded-scheme') ||
-    (req && req.secure ? 'https' : req && req.protocol) ||
-    'http'
-  );
-  const normalizedPath = String(pathAndQuery || '').startsWith('/')
-    ? String(pathAndQuery || '')
-    : `/${pathAndQuery || ''}`;
-  return `${protocol}://${host}${normalizedPath}`;
-}
-
-function firstForwardedHeader(req, name) {
-  const value = req && typeof req.get === 'function' ? req.get(name) : '';
-  return String(value || '').split(',')[0].trim();
-}
-
-function normalizeProtocol(value) {
-  const normalized = String(value || '').trim().toLowerCase().replace(/:$/, '');
-  return normalized === 'https' ? 'https' : 'http';
 }
 
 function resolvePresencePanelToken(currentConfig) {

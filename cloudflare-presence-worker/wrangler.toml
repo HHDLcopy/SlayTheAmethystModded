@@ -1,0 +1,21 @@
+name = "sts-presence-storage"
+main = "src/index.js"
+compatibility_date = "2026-06-01"
+workers_dev = true
+
+routes = [
+  { pattern = "sts.presence.mctown.online", custom_domain = true, zone_name = "mctown.online" }
+]
+
+[triggers]
+crons = ["0 * * * *"]
+
+[vars]
+PRESENCE_HEARTBEAT_INTERVAL_SECONDS = "600"
+PRESENCE_OFFLINE_TIMEOUT_SECONDS = "1500"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "sts-presence"
+database_id = "28900d64-6cb3-4c21-aacb-4955a7a71a5e"
+migrations_dir = "migrations"

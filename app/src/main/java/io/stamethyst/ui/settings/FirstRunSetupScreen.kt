@@ -44,6 +44,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
@@ -152,9 +153,30 @@ fun LauncherFirstRunSetupScreen(
     val canExitToPreviousRoute =
         navigator.backStack.lastIndex > 0 &&
             (previousRoute == Route.Settings || previousRoute == Route.SettingsLauncher)
+    var pendingPlayerName by rememberSaveable { mutableStateOf(uiState.playerName) }
+    var pendingPlayerNameDirty by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(activity) {
         viewModel.bind(activity)
+    }
+
+    LaunchedEffect(uiState.playerName) {
+        if (!pendingPlayerNameDirty) {
+            pendingPlayerName = uiState.playerName
+        }
+    }
+
+    fun savePendingPlayerNameIfNeeded(): Boolean {
+        if (!pendingPlayerNameDirty) {
+            return true
+        }
+        val normalizedPlayerName = LauncherPreferences.normalizePlayerName(pendingPlayerName)
+        if (!viewModel.onPlayerNameChanged(activity, pendingPlayerName)) {
+            return false
+        }
+        pendingPlayerName = normalizedPlayerName
+        pendingPlayerNameDirty = false
+        return true
     }
 
     fun goPrevious() {
@@ -220,6 +242,11 @@ fun LauncherFirstRunSetupScreen(
                     }
                     Button(
                         onClick = {
+                            if (currentStep == FirstRunSetupStep.INPUT &&
+                                !savePendingPlayerNameIfNeeded()
+                            ) {
+                                return@Button
+                            }
                             if (currentStepIndex == steps.lastIndex) {
                                 finishSetup()
                             } else {
@@ -315,6 +342,13 @@ fun LauncherFirstRunSetupScreen(
                         FirstRunSetupStep.INPUT -> {
                             FirstRunInputStep(
                                 uiState = uiState,
+                                playerName = pendingPlayerName,
+                                playerNameDirty = pendingPlayerNameDirty,
+                                onPlayerNameChanged = { name ->
+                                    pendingPlayerName = name
+                                    pendingPlayerNameDirty = name != uiState.playerName
+                                },
+                                onSavePlayerName = ::savePendingPlayerNameIfNeeded,
                                 onTouchscreenInputModeChanged = { mode ->
                                     viewModel.onTouchscreenInputModeChanged(activity, mode)
                                 },
@@ -575,11 +609,37 @@ private fun FirstRunRenderStep(
 @Composable
 private fun FirstRunInputStep(
     uiState: SettingsScreenViewModel.UiState,
+    playerName: String,
+    playerNameDirty: Boolean,
+    onPlayerNameChanged: (String) -> Unit,
+    onSavePlayerName: () -> Boolean,
     onTouchscreenInputModeChanged: (TouchscreenInputMode) -> Unit,
     onShowFloatingMouseWindowChanged: (Boolean) -> Unit,
     onTouchMouseInteractionModeChanged: (TouchMouseInteractionMode) -> Unit,
     onTouchDoubleClickAsRightClickChanged: (Boolean) -> Unit,
 ) {
+    SettingsSectionCard(
+        title = stringResource(R.string.settings_player_name_title)
+    ) {
+        OutlinedTextField(
+            value = playerName,
+            onValueChange = onPlayerNameChanged,
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            enabled = !uiState.busy,
+            label = { Text(stringResource(R.string.settings_player_name_hint)) },
+        )
+        FirstRunSupportingText(stringResource(R.string.settings_player_name_desc))
+        FirstRunSupportingText(stringResource(R.string.settings_player_name_dialog_message))
+        Button(
+            onClick = { onSavePlayerName() },
+            enabled = !uiState.busy && playerNameDirty,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(stringResource(R.string.common_action_save))
+        }
+    }
+
     SettingsSectionCard(
         title = stringResource(R.string.settings_section_input)
     ) {

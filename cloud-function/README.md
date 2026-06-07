@@ -24,7 +24,7 @@ The Android game process sends presence heartbeats to:
 POST /api/presence/heartbeat
 ```
 
-The launcher can query the in-memory online count from either route:
+The launcher can query the online count from either route:
 
 ```text
 GET /api/presence/summary
@@ -37,6 +37,7 @@ The operator panel is available at:
 GET /presence?token=<PRESENCE_PANEL_TOKEN>
 GET /api/presence/panel?token=<PRESENCE_PANEL_TOKEN>
 GET /api/presence/sessions?token=<PRESENCE_PANEL_TOKEN>
+GET /api/presence/stats?token=<PRESENCE_PANEL_TOKEN>
 ```
 
 ## What it does
@@ -49,7 +50,7 @@ GET /api/presence/sessions?token=<PRESENCE_PANEL_TOKEN>
 6. Creates a GitHub issue in the target repository
 7. If the user opted in, stores private mail notification state in Release assets and sends a styled creation email
 8. Receives `POST /github/webhook` issue events and sends a progress email when the target issue is commented or closed
-9. Tracks game-process presence heartbeats in process memory
+9. Tracks game-process presence heartbeats through the configured presence storage backend
 10. Returns `issueNumber` and `issueUrl` to the client
 
 ## Required environment variables
@@ -86,9 +87,12 @@ SMTP_PASSWORD=
 SMTP_FROM=
 SMTP_REPLY_TO=
 BUNDLE_MAX_BYTES=26214400
-PRESENCE_HEARTBEAT_INTERVAL_SECONDS=240
-PRESENCE_OFFLINE_TIMEOUT_SECONDS=500
+PRESENCE_HEARTBEAT_INTERVAL_SECONDS=600
+PRESENCE_OFFLINE_TIMEOUT_SECONDS=1500
 PRESENCE_PANEL_TOKEN=
+PRESENCE_STORAGE_URL=https://sts.presence.mctown.online
+PRESENCE_STORAGE_SECRET=
+PRESENCE_STORAGE_TIMEOUT_MS=3000
 ```
 
 Notes:
@@ -106,12 +110,18 @@ Notes:
 - If SMTP is not configured, issues are still created and notification state is still stored, but no email is sent.
 - `POST /github/webhook` must be configured as the GitHub App or repository webhook URL, and `GITHUB_WEBHOOK_SECRET` must match the webhook secret configured in GitHub.
 - The webhook must subscribe to both `issues` and `issue_comment` events if you want close and comment emails to be sent.
-- Presence state is currently stored in process memory only. It is cheap and has no external dependency, but it is reset by cold starts and is not shared between multiple SCF instances.
+- Presence state uses process memory by default for local development. Set `PRESENCE_STORAGE_URL` and `PRESENCE_STORAGE_SECRET` to use the Cloudflare Worker + D1 storage backend, which is shared across SCF instances and survives cold starts.
+- `PRESENCE_STORAGE_URL` should be the Worker origin. Production currently uses the custom Worker domain `https://sts.presence.mctown.online` instead of the `workers.dev` domain.
+- `PRESENCE_STORAGE_SECRET` must match the Worker secret with the same name. It is only used between Tencent SCF and the Cloudflare Worker; Android clients do not receive it.
+- `PRESENCE_STORAGE_TIMEOUT_MS` defaults to `3000`.
 - Presence heartbeat and online-count APIs are intentionally public and do not require `X-Feedback-Key`.
 - Presence clients are keyed by `client_id`. The Android client sends a SHA-256 hash derived from `Settings.Secure.ANDROID_ID`, with a local install ID fallback when Android ID is unavailable, and includes the current player name when available.
 - The presence panel requires `PRESENCE_PANEL_TOKEN`. If it is not configured, it falls back to `FEEDBACK_SHARED_SECRET`; if neither is configured, the panel is disabled.
-- The presence panel renders once and then polls `GET /api/presence/sessions` every 15 seconds instead of refreshing the whole page.
-- A client is treated as offline when its latest heartbeat is older than `PRESENCE_OFFLINE_TIMEOUT_SECONDS`.
+- The presence panel renders once, polls `GET /api/presence/sessions` every 60 seconds, and polls `GET /api/presence/stats` every 5 minutes instead of refreshing the whole page.
+- The presence panel renders the weekly online chart with the bundled ECharts asset served from `GET /api/presence/assets/echarts.min.js`.
+- The presence panel can switch between `source=cf` and `source=memory`. The cloud function keeps a best-effort in-process memory view while still returning Cloudflare D1 by default when `PRESENCE_STORAGE_URL` is configured.
+- A client is treated as offline when its latest heartbeat is older than `PRESENCE_OFFLINE_TIMEOUT_SECONDS`. Production should use a 600-second client heartbeat and a 1500-second offline threshold so one missed heartbeat does not immediately drop the user.
+- `GET /api/presence/stats` requires the presence panel token and returns the last week of online statistics from hourly snapshots. It uses 1-hour buckets.
 
 ## Local run
 

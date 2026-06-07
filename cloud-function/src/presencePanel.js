@@ -29,7 +29,7 @@ function renderPresencePanel(snapshot, currentConfig, req) {
   const token = firstNonEmpty(req.query && req.query.token, req.query && req.query.key);
   const tokenQuery = token ? `?token=${encodeURIComponent(token)}` : '';
   const panelUrl = `${escapeHtmlAttribute(req.path || '/presence')}${escapeHtmlAttribute(tokenQuery)}`;
-  const sessionsApiUrl = `/api/presence/sessions${tokenQuery}`;
+  const sessionsApiUrl = buildAbsoluteRequestUrl(req, `/api/presence/sessions${tokenQuery}`);
   const initialSnapshotJson = escapeJsonForScript(snapshot);
   const stateRows = Object.entries(snapshot.byState || {})
     .sort(([left], [right]) => left.localeCompare(right))
@@ -534,6 +534,36 @@ function escapeJsonForScript(value) {
     .replace(/&/g, '\\u0026')
     .replace(/\u2028/g, '\\u2028')
     .replace(/\u2029/g, '\\u2029');
+}
+
+function buildAbsoluteRequestUrl(req, pathAndQuery) {
+  const host = firstForwardedHeader(req, 'x-forwarded-host') ||
+    firstForwardedHeader(req, 'host');
+  if (!host) {
+    return pathAndQuery;
+  }
+
+  const protocol = normalizeProtocol(
+    firstForwardedHeader(req, 'x-forwarded-proto') ||
+    firstForwardedHeader(req, 'x-forwarded-protocol') ||
+    firstForwardedHeader(req, 'x-forwarded-scheme') ||
+    (req && req.secure ? 'https' : req && req.protocol) ||
+    'http'
+  );
+  const normalizedPath = String(pathAndQuery || '').startsWith('/')
+    ? String(pathAndQuery || '')
+    : `/${pathAndQuery || ''}`;
+  return `${protocol}://${host}${normalizedPath}`;
+}
+
+function firstForwardedHeader(req, name) {
+  const value = req && typeof req.get === 'function' ? req.get(name) : '';
+  return String(value || '').split(',')[0].trim();
+}
+
+function normalizeProtocol(value) {
+  const normalized = String(value || '').trim().toLowerCase().replace(/:$/, '');
+  return normalized === 'https' ? 'https' : 'http';
 }
 
 function resolvePresencePanelToken(currentConfig) {

@@ -1,0 +1,74 @@
+name: Deploy Presence Pages
+
+on:
+  workflow_dispatch:
+    inputs:
+      presence_panel_url:
+        description: "Presence panel URL without token"
+        required: true
+        default: "https://1315061624-boxfc2p5fb.ap-guangzhou.tencentscf.com/presence"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: presence-pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Fetch presence panel and deploy Pages
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Fetch presence panel HTML
+        shell: bash
+        env:
+          PRESENCE_PANEL_URL: ${{ inputs.presence_panel_url }}
+          PRESENCE_PANEL_TOKEN: ${{ secrets.PRESENCE_PANEL_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${PRESENCE_PANEL_TOKEN:-}" ]; then
+            echo "Missing PRESENCE_PANEL_TOKEN repository secret." >&2
+            exit 1
+          fi
+
+          panel_url="$(node -e '
+            const rawUrl = process.env.PRESENCE_PANEL_URL || "";
+            const token = process.env.PRESENCE_PANEL_TOKEN || "";
+            const url = new URL(rawUrl);
+            url.searchParams.set("token", token);
+            process.stdout.write(url.toString());
+          ')"
+
+          pages_root="$RUNNER_TEMP/presence-pages"
+          mkdir -p "$pages_root"
+
+          curl --fail --silent --show-error --location \
+            --header "Accept: text/html" \
+            --output "$pages_root/index.html" \
+            "$panel_url"
+
+          if ! grep -qi "<html" "$pages_root/index.html"; then
+            echo "Downloaded presence panel response does not look like HTML." >&2
+            exit 1
+          fi
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: ${{ runner.temp }}/presence-pages
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

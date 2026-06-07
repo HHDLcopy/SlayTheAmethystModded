@@ -131,6 +131,7 @@ test('presence panel renders protected session details', async (t) => {
   assert.doesNotMatch(panelHtml, />进程</);
   assert.doesNotMatch(panelHtml, />启动模式</);
   assert.match(panelHtml, /fetch\(sessionsApiUrl/);
+  assert.ok(panelHtml.includes(`${baseUrl}/api/presence/sessions?token=panel-secret`));
 
   const sessions = await fetch(`${baseUrl}/api/presence/sessions?token=panel-secret`);
   assert.equal(sessions.status, 200);

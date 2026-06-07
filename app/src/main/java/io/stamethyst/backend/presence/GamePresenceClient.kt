@@ -3,6 +3,7 @@ package io.stamethyst.backend.presence
 import android.content.Context
 import android.provider.Settings
 import io.stamethyst.BuildConfig
+import io.stamethyst.config.LauncherConfig
 import org.json.JSONObject
 import org.json.JSONTokener
 import java.io.BufferedReader
@@ -41,8 +42,7 @@ object GamePresenceClient {
             put("device_id", identity.deviceId)
             put("id_type", identity.idType)
             put("state", "game")
-            put("process", "game")
-            put("launch_mode", launchMode)
+            put("player_name", LauncherConfig.readPlayerName(context))
             put("app_version", BuildConfig.VERSION_NAME)
             put("version_code", BuildConfig.VERSION_CODE)
             put("sent_at", System.currentTimeMillis())

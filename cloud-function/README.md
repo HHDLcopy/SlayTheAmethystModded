@@ -108,8 +108,9 @@ Notes:
 - The webhook must subscribe to both `issues` and `issue_comment` events if you want close and comment emails to be sent.
 - Presence state is currently stored in process memory only. It is cheap and has no external dependency, but it is reset by cold starts and is not shared between multiple SCF instances.
 - Presence heartbeat and online-count APIs are intentionally public and do not require `X-Feedback-Key`.
-- Presence clients are keyed by `client_id`. The Android client sends a SHA-256 hash derived from `Settings.Secure.ANDROID_ID`, with a local install ID fallback when Android ID is unavailable.
+- Presence clients are keyed by `client_id`. The Android client sends a SHA-256 hash derived from `Settings.Secure.ANDROID_ID`, with a local install ID fallback when Android ID is unavailable, and includes the current player name when available.
 - The presence panel requires `PRESENCE_PANEL_TOKEN`. If it is not configured, it falls back to `FEEDBACK_SHARED_SECRET`; if neither is configured, the panel is disabled.
+- The presence panel renders once and then polls `GET /api/presence/sessions` every 15 seconds instead of refreshing the whole page.
 - A client is treated as offline when its latest heartbeat is older than `PRESENCE_OFFLINE_TIMEOUT_SECONDS`.
 
 ## Local run

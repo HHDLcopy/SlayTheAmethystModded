@@ -119,11 +119,48 @@ object LauncherUpdateService {
         )
     }
 
+    fun fetchLatestFullRelease(
+        context: Context,
+        preferredUserSource: UpdateSource,
+    ): UpdateReleaseInfo {
+        val clients = createGithubClients(context)
+        val normalizedPreferredSource = UpdateSource.normalizePreferredUserSource(preferredUserSource.id)
+        val bypassAcceleratedLinks = NetworkAccelerationPolicy.shouldBypassAcceleratedLinks(context)
+        return GithubMirrorFallback.run(
+            normalizedPreferredSource,
+            bypassAcceleratedLinks = bypassAcceleratedLinks,
+        ) { source ->
+            val responseText = requestText(
+                clients.pick(source.usesGithubAcceleration),
+                source.buildUrl(LATEST_RELEASE_API_URL)
+            )
+            parseLatestFullRelease(responseText)
+                ?: throw IOException("Latest full release APK not found.")
+        }.value
+    }
+
     internal fun parseLatestRelease(responseText: String): UpdateReleaseInfo? {
+        return parseLatestRelease(
+            responseText = responseText,
+            preferredAsset = ReleaseAssetPreference.SLIM
+        )
+    }
+
+    internal fun parseLatestFullRelease(responseText: String): UpdateReleaseInfo? {
+        return parseLatestRelease(
+            responseText = responseText,
+            preferredAsset = ReleaseAssetPreference.FULL
+        )
+    }
+
+    private fun parseLatestRelease(
+        responseText: String,
+        preferredAsset: ReleaseAssetPreference,
+    ): UpdateReleaseInfo? {
         val root = parseJsonObject(responseText) ?: return null
         val summary = parseReleaseSummary(root) ?: return null
         val assets = root.optJSONArray("assets") ?: JSONArray()
-        val asset = findFirstApkAsset(assets) ?: return null
+        val asset = findPreferredApkAsset(assets, preferredAsset) ?: return null
         val assetName = asset.optString("name").trim()
         val assetDownloadUrl = asset.optString("browser_download_url").trim()
         if (assetName.isEmpty() || assetDownloadUrl.isEmpty()) {
@@ -296,14 +333,33 @@ object LauncherUpdateService {
         )
     }
 
-    private fun findFirstApkAsset(assets: JSONArray): JSONObject? {
+    private fun findPreferredApkAsset(
+        assets: JSONArray,
+        preferredAsset: ReleaseAssetPreference,
+    ): JSONObject? {
+        var firstApkAsset: JSONObject? = null
         for (index in 0 until assets.length()) {
             val asset = assets.optJSONObject(index) ?: continue
             val name = asset.optString("name").trim()
-            if (name.endsWith(".apk", ignoreCase = true)) {
+            if (!name.endsWith(".apk", ignoreCase = true)) {
+                continue
+            }
+            if (firstApkAsset == null) {
+                firstApkAsset = asset
+            }
+            val isFullApk = name.endsWith("-full.apk", ignoreCase = true)
+            if (
+                preferredAsset == ReleaseAssetPreference.FULL && isFullApk ||
+                preferredAsset == ReleaseAssetPreference.SLIM && !isFullApk
+            ) {
                 return asset
             }
         }
-        return null
+        return if (preferredAsset == ReleaseAssetPreference.SLIM) firstApkAsset else null
+    }
+
+    private enum class ReleaseAssetPreference {
+        SLIM,
+        FULL
     }
 }

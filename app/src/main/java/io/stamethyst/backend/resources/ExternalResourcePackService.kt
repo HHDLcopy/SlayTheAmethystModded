@@ -5,11 +5,14 @@ import io.stamethyst.BuildConfig
 import io.stamethyst.R
 import io.stamethyst.backend.fs.FileTreeCleaner
 import io.stamethyst.backend.github.GithubAcceleratedHttp
+import io.stamethyst.backend.github.GithubRequestClients
 import io.stamethyst.backend.launch.StartupProgressCallback
 import io.stamethyst.backend.launch.progressText
 import io.stamethyst.backend.network.NetworkAccelerationPolicy
-import io.stamethyst.backend.update.GithubMirrorFallback
+import io.stamethyst.backend.update.GithubMirrorFallbackException
+import io.stamethyst.backend.update.GithubMirrorFallbackFailure
 import io.stamethyst.backend.update.UpdateMirrorManager
+import io.stamethyst.backend.update.UpdateSource
 import io.stamethyst.config.RuntimePaths
 import java.io.File
 import java.io.FileInputStream
@@ -25,6 +28,8 @@ import okhttp3.Request
 object ExternalResourcePackService {
     private const val CONNECT_TIMEOUT_MS = 8_000
     private const val READ_TIMEOUT_MS = 30_000
+    private const val PROBE_CONNECT_TIMEOUT_MS = 4_000
+    private const val PROBE_READ_TIMEOUT_MS = 6_000
     private const val USER_AGENT = "SlayTheAmethyst-ResourcePack"
     private const val DOWNLOAD_PROGRESS_REPORT_STEP_BYTES = 256L * 1024L
 
@@ -83,6 +88,43 @@ object ExternalResourcePackService {
         "libvulkan_freedreno.so",
         "libzink_dri.so"
     )
+
+    internal data class ResourcePackLinkProbeResult(
+        val source: UpdateSource,
+        val requestUrl: String,
+        val reachable: Boolean,
+        val elapsedNanos: Long,
+        val candidateIndex: Int,
+        val error: Throwable?
+    )
+
+    internal data class ResourcePackDownloadCandidate(
+        val source: UpdateSource,
+        val requestUrl: String,
+        val elapsedNanos: Long,
+        val candidateIndex: Int
+    )
+
+    internal fun orderResourcePackDownloadCandidates(
+        probeResults: List<ResourcePackLinkProbeResult>
+    ): List<ResourcePackDownloadCandidate> {
+        return probeResults
+            .asSequence()
+            .filter(ResourcePackLinkProbeResult::reachable)
+            .sortedWith(
+                compareBy<ResourcePackLinkProbeResult> { it.elapsedNanos }
+                    .thenBy { it.candidateIndex }
+            )
+            .map { result ->
+                ResourcePackDownloadCandidate(
+                    source = result.source,
+                    requestUrl = result.requestUrl,
+                    elapsedNanos = result.elapsedNanos,
+                    candidateIndex = result.candidateIndex
+                )
+            }
+            .toList()
+    }
 
     @JvmStatic
     @Throws(IOException::class)
@@ -263,24 +305,174 @@ object ExternalResourcePackService {
         targetFile: File,
         progressCallback: StartupProgressCallback?
     ) {
-        val clients = GithubAcceleratedHttp.createClientPair(
+        val downloadClients = GithubAcceleratedHttp.createClientPair(
             context = context,
             connectTimeoutMs = CONNECT_TIMEOUT_MS,
             readTimeoutMs = READ_TIMEOUT_MS,
             followRedirects = true
         )
+        val probeClients = GithubAcceleratedHttp.createClientPair(
+            context = context,
+            connectTimeoutMs = PROBE_CONNECT_TIMEOUT_MS,
+            readTimeoutMs = PROBE_READ_TIMEOUT_MS,
+            followRedirects = true
+        )
         val preferredSource = UpdateMirrorManager.current(context)
-        GithubMirrorFallback.run(
-            preferredSource,
-            bypassAcceleratedLinks = NetworkAccelerationPolicy.shouldBypassAcceleratedLinks(context)
-        ) { candidate ->
-            downloadFile(
-                client = clients.pick(candidate.usesGithubAcceleration),
-                requestUrl = candidate.buildUrl(resourcePackUrl),
-                targetFile = targetFile,
-                progressCallback = progressCallback,
-                context = context
+        val bypassAcceleratedLinks = NetworkAccelerationPolicy.shouldBypassAcceleratedLinks(context)
+        val candidates = UpdateSource.downloadCandidates(
+            preferredUserSource = preferredSource,
+            metadataSource = preferredSource,
+            bypassAcceleratedLinks = bypassAcceleratedLinks
+        )
+        val orderedCandidates = probeResourcePackDownloadCandidates(
+            clients = probeClients,
+            resourcePackUrl = resourcePackUrl,
+            candidates = candidates,
+            progressCallback = progressCallback,
+            context = context
+        )
+        val failures = ArrayList<GithubMirrorFallbackFailure>()
+        orderedCandidates.forEach { candidate ->
+            throwIfInterrupted()
+            reportProgress(
+                progressCallback,
+                10,
+                context.progressText(
+                    R.string.startup_progress_selected_external_resource_link,
+                    candidate.source.displayName
+                )
             )
+            try {
+                downloadFile(
+                    client = downloadClients.pick(candidate.source.usesGithubAcceleration),
+                    requestUrl = candidate.requestUrl,
+                    targetFile = targetFile,
+                    progressCallback = progressCallback,
+                    context = context
+                )
+                return
+            } catch (error: Throwable) {
+                failures += GithubMirrorFallbackFailure(candidate.source, error)
+            }
+        }
+        throw GithubMirrorFallbackException(failures)
+    }
+
+    private fun probeResourcePackDownloadCandidates(
+        clients: GithubRequestClients,
+        resourcePackUrl: String,
+        candidates: List<UpdateSource>,
+        progressCallback: StartupProgressCallback?,
+        context: Context
+    ): List<ResourcePackDownloadCandidate> {
+        val results = ArrayList<ResourcePackLinkProbeResult>()
+        candidates.forEachIndexed { index, source ->
+            throwIfInterrupted()
+            reportProgress(
+                progressCallback,
+                6 + ((index * 4) / candidates.size.coerceAtLeast(1)),
+                context.progressText(
+                    R.string.startup_progress_checking_external_resource_links,
+                    index + 1,
+                    candidates.size,
+                    source.displayName
+                )
+            )
+            val requestUrl = source.buildUrl(resourcePackUrl)
+            results += probeResourcePackLink(
+                client = clients.pick(source.usesGithubAcceleration),
+                source = source,
+                requestUrl = requestUrl,
+                candidateIndex = index
+            )
+        }
+        return orderResourcePackDownloadCandidates(results)
+            .ifEmpty {
+                throw GithubMirrorFallbackException(
+                    results.map { result ->
+                        GithubMirrorFallbackFailure(
+                            source = result.source,
+                            error = result.error ?: IOException("Resource pack link is unreachable.")
+                        )
+                    }
+                )
+            }
+    }
+
+    private fun probeResourcePackLink(
+        client: OkHttpClient,
+        source: UpdateSource,
+        requestUrl: String,
+        candidateIndex: Int,
+    ): ResourcePackLinkProbeResult {
+        val startedAtNs = System.nanoTime()
+        return runCatching {
+            if (!isResourcePackLinkReachable(client, requestUrl)) {
+                throw IOException("Resource pack link is unreachable.")
+            }
+            ResourcePackLinkProbeResult(
+                source = source,
+                requestUrl = requestUrl,
+                reachable = true,
+                elapsedNanos = System.nanoTime() - startedAtNs,
+                candidateIndex = candidateIndex,
+                error = null
+            )
+        }.getOrElse { error ->
+            ResourcePackLinkProbeResult(
+                source = source,
+                requestUrl = requestUrl,
+                reachable = false,
+                elapsedNanos = System.nanoTime() - startedAtNs,
+                candidateIndex = candidateIndex,
+                error = error
+            )
+        }
+    }
+
+    private fun isResourcePackLinkReachable(client: OkHttpClient, requestUrl: String): Boolean {
+        return requestResourcePackProbe(client, requestUrl, "HEAD") ||
+            requestResourcePackRangeProbe(client, requestUrl)
+    }
+
+    private fun requestResourcePackProbe(
+        client: OkHttpClient,
+        requestUrl: String,
+        method: String,
+    ): Boolean {
+        val requestBuilder = Request.Builder()
+            .url(requestUrl)
+            .header("User-Agent", USER_AGENT)
+        val request = if (method.equals("HEAD", ignoreCase = true)) {
+            requestBuilder.head().build()
+        } else {
+            requestBuilder.method(method, null).build()
+        }
+        return try {
+            client.newCall(request).execute().use { response ->
+                response.isSuccessful
+            }
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    private fun requestResourcePackRangeProbe(
+        client: OkHttpClient,
+        requestUrl: String,
+    ): Boolean {
+        val request = Request.Builder()
+            .url(requestUrl)
+            .get()
+            .header("User-Agent", USER_AGENT)
+            .header("Range", "bytes=0-0")
+            .build()
+        return try {
+            client.newCall(request).execute().use { response ->
+                response.isSuccessful || response.code == 206
+            }
+        } catch (_: Throwable) {
+            false
         }
     }
 

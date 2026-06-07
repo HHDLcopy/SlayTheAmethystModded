@@ -28,7 +28,9 @@ function enforcePresencePanelAccess(req, currentConfig) {
 function renderPresencePanel(snapshot, currentConfig, req) {
   const token = firstNonEmpty(req.query && req.query.token, req.query && req.query.key);
   const tokenQuery = token ? `?token=${encodeURIComponent(token)}` : '';
-  const refreshUrl = `${escapeHtmlAttribute(req.path || '/presence')}${escapeHtmlAttribute(tokenQuery)}`;
+  const panelUrl = `${escapeHtmlAttribute(req.path || '/presence')}${escapeHtmlAttribute(tokenQuery)}`;
+  const sessionsApiUrl = `/api/presence/sessions${tokenQuery}`;
+  const initialSnapshotJson = escapeJsonForScript(snapshot);
   const stateRows = Object.entries(snapshot.byState || {})
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([state, count]) => `
@@ -40,16 +42,15 @@ function renderPresencePanel(snapshot, currentConfig, req) {
   const sessionRows = Array.isArray(snapshot.sessions) && snapshot.sessions.length > 0
     ? snapshot.sessions.map(renderSessionRow).join('')
     : `
-          <tr>
-            <td class="empty" colspan="9">No active game sessions.</td>
-          </tr>`;
+            <tr>
+              <td class="empty" colspan="8">No active game sessions.</td>
+            </tr>`;
 
   return `<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="refresh" content="15;url=${refreshUrl}">
   <title>Presence Panel - ${escapeHtml(APP_NAME)}</title>
   <style>
     :root {
@@ -224,25 +225,25 @@ function renderPresencePanel(snapshot, currentConfig, req) {
     <header>
       <div>
         <h1>在线情况面板</h1>
-        <div class="subtle">${escapeHtml(APP_NAME)} · 自动每 15 秒刷新 · ${escapeHtml(snapshot.checkedAt || '')}</div>
+        <div class="subtle" id="panel-subtitle">${escapeHtml(APP_NAME)} · 自动每 15 秒同步 · ${escapeHtml(snapshot.checkedAt || '')}</div>
       </div>
       <div class="actions">
-        <a class="button" href="${refreshUrl}">刷新</a>
+        <a class="button" id="refresh-now" href="${panelUrl}">刷新</a>
       </div>
     </header>
 
     <section class="grid" aria-label="Presence summary">
       <div class="metric">
         <div class="metric-label">当前在线</div>
-        <div class="metric-value">${Number(snapshot.online) || 0}</div>
+        <div class="metric-value" id="metric-online">${Number(snapshot.online) || 0}</div>
       </div>
       <div class="metric">
         <div class="metric-label">心跳间隔</div>
-        <div class="metric-value">${Number(snapshot.heartbeatIntervalSeconds) || 0}s</div>
+        <div class="metric-value" id="metric-heartbeat">${Number(snapshot.heartbeatIntervalSeconds) || 0}s</div>
       </div>
       <div class="metric">
         <div class="metric-label">离线阈值</div>
-        <div class="metric-value">${Number(snapshot.offlineTimeoutSeconds) || 0}s</div>
+        <div class="metric-value" id="metric-timeout">${Number(snapshot.offlineTimeoutSeconds) || 0}s</div>
       </div>
       <div class="metric">
         <div class="metric-label">存储后端</div>
@@ -262,7 +263,7 @@ function renderPresencePanel(snapshot, currentConfig, req) {
               <th class="number">人数</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody id="state-rows">
 ${stateRows || '          <tr><td class="empty" colspan="2">No active states.</td></tr>'}
           </tbody>
         </table>
@@ -279,23 +280,160 @@ ${stateRows || '          <tr><td class="empty" colspan="2">No active states.</t
           <thead>
             <tr>
               <th>设备</th>
+              <th>玩家名</th>
               <th>ID 类型</th>
               <th>状态</th>
               <th>版本</th>
-              <th>进程</th>
-              <th>启动模式</th>
               <th>首次在线</th>
               <th>最近心跳</th>
               <th>剩余 TTL</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody id="session-rows">
 ${sessionRows}
           </tbody>
         </table>
       </div>
     </section>
   </main>
+  <script>
+    (function () {
+      'use strict';
+
+      var appName = ${JSON.stringify(APP_NAME)};
+      var sessionsApiUrl = ${JSON.stringify(sessionsApiUrl)};
+      var refreshButton = document.getElementById('refresh-now');
+      var stateRows = document.getElementById('state-rows');
+      var sessionRows = document.getElementById('session-rows');
+      var subtitle = document.getElementById('panel-subtitle');
+      var metricOnline = document.getElementById('metric-online');
+      var metricHeartbeat = document.getElementById('metric-heartbeat');
+      var metricTimeout = document.getElementById('metric-timeout');
+      var refreshTimer = null;
+
+      function escapeHtml(value) {
+        return String(value || '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+      }
+
+      function escapeHtmlAttribute(value) {
+        return escapeHtml(value).replace(new RegExp(String.fromCharCode(96), 'g'), '&#96;');
+      }
+
+      function maskIdentifier(value) {
+        var normalized = String(value || '').trim();
+        if (normalized.length <= 24) {
+          return normalized || 'unknown';
+        }
+        return normalized.slice(0, 14) + '...' + normalized.slice(-8);
+      }
+
+      function formatDateTime(value) {
+        if (!value) {
+          return '-';
+        }
+        var date = new Date(value);
+        if (Number.isNaN(date.getTime())) {
+          return '-';
+        }
+        return date.toLocaleString('zh-CN', {
+          hour12: false,
+          timeZone: 'Asia/Hong_Kong'
+        });
+      }
+
+      function formatAge(value) {
+        var seconds = Number(value);
+        if (!Number.isFinite(seconds)) {
+          return '-';
+        }
+        return Math.max(0, seconds) + 's ago';
+      }
+
+      function renderStateRows(byState) {
+        var entries = Object.entries(byState || {})
+          .sort(function (left, right) {
+            return left[0].localeCompare(right[0]);
+          });
+        if (entries.length === 0) {
+          return '<tr><td class="empty" colspan="2">No active states.</td></tr>';
+        }
+        return entries.map(function (entry) {
+          return '<tr><td>' + escapeHtml(entry[0]) + '</td><td class="number">' + (Number(entry[1]) || 0) + '</td></tr>';
+        }).join('');
+      }
+
+      function renderSessionRows(sessions) {
+        if (!Array.isArray(sessions) || sessions.length === 0) {
+          return '<tr><td class="empty" colspan="8">No active game sessions.</td></tr>';
+        }
+        return sessions.map(function (session) {
+          var clientId = session.clientId || '';
+          var deviceLabel = maskIdentifier(clientId || session.deviceId || 'unknown');
+          var playerName = String(session.playerName || '').trim() || '-';
+          return '<tr>' +
+            '<td><code title="' + escapeHtmlAttribute(clientId) + '">' + escapeHtml(deviceLabel) + '</code></td>' +
+            '<td>' + escapeHtml(playerName) + '</td>' +
+            '<td>' + escapeHtml(session.idType || 'unknown') + '</td>' +
+            '<td>' + escapeHtml(session.state || 'unknown') + '</td>' +
+            '<td>' + escapeHtml(session.appVersion || '-') + '</td>' +
+            '<td>' + escapeHtml(formatDateTime(session.firstSeenAt)) + '</td>' +
+            '<td>' + escapeHtml(formatDateTime(session.lastSeenAt)) + '<br><span class="subtle">' + escapeHtml(formatAge(session.ageSeconds)) + '</span></td>' +
+            '<td>' + (Number(session.expiresInSeconds) || 0) + 's</td>' +
+          '</tr>';
+        }).join('');
+      }
+
+      function renderSnapshot(snapshot) {
+        metricOnline.textContent = String(Number(snapshot.online) || 0);
+        metricHeartbeat.textContent = String(Number(snapshot.heartbeatIntervalSeconds) || 0) + 's';
+        metricTimeout.textContent = String(Number(snapshot.offlineTimeoutSeconds) || 0) + 's';
+        subtitle.textContent = appName + ' · 自动每 15 秒同步 · ' + (snapshot.checkedAt || '');
+        stateRows.innerHTML = renderStateRows(snapshot.byState || {});
+        sessionRows.innerHTML = renderSessionRows(snapshot.sessions || []);
+      }
+
+      function loadSnapshot() {
+        return fetch(sessionsApiUrl, {
+          cache: 'no-store',
+          headers: {
+            Accept: 'application/json'
+          }
+        })
+          .then(function (response) {
+            if (!response.ok) {
+              throw new Error('HTTP ' + response.status);
+            }
+            return response.json();
+          })
+          .then(function (snapshot) {
+            renderSnapshot(snapshot);
+          })
+          .catch(function (error) {
+            subtitle.textContent = appName + ' · 同步失败 · ' + (error && error.message ? error.message : 'unknown');
+          });
+      }
+
+      if (refreshButton) {
+        refreshButton.addEventListener('click', function (event) {
+          event.preventDefault();
+          loadSnapshot();
+        });
+      }
+
+      renderSnapshot(${initialSnapshotJson});
+      refreshTimer = window.setInterval(loadSnapshot, 15000);
+      window.addEventListener('beforeunload', function () {
+        if (refreshTimer) {
+          window.clearInterval(refreshTimer);
+        }
+      });
+    }());
+  </script>
 </body>
 </html>`;
 }
@@ -379,15 +517,23 @@ function renderSessionRow(session) {
   return `
           <tr>
             <td><code title="${escapeHtmlAttribute(session.clientId || '')}">${escapeHtml(maskIdentifier(session.clientId || session.deviceId || 'unknown'))}</code></td>
+            <td>${escapeHtml(session.playerName || '-')}</td>
             <td>${escapeHtml(session.idType || 'unknown')}</td>
             <td>${escapeHtml(session.state || 'unknown')}</td>
             <td>${escapeHtml(session.appVersion || '-')}</td>
-            <td>${escapeHtml(session.processName || '-')}</td>
-            <td>${escapeHtml(session.launchMode || '-')}</td>
             <td>${escapeHtml(formatDateTime(session.firstSeenAt))}</td>
             <td>${escapeHtml(formatDateTime(session.lastSeenAt))}<br><span class="subtle">${formatAge(session.ageSeconds)}</span></td>
             <td>${Number(session.expiresInSeconds) || 0}s</td>
           </tr>`;
+}
+
+function escapeJsonForScript(value) {
+  return JSON.stringify(value)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
 }
 
 function resolvePresencePanelToken(currentConfig) {

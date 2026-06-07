@@ -35,6 +35,33 @@ class LauncherUpdateServiceParsingTest {
     }
 
     @Test
+    fun parseLatestRelease_prefersSlimApkAndFullParserSelectsFullApk() {
+        val payload = "{\"tag_name\":\"v1.4.7\"," +
+            "\"published_at\":\"2026-06-07T04:20:00Z\"," +
+            "\"html_url\":\"https://github.com/ModinMobileSTS/SlayTheAmethystModded/releases/tag/v1.4.7\"," +
+            "\"body\":\"Release\"," +
+            "\"assets\":[{" +
+            "\"name\":\"SlayTheAmethyst-release-1.4.7-full.apk\"," +
+            "\"browser_download_url\":\"https://github.com/ModinMobileSTS/SlayTheAmethystModded/releases/download/v1.4.7/SlayTheAmethyst-release-1.4.7-full.apk\"" +
+            "},{" +
+            "\"name\":\"SlayTheAmethyst-release-1.4.7.apk\"," +
+            "\"browser_download_url\":\"https://github.com/ModinMobileSTS/SlayTheAmethystModded/releases/download/v1.4.7/SlayTheAmethyst-release-1.4.7.apk\"" +
+            "}]}"
+
+        val slim = LauncherUpdateService.parseLatestRelease(payload)
+        val full = LauncherUpdateService.parseLatestFullRelease(payload)
+
+        assertNotNull(slim)
+        assertNotNull(full)
+        assertEquals("SlayTheAmethyst-release-1.4.7.apk", slim?.assetName)
+        assertEquals("SlayTheAmethyst-release-1.4.7-full.apk", full?.assetName)
+        assertEquals(
+            "https://github.com/ModinMobileSTS/SlayTheAmethystModded/releases/download/v1.4.7/SlayTheAmethyst-release-1.4.7-full.apk",
+            full?.assetDownloadUrl
+        )
+    }
+
+    @Test
     fun parseReleaseHistory_extractsMultipleEntriesAndSkipsDrafts() {
         val parsed = LauncherUpdateService.parseReleaseHistory(
             "[" +

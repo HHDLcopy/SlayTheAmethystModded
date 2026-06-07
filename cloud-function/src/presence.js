@@ -24,9 +24,8 @@ function parsePresenceHeartbeatRequest(req) {
     deviceId: normalizeClientId(firstNonEmpty(body.device_id, body.deviceId)),
     idType: normalizeOptionalString(firstNonEmpty(body.id_type, body.idType)),
     state: normalizeOptionalString(firstNonEmpty(body.state, body.phase)) || 'game',
-    appVersion: normalizeOptionalString(firstNonEmpty(body.app_version, body.appVersion)),
-    processName: normalizeOptionalString(firstNonEmpty(body.process, body.process_name, body.processName)),
-    launchMode: normalizeOptionalString(firstNonEmpty(body.launch_mode, body.launchMode))
+    playerName: normalizeOptionalString(firstNonEmpty(body.player_name, body.playerName)),
+    appVersion: normalizeOptionalString(firstNonEmpty(body.app_version, body.appVersion))
   };
 }
 
@@ -41,9 +40,8 @@ function recordPresenceHeartbeat(heartbeat, currentConfig) {
     deviceId: heartbeat.deviceId,
     idType: heartbeat.idType,
     state: heartbeat.state,
+    playerName: heartbeat.playerName,
     appVersion: heartbeat.appVersion,
-    processName: heartbeat.processName,
-    launchMode: heartbeat.launchMode,
     firstSeenAtMs: existing ? existing.firstSeenAtMs : nowMs,
     lastSeenAtMs: nowMs
   };
@@ -83,9 +81,8 @@ function buildPresenceSnapshot(currentConfig, nowMs = Date.now()) {
         deviceId: session.deviceId || '',
         idType: session.idType || '',
         state: session.state || 'unknown',
+        playerName: session.playerName || '',
         appVersion: session.appVersion || '',
-        processName: session.processName || '',
-        launchMode: session.launchMode || '',
         firstSeenAt: firstSeenAtMs > 0 ? new Date(firstSeenAtMs).toISOString() : null,
         lastSeenAt: lastSeenAtMs > 0 ? new Date(lastSeenAtMs).toISOString() : null,
         ageSeconds: lastSeenAtMs > 0 ? Math.max(0, Math.floor((nowMs - lastSeenAtMs) / 1000)) : null,

@@ -1,6 +1,8 @@
 package io.stamethyst.ui.resources
 
 import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -36,25 +38,28 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.stamethyst.R
 import io.stamethyst.backend.launch.progressText
 import io.stamethyst.backend.resources.ExternalResourcePackService
 import io.stamethyst.backend.update.GithubMirrorFallback
+import io.stamethyst.backend.update.LauncherUpdateService
 import io.stamethyst.backend.update.UpdateMirrorManager
 import io.stamethyst.backend.update.UpdateSource
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private const val FULL_RELEASE_PAGE_URL =
-    "https://github.com/ModinMobileSTS/SlayTheAmethystModded/releases/latest"
+private const val QUARK_BROWSER_PACKAGE_NAME = "com.quark.browser"
 
 @Composable
 fun LauncherResourceGate(
@@ -64,6 +69,8 @@ fun LauncherResourceGate(
 ) {
     val context = LocalContext.current
     val applicationContext = context.applicationContext
+    val coroutineScope = rememberCoroutineScope()
+    val quarkDownloadUrl = stringResource(R.string.update_dialog_quark_download_url)
     var gateState by remember {
         mutableStateOf<ResourceGateState>(
             if (ExternalResourcePackService.isAvailable(applicationContext)) {
@@ -81,6 +88,7 @@ fun LauncherResourceGate(
     }
     var retryNonce by remember { mutableIntStateOf(0) }
     var readyNotified by remember { mutableStateOf(false) }
+    var resolvingFullRelease by remember { mutableStateOf(false) }
 
     LaunchedEffect(retryNonce) {
         if (retryNonce == 0 && ExternalResourcePackService.isAvailable(applicationContext)) {
@@ -135,7 +143,30 @@ fun LauncherResourceGate(
             retryNonce++
         },
         onRetry = { retryNonce++ },
-        onOpenFullRelease = { openExternalUrl(context, FULL_RELEASE_PAGE_URL) },
+        onOpenFullRelease = {
+            if (!resolvingFullRelease) {
+                resolvingFullRelease = true
+                coroutineScope.launch {
+                    val downloadTarget = resolveLatestFullReleaseDownloadTarget(
+                        context = applicationContext,
+                        selectedMirror = selectedMirror
+                    )
+                    resolvingFullRelease = false
+                    when (downloadTarget) {
+                        is FullReleaseDownloadTarget.Github -> openExternalUrl(
+                            context,
+                            downloadTarget.url
+                        )
+
+                        FullReleaseDownloadTarget.Quark -> copyAndOpenQuarkDownload(
+                            context,
+                            quarkDownloadUrl
+                        )
+                    }
+                }
+            }
+        },
+        resolvingFullRelease = resolvingFullRelease,
         modifier = modifier
     )
 }
@@ -148,6 +179,7 @@ private fun ResourcePreparationScreen(
     onMirrorSelected: (UpdateSource) -> Unit,
     onRetry: () -> Unit,
     onOpenFullRelease: () -> Unit,
+    resolvingFullRelease: Boolean,
     modifier: Modifier = Modifier,
 ) {
     var showMirrorDialog by remember { mutableStateOf(false) }
@@ -155,102 +187,106 @@ private fun ResourcePreparationScreen(
     val failed = state as? ResourceGateState.Failed
 
     Surface(modifier = modifier.fillMaxSize()) {
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
                 .navigationBarsPadding()
                 .padding(horizontal = 24.dp, vertical = 20.dp),
-            contentAlignment = Alignment.Center
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Column(
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .widthIn(max = 520.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                    .weight(1f),
+                contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = stringResource(R.string.resource_gate_title),
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    text = stringResource(R.string.resource_gate_description),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                if (preparing != null) {
-                    val progress = preparing.percent.coerceIn(0, 100)
-                    LinearProgressIndicator(
-                        progress = { progress / 100f },
-                        modifier = Modifier.fillMaxWidth()
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .widthIn(max = 520.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.resource_gate_title),
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        text = stringResource(R.string.resource_gate_progress_percent, progress),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = preparing.message,
-                        style = MaterialTheme.typography.bodySmall,
+                        text = stringResource(R.string.resource_gate_description),
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                } else {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                }
 
-                MirrorSelectionRow(
-                    selectedMirror = selectedMirror,
-                    enabled = preparing == null,
-                    onClick = { showMirrorDialog = true }
-                )
-
-                if (failed != null) {
-                    Text(
-                        text = stringResource(R.string.resource_gate_failure_title),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                    SelectionContainer {
+                    if (preparing != null) {
+                        val progress = preparing.percent.coerceIn(0, 100)
+                        LinearProgressIndicator(
+                            progress = { progress / 100f },
+                            modifier = Modifier.fillMaxWidth()
+                        )
                         Text(
-                            text = failed.summary,
+                            text = stringResource(R.string.resource_gate_progress_percent, progress),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = preparing.message,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Text(
-                        text = stringResource(R.string.resource_gate_full_release_fallback),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+
+                    MirrorSelectionRow(
+                        selectedMirror = selectedMirror,
+                        enabled = preparing == null,
+                        onClick = { showMirrorDialog = true }
                     )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
+
+                    if (failed != null) {
                         Button(
                             onClick = onRetry,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(stringResource(R.string.resource_gate_retry))
                         }
-                        OutlinedButton(
-                            onClick = onOpenFullRelease,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text(stringResource(R.string.resource_gate_open_full_release))
+                        Text(
+                            text = stringResource(R.string.resource_gate_failure_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        SelectionContainer {
+                            Text(
+                                text = failed.summary,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
+                        Text(
+                            text = stringResource(R.string.resource_gate_full_release_fallback),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
+            Text(
+                text = stringResource(R.string.resource_gate_full_release_quick_download),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                textDecoration = TextDecoration.Underline,
+                modifier = Modifier
+                    .padding(top = 12.dp)
+                    .clickable(onClick = onOpenFullRelease)
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            )
         }
     }
 
     if (showMirrorDialog) {
         AlertDialog(
             onDismissRequest = { showMirrorDialog = false },
-            title = { Text(stringResource(R.string.resource_gate_mirror_title)) },
+//            title = { Text(stringResource(R.string.resource_gate_mirror_title)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     availableMirrors.forEach { source ->
@@ -263,11 +299,11 @@ private fun ResourcePreparationScreen(
                             }
                         )
                     }
-                    Text(
-                        text = stringResource(R.string.resource_gate_mirror_description),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+//                    Text(
+//                        text = stringResource(R.string.resource_gate_mirror_description),
+//                        style = MaterialTheme.typography.bodySmall,
+//                        color = MaterialTheme.colorScheme.onSurfaceVariant
+//                    )
                 }
             },
             confirmButton = {
@@ -275,6 +311,24 @@ private fun ResourcePreparationScreen(
                     Text(stringResource(R.string.main_folder_dialog_confirm))
                 }
             }
+        )
+    }
+
+    if (resolvingFullRelease) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text(stringResource(R.string.resource_gate_fetching_latest_full_release)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    Text(
+                        text = stringResource(R.string.resource_gate_fetching_latest_full_release_description),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {}
         )
     }
 }
@@ -286,10 +340,10 @@ private fun MirrorSelectionRow(
     onClick: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(
-            text = stringResource(R.string.resource_gate_mirror_title),
-            style = MaterialTheme.typography.labelLarge
-        )
+//        Text(
+//            text = stringResource(R.string.resource_gate_mirror_title),
+//            style = MaterialTheme.typography.labelLarge
+//        )
         OutlinedButton(
             onClick = onClick,
             enabled = enabled,
@@ -348,13 +402,54 @@ private sealed interface ResourceGateState {
     ) : ResourceGateState
 }
 
+private sealed interface FullReleaseDownloadTarget {
+    data class Github(val url: String) : FullReleaseDownloadTarget
+    data object Quark : FullReleaseDownloadTarget
+}
+
+private suspend fun resolveLatestFullReleaseDownloadTarget(
+    context: Context,
+    selectedMirror: UpdateSource,
+): FullReleaseDownloadTarget {
+    return withContext(Dispatchers.IO) {
+        runCatching<FullReleaseDownloadTarget> {
+            val latestFullRelease = LauncherUpdateService.fetchLatestFullRelease(
+                context = context,
+                preferredUserSource = selectedMirror
+            )
+            FullReleaseDownloadTarget.Github(selectedMirror.buildUrl(latestFullRelease.assetDownloadUrl))
+        }.getOrDefault(FullReleaseDownloadTarget.Quark)
+    }
+}
+
+private fun copyAndOpenQuarkDownload(context: Context, url: String) {
+    copyToClipboard(context, "quark-download-url", url)
+    val quarkIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+        .setPackage(QUARK_BROWSER_PACKAGE_NAME)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    if (!tryStartActivity(context, quarkIntent)) {
+        openExternalUrl(context, url)
+    }
+}
+
 private fun openExternalUrl(context: Context, url: String) {
     val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    try {
-        context.startActivity(intent)
-    } catch (_: ActivityNotFoundException) {
-    } catch (_: SecurityException) {
-    } catch (_: IllegalArgumentException) {
-    }
+    tryStartActivity(context, intent)
+}
+
+private fun tryStartActivity(context: Context, intent: Intent): Boolean = try {
+    context.startActivity(intent)
+    true
+} catch (_: ActivityNotFoundException) {
+    false
+} catch (_: SecurityException) {
+    false
+} catch (_: IllegalArgumentException) {
+    false
+}
+
+private fun copyToClipboard(context: Context, label: String, value: String) {
+    val clipboard = context.getSystemService(ClipboardManager::class.java) ?: return
+    clipboard.setPrimaryClip(ClipData.newPlainText(label, value))
 }

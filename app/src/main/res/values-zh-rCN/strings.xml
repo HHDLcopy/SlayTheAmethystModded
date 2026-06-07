@@ -288,14 +288,19 @@
     <string name="boot_overlay_stage_starting_game_entry">正在启动游戏入口…</string>
     <string name="startup_progress_checking_external_resources">正在检查外置运行资源…</string>
     <string name="startup_progress_external_resources_available">外置运行资源已就绪</string>
+    <string name="startup_progress_checking_external_resource_links">正在检查资源下载链路… %1$d / %2$d（%3$s）</string>
+    <string name="startup_progress_selected_external_resource_link">正在使用资源下载链路：%1$s</string>
     <string name="startup_progress_downloading_external_resources">正在下载外置运行资源… %1$s / %2$s</string>
     <string name="startup_progress_extracting_external_resources">正在准备外置运行资源… %1$d%%</string>
     <string name="startup_progress_external_resources_ready">外置运行资源已准备完成</string>
     <string name="resource_gate_title">正在准备运行资源</string>
-    <string name="resource_gate_description">启动器需要先准备资源包才能继续。full 版本会从安装包内安装这些资源，slim 版本会在首次启动时下载一次。</string>
+    <string name="resource_gate_description">依赖包约 70 M，请耐心等待。</string>
     <string name="resource_gate_progress_percent">%1$d%%</string>
     <string name="resource_gate_failure_title">资源下载失败</string>
-    <string name="resource_gate_full_release_fallback">如果资源包始终下载不下来，可以去 GitHub 下载最新 release 的 full 版本 APK。full 版本已经包含全部运行资源，不需要额外下载。</string>
+    <string name="resource_gate_full_release_fallback">建议切换上方镜像源重试下载。如果全部下载失败，建议移步 Github 下载离线版安装包。</string>
+    <string name="resource_gate_full_release_quick_download">无法下载？点我下载离线版。</string>
+    <string name="resource_gate_fetching_latest_full_release">获取最新版中</string>
+    <string name="resource_gate_fetching_latest_full_release_description">正在获取最新离线版下载链接…</string>
     <string name="resource_gate_retry">重试</string>
     <string name="resource_gate_open_full_release">打开 full 版本</string>
     <string name="resource_gate_mirror_title">下载镜像</string>
@@ -874,7 +879,7 @@
     <string name="update_dialog_action_download">前往下载</string>
     <string name="update_dialog_download_option_direct">GitHub Release（直链）</string>
     <string name="update_download_choice_dialog_title">选择更新方式</string>
-    <string name="update_download_choice_dialog_message">启动器永久免费，但是开发成本过高，买不起 tokens 了😭😭😭\n为了以后的长久维护，开发者已加入蕾忍宗学习人民收米术，后续下载渠道改为夸克（下载可能会慢一点但会稳定一些）。因为夸克神秘的限速策略，如果实在下不下来，可以加入我们的交流群，群文件里会发版。有能力的小伙伴也可以前往 Github Release 下载。最后感谢大家支持！</string>
+    <string name="update_download_choice_dialog_message">启动器为了维持基本的开发成本，调整为从夸克进行下载，启动器经过优化，大小仅有10MB，即使夸克下的慢，也不影响正常下载。请大家支持支持开发，从夸克进行启动器的下载，从 Github 下载的朋友们，也可以每次更新时转存一下，同样也能获得收益，非常感谢！</string>
     <string name="update_download_choice_dialog_image_description">更新下载提示图片</string>
     <string name="update_download_choice_dialog_source_label">下载源</string>
     <string name="update_download_choice_dialog_action_direct_download">直链下载</string>
@@ -918,7 +923,7 @@
     <string name="settings_author_report_notice">如果你在其他来源下载到本项目，属于第三方违规再分发。</string>
     <string name="settings_author_follow_notice">请关注官方发布渠道，以获取最新版本与公告。</string>
     <string name="settings_author_qq_group_prefix">欢迎加入官方互助交流QQ群：</string>
-    <string name="settings_author_qq_group_number">1029305387</string>
+    <string name="settings_author_qq_group_number">172064628</string>
     <string name="settings_author_qq_group_url">mqqapi://card/show_pslcard?src_type=internal&amp;version=1&amp;uin=1029305387&amp;card_type=group&amp;source=qrcode</string>
     <string name="settings_unplayable_mods_entry_title">有模组玩不了？</string>
     <string name="settings_unplayable_mods_dialog_title">上报无法游玩模组</string>

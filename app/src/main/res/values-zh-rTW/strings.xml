@@ -289,6 +289,8 @@
     <string name="boot_overlay_stage_starting_game_entry">正在啟動遊戲入口…</string>
     <string name="startup_progress_checking_external_resources">正在檢查外置執行資源…</string>
     <string name="startup_progress_external_resources_available">外置執行資源已就緒</string>
+    <string name="startup_progress_checking_external_resource_links">正在檢查資源下載鏈路… %1$d / %2$d（%3$s）</string>
+    <string name="startup_progress_selected_external_resource_link">正在使用資源下載鏈路：%1$s</string>
     <string name="startup_progress_downloading_external_resources">正在下載外置執行資源… %1$s / %2$s</string>
     <string name="startup_progress_extracting_external_resources">正在準備外置執行資源… %1$d%%</string>
     <string name="startup_progress_external_resources_ready">外置執行資源已準備完成</string>
@@ -297,6 +299,9 @@
     <string name="resource_gate_progress_percent">%1$d%%</string>
     <string name="resource_gate_failure_title">資源下載失敗</string>
     <string name="resource_gate_full_release_fallback">如果資源包始終下載不下來，可以去 GitHub 下載最新 release 的 full 版本 APK。full 版本已包含全部執行資源，不需要額外下載。</string>
+    <string name="resource_gate_full_release_quick_download">無法下載？點我下載完整版</string>
+    <string name="resource_gate_fetching_latest_full_release">正在取得最新版</string>
+    <string name="resource_gate_fetching_latest_full_release_description">正在取得最新離線版下載連結…</string>
     <string name="resource_gate_retry">重試</string>
     <string name="resource_gate_open_full_release">開啟 full 版本</string>
     <string name="resource_gate_mirror_title">下載鏡像</string>
@@ -919,7 +924,7 @@
     <string name="settings_author_report_notice">如果你在其他來源下載到本專案，屬於第三方違規再分發。</string>
     <string name="settings_author_follow_notice">請關注官方釋出渠道，以獲取最新版本與公告。</string>
     <string name="settings_author_qq_group_prefix">歡迎加入官方互助交流QQ群：</string>
-    <string name="settings_author_qq_group_number">1029305387</string>
+    <string name="settings_author_qq_group_number">172064628</string>
     <string name="settings_author_qq_group_url">mqqapi://card/show_pslcard?src_type=internal&amp;version=1&amp;uin=1029305387&amp;card_type=group&amp;source=qrcode</string>
     <string name="settings_unplayable_mods_entry_title">有模組玩不了？</string>
     <string name="settings_unplayable_mods_dialog_title">上報無法遊玩模組</string>

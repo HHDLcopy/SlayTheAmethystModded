@@ -55,7 +55,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInteropFilter
-import androidx.compose.ui.layout.ContentScale
 import androidx.activity.compose.LocalActivity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -107,8 +106,6 @@ import io.stamethyst.ui.main.LauncherGameScreenContent
 import io.stamethyst.ui.main.LauncherMainRoute
 import io.stamethyst.ui.main.LauncherModsScreen
 import io.stamethyst.ui.main.LauncherModsScreenContent
-import io.stamethyst.ui.resources.RuntimeResourceImage
-import io.stamethyst.ui.resources.RuntimeUiResourcePaths
 import io.stamethyst.ui.main.LauncherUpdateNoticeUiState
 import io.stamethyst.ui.main.MainScreenViewModel
 import io.stamethyst.ui.modimport.ModImportHost
@@ -163,9 +160,6 @@ fun LauncherContent(
     val activity = requireNotNull(LocalActivity.current)
     val navigator = rememberAppNavigator(initialRoute)
     val transientNoticeHostState = remember { SnackbarHostState() }
-    var showBasicTutorialNotice by remember(activity) {
-        mutableStateOf(!LauncherPreferences.isBasicTutorialNoticeDismissed(activity))
-    }
     var pendingFeedbackNotice by remember {
         mutableStateOf<FeedbackSubmissionNotice?>(null)
     }
@@ -895,17 +889,6 @@ fun LauncherContent(
                                         ),
                                         style = MaterialTheme.typography.bodySmall
                                     )
-                                    RuntimeResourceImage(
-                                        path = RuntimeUiResourcePaths.UPDATE_DOWNLOAD_CHOICE_NOTICE,
-                                        contentDescription = stringResource(
-                                            R.string.update_download_choice_dialog_image_description
-                                        ),
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .heightIn(max = 180.dp)
-                                            .clip(RoundedCornerShape(16.dp)),
-                                        contentScale = ContentScale.Fit
-                                    )
                                 }
                             },
                             confirmButton = {
@@ -991,32 +974,6 @@ fun LauncherContent(
                             }
                         )
                     }
-                }
-                if (showBasicTutorialNotice) {
-                    val dismissBasicTutorialNotice = {
-                        LauncherPreferences.setBasicTutorialNoticeDismissed(activity, true)
-                        showBasicTutorialNotice = false
-                    }
-                    AlertDialog(
-                        onDismissRequest = dismissBasicTutorialNotice,
-                        title = { Text(stringResource(R.string.basic_tutorial_notice_title)) },
-                        text = { Text(stringResource(R.string.basic_tutorial_notice_message)) },
-                        confirmButton = {
-                            TextButton(
-                                onClick = {
-                                    dismissBasicTutorialNotice()
-                                    openBasicTutorial(activity)
-                                }
-                            ) {
-                                Text(stringResource(R.string.basic_tutorial_notice_action_open))
-                            }
-                        },
-                        dismissButton = {
-                            TextButton(onClick = dismissBasicTutorialNotice) {
-                                Text(stringResource(R.string.basic_tutorial_notice_action_dismiss))
-                            }
-                        }
-                    )
                 }
             feedbackInboxState.pendingNotice?.let { notice ->
                 AlertDialog(

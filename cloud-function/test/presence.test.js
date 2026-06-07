@@ -104,6 +104,7 @@ test('presence panel renders protected session details', async (t) => {
       device_id: 'panel-device',
       id_type: 'android_id_sha256',
       state: 'game',
+      player_name: 'Watcher',
       app_version: '1.2.3',
       process: 'game',
       launch_mode: 'default'
@@ -123,8 +124,13 @@ test('presence panel renders protected session details', async (t) => {
   assert.equal(panel.headers.get('content-disposition'), 'inline');
   const panelHtml = await panel.text();
   assert.match(panelHtml, /在线情况面板/);
+  assert.match(panelHtml, /Watcher/);
   assert.match(panelHtml, /android_id_sha256/);
   assert.match(panelHtml, /1\.2\.3/);
+  assert.doesNotMatch(panelHtml, /http-equiv="refresh"/);
+  assert.doesNotMatch(panelHtml, />进程</);
+  assert.doesNotMatch(panelHtml, />启动模式</);
+  assert.match(panelHtml, /fetch\(sessionsApiUrl/);
 
   const sessions = await fetch(`${baseUrl}/api/presence/sessions?token=panel-secret`);
   assert.equal(sessions.status, 200);
@@ -133,4 +139,7 @@ test('presence panel renders protected session details', async (t) => {
   assert.equal(sessionsBody.sessions.length, 1);
   assert.equal(sessionsBody.sessions[0].clientId, 'android:panel-device');
   assert.equal(sessionsBody.sessions[0].idType, 'android_id_sha256');
+  assert.equal(sessionsBody.sessions[0].playerName, 'Watcher');
+  assert.equal(Object.hasOwn(sessionsBody.sessions[0], 'processName'), false);
+  assert.equal(Object.hasOwn(sessionsBody.sessions[0], 'launchMode'), false);
 });

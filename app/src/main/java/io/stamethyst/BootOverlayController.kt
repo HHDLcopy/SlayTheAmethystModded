@@ -6,7 +6,6 @@ import androidx.annotation.StringRes
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -66,6 +65,8 @@ import io.stamethyst.config.BootOverlayStyle
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.ui.loading.BootLoadingAnimation
+import io.stamethyst.ui.resources.RuntimeResourceImage
+import io.stamethyst.ui.resources.RuntimeUiResourcePaths
 import io.stamethyst.ui.theme.LauncherTheme
 import java.io.RandomAccessFile
 import java.nio.charset.StandardCharsets
@@ -724,15 +725,15 @@ private fun ModernBootOverlayPanel(
     ) {
         var artHintExpanded by remember { mutableStateOf(false) }
         val revealProgress = animatedProgress.coerceIn(0f, 1f)
-        Image(
-            painter = painterResource(R.drawable.boot_overlay_background_dark),
+        RuntimeResourceImage(
+            path = RuntimeUiResourcePaths.BOOT_OVERLAY_BACKGROUND_DARK,
             contentDescription = null,
             contentScale = ContentScale.Crop,
             alignment = Alignment.TopStart,
             modifier = Modifier.fillMaxSize()
         )
-        Image(
-            painter = painterResource(R.drawable.boot_overlay_background_bright),
+        RuntimeResourceImage(
+            path = RuntimeUiResourcePaths.BOOT_OVERLAY_BACKGROUND_BRIGHT,
             contentDescription = null,
             contentScale = ContentScale.Crop,
             alignment = Alignment.TopStart,

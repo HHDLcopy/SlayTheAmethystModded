@@ -18,6 +18,27 @@ POST /api/sts-feedback
 
 The local relay implementation in this repository also accepts `POST /` as a compatibility route, but the app does not rely on it.
 
+The Android game process sends presence heartbeats to:
+
+```text
+POST /api/presence/heartbeat
+```
+
+The launcher can query the in-memory online count from either route:
+
+```text
+GET /api/presence/summary
+GET /api/presence/online-count
+```
+
+The operator panel is available at:
+
+```text
+GET /presence?token=<PRESENCE_PANEL_TOKEN>
+GET /api/presence/panel?token=<PRESENCE_PANEL_TOKEN>
+GET /api/presence/sessions?token=<PRESENCE_PANEL_TOKEN>
+```
+
 ## What it does
 
 1. Receives the Android client's `multipart/form-data` request
@@ -28,7 +49,8 @@ The local relay implementation in this repository also accepts `POST /` as a com
 6. Creates a GitHub issue in the target repository
 7. If the user opted in, stores private mail notification state in Release assets and sends a styled creation email
 8. Receives `POST /github/webhook` issue events and sends a progress email when the target issue is commented or closed
-9. Returns `issueNumber` and `issueUrl` to the client
+9. Tracks game-process presence heartbeats in process memory
+10. Returns `issueNumber` and `issueUrl` to the client
 
 ## Required environment variables
 
@@ -64,6 +86,9 @@ SMTP_PASSWORD=
 SMTP_FROM=
 SMTP_REPLY_TO=
 BUNDLE_MAX_BYTES=26214400
+PRESENCE_HEARTBEAT_INTERVAL_SECONDS=240
+PRESENCE_OFFLINE_TIMEOUT_SECONDS=500
+PRESENCE_PANEL_TOKEN=
 ```
 
 Notes:
@@ -81,6 +106,11 @@ Notes:
 - If SMTP is not configured, issues are still created and notification state is still stored, but no email is sent.
 - `POST /github/webhook` must be configured as the GitHub App or repository webhook URL, and `GITHUB_WEBHOOK_SECRET` must match the webhook secret configured in GitHub.
 - The webhook must subscribe to both `issues` and `issue_comment` events if you want close and comment emails to be sent.
+- Presence state is currently stored in process memory only. It is cheap and has no external dependency, but it is reset by cold starts and is not shared between multiple SCF instances.
+- Presence heartbeat and online-count APIs are intentionally public and do not require `X-Feedback-Key`.
+- Presence clients are keyed by `client_id`. The Android client sends a SHA-256 hash derived from `Settings.Secure.ANDROID_ID`, with a local install ID fallback when Android ID is unavailable.
+- The presence panel requires `PRESENCE_PANEL_TOKEN`. If it is not configured, it falls back to `FEEDBACK_SHARED_SECRET`; if neither is configured, the panel is disabled.
+- A client is treated as offline when its latest heartbeat is older than `PRESENCE_OFFLINE_TIMEOUT_SECONDS`.
 
 ## Local run
 

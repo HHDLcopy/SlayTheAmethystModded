@@ -14,6 +14,7 @@ import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.mods.ModManifestNameRewriter
 import io.stamethyst.backend.mods.MtsLaunchManifestValidator
+import io.stamethyst.backend.resources.RuntimeResourceProvider
 import io.stamethyst.backend.workshop.WorkshopDownloadProcessService
 import io.stamethyst.backend.workshop.WorkshopDownloadTaskRecord
 import io.stamethyst.backend.workshop.WorkshopDownloadTaskStore
@@ -1474,11 +1475,7 @@ internal class MainModManagementController(
     }
 
     private fun hasBundledAsset(host: Activity, assetPath: String): Boolean {
-        return try {
-            host.assets.open(assetPath).use { true }
-        } catch (_: IOException) {
-            false
-        }
+        return RuntimeResourceProvider(host).exists(assetPath)
     }
 
     private fun loadModItems(host: Activity): List<ModItemUi> {

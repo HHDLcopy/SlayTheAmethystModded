@@ -33,6 +33,17 @@ const {
   updateGithubIssueState
 } = require('./github');
 const {
+  parsePresenceHeartbeatRequest,
+  recordPresenceHeartbeat,
+  buildPresenceSummary,
+  buildPresenceSnapshot
+} = require('./presence');
+const {
+  enforcePresencePanelAccess,
+  renderPresencePanel,
+  renderPresencePanelUnauthorized
+} = require('./presencePanel');
+const {
   maybeHandleIssueCreatedNotification,
   maybeHandleIssueClosedNotification,
   maybeHandleIssueCommentNotification
@@ -281,6 +292,56 @@ function createApp(config) {
     }
   };
 
+  const handlePresenceHeartbeat = (req, res, next) => {
+    try {
+      const heartbeatRequest = parsePresenceHeartbeatRequest(req);
+      const summary = recordPresenceHeartbeat(heartbeatRequest, config);
+      res.json({
+        ok: true,
+        ...summary
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  const handlePresenceSummary = (req, res, next) => {
+    try {
+      res.json({
+        ok: true,
+        ...buildPresenceSummary(config)
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  const handlePresenceSessions = (req, res, next) => {
+    try {
+      enforcePresencePanelAccess(req, config);
+
+      res.json({
+        ok: true,
+        ...buildPresenceSnapshot(config)
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  const handlePresencePanel = (req, res, next) => {
+    try {
+      enforcePresencePanelAccess(req, config);
+      sendHtmlResponse(res, 200, renderPresencePanel(buildPresenceSnapshot(config), config, req));
+    } catch (error) {
+      if (error && (error.statusCode === 401 || error.statusCode === 503)) {
+        sendHtmlResponse(res, error.statusCode, renderPresencePanelUnauthorized(req, config));
+        return;
+      }
+      next(error);
+    }
+  };
+
   app.post('/', upload.fields([
     { name: 'bundle', maxCount: 1 },
     { name: 'screenshots', maxCount: 4 }
@@ -295,6 +356,12 @@ function createApp(config) {
     { name: 'log_bundle', maxCount: 1 }
   ]), handleIssueMessage);
   app.post('/api/feedback-issues/state', handleIssueState);
+  app.post('/api/presence/heartbeat', handlePresenceHeartbeat);
+  app.get('/api/presence/summary', handlePresenceSummary);
+  app.get('/api/presence/online-count', handlePresenceSummary);
+  app.get('/api/presence/sessions', handlePresenceSessions);
+  app.get('/presence', handlePresencePanel);
+  app.get('/api/presence/panel', handlePresencePanel);
   app.post('/github/webhook', handleGithubWebhook);
 
   app.use((error, _req, res, _next) => {
@@ -316,6 +383,16 @@ function createApp(config) {
   });
 
   return app;
+}
+
+function sendHtmlResponse(res, statusCode, html) {
+  res
+    .status(statusCode)
+    .set({
+      'Content-Type': 'text/html; charset=utf-8',
+      'Content-Disposition': 'inline'
+    })
+    .send(html);
 }
 
 module.exports = {

@@ -27,6 +27,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.nio.charset.StandardCharsets
 import java.util.zip.ZipFile
+import javax.swing.filechooser.FileSystemView
 
 @Suppress("unused")
 class StsAndroidAppBuildPlugin : Plugin<Project> {
@@ -37,35 +38,108 @@ class StsAndroidAppBuildPlugin : Plugin<Project> {
     }
 }
 
+private const val RESOURCE_PACK_ABI = "arm64-v8a"
+
+private val externalizedModAssetPatterns = listOf(
+    "components/mods/ModTheSpire.jar",
+    "components/mods/BaseMod.jar",
+    "components/mods/StSLib.jar"
+)
+
+private val externalizedAssetPatterns = listOf(
+    "components/jre/**",
+    "components/lwjgl3/**",
+    "components/log4j_runtime/**",
+    "ui/**"
+) + externalizedModAssetPatterns
+
+private val externalizedNativeLibraries = listOf(
+    "libEGL_mesa.so",
+    "libOSMesa.so",
+    "libVkLayer_khronos_timeline_semaphore.so",
+    "libcutils.so",
+    "libfreetype.so",
+    "libgdx-freetype.so",
+    "libgdx.so",
+    "libgl4es_114.so",
+    "libglapi.so",
+    "libglxshim.so",
+    "libjnidispatch.so",
+    "liblinkerhook.so",
+    "liblwjgl.so",
+    "liblwjgl_nanovg.so",
+    "liblwjgl_opengl.so",
+    "liblwjgl_opengles.so",
+    "liblwjgl_stb.so",
+    "liblwjgl_tinyfd.so",
+    "libmobileglues.so",
+    "libopenal.so",
+    "libspirv-cross-c-shared.so",
+    "libvulkan_freedreno.so",
+    "libzink_dri.so"
+)
+
 private fun Project.configureStsAndroidAppBuild() {
     val packageName = readGradleProperty("application.id")
     val appVersionName = readGradleProperty("application.version.name")
     val generatedRuntimeAssetsDir = layout.buildDirectory.dir("generated/runtime-assets")
+    val packagedCommonAssetsDir = layout.buildDirectory.dir("generated/packaged-assets/common")
+    val packagedExternalizedAssetsDir = layout.buildDirectory.dir("generated/packaged-assets/externalized")
     val generatedAndroidCallbackBridgeDir = layout.buildDirectory.dir("generated/source/callbackBridge/android")
 
-    configureGeneratedAndroidSources(generatedRuntimeAssetsDir, generatedAndroidCallbackBridgeDir)
+    configureGeneratedAndroidSources(
+        packagedCommonAssetsDir = packagedCommonAssetsDir,
+        packagedExternalizedAssetsDir = packagedExternalizedAssetsDir,
+        generatedAndroidCallbackBridgeDir = generatedAndroidCallbackBridgeDir
+    )
     configureApkOutput(appVersionName)
+    configureSlimNativePackaging()
 
-    val assetTasks = registerRuntimeAssetTasks(
+    val generatedAssetTasks = registerRuntimeAssetTasks(
         generatedRuntimeAssetsDir = generatedRuntimeAssetsDir,
         generatedAndroidCallbackBridgeDir = generatedAndroidCallbackBridgeDir
+    )
+    val packagedAssetTasks = registerPackagedRuntimeAssetTasks(
+        generatedRuntimeAssetsDir = generatedRuntimeAssetsDir,
+        packagedCommonAssetsDir = packagedCommonAssetsDir,
+        packagedExternalizedAssetsDir = packagedExternalizedAssetsDir,
+        generatedAssetTasks = generatedAssetTasks
+    )
+    val copyResourcesZipToDesktop = registerExternalResourceZipTasks(
+        packagedExternalizedAssetsDir = packagedExternalizedAssetsDir,
+        prepareExternalizedAssetsTask = packagedAssetTasks.prepareExternalizedAssets
     )
     val adb = androidComponents().sdkComponents.adb.map { it.asFile.absolutePath }
     registerAdbTasks(adb, packageName)
 
     tasks.named("preBuild").configure {
-        dependsOn(assetTasks)
+        dependsOn(packagedAssetTasks.prepareCommonAssets)
+        dependsOn(packagedAssetTasks.prepareExternalizedAssets)
+    }
+    tasks.matching {
+        it.name in setOf(
+            "assembleRelease",
+            "assembleFullRelease",
+            "assembleFastSlimRelease",
+            "assembleFastFullRelease"
+        )
+    }.configureEach {
+        finalizedBy(copyResourcesZipToDesktop)
     }
 }
 
 private fun Project.configureGeneratedAndroidSources(
-    generatedRuntimeAssetsDir: Provider<Directory>,
+    packagedCommonAssetsDir: Provider<Directory>,
+    packagedExternalizedAssetsDir: Provider<Directory>,
     generatedAndroidCallbackBridgeDir: Provider<Directory>
 ) {
     extensions.configure<ApplicationExtension> {
         sourceSets.getByName("main") {
-            assets.srcDir(generatedRuntimeAssetsDir)
+            assets.setSrcDirs(listOf(packagedCommonAssetsDir))
             java.srcDir(generatedAndroidCallbackBridgeDir)
+        }
+        listOf("fastFullRelease", "fullRelease").forEach { sourceSetName ->
+            sourceSets.maybeCreate(sourceSetName).assets.srcDir(packagedExternalizedAssetsDir)
         }
     }
 }
@@ -78,7 +152,16 @@ private fun Project.configureApkOutput(appVersionName: String) {
             outputs.all {
                 @Suppress("DEPRECATION")
                 if (this is ApkVariantOutput) {
-                    outputFileName = "SlayTheAmethyst-stable-$appVersionName.apk"
+                    val buildTypeName = buildType.name
+                    val naming = when (buildTypeName) {
+                        "release" -> ApkOutputNaming(channelName = "release")
+                        "fullRelease" -> ApkOutputNaming(channelName = "release", suffix = "-full")
+                        "fastSlimRelease" -> ApkOutputNaming(channelName = "fast-release")
+                        "fastFullRelease" -> ApkOutputNaming(channelName = "fast-release", suffix = "-full")
+                        else -> ApkOutputNaming(channelName = buildTypeName)
+                    }
+                    outputFileName =
+                        "SlayTheAmethyst-${naming.channelName}-$appVersionName${naming.suffix}.apk"
                 }
             }
         }
@@ -93,6 +176,118 @@ private fun Project.configureApkOutput(appVersionName: String) {
             }
         }
     }
+}
+
+private fun Project.configureSlimNativePackaging() {
+    val components = androidComponents()
+    listOf("debug", "release", "fastSlimRelease").forEach { buildTypeName ->
+        components.onVariants(components.selector().withBuildType(buildTypeName)) { variant ->
+            externalizedNativeLibraries.forEach { libraryName ->
+                variant.packaging.jniLibs.excludes.add("**/$libraryName")
+            }
+        }
+    }
+}
+
+private data class ApkOutputNaming(
+    val channelName: String,
+    val suffix: String = ""
+)
+
+private data class PackagedRuntimeAssetTasks(
+    val prepareCommonAssets: TaskProvider<Sync>,
+    val prepareExternalizedAssets: TaskProvider<Sync>
+)
+
+private fun Project.registerPackagedRuntimeAssetTasks(
+    generatedRuntimeAssetsDir: Provider<Directory>,
+    packagedCommonAssetsDir: Provider<Directory>,
+    packagedExternalizedAssetsDir: Provider<Directory>,
+    generatedAssetTasks: List<TaskProvider<out Task>>
+): PackagedRuntimeAssetTasks {
+    val sourceAssetsDir = layout.projectDirectory.dir("src/main/assets")
+    val resourcePackSourceDir = layout.projectDirectory.dir("src/main/resource-pack")
+
+    val prepareCommonAssets = tasks.register<Sync>("prepareCommonRuntimeAssets") {
+        dependsOn(generatedAssetTasks)
+        duplicatesStrategy = DuplicatesStrategy.INCLUDE
+        from(sourceAssetsDir) {
+            exclude(externalizedAssetPatterns)
+        }
+        from(generatedRuntimeAssetsDir) {
+            exclude(externalizedAssetPatterns)
+        }
+        into(packagedCommonAssetsDir)
+    }
+
+    val prepareExternalizedAssets = tasks.register<Sync>("prepareExternalizedRuntimeAssets") {
+        dependsOn(generatedAssetTasks)
+        duplicatesStrategy = DuplicatesStrategy.INCLUDE
+        from(sourceAssetsDir) {
+            include(externalizedAssetPatterns)
+        }
+        from(generatedRuntimeAssetsDir) {
+            include(externalizedAssetPatterns)
+        }
+        from(resourcePackSourceDir) {
+            include(externalizedAssetPatterns)
+        }
+        into(packagedExternalizedAssetsDir)
+    }
+
+    return PackagedRuntimeAssetTasks(
+        prepareCommonAssets = prepareCommonAssets,
+        prepareExternalizedAssets = prepareExternalizedAssets
+    )
+}
+
+private fun Project.registerExternalResourceZipTasks(
+    packagedExternalizedAssetsDir: Provider<Directory>,
+    prepareExternalizedAssetsTask: TaskProvider<Sync>
+): TaskProvider<Task> {
+    val packageExternalResources = tasks.register<Zip>("packageExternalResources") {
+        group = "build"
+        description = "Package external launcher runtime resources as resources.zip."
+        dependsOn(prepareExternalizedAssetsTask)
+        from(packagedExternalizedAssetsDir) {
+            into("assets")
+        }
+        from(layout.projectDirectory.dir("src/main/jniLibs/$RESOURCE_PACK_ABI")) {
+            include(externalizedNativeLibraries)
+            into("lib/$RESOURCE_PACK_ABI")
+        }
+        destinationDirectory.set(layout.buildDirectory.dir("outputs/resources"))
+        archiveFileName.set("resources.zip")
+        isPreserveFileTimestamps = false
+        isReproducibleFileOrder = true
+    }
+
+    val resourceArchive = packageExternalResources.flatMap { it.archiveFile }
+    return tasks.register("copyExternalResourcesToDesktop") {
+        group = "build"
+        description = "Copy resources.zip to the current user's Desktop."
+        dependsOn(packageExternalResources)
+        inputs.file(resourceArchive)
+        doLast {
+            val desktopDirectory = resolveDesktopDirectory()
+            desktopDirectory.mkdirs()
+            val source = resourceArchive.get().asFile
+            val target = File(desktopDirectory, source.name)
+            source.copyTo(target, overwrite = true)
+            logger.lifecycle("External resources copied to: ${target.absolutePath}")
+        }
+    }
+}
+
+private fun resolveDesktopDirectory(): File {
+    val osName = System.getProperty("os.name").orEmpty()
+    if (osName.contains("Windows", ignoreCase = true)) {
+        runCatching { FileSystemView.getFileSystemView().getHomeDirectory() }
+            .getOrNull()
+            ?.takeIf { it.path.isNotBlank() }
+            ?.let { return it }
+    }
+    return File(System.getProperty("user.home"), "Desktop")
 }
 
 private fun Project.registerRuntimeAssetTasks(

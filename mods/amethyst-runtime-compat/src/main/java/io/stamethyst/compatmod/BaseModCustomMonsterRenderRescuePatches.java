@@ -34,17 +34,33 @@ public final class BaseModCustomMonsterRenderRescuePatches {
                     if (Texture.class.getName().equals(call.getClassName())) {
                         if ("getWidth".equals(call.getMethodName())) {
                             call.replace(
-                                "{ $_ = "
+                                "{ "
+                                    + "if ($0 == null && "
+                                    + CompatRuntimeState.class.getName()
+                                    + ".isBaseModCustomMonsterRenderRescueEnabled()) { "
+                                    + "$_ = "
                                     + BaseModCustomMonsterRenderRescuePatches.class.getName()
-                                    + ".safeTextureWidth($0, this); }"
+                                    + ".handleMissingTextureWidth(this); "
+                                    + "} else { "
+                                    + "$_ = $proceed($$); "
+                                    + "} "
+                                    + "}"
                             );
                             return;
                         }
                         if ("getHeight".equals(call.getMethodName())) {
                             call.replace(
-                                "{ $_ = "
+                                "{ "
+                                    + "if ($0 == null && "
+                                    + CompatRuntimeState.class.getName()
+                                    + ".isBaseModCustomMonsterRenderRescueEnabled()) { "
+                                    + "$_ = "
                                     + BaseModCustomMonsterRenderRescuePatches.class.getName()
-                                    + ".safeTextureHeight($0, this); }"
+                                    + ".handleMissingTextureHeight(this); "
+                                    + "} else { "
+                                    + "$_ = $proceed($$); "
+                                    + "} "
+                                    + "}"
                             );
                             return;
                         }
@@ -60,8 +76,14 @@ public final class BaseModCustomMonsterRenderRescuePatches {
                     }
                     call.replace(
                         "{ "
+                            + "if ($1 == null && "
+                            + CompatRuntimeState.class.getName()
+                            + ".isBaseModCustomMonsterRenderRescueEnabled()) { "
                             + BaseModCustomMonsterRenderRescuePatches.class.getName()
-                            + ".safeDrawTexture($0, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, this); "
+                            + ".handleMissingTextureDraw(this); "
+                            + "} else { "
+                            + "$proceed($$); "
+                            + "} "
                             + "}"
                     );
                 }
@@ -69,48 +91,18 @@ public final class BaseModCustomMonsterRenderRescuePatches {
         }
     }
 
-    public static int safeTextureWidth(Texture texture, AbstractMonster monster) {
-        if (texture != null) {
-            return texture.getWidth();
-        }
-        if (!CompatRuntimeState.isBaseModCustomMonsterRenderRescueEnabled()) {
-            return texture.getWidth();
-        }
+    public static int handleMissingTextureWidth(AbstractMonster monster) {
         notifyMissingTexture(monster);
         return 0;
     }
 
-    public static int safeTextureHeight(Texture texture, AbstractMonster monster) {
-        if (texture != null) {
-            return texture.getHeight();
-        }
-        if (!CompatRuntimeState.isBaseModCustomMonsterRenderRescueEnabled()) {
-            return texture.getHeight();
-        }
+    public static int handleMissingTextureHeight(AbstractMonster monster) {
         notifyMissingTexture(monster);
         return 0;
     }
 
-    public static void safeDrawTexture(
-        SpriteBatch spriteBatch,
-        Texture texture,
-        float x,
-        float y,
-        float width,
-        float height,
-        int srcX,
-        int srcY,
-        int srcWidth,
-        int srcHeight,
-        boolean flipX,
-        boolean flipY,
-        AbstractMonster monster
-    ) {
-        if (texture == null && CompatRuntimeState.isBaseModCustomMonsterRenderRescueEnabled()) {
-            notifyMissingTexture(monster);
-            return;
-        }
-        spriteBatch.draw(texture, x, y, width, height, srcX, srcY, srcWidth, srcHeight, flipX, flipY);
+    public static void handleMissingTextureDraw(AbstractMonster monster) {
+        notifyMissingTexture(monster);
     }
 
     private static void notifyMissingTexture(AbstractMonster monster) {
@@ -134,4 +126,3 @@ public final class BaseModCustomMonsterRenderRescuePatches {
         return monster.getClass().getName();
     }
 }
-

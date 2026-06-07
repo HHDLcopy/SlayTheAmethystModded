@@ -1,11 +1,12 @@
 package io.stamethyst.backend.runtime
 
 import android.content.Context
-import android.content.res.AssetManager
 import android.os.SystemClock
 import android.system.Os
 import io.stamethyst.R
 import io.stamethyst.backend.fs.FileTreeCleaner
+import io.stamethyst.backend.launch.NativeLibraryPathResolver
+import io.stamethyst.backend.resources.RuntimeResourceProvider
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.launch.StartupProgressCallback
 import io.stamethyst.backend.launch.progressText
@@ -20,6 +21,7 @@ import java.io.IOException
 import java.io.InputStream
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
+import java.util.LinkedHashSet
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.roundToInt
 
@@ -133,12 +135,12 @@ object RuntimePackInstaller {
             context.progressText(R.string.startup_progress_checking_runtime_pack)
         )
         RuntimePaths.ensureBaseDirs(context)
-        val assets = context.assets
-        val archArchive = resolveArchArchive(assets)
+        val resources = RuntimeResourceProvider(context)
+        val archArchive = resolveArchArchive(resources)
 
         val runtimeRoot = RuntimePaths.runtimeRoot(context)
         val markerFile = File(runtimeRoot, ".installed-version")
-        val bundledVersion = readAssetAsString(assets, "components/jre/$ARCHIVE_VERSION").trim()
+        val bundledVersion = readResourceAsString(resources, "components/jre/$ARCHIVE_VERSION").trim()
         val bundledMarker = "$bundledVersion|$archArchive"
 
         if (markerFile.exists()) {
@@ -190,7 +192,7 @@ object RuntimePackInstaller {
         for (i in requiredFiles.indices) {
             throwIfInterrupted()
             val required = requiredFiles[i]
-            copyAssetToFile(assets, "components/jre/$required", File(stagingDir, required))
+            copyResourceToFile(resources, "components/jre/$required", File(stagingDir, required))
             val copiedPercent = 26 + ((i + 1) * 14f / requiredFiles.size).roundToInt()
             reportProgress(
                 progressCallback,
@@ -395,12 +397,16 @@ object RuntimePackInstaller {
             return
         }
 
-        val unpackBinary = File(context.applicationInfo.nativeLibraryDir, "libunpack200.so")
-        if (!unpackBinary.exists()) {
+        val appNativeLibraryDir = context.applicationInfo.nativeLibraryDir
+        val unpackBinary = File(appNativeLibraryDir, "libunpack200.so")
+        if (!unpackBinary.isFile) {
             throw IOException("Missing unpack helper binary: ${unpackBinary.absolutePath}")
         }
 
-        val processBuilder = ProcessBuilder().directory(File(context.applicationInfo.nativeLibraryDir))
+        val processBuilder = ProcessBuilder()
+            .directory(unpackBinary.parentFile ?: File(appNativeLibraryDir))
+        processBuilder.environment()["LD_LIBRARY_PATH"] =
+            buildNativeSearchPath(context, appNativeLibraryDir, unpackBinary.parentFile)
         for (i in packFiles.indices) {
             throwIfInterrupted()
             val packFile = packFiles[i]
@@ -454,6 +460,27 @@ object RuntimePackInstaller {
                 )
             )
         }
+    }
+
+    private fun buildNativeSearchPath(
+        context: Context,
+        appNativeLibraryDir: String,
+        unpackBinaryDir: File?
+    ): String {
+        val directories = LinkedHashSet<String>()
+        addNativeSearchDir(directories, unpackBinaryDir)
+        addNativeSearchDir(directories, File(appNativeLibraryDir))
+        NativeLibraryPathResolver.collectAdditionalSearchDirectories(context).forEach { directory ->
+            addNativeSearchDir(directories, directory)
+        }
+        return directories.joinToString(File.pathSeparator)
+    }
+
+    private fun addNativeSearchDir(directories: MutableSet<String>, directory: File?) {
+        if (directory == null || !directory.isDirectory) {
+            return
+        }
+        directories.add(directory.absolutePath)
     }
 
     @Throws(IOException::class)
@@ -577,20 +604,24 @@ object RuntimePackInstaller {
             }
         }
 
-        val appAwtXawt = File(context.applicationInfo.nativeLibraryDir, "libawt_xawt.so")
-        if (appAwtXawt.exists()) {
+        val appAwtXawt = NativeLibraryPathResolver.resolveLibraryFile(
+            context = context,
+            libraryName = "libawt_xawt.so",
+            appNativeLibraryDir = context.applicationInfo.nativeLibraryDir
+        )
+        if (appAwtXawt != null && appAwtXawt.exists()) {
             copyFile(appAwtXawt, File(archLibDir, "libawt_xawt.so"))
         }
     }
 
     @Throws(IOException::class)
-    private fun resolveArchArchive(assets: AssetManager): String {
+    private fun resolveArchArchive(resources: RuntimeResourceProvider): String {
         val is64BitProcess = android.os.Process.is64Bit()
         if (is64BitProcess) {
-            if (assetExists(assets, "components/jre/$ARCHIVE_AARCH64")) {
+            if (resources.exists("components/jre/$ARCHIVE_AARCH64")) {
                 return ARCHIVE_AARCH64
             }
-            if (assetExists(assets, "components/jre/$ARCHIVE_ARM64")) {
+            if (resources.exists("components/jre/$ARCHIVE_ARM64")) {
                 return ARCHIVE_ARM64
             }
             throw IOException(
@@ -599,7 +630,7 @@ object RuntimePackInstaller {
                     " or " +
                     ARCHIVE_ARM64 +
                     " (process=64-bit, available=" +
-                    listRuntimeArchives(assets) +
+                    listRuntimeArchives(resources) +
                     ")"
             )
         }
@@ -607,7 +638,7 @@ object RuntimePackInstaller {
         throw IOException(
             "This build only supports 64-bit ARM devices; refusing to install a 32-bit runtime " +
                 "(available=" +
-                listRuntimeArchives(assets) +
+                listRuntimeArchives(resources) +
                 ")"
         )
     }
@@ -616,10 +647,10 @@ object RuntimePackInstaller {
         return ARCHIVE_AARCH64 == archiveName || ARCHIVE_ARM64 == archiveName
     }
 
-    private fun listRuntimeArchives(assets: AssetManager): String {
+    private fun listRuntimeArchives(resources: RuntimeResourceProvider): String {
         return try {
-            val names = assets.list("components/jre")
-            if (names == null || names.isEmpty()) {
+            val names = resources.list("components/jre")
+            if (names.isEmpty()) {
                 return "<empty>"
             }
             val builder = StringBuilder()
@@ -647,19 +678,10 @@ object RuntimePackInstaller {
         return null
     }
 
-    private fun assetExists(assets: AssetManager, assetPath: String): Boolean {
-        return try {
-            assets.open(assetPath).use { _: InputStream -> }
-            true
-        } catch (_: IOException) {
-            false
-        }
-    }
-
     @Throws(IOException::class)
-    private fun readAssetAsString(assets: AssetManager, assetPath: String): String {
+    private fun readResourceAsString(resources: RuntimeResourceProvider, assetPath: String): String {
         throwIfInterrupted()
-        assets.open(assetPath).use { input ->
+        resources.open(assetPath).use { input ->
             val data = ByteArray(4096)
             val out = StringBuilder()
             while (true) {
@@ -675,13 +697,17 @@ object RuntimePackInstaller {
     }
 
     @Throws(IOException::class)
-    private fun copyAssetToFile(assets: AssetManager, assetPath: String, targetFile: File) {
+    private fun copyResourceToFile(
+        resources: RuntimeResourceProvider,
+        assetPath: String,
+        targetFile: File
+    ) {
         throwIfInterrupted()
         val parent = targetFile.parentFile
         if (parent != null && !parent.exists() && !parent.mkdirs()) {
             throw IOException("Failed to create asset target directory: $parent")
         }
-        assets.open(assetPath).use { input ->
+        resources.open(assetPath).use { input ->
             FileOutputStream(targetFile, false).use { output ->
                 val buffer = ByteArray(8192)
                 while (true) {

@@ -255,11 +255,23 @@ object StsLaunchSpec {
         if (enableLwjglDebug) {
             args.add("-Dorg.lwjgl.util.DebugFunctions=true")
         }
+        val appNativeLibraryDir = context.applicationInfo.nativeLibraryDir
+        val lwjglLibraryFile = NativeLibraryPathResolver.resolveLibraryFile(
+            context = context,
+            libraryName = "liblwjgl.so",
+            appNativeLibraryDir = appNativeLibraryDir
+        ) ?: File(appNativeLibraryDir, "liblwjgl.so")
+        val openalLibraryFile = NativeLibraryPathResolver.resolveLibraryFile(
+            context = context,
+            libraryName = "libopenal.so",
+            appNativeLibraryDir = appNativeLibraryDir
+        ) ?: File(appNativeLibraryDir, "libopenal.so")
+        val lwjglLibraryDir = lwjglLibraryFile.parentFile ?: File(appNativeLibraryDir)
         args.add("-Dorg.lwjgl.vulkan.libname=libvulkan.so")
-        args.add("-Dorg.lwjgl.libname=${context.applicationInfo.nativeLibraryDir}/liblwjgl.so")
-        args.add("-Dorg.lwjgl.openal.libname=${context.applicationInfo.nativeLibraryDir}/libopenal.so")
-        args.add("-Dorg.lwjgl.librarypath=${context.applicationInfo.nativeLibraryDir}")
-        args.add("-Dorg.lwjgl.system.SharedLibraryExtractPath=${context.applicationInfo.nativeLibraryDir}")
+        args.add("-Dorg.lwjgl.libname=${lwjglLibraryFile.absolutePath}")
+        args.add("-Dorg.lwjgl.openal.libname=${openalLibraryFile.absolutePath}")
+        args.add("-Dorg.lwjgl.librarypath=${lwjglLibraryDir.absolutePath}")
+        args.add("-Dorg.lwjgl.system.SharedLibraryExtractPath=${lwjglLibraryDir.absolutePath}")
         args.add("-Dorg.lwjgl.system.EmulateSystemLoadLibrary=true")
         args.add("-Damethyst.renderer.selection_mode=${rendererDecision.selectionMode.persistedValue}")
         args.add("-Damethyst.renderer.auto_backend=${rendererDecision.automaticBackend.rendererId()}")

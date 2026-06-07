@@ -20,6 +20,12 @@ object RuntimePaths {
     private const val JVM_HEAP_SNAPSHOT_FILE_NAME = "jvm_heap_snapshot.txt"
     private const val JVM_SIGNAL_DUMP_FILE_NAME = "last_signal_dump.txt"
     private const val EXPECTED_GAME_EXIT_MARKER_FILE_NAME = ".expected_game_exit_marker"
+    private const val EXTERNAL_RESOURCES_DIR_NAME = "external_resources"
+    private const val EXTERNAL_RESOURCES_CURRENT_DIR_NAME = "current"
+    private const val EXTERNAL_RESOURCES_ASSETS_DIR_NAME = "assets"
+    private const val EXTERNAL_RESOURCES_LIB_DIR_NAME = "lib"
+    private const val EXTERNAL_RESOURCES_ABI_DIR_NAME = "arm64-v8a"
+    private const val EXTERNAL_RESOURCES_MARKER_FILE_NAME = ".resource-pack-installed"
     private const val IN_GAME_KEYBOARD_REQUEST_FILE_NAME = ".in_game_keyboard_request"
     private const val IN_GAME_FILE_PICKER_REQUEST_FILE_NAME = ".in_game_file_picker_request"
     private const val IN_GAME_FILE_PICKER_RESULT_FILE_NAME = ".in_game_file_picker_result"
@@ -376,6 +382,29 @@ object RuntimePaths {
     @JvmStatic
     fun runtimeRoot(context: Context): File = File(File(context.filesDir, "runtimes"), "Internal")
 
+    @JvmStatic
+    fun externalResourcesRoot(context: Context): File =
+        File(componentRoot(context), EXTERNAL_RESOURCES_DIR_NAME)
+
+    @JvmStatic
+    fun externalResourcesCurrentDir(context: Context): File =
+        File(externalResourcesRoot(context), EXTERNAL_RESOURCES_CURRENT_DIR_NAME)
+
+    @JvmStatic
+    fun externalResourcesAssetsDir(context: Context): File =
+        File(externalResourcesCurrentDir(context), EXTERNAL_RESOURCES_ASSETS_DIR_NAME)
+
+    @JvmStatic
+    fun externalNativeLibDir(context: Context): File =
+        File(
+            File(externalResourcesCurrentDir(context), EXTERNAL_RESOURCES_LIB_DIR_NAME),
+            EXTERNAL_RESOURCES_ABI_DIR_NAME
+        )
+
+    @JvmStatic
+    fun externalResourcesMarkerFile(context: Context): File =
+        File(externalResourcesCurrentDir(context), EXTERNAL_RESOURCES_MARKER_FILE_NAME)
+
     internal fun legacyInternalStsRootCandidates(packageName: String): List<String> =
         legacyInternalStsRootCandidates(packageName, null)
 
@@ -583,6 +612,7 @@ object RuntimePaths {
         modSuggestionDir(context).mkdirs()
         bundledLog4jRuntimeDir(context).mkdirs()
         cacioDir(context).mkdirs()
+        externalResourcesRoot(context).mkdirs()
         runtimeRoot(context).mkdirs()
     }
 

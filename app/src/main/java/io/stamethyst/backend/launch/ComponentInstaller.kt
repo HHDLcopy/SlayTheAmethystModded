@@ -4,12 +4,12 @@ import android.content.Context
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.os.Build
-import android.content.res.AssetManager
 import io.stamethyst.R
 import io.stamethyst.backend.diag.MemoryDiagnosticsLogger
 import io.stamethyst.backend.fs.FileTreeCleaner
 import io.stamethyst.backend.mods.MtsLoaderCrashPatcher
 import io.stamethyst.backend.mods.ModJarSupport
+import io.stamethyst.backend.resources.RuntimeResourceProvider
 import io.stamethyst.config.RuntimePaths
 import java.io.File
 import java.io.FileInputStream
@@ -66,10 +66,10 @@ object ComponentInstaller {
     fun ensureInstalled(context: Context, progressCallback: StartupProgressCallback?) {
         throwIfInterrupted()
         RuntimePaths.ensureBaseDirs(context)
-        val assets = context.assets
+        val resources = RuntimeResourceProvider(context)
         val packagedComponentsState = evaluatePackagedComponentsState(
             context = context,
-            assets = assets,
+            resources = resources,
             expectedMarker = resolvePackagedComponentsMarker(context)
         )
         val packagedComponentsCurrent = packagedComponentsState.current
@@ -103,7 +103,7 @@ object ComponentInstaller {
                     "markerMatches" to packagedComponentsState.markerMatches
                 )
             )
-            installPackagedComponents(context, assets, progressCallback)
+            installPackagedComponents(context, resources, progressCallback)
             writeInstallMarker(
                 componentInstallMarkerFile(context),
                 packagedComponentsState.expectedMarker
@@ -124,7 +124,7 @@ object ComponentInstaller {
             context.getString(R.string.startup_progress_installing_bundled_mods)
         )
         installBundledMods(
-            assets = assets,
+            resources = resources,
             context = context,
             forceReplaceExisting = !packagedComponentsCurrent,
             progressCallback = progressCallback
@@ -142,7 +142,7 @@ object ComponentInstaller {
             96,
             context.getString(R.string.startup_progress_checking_default_preferences)
         )
-        ensureDefaultPreferencesIfMissing(assets, context)
+        ensureDefaultPreferencesIfMissing(resources, context)
         throwIfInterrupted()
         reportProgress(
             progressCallback,
@@ -154,7 +154,7 @@ object ComponentInstaller {
     @Throws(IOException::class)
     private fun installPackagedComponents(
         context: Context,
-        assets: AssetManager,
+        resources: RuntimeResourceProvider,
         progressCallback: StartupProgressCallback?
     ) {
         throwIfInterrupted()
@@ -163,14 +163,14 @@ object ComponentInstaller {
             5,
             context.getString(R.string.startup_progress_installing_lwjgl_bridge)
         )
-        replaceAssetTree(assets, "components/lwjgl3", RuntimePaths.lwjglDir(context))
+        replaceAssetTree(resources, "components/lwjgl3", RuntimePaths.lwjglDir(context))
         throwIfInterrupted()
         reportProgress(
             progressCallback,
             15,
             context.getString(R.string.startup_progress_installing_startup_bridge)
         )
-        replaceAssetTree(assets, "components/boot_bridge", RuntimePaths.bootBridgeDir(context))
+        replaceAssetTree(resources, "components/boot_bridge", RuntimePaths.bootBridgeDir(context))
         throwIfInterrupted()
         reportProgress(
             progressCallback,
@@ -178,7 +178,7 @@ object ComponentInstaller {
             context.getString(R.string.startup_progress_installing_lwjgl2_injector)
         )
         replaceAssetTree(
-            assets,
+            resources,
             "components/lwjgl2_methods_injector",
             RuntimePaths.lwjgl2InjectorDir(context)
         )
@@ -188,7 +188,7 @@ object ComponentInstaller {
             40,
             context.getString(R.string.startup_progress_installing_gdx_patches)
         )
-        replaceAssetTree(assets, "components/gdx_patch", RuntimePaths.gdxPatchDir(context))
+        replaceAssetTree(resources, "components/gdx_patch", RuntimePaths.gdxPatchDir(context))
         removeLegacyCompatArtifacts(RuntimePaths.gdxPatchDir(context))
         throwIfInterrupted()
         reportProgress(
@@ -196,9 +196,9 @@ object ComponentInstaller {
             48,
             context.getString(R.string.startup_progress_installing_bundled_native_libraries)
         )
-        if (hasAssetChildren(assets, BUNDLED_RUNTIME_NATIVE_ASSET_DIR)) {
+        if (resources.hasChildren(BUNDLED_RUNTIME_NATIVE_ASSET_DIR)) {
             copyAssetTree(
-                assets,
+                resources,
                 BUNDLED_RUNTIME_NATIVE_ASSET_DIR,
                 RuntimePaths.gdxPatchNativesDir(context)
             )
@@ -210,7 +210,7 @@ object ComponentInstaller {
             context.getString(R.string.startup_progress_installing_bundled_log4j_runtime)
         )
         replaceAssetTree(
-            assets,
+            resources,
             "components/log4j_runtime",
             RuntimePaths.bundledLog4jRuntimeDir(context)
         )
@@ -220,12 +220,12 @@ object ComponentInstaller {
             70,
             context.getString(R.string.startup_progress_installing_caciocavallo_runtime)
         )
-        replaceAssetTree(assets, "components/caciocavallo", RuntimePaths.cacioDir(context))
+        replaceAssetTree(resources, "components/caciocavallo", RuntimePaths.cacioDir(context))
     }
 
     @Throws(IOException::class)
     private fun installBundledMods(
-        assets: AssetManager,
+        resources: RuntimeResourceProvider,
         context: Context,
         forceReplaceExisting: Boolean,
         progressCallback: StartupProgressCallback?
@@ -240,7 +240,7 @@ object ComponentInstaller {
         ensureBundledMod(
             context = context,
             modLabel = "ModTheSpire.jar",
-            assets = assets,
+            resources = resources,
             assetPath = "components/mods/ModTheSpire.jar",
             targetFile = RuntimePaths.importedMtsJar(context),
             validator = ModJarSupport::validateMtsJar,
@@ -271,7 +271,7 @@ object ComponentInstaller {
         ensureBundledMod(
             context = context,
             modLabel = "BaseMod.jar",
-            assets = assets,
+            resources = resources,
             assetPath = "components/mods/BaseMod.jar",
             targetFile = RuntimePaths.importedBaseModJar(context),
             validator = ModJarSupport::validateBaseModJar,
@@ -280,7 +280,7 @@ object ComponentInstaller {
         ensureBundledMod(
             context = context,
             modLabel = "StSLib.jar",
-            assets = assets,
+            resources = resources,
             assetPath = "components/mods/StSLib.jar",
             targetFile = RuntimePaths.importedStsLibJar(context),
             validator = ModJarSupport::validateStsLibJar,
@@ -289,7 +289,7 @@ object ComponentInstaller {
         ensureBundledMod(
             context = context,
             modLabel = "AmethystRuntimeCompat.jar",
-            assets = assets,
+            resources = resources,
             assetPath = "components/mods/AmethystRuntimeCompat.jar",
             targetFile = RuntimePaths.importedAmethystRuntimeCompatJar(context),
             validator = ModJarSupport::validateAmethystRuntimeCompatJar,
@@ -298,7 +298,7 @@ object ComponentInstaller {
         ensureBundledMod(
             context = context,
             modLabel = "RamSaver.jar",
-            assets = assets,
+            resources = resources,
             assetPath = "components/mods/RamSaver.jar",
             targetFile = RuntimePaths.importedRamSaverJar(context),
             validator = ModJarSupport::validateRamSaverJar,
@@ -320,11 +320,11 @@ object ComponentInstaller {
     }
 
     @Throws(IOException::class)
-    private fun copyAssetTree(assets: AssetManager, assetPath: String, targetDir: File) {
+    private fun copyAssetTree(resources: RuntimeResourceProvider, assetPath: String, targetDir: File) {
         throwIfInterrupted()
-        val names = assets.list(assetPath) ?: throw IOException("Asset listing failed: $assetPath")
+        val names = resources.list(assetPath)
         if (names.isEmpty()) {
-            copyFile(assets, assetPath, File(targetDir.parentFile, File(assetPath).name))
+            copyFile(resources, assetPath, File(targetDir.parentFile, File(assetPath).name))
             return
         }
         if (!targetDir.exists() && !targetDir.mkdirs()) {
@@ -333,28 +333,32 @@ object ComponentInstaller {
         for (name in names) {
             throwIfInterrupted()
             val childAssetPath = "$assetPath/$name"
-            val childList = assets.list(childAssetPath)
+            val childList = resources.list(childAssetPath)
             val childFile = File(targetDir, name)
-            if (childList != null && childList.isNotEmpty()) {
-                copyAssetTree(assets, childAssetPath, childFile)
+            if (childList.isNotEmpty()) {
+                copyAssetTree(resources, childAssetPath, childFile)
             } else {
-                copyFile(assets, childAssetPath, childFile)
+                copyFile(resources, childAssetPath, childFile)
             }
         }
     }
 
     @Throws(IOException::class)
-    private fun replaceAssetTree(assets: AssetManager, assetPath: String, targetDir: File) {
+    private fun replaceAssetTree(resources: RuntimeResourceProvider, assetPath: String, targetDir: File) {
         prepareCleanDirectory(targetDir, "component directory")
-        copyAssetTree(assets, assetPath, targetDir)
+        copyAssetTree(resources, assetPath, targetDir)
     }
 
     @Throws(IOException::class)
-    private fun copyAssetTreeIfMissing(assets: AssetManager, assetPath: String, targetDir: File) {
+    private fun copyAssetTreeIfMissing(
+        resources: RuntimeResourceProvider,
+        assetPath: String,
+        targetDir: File
+    ) {
         throwIfInterrupted()
-        val names = assets.list(assetPath) ?: throw IOException("Asset listing failed: $assetPath")
+        val names = resources.list(assetPath)
         if (names.isEmpty()) {
-            copyFileIfMissing(assets, assetPath, File(targetDir.parentFile, File(assetPath).name))
+            copyFileIfMissing(resources, assetPath, File(targetDir.parentFile, File(assetPath).name))
             return
         }
         if (!targetDir.exists() && !targetDir.mkdirs()) {
@@ -363,24 +367,24 @@ object ComponentInstaller {
         for (name in names) {
             throwIfInterrupted()
             val childAssetPath = "$assetPath/$name"
-            val childList = assets.list(childAssetPath)
+            val childList = resources.list(childAssetPath)
             val childFile = File(targetDir, name)
-            if (childList != null && childList.isNotEmpty()) {
-                copyAssetTreeIfMissing(assets, childAssetPath, childFile)
+            if (childList.isNotEmpty()) {
+                copyAssetTreeIfMissing(resources, childAssetPath, childFile)
             } else {
-                copyFileIfMissing(assets, childAssetPath, childFile)
+                copyFileIfMissing(resources, childAssetPath, childFile)
             }
         }
     }
 
     @Throws(IOException::class)
-    private fun copyFile(assets: AssetManager, assetPath: String, targetFile: File) {
+    private fun copyFile(resources: RuntimeResourceProvider, assetPath: String, targetFile: File) {
         throwIfInterrupted()
         val parent = targetFile.parentFile
         if (parent != null && !parent.exists() && !parent.mkdirs()) {
             throw IOException("Failed to create parent: $parent")
         }
-        assets.open(assetPath).use { input ->
+        resources.open(assetPath).use { input ->
             FileOutputStream(targetFile, false).use { output ->
                 val buffer = ByteArray(8192)
                 while (true) {
@@ -396,18 +400,22 @@ object ComponentInstaller {
     }
 
     @Throws(IOException::class)
-    private fun copyFileIfMissing(assets: AssetManager, assetPath: String, targetFile: File) {
+    private fun copyFileIfMissing(
+        resources: RuntimeResourceProvider,
+        assetPath: String,
+        targetFile: File
+    ) {
         if (targetFile.isFile && targetFile.length() > 0) {
             return
         }
-        copyFile(assets, assetPath, targetFile)
+        copyFile(resources, assetPath, targetFile)
     }
 
     @Throws(IOException::class)
     private fun ensureBundledMod(
         context: Context,
         modLabel: String,
-        assets: AssetManager,
+        resources: RuntimeResourceProvider,
         assetPath: String,
         targetFile: File,
         validator: JarValidator,
@@ -510,7 +518,7 @@ object ComponentInstaller {
                 "target" to buildFileState(targetFile)
             )
         )
-        copyFile(assets, assetPath, targetFile)
+        copyFile(resources, assetPath, targetFile)
         if (!targetFile.isFile || targetFile.length() <= 0) {
             throw IOException("Bundled mod install failed: ${targetFile.absolutePath}")
         }
@@ -587,30 +595,36 @@ object ComponentInstaller {
     }
 
     @Throws(IOException::class)
-    private fun ensureDefaultPreferencesIfMissing(assets: AssetManager, context: Context) {
+    private fun ensureDefaultPreferencesIfMissing(
+        resources: RuntimeResourceProvider,
+        context: Context
+    ) {
         throwIfInterrupted()
-        if (!hasAssetChildren(assets, DEFAULT_PREFS_ASSET_DIR)) {
+        if (!resources.hasChildren(DEFAULT_PREFS_ASSET_DIR)) {
             return
         }
-        ensureDefaultPreferencesForDir(assets, RuntimePaths.preferencesDir(context))
+        ensureDefaultPreferencesForDir(resources, RuntimePaths.preferencesDir(context))
     }
 
     @Throws(IOException::class)
-    private fun ensureDefaultPreferencesForDir(assets: AssetManager, preferencesDir: File) {
+    private fun ensureDefaultPreferencesForDir(
+        resources: RuntimeResourceProvider,
+        preferencesDir: File
+    ) {
         throwIfInterrupted()
         if (!shouldInstallDefaultPreferences(preferencesDir)) {
             return
         }
-        copyAssetTreeIfMissing(assets, DEFAULT_PREFS_ASSET_DIR, preferencesDir)
-        repairSentinelFile(assets, preferencesDir, PREF_FILE_PLAYER, PLAYER_REQUIRED_TOKEN)
-        repairSentinelFile(assets, preferencesDir, PREF_FILE_SAVE_SLOTS, SAVE_SLOTS_REQUIRED_TOKEN)
+        copyAssetTreeIfMissing(resources, DEFAULT_PREFS_ASSET_DIR, preferencesDir)
+        repairSentinelFile(resources, preferencesDir, PREF_FILE_PLAYER, PLAYER_REQUIRED_TOKEN)
+        repairSentinelFile(resources, preferencesDir, PREF_FILE_SAVE_SLOTS, SAVE_SLOTS_REQUIRED_TOKEN)
         copyFileIfMissing(
-            assets,
+            resources,
             "$DEFAULT_PREFS_ASSET_DIR/$PREF_FILE_PLAYER_BACKUP",
             File(preferencesDir, PREF_FILE_PLAYER_BACKUP)
         )
         copyFileIfMissing(
-            assets,
+            resources,
             "$DEFAULT_PREFS_ASSET_DIR/$PREF_FILE_SAVE_SLOTS_BACKUP",
             File(preferencesDir, PREF_FILE_SAVE_SLOTS_BACKUP)
         )
@@ -618,7 +632,7 @@ object ComponentInstaller {
 
     @Throws(IOException::class)
     private fun repairSentinelFile(
-        assets: AssetManager,
+        resources: RuntimeResourceProvider,
         preferencesDir: File,
         fileName: String,
         requiredToken: String
@@ -628,7 +642,7 @@ object ComponentInstaller {
         if (fileContainsToken(target, requiredToken)) {
             return
         }
-        copyFile(assets, "$DEFAULT_PREFS_ASSET_DIR/$fileName", target)
+        copyFile(resources, "$DEFAULT_PREFS_ASSET_DIR/$fileName", target)
     }
 
     private fun shouldInstallDefaultPreferences(preferencesDir: File): Boolean {
@@ -658,22 +672,13 @@ object ComponentInstaller {
         }
     }
 
-    private fun hasAssetChildren(assets: AssetManager, assetPath: String): Boolean {
-        return try {
-            val names = assets.list(assetPath)
-            names != null && names.isNotEmpty()
-        } catch (_: IOException) {
-            false
-        }
-    }
-
     private fun componentInstallMarkerFile(context: Context): File {
         return File(RuntimePaths.componentRoot(context), COMPONENT_INSTALL_MARKER_FILE_NAME)
     }
 
     private fun evaluatePackagedComponentsState(
         context: Context,
-        assets: AssetManager,
+        resources: RuntimeResourceProvider,
         expectedMarker: String
     ): PackagedComponentsState {
         val markerFile = componentInstallMarkerFile(context)
@@ -691,11 +696,14 @@ object ComponentInstaller {
             expectedMarker = expectedMarker,
             installedMarker = installedMarker,
             markerMatches = installedMarker == expectedMarker,
-            missingComponents = collectMissingPackagedComponents(context, assets)
+            missingComponents = collectMissingPackagedComponents(context, resources)
         )
     }
 
-    private fun collectMissingPackagedComponents(context: Context, assets: AssetManager): List<String> {
+    private fun collectMissingPackagedComponents(
+        context: Context,
+        resources: RuntimeResourceProvider
+    ): List<String> {
         val missing = ArrayList<String>()
         if (!File(RuntimePaths.lwjglDir(context), "version").isFile ||
             !RuntimePaths.lwjglJar(context).isFile
@@ -721,7 +729,7 @@ object ComponentInstaller {
         if (!File(RuntimePaths.cacioDir(context), "version").isFile) {
             missing += "caciocavallo"
         }
-        if (hasAssetChildren(assets, BUNDLED_RUNTIME_NATIVE_ASSET_DIR)) {
+        if (resources.hasChildren(BUNDLED_RUNTIME_NATIVE_ASSET_DIR)) {
             if (!containsNonEmptyFile(RuntimePaths.gdxPatchNativesDir(context))) {
                 missing += "bundled_runtime_natives"
             }

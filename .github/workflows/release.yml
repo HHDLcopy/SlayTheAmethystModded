@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   build-release:
-    name: Build signed release APK
+    name: Build signed release APKs
     runs-on: ubuntu-latest
     environment: release-signing
     steps:
@@ -104,22 +104,26 @@ jobs:
           STEAM_PATH: ${{ env.STEAM_PATH }}
         run: ./gradlew :app:lintDebug --stacktrace
 
-      - name: Build signed release APK
+      - name: Build signed release APKs
         env:
           STEAM_PATH: ${{ env.STEAM_PATH }}
           RELEASE_STORE_FILE: ${{ env.RELEASE_STORE_FILE }}
           RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
-        run: ./gradlew :app:assembleRelease --stacktrace
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon "-Dorg.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8" :app:assembleRelease --stacktrace
+          ./gradlew --no-daemon "-Dorg.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8" :app:assembleFullRelease --stacktrace
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: SlayTheAmethyst-${{ github.ref_name }}-release
+          name: SlayTheAmethyst-${{ github.ref_name }}-release-apks
           path: |
-            app/build/outputs/apk/release/*.apk
-            app/build/outputs/apk/release/*.APK
+            app/build/outputs/apk/release/SlayTheAmethyst-release-*.apk
+            app/build/outputs/apk/fullRelease/SlayTheAmethyst-release-*-full.apk
           if-no-files-found: error
 
       - name: Publish GitHub Release
@@ -133,9 +137,14 @@ jobs:
           tag="${GITHUB_REF_NAME}"
           notes_file="docs/release/note/${tag}.md"
           shopt -s nullglob
-          assets=(app/build/outputs/apk/release/*.apk app/build/outputs/apk/release/*.APK)
-          if [ "${#assets[@]}" -eq 0 ]; then
-            echo "No APK assets found for release publish." >&2
+          assets=(
+            app/build/outputs/apk/release/SlayTheAmethyst-release-*.apk
+            app/build/outputs/apk/fullRelease/SlayTheAmethyst-release-*-full.apk
+          )
+          if [ "${#assets[@]}" -ne 2 ]; then
+            echo "Expected exactly 2 APK assets for release publish, found ${#assets[@]}." >&2
+            printf 'Matched assets:\n' >&2
+            printf '  %s\n' "${assets[@]}" >&2
             exit 1
           fi
 

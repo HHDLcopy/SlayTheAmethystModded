@@ -28,6 +28,7 @@ import io.stamethyst.ui.UiBusyOperation
 import io.stamethyst.ui.main.MainScreenViewModel
 import io.stamethyst.ui.modimport.ModImportRequestBus
 import io.stamethyst.ui.preferences.LauncherPreferences
+import io.stamethyst.ui.resources.LauncherResourceGate
 import io.stamethyst.ui.settings.SettingsFileService
 import io.stamethyst.ui.settings.SettingsScreenViewModel
 import io.stamethyst.ui.theme.LauncherTheme
@@ -91,6 +92,7 @@ class LauncherActivity : AppCompatActivity() {
     private var pendingModImportFlow = false
     private var pendingGameReturnAnalysis: Runnable? = null
     private var launchedWithoutImportedStsJar = false
+    private var startupAfterResourcesCompleted = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val startupBackground = StartupWindowBackground.launcherColor(this)
@@ -135,28 +137,32 @@ class LauncherActivity : AppCompatActivity() {
                 themeMode = settingsViewModel.uiState.themeMode,
                 themeColor = settingsViewModel.uiState.themeColor
             ) {
-                LauncherContent(
-                    initialRoute = initialRoute,
-                    mainViewModel = mainViewModel,
-                    settingsViewModel = settingsViewModel,
-                    onMainScreenOpened = ::onMainScreenOpened,
-                )
+                LauncherResourceGate(
+                    onResourcesReady = {
+                        onStartupResourcesReady(
+                            storageMigrationResult = storageMigrationResult,
+                            startupIntent = intent
+                        )
+                    }
+                ) {
+                    LauncherContent(
+                        initialRoute = initialRoute,
+                        mainViewModel = mainViewModel,
+                        settingsViewModel = settingsViewModel,
+                        onMainScreenOpened = ::onMainScreenOpened,
+                    )
+                }
             }
         }
-
-        handleIncomingLauncherIntent(intent)
-        if (storageMigrationResult != null) {
-            showStorageMigrationDialog(storageMigrationResult)
-        }
-        maybeShowExternalStsImportNotice(intent)
-        maybeHandleJarIntent(intent)
-        WorkshopUpdateCheckCoordinator.checkOnAppStartIfDue(this)
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         LauncherOrientationPolicy.applyTo(this)
         setIntent(intent)
+        if (!startupAfterResourcesCompleted) {
+            return
+        }
         handleIncomingLauncherIntent(intent)
         maybeShowExternalStsImportNotice(intent)
         maybeHandleJarIntent(intent)
@@ -189,6 +195,23 @@ class LauncherActivity : AppCompatActivity() {
 
     private fun handleIncomingLauncherIntent(incomingIntent: Intent?) {
         mainViewModel.handleIncomingIntent(this, incomingIntent)
+    }
+
+    private fun onStartupResourcesReady(
+        storageMigrationResult: LegacyStsStorageMigration.Result?,
+        startupIntent: Intent?
+    ) {
+        if (startupAfterResourcesCompleted || isFinishing || isDestroyed) {
+            return
+        }
+        startupAfterResourcesCompleted = true
+        handleIncomingLauncherIntent(startupIntent)
+        if (storageMigrationResult != null) {
+            showStorageMigrationDialog(storageMigrationResult)
+        }
+        maybeShowExternalStsImportNotice(startupIntent)
+        maybeHandleJarIntent(startupIntent)
+        WorkshopUpdateCheckCoordinator.checkOnAppStartIfDue(this)
     }
 
     private fun syncLauncherLogcatCapture() {

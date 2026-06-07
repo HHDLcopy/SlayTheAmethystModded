@@ -166,7 +166,7 @@ run_local_release_preflight() {
   fi
 
   echo
-  echo "开始执行本地发布预检（lintDebug + assembleRelease）..."
+  echo "开始执行本地发布预检（lintDebug + assembleRelease + assembleFullRelease）..."
   (
     export RELEASE_STORE_FILE="$resolved_store_file"
     export RELEASE_STORE_PASSWORD="$resolved_store_password"
@@ -176,9 +176,11 @@ run_local_release_preflight() {
     cd "$REPO_ROOT"
     run_gradle_wrapper :app:lintDebug --stacktrace --console=plain
     run_gradle_wrapper :app:assembleRelease --stacktrace --console=plain
+    run_gradle_wrapper :app:assembleFullRelease --stacktrace --console=plain
   )
   echo "本地发布预检通过。"
-  echo "Release APK directory: $REPO_ROOT/app/build/outputs/apk/release"
+  echo "Slim release APK directory: $REPO_ROOT/app/build/outputs/apk/release"
+  echo "Full release APK directory: $REPO_ROOT/app/build/outputs/apk/fullRelease"
 }
 
 require_command git

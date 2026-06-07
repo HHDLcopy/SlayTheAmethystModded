@@ -9,6 +9,7 @@ import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.backend.mods.OptionalModStorageCoordinator
 import io.stamethyst.backend.mods.StsJarValidator
+import io.stamethyst.backend.resources.ExternalResourcePackService
 import io.stamethyst.backend.runtime.RuntimePackInstaller
 import java.io.IOException
 import kotlin.math.roundToInt
@@ -38,18 +39,26 @@ object LaunchPreparationService {
         throwIfInterrupted()
         reportProgress(
             progressCallback,
-            3,
-            context.progressText(R.string.startup_progress_installing_launcher_components)
+            2,
+            context.progressText(R.string.startup_progress_checking_external_resources)
         )
-        ComponentInstaller.ensureInstalled(context, mapProgressRange(progressCallback, 5, 35))
+        ExternalResourcePackService.ensureAvailable(context, mapProgressRange(progressCallback, 2, 20))
 
         throwIfInterrupted()
         reportProgress(
             progressCallback,
-            36,
+            21,
+            context.progressText(R.string.startup_progress_installing_launcher_components)
+        )
+        ComponentInstaller.ensureInstalled(context, mapProgressRange(progressCallback, 21, 43))
+
+        throwIfInterrupted()
+        reportProgress(
+            progressCallback,
+            44,
             context.progressText(R.string.startup_progress_preparing_java_runtime)
         )
-        RuntimePackInstaller.ensureInstalled(context, mapProgressRange(progressCallback, 36, 76))
+        RuntimePackInstaller.ensureInstalled(context, mapProgressRange(progressCallback, 44, 76))
 
         throwIfInterrupted()
         reportProgress(

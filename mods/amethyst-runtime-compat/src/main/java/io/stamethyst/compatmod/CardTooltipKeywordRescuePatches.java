@@ -2,7 +2,7 @@ package io.stamethyst.compatmod;
 
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.evacipated.cardcrawl.modthespire.lib.ByRef;
-import com.evacipated.cardcrawl.modthespire.lib.SpirePatch2;
+import com.evacipated.cardcrawl.modthespire.lib.SpirePatch;
 import com.evacipated.cardcrawl.modthespire.lib.SpirePrefixPatch;
 import com.megacrit.cardcrawl.cards.AbstractCard;
 import com.megacrit.cardcrawl.helpers.TipHelper;
@@ -13,7 +13,7 @@ public final class CardTooltipKeywordRescuePatches {
     private CardTooltipKeywordRescuePatches() {
     }
 
-    @SpirePatch2(
+    @SpirePatch(
         clz = TipHelper.class,
         method = "renderTipForCard",
         paramtypez = {AbstractCard.class, SpriteBatch.class, ArrayList.class}

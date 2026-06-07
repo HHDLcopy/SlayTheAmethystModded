@@ -37,9 +37,22 @@ public final class RoomTransitionRescuePatches {
                         return;
                     }
                     call.replace(
-                        "{ $_ = "
+                        "{ "
+                            + "if ("
                             + RoomTransitionRescuePatches.class.getName()
-                            + ".safeGetCurrRoomForTransition(); }"
+                            + ".shouldUseMissingCurrentRoomFallback()) { "
+                            + "$_ = "
+                            + RoomTransitionRescuePatches.class.getName()
+                            + ".handleMissingGetCurrRoomForTransition(); "
+                            + "} else { "
+                            + "$_ = $proceed($$); "
+                            + "if ($_ == null) { "
+                            + "$_ = "
+                            + RoomTransitionRescuePatches.class.getName()
+                            + ".handleNullGetCurrRoomForTransitionResult(); "
+                            + "} "
+                            + "} "
+                            + "}"
                     );
                 }
             };
@@ -76,18 +89,29 @@ public final class RoomTransitionRescuePatches {
         }
     }
 
-    public static AbstractRoom safeGetCurrRoomForTransition() {
+    public static boolean shouldUseMissingCurrentRoomFallback() {
+        return CompatRuntimeState.isRoomTransitionRescueEnabled()
+            && RoomContextRescueRuntime.getCurrentRoomOrNull() == null;
+    }
+
+    public static AbstractRoom handleMissingGetCurrRoomForTransition() {
+        notifyMissingCurrentRoom();
+        return null;
+    }
+
+    public static AbstractRoom handleNullGetCurrRoomForTransitionResult() {
         if (!CompatRuntimeState.isRoomTransitionRescueEnabled()) {
-            return AbstractDungeon.getCurrRoom();
+            return null;
         }
-        AbstractRoom room = RoomContextRescueRuntime.getCurrentRoomOrNull();
-        if (room == null) {
-            RoomStateRescueNoticeBridge.notifyRescue(
-                "room_transition_get_curr_room",
-                "AbstractDungeon.nextRoomTransition continued after the current room was unavailable"
-            );
-        }
-        return room;
+        notifyMissingCurrentRoom();
+        return null;
+    }
+
+    private static void notifyMissingCurrentRoom() {
+        RoomStateRescueNoticeBridge.notifyRescue(
+            "room_transition_get_curr_room",
+            "AbstractDungeon.nextRoomTransition continued after the current room was unavailable"
+        );
     }
 
     private static boolean hasPreviousCurrentRoom() {

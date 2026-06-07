@@ -4,7 +4,6 @@ import com.evacipated.cardcrawl.modthespire.lib.SpireInstrumentPatch;
 import com.evacipated.cardcrawl.modthespire.lib.SpirePatch2;
 import com.megacrit.cardcrawl.dungeons.AbstractDungeon;
 import com.megacrit.cardcrawl.relics.AbstractRelic;
-import com.megacrit.cardcrawl.rooms.AbstractRoom;
 import com.megacrit.cardcrawl.saveAndContinue.SaveFile;
 
 import javassist.CannotCompileException;
@@ -34,8 +33,19 @@ public final class RelicEnterRoomRescuePatches {
                     }
                     call.replace(
                         "{ "
+                            + "if ($0 == null && "
+                            + CompatRuntimeState.class.getName()
+                            + ".isRelicEnterRoomRescueEnabled()) { "
                             + RelicEnterRoomRescuePatches.class.getName()
-                            + ".safeOnEnterRoom($0, $1); "
+                            + ".handleNullRelic(); "
+                            + "} else { "
+                            + "try { "
+                            + "$proceed($$); "
+                            + "} catch (java.lang.NullPointerException exception) { "
+                            + RelicEnterRoomRescuePatches.class.getName()
+                            + ".handleOnEnterRoomException($0, exception); "
+                            + "} "
+                            + "} "
                             + "}"
                     );
                 }
@@ -43,28 +53,39 @@ public final class RelicEnterRoomRescuePatches {
         }
     }
 
-    public static void safeOnEnterRoom(AbstractRelic relic, AbstractRoom room) {
+    public static void handleNullRelic() {
+        RoomStateRescueNoticeBridge.notifyRescue(
+            "relic_enter_room",
+            "Skipped null relic onEnterRoom during room transition"
+        );
+    }
+
+    public static void handleOnEnterRoomException(
+        AbstractRelic relic,
+        NullPointerException exception
+    ) {
         if (!CompatRuntimeState.isRelicEnterRoomRescueEnabled()) {
-            relic.onEnterRoom(room);
-            return;
+            throw exception;
         }
+        RoomStateRescueNoticeBridge.notifyRescue(
+            "relic_enter_room",
+            "Skipped relic onEnterRoom for "
+                + describeRelic(relic)
+                + " after "
+                + RoomContextRescueRuntime.describeThrowable(exception)
+        );
+    }
+
+    private static String describeRelic(AbstractRelic relic) {
         if (relic == null) {
-            RoomStateRescueNoticeBridge.notifyRescue(
-                "relic_enter_room",
-                "Skipped null relic onEnterRoom during room transition"
-            );
-            return;
+            return "<null>";
         }
-        try {
-            relic.onEnterRoom(room);
-        } catch (NullPointerException exception) {
-            RoomStateRescueNoticeBridge.notifyRescue(
-                "relic_enter_room",
-                "Skipped relic onEnterRoom for "
-                    + relic.relicId
-                    + " after "
-                    + RoomContextRescueRuntime.describeThrowable(exception)
-            );
+        if (relic.relicId != null) {
+            return relic.relicId;
         }
+        if (relic.name != null) {
+            return relic.name;
+        }
+        return relic.getClass().getName();
     }
 }

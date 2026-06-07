@@ -49,6 +49,7 @@ import io.stamethyst.backend.nativelib.NativeLibraryMarketCatalogEntry
 import io.stamethyst.backend.nativelib.NativeLibraryMarketInstallProgress
 import io.stamethyst.backend.nativelib.NativeLibraryMarketPackageState
 import io.stamethyst.backend.nativelib.NativeLibraryMarketService
+import io.stamethyst.backend.resources.RuntimeResourceProvider
 import io.stamethyst.backend.render.MobileGluesAnglePolicy
 import io.stamethyst.backend.render.MobileGluesAngleDepthClearFixMode
 import io.stamethyst.backend.render.MobileGluesConfigFile
@@ -3650,13 +3651,7 @@ class SettingsScreenViewModel : ViewModel() {
     }
 
     private fun hasBundledAsset(host: Activity, assetPath: String): Boolean {
-        return try {
-            host.assets.open(assetPath).use {
-                true
-            }
-        } catch (_: IOException) {
-            false
-        }
+        return RuntimeResourceProvider(host).exists(assetPath)
     }
 
     private fun buildStatusText(
@@ -4315,7 +4310,7 @@ class SettingsScreenViewModel : ViewModel() {
 
     private fun resolveJarVersionFromAsset(host: Activity, assetPath: String): String? {
         return try {
-            host.assets.open(assetPath).use { input ->
+            RuntimeResourceProvider(host).open(assetPath).use { input ->
                 resolveJarVersionFromStream(input)
             }
         } catch (_: Throwable) {

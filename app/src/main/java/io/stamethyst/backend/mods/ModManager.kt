@@ -1,6 +1,7 @@
 package io.stamethyst.backend.mods
 
 import android.content.Context
+import io.stamethyst.backend.resources.RuntimeResourceProvider
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
 import java.io.BufferedReader
@@ -9,7 +10,6 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
-import java.io.InputStream
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.nio.charset.StandardCharsets
@@ -719,12 +719,7 @@ object ModManager {
     }
 
     private fun hasBundledAsset(context: Context, assetPath: String): Boolean {
-        return try {
-            context.assets.open(assetPath).use { _: InputStream -> }
-            true
-        } catch (_: Throwable) {
-            false
-        }
+        return RuntimeResourceProvider(context).exists(assetPath)
     }
 
     @Throws(IOException::class)

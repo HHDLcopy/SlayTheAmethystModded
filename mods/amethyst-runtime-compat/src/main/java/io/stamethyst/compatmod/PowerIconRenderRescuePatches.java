@@ -1,6 +1,5 @@
 package io.stamethyst.compatmod;
 
-import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.evacipated.cardcrawl.modthespire.lib.SpireInstrumentPatch;
 import com.evacipated.cardcrawl.modthespire.lib.SpirePatch2;
@@ -34,8 +33,12 @@ public final class PowerIconRenderRescuePatches {
                     }
                     call.replace(
                         "{ "
+                            + "try { "
+                            + "$proceed($$); "
+                            + "} catch (java.lang.NullPointerException exception) { "
                             + PowerIconRenderRescuePatches.class.getName()
-                            + ".safeRenderIcons($0, $1, $2, $3, $4); "
+                            + ".handleRenderIconsException($0, exception); "
+                            + "} "
                             + "}"
                     );
                 }
@@ -43,31 +46,21 @@ public final class PowerIconRenderRescuePatches {
         }
     }
 
-    public static void safeRenderIcons(
+    public static void handleRenderIconsException(
         AbstractPower power,
-        SpriteBatch spriteBatch,
-        float x,
-        float y,
-        Color color
+        NullPointerException exception
     ) {
-        if (!CompatRuntimeState.isPowerIconRenderRescueEnabled()) {
-            power.renderIcons(spriteBatch, x, y, color);
-            return;
+        if (!CompatRuntimeState.isPowerIconRenderRescueEnabled()
+            || !isMissingIconResource(power)) {
+            throw exception;
         }
-        try {
-            power.renderIcons(spriteBatch, x, y, color);
-        } catch (NullPointerException exception) {
-            if (!isMissingIconResource(power)) {
-                throw exception;
-            }
-            RoomStateRescueNoticeBridge.notifyRescue(
-                "power_icon_render",
-                "Skipped power icon render for "
-                    + describePower(power)
-                    + " because both img and region48 were missing after "
-                    + RoomContextRescueRuntime.describeThrowable(exception)
-            );
-        }
+        RoomStateRescueNoticeBridge.notifyRescue(
+            "power_icon_render",
+            "Skipped power icon render for "
+                + describePower(power)
+                + " because both img and region48 were missing after "
+                + RoomContextRescueRuntime.describeThrowable(exception)
+        );
     }
 
     private static boolean isMissingIconResource(AbstractPower power) {
@@ -87,4 +80,3 @@ public final class PowerIconRenderRescuePatches {
         return power.getClass().getName();
     }
 }
-

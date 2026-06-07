@@ -37,6 +37,16 @@ val releaseStoreFilePath = readReleaseSigningProperty("RELEASE_STORE_FILE", "rel
 val releaseStorePassword = readReleaseSigningProperty("RELEASE_STORE_PASSWORD", "release.storePassword")
 val releaseKeyAlias = readReleaseSigningProperty("RELEASE_KEY_ALIAS", "release.keyAlias")
 val releaseKeyPassword = readReleaseSigningProperty("RELEASE_KEY_PASSWORD", "release.keyPassword")
+val defaultResourcePackDownloadUrl =
+    "https://github.com/ModinMobileSTS/SlayTheAmethystResource/releases/download/Resource/resources.zip"
+val resourcePackDownloadUrl = readGradleProperty(
+    "resourcePack.downloadUrl",
+    readLocalProperty("resourcePack.downloadUrl").ifEmpty { defaultResourcePackDownloadUrl }
+)
+val resourcePackVersion = readGradleProperty(
+    "resourcePack.version",
+    readLocalProperty("resourcePack.version").ifEmpty { "resources-v1" }
+)
 val hasReleaseSigning = listOf(
     releaseStoreFilePath,
     releaseStorePassword,
@@ -74,6 +84,8 @@ android {
         buildConfigField("String", "FEEDBACK_API_KEY", feedbackApiKey.toBuildConfigStringLiteral())
         buildConfigField("String", "FEEDBACK_GITHUB_OWNER", "\"ModinMobileSTS\"")
         buildConfigField("String", "FEEDBACK_GITHUB_REPO", "\"SlayTheAmethystModded\"")
+        buildConfigField("String", "RESOURCE_PACK_DOWNLOAD_URL", resourcePackDownloadUrl.toBuildConfigStringLiteral())
+        buildConfigField("String", "RESOURCE_PACK_VERSION", resourcePackVersion.toBuildConfigStringLiteral())
 
         ndk {
             //noinspection ChromeOsAbiSupport
@@ -113,10 +125,18 @@ android {
                 "proguard-rules.pro"
             )
         }
-        create("fastRelease") {
+        create("fastSlimRelease") {
             initWith(getByName("release"))
             isMinifyEnabled = false
             isShrinkResources = false
+            matchingFallbacks += "release"
+        }
+        create("fastFullRelease") {
+            initWith(getByName("fastSlimRelease"))
+            matchingFallbacks += "release"
+        }
+        create("fullRelease") {
+            initWith(getByName("release"))
             matchingFallbacks += "release"
         }
         debug {
@@ -163,10 +183,14 @@ kotlin {
 
 tasks.matching {
     it.name in setOf(
-        "generateFastReleaseLintVitalReportModel",
-        "lintVitalAnalyzeFastRelease",
-        "lintVitalReportFastRelease",
-        "lintVitalFastRelease"
+        "generateFastSlimReleaseLintVitalReportModel",
+        "lintVitalAnalyzeFastSlimRelease",
+        "lintVitalReportFastSlimRelease",
+        "lintVitalFastSlimRelease",
+        "generateFastFullReleaseLintVitalReportModel",
+        "lintVitalAnalyzeFastFullRelease",
+        "lintVitalReportFastFullRelease",
+        "lintVitalFastFullRelease"
     )
 }.configureEach {
     enabled = false

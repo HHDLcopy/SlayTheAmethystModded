@@ -98,9 +98,13 @@ function Invoke-LocalReleaseCheck {
         [string]$KeyAlias
     )
 
-    $buildScript = Join-Path $RepoRoot 'scripts\build-release.ps1'
-    if (-not (Test-Path -LiteralPath $buildScript)) {
-        throw "未找到本地发布预检脚本: $buildScript"
+    $slimBuildScript = Join-Path $RepoRoot 'scripts\build-release-fast.ps1'
+    $fullBuildScript = Join-Path $RepoRoot 'scripts\build-release-full.ps1'
+    if (-not (Test-Path -LiteralPath $slimBuildScript)) {
+        throw "未找到本地 slim 发布预检脚本: $slimBuildScript"
+    }
+    if (-not (Test-Path -LiteralPath $fullBuildScript)) {
+        throw "未找到本地 full 发布预检脚本: $fullBuildScript"
     }
 
     $buildArgs = @{}
@@ -112,9 +116,10 @@ function Invoke-LocalReleaseCheck {
     }
 
     Write-Host ''
-    Write-Host '开始执行本地发布预检（lintDebug + assembleRelease）...'
+    Write-Host '开始执行本地发布预检（lintDebug + assembleRelease + assembleFullRelease）...'
     try {
-        & $buildScript @buildArgs
+        & $slimBuildScript @buildArgs
+        & $fullBuildScript @buildArgs -SkipLintCheck
     }
     catch {
         throw "本地发布预检失败：$($_.Exception.Message)"

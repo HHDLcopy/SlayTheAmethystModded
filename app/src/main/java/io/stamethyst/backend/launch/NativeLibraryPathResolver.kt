@@ -35,6 +35,36 @@ internal object NativeLibraryPathResolver {
         return directories.joinToString(File.pathSeparator)
     }
 
+    fun resolveLibraryFile(
+        context: Context,
+        libraryName: String,
+        appNativeLibraryDir: String
+    ): File? {
+        val appLibrary = File(appNativeLibraryDir, libraryName)
+        if (appLibrary.isFile) {
+            return appLibrary
+        }
+        collectAdditionalSearchDirectories(context).forEach { directory ->
+            val candidate = File(directory, libraryName)
+            if (candidate.isFile) {
+                return candidate
+            }
+        }
+        return null
+    }
+
+    fun resolveLibraryDirectory(
+        context: Context,
+        libraryName: String,
+        appNativeLibraryDir: String
+    ): File {
+        return resolveLibraryFile(
+            context = context,
+            libraryName = libraryName,
+            appNativeLibraryDir = appNativeLibraryDir
+        )?.parentFile ?: File(appNativeLibraryDir)
+    }
+
     internal fun collectDirectoriesWithSharedLibraries(root: File): List<File> {
         if (!root.isDirectory) {
             return emptyList()
@@ -85,6 +115,7 @@ internal object NativeLibraryPathResolver {
 
     private fun collectNativeSearchRoots(context: Context): List<File> {
         return listOf(
+            RuntimePaths.externalNativeLibDir(context),
             RuntimePaths.gdxPatchNativesDir(context),
             RuntimePaths.nativeMarketActiveDir(context)
         )

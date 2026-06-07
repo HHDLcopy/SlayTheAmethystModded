@@ -49,6 +49,7 @@ import io.stamethyst.backend.steamcloud.SteamCloudSyncProcessService
 import io.stamethyst.backend.steamcloud.SteamCloudUploadPlan
 import io.stamethyst.backend.mods.StsDesktopJarPatcher
 import io.stamethyst.backend.mods.StsJarValidator
+import io.stamethyst.backend.resources.RuntimeResourceProvider
 import io.stamethyst.backend.update.UpdateMirrorManager
 import io.stamethyst.backend.workshop.WorkshopDownloadTaskRecord
 import io.stamethyst.backend.workshop.WorkshopDownloadTaskStatus
@@ -3330,11 +3331,7 @@ class MainScreenViewModel : ViewModel() {
     }
 
     private fun hasBundledAsset(host: Activity, assetPath: String): Boolean {
-        return try {
-            host.assets.open(assetPath).use { true }
-        } catch (_: IOException) {
-            false
-        }
+        return RuntimeResourceProvider(host).exists(assetPath)
     }
 
     companion object {

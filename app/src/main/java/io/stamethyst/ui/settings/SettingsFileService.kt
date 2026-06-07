@@ -29,6 +29,7 @@ import io.stamethyst.backend.mods.MtsLaunchManifestValidator
 import io.stamethyst.backend.mods.ModManifestNameRewriter
 import io.stamethyst.backend.mods.OptionalModStorageCoordinator
 import io.stamethyst.backend.mods.VupShionModCompatPatcher
+import io.stamethyst.backend.resources.RuntimeResourceProvider
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.mods.ModManager
@@ -2268,11 +2269,7 @@ internal object SettingsFileService {
     }
 
     private fun hasAsset(host: Activity, assetPath: String): Boolean {
-        return try {
-            host.assets.open(assetPath).use { true }
-        } catch (_: Throwable) {
-            false
-        }
+        return RuntimeResourceProvider(host).exists(assetPath)
     }
 
     @Throws(IOException::class)
@@ -2391,7 +2388,7 @@ internal object SettingsFileService {
     ) {
         val entry = ZipEntry(entryName)
         zipOutput.putNextEntry(entry)
-        host.assets.open(assetPath).use { input ->
+        RuntimeResourceProvider(host).open(assetPath).use { input ->
             val buffer = ByteArray(8192)
             while (true) {
                 val read = input.read(buffer)

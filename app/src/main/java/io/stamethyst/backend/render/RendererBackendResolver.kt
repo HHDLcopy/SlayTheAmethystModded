@@ -4,7 +4,9 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import io.stamethyst.config.RenderSurfaceBackend
+import io.stamethyst.config.RuntimePaths
 import java.io.File
+import java.util.LinkedHashSet
 import java.util.Locale
 
 object RendererBackendResolver {
@@ -96,12 +98,9 @@ object RendererBackendResolver {
 
     @JvmStatic
     fun collectRuntimeInfo(context: Context): RuntimeInfo {
-        val nativeLibDir = File(context.applicationInfo.nativeLibraryDir)
-        val packagedLibraryNames = nativeLibDir.list()
-            ?.map { it.trim() }
-            ?.filter { it.isNotEmpty() }
-            ?.toSet()
-            .orEmpty()
+        val packagedLibraryNames = LinkedHashSet<String>()
+        collectLibraryNames(File(context.applicationInfo.nativeLibraryDir), packagedLibraryNames)
+        collectLibraryNames(RuntimePaths.externalNativeLibDir(context), packagedLibraryNames)
         return RuntimeInfo(
             packagedLibraryNames = packagedLibraryNames,
             hasVulkanSupport = hasVulkanSupport(context.packageManager),
@@ -117,6 +116,13 @@ object RendererBackendResolver {
             },
             oneUiVersion = readSystemProperty("ro.build.version.oneui")
         )
+    }
+
+    private fun collectLibraryNames(directory: File, out: MutableSet<String>) {
+        directory.list()
+            ?.map { it.trim() }
+            ?.filter { it.isNotEmpty() }
+            ?.forEach(out::add)
     }
 
     private fun evaluateAvailability(

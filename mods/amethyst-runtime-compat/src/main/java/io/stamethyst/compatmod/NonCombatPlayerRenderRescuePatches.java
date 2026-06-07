@@ -34,8 +34,12 @@ public final class NonCombatPlayerRenderRescuePatches {
                     }
                     call.replace(
                         "{ "
+                            + "try { "
+                            + "$proceed($$); "
+                            + "} catch (java.lang.NullPointerException exception) { "
                             + NonCombatPlayerRenderRescuePatches.class.getName()
-                            + ".safeRenderPlayerInRoom($0, $1, this); "
+                            + ".handleRenderPlayerException(this, exception); "
+                            + "} "
                             + "}"
                     );
                 }
@@ -43,30 +47,28 @@ public final class NonCombatPlayerRenderRescuePatches {
         }
     }
 
-    public static void safeRenderPlayerInRoom(
-        AbstractPlayer player,
-        SpriteBatch spriteBatch,
-        AbstractRoom room
-    ) {
-        if (!CompatRuntimeState.isNonCombatPlayerRenderRescueEnabled()
-            || isCombatRoom(room)) {
-            player.render(spriteBatch);
-            return;
-        }
-        try {
-            player.render(spriteBatch);
-        } catch (NullPointerException exception) {
-            RoomStateRescueNoticeBridge.notifyRescue(
-                "non_combat_player_render",
-                "Skipped non-combat player render in "
-                    + describeRoom(room)
-                    + " after "
-                    + RoomContextRescueRuntime.describeThrowable(exception)
-            );
-        }
+    public static boolean shouldRescuePlayerRender(AbstractRoom room) {
+        return CompatRuntimeState.isNonCombatPlayerRenderRescueEnabled()
+            && !isCombatRoom(room);
     }
 
-    private static boolean isCombatRoom(AbstractRoom room) {
+    public static void handleRenderPlayerException(
+        AbstractRoom room,
+        NullPointerException exception
+    ) {
+        if (!shouldRescuePlayerRender(room)) {
+            throw exception;
+        }
+        RoomStateRescueNoticeBridge.notifyRescue(
+            "non_combat_player_render",
+            "Skipped non-combat player render in "
+                + describeRoom(room)
+                + " after "
+                + RoomContextRescueRuntime.describeThrowable(exception)
+        );
+    }
+
+    public static boolean isCombatRoom(AbstractRoom room) {
         if (room instanceof MonsterRoom) {
             return true;
         }
@@ -81,4 +83,3 @@ public final class NonCombatPlayerRenderRescuePatches {
         return room.getClass().getName() + " phase=" + phase;
     }
 }
-

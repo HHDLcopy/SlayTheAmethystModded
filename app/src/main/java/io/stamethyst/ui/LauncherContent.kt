@@ -17,7 +17,6 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -108,6 +107,8 @@ import io.stamethyst.ui.main.LauncherGameScreenContent
 import io.stamethyst.ui.main.LauncherMainRoute
 import io.stamethyst.ui.main.LauncherModsScreen
 import io.stamethyst.ui.main.LauncherModsScreenContent
+import io.stamethyst.ui.resources.RuntimeResourceImage
+import io.stamethyst.ui.resources.RuntimeUiResourcePaths
 import io.stamethyst.ui.main.LauncherUpdateNoticeUiState
 import io.stamethyst.ui.main.MainScreenViewModel
 import io.stamethyst.ui.modimport.ModImportHost
@@ -894,10 +895,8 @@ fun LauncherContent(
                                         ),
                                         style = MaterialTheme.typography.bodySmall
                                     )
-                                    Image(
-                                        painter = painterResource(
-                                            R.drawable.update_download_choice_notice
-                                        ),
+                                    RuntimeResourceImage(
+                                        path = RuntimeUiResourcePaths.UPDATE_DOWNLOAD_CHOICE_NOTICE,
                                         contentDescription = stringResource(
                                             R.string.update_download_choice_dialog_image_description
                                         ),

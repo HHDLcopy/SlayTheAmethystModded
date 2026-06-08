@@ -1,0 +1,68 @@
+'use strict';
+
+const path = require('path');
+
+const DEFAULT_PORT = 8787;
+const DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 30;
+const DEFAULT_OFFLINE_TIMEOUT_SECONDS = 90;
+
+function loadConfig(env = process.env) {
+  const heartbeatIntervalSeconds = parsePositiveInteger(
+    env.PRESENCE_HEARTBEAT_INTERVAL_SECONDS,
+    DEFAULT_HEARTBEAT_INTERVAL_SECONDS
+  );
+
+  return {
+    host: firstNonEmpty(env.HOST, '0.0.0.0'),
+    port: parsePositiveInteger(env.PORT, DEFAULT_PORT),
+    publicBaseUrl: normalizeOptionalBaseUrl(env.PUBLIC_BASE_URL),
+    dbPath: path.resolve(firstNonEmpty(env.PRESENCE_DB_PATH, './data/presence.sqlite')),
+    presenceHeartbeatIntervalSeconds: heartbeatIntervalSeconds,
+    presenceOfflineTimeoutSeconds: parsePositiveInteger(
+      env.PRESENCE_OFFLINE_TIMEOUT_SECONDS,
+      Math.max(DEFAULT_OFFLINE_TIMEOUT_SECONDS, heartbeatIntervalSeconds * 3)
+    ),
+    presencePanelToken: firstNonEmpty(env.PRESENCE_PANEL_TOKEN, env.FEEDBACK_SHARED_SECRET),
+    logLevel: firstNonEmpty(env.LOG_LEVEL, 'info'),
+    maxSessionsReturned: parsePositiveInteger(env.PRESENCE_MAX_SESSIONS_RETURNED, 1000),
+    panelSnapshotPushIntervalSeconds: parsePositiveInteger(
+      env.PRESENCE_PANEL_SNAPSHOT_PUSH_INTERVAL_SECONDS,
+      60
+    ),
+    panelStatsPushIntervalSeconds: parsePositiveInteger(
+      env.PRESENCE_PANEL_STATS_PUSH_INTERVAL_SECONDS,
+      300
+    )
+  };
+}
+
+function parsePositiveInteger(rawValue, fallbackValue) {
+  const parsed = Number.parseInt(String(rawValue || '').trim(), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallbackValue;
+}
+
+function firstNonEmpty(...values) {
+  for (const value of values) {
+    const normalized = String(value || '').trim();
+    if (normalized) {
+      return normalized;
+    }
+  }
+  return '';
+}
+
+function normalizeOptionalBaseUrl(value) {
+  const normalized = String(value || '').trim();
+  if (!normalized) {
+    return '';
+  }
+  return normalized.endsWith('/') ? normalized.slice(0, -1) : normalized;
+}
+
+module.exports = {
+  DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
+  DEFAULT_OFFLINE_TIMEOUT_SECONDS,
+  loadConfig,
+  parsePositiveInteger,
+  firstNonEmpty
+};

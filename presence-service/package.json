@@ -1,0 +1,22 @@
+{
+  "name": "sts-presence-service",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Standalone Fastify/Vue3/SQLite presence service for SlayTheAmethyst",
+  "main": "src/server/index.js",
+  "scripts": {
+    "start": "node src/server/index.js",
+    "check": "node --check src/server/index.js && node --check src/server/app.js && node --check src/server/config.js && node --check src/server/db.js && node --check src/server/presence.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@fastify/websocket": "^11.0.0",
+    "fastify": "^5.0.0",
+    "sqlite3": "^5.1.7",
+    "vue": "^3.5.0",
+    "ws": "^8.18.0"
+  }
+}

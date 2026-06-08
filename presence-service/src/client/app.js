@@ -22,8 +22,8 @@
       value(snapshot) {
         return String(Number(snapshot.online) || 0);
       },
-      subtitle(snapshot) {
-        return '累计设备 ' + (Number(snapshot.totalDevices) || 0);
+      subtitle() {
+        return '按最近心跳计算';
       }
     },
     {
@@ -39,15 +39,15 @@
       }
     },
     {
-      key: 'timeout',
-      title: '离线阈值',
-      icon: 'mdi-timer-sand',
+      key: 'totalOnline',
+      title: '累计在线',
+      icon: 'mdi-counter',
       color: 'warning',
       value(snapshot) {
-        return (Number(snapshot.offlineTimeoutSeconds) || 0) + 's';
+        return String(getTotalOnlineUsers(snapshot));
       },
       subtitle() {
-        return '超时后移出在线列表';
+        return '历史唯一上报设备';
       }
     },
     {
@@ -138,6 +138,14 @@
     return normalized.slice(0, 14) + '...' + normalized.slice(-8);
   }
 
+  function getTotalOnlineUsers(snapshot) {
+    const explicitValue = Number(snapshot && snapshot.totalOnlineUsers);
+    if (Number.isFinite(explicitValue)) {
+      return Math.max(0, explicitValue);
+    }
+    return Math.max(0, Number(snapshot && snapshot.totalDevices) || 0);
+  }
+
   function buildChartOption(stats) {
     const buckets = Array.isArray(stats && stats.buckets) ? stats.buckets : [];
     const samples = buckets
@@ -145,7 +153,7 @@
       .map((bucket) => ({
         label: formatShortDateTime(bucket.bucketStart),
         online: Math.max(0, Number(bucket.online) || 0),
-        totalDevices: Math.max(0, Number(bucket.totalDevices) || 0),
+        totalOnlineUsers: getTotalOnlineUsers(bucket),
         recordedAt: bucket.recordedAt ? formatDateTime(bucket.recordedAt) : '-'
       }));
 
@@ -163,7 +171,7 @@
           return [
             '<strong>' + item.label + '</strong>',
             '在线人数: ' + item.online,
-            '累计设备: ' + item.totalDevices,
+            '累计在线: ' + item.totalOnlineUsers,
             '记录时间: ' + item.recordedAt
           ].join('<br>');
         }
@@ -269,11 +277,13 @@
         checkedAt: '',
         storageBackend: 'sqlite3',
         totalDevices: 0,
+        totalOnlineUsers: 0,
         sessions: []
       });
       const stats = computed(() => state.stats || {
         peakOnline: 0,
         currentOnline: 0,
+        totalOnlineUsers: 0,
         snapshotCount: 0,
         buckets: [],
         since: '',

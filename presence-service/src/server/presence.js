@@ -89,6 +89,7 @@ class PresenceStore {
     }
 
     const totalDevicesRow = await this.database.get('SELECT COUNT(*) AS count FROM presence_sessions');
+    const totalOnlineUsers = Number(totalDevicesRow && totalDevicesRow.count) || 0;
 
     return {
       online,
@@ -97,7 +98,8 @@ class PresenceStore {
       offlineTimeoutSeconds: runtimeOptions.offlineTimeoutSeconds,
       checkedAt: new Date(nowMs).toISOString(),
       storageBackend: 'sqlite3',
-      totalDevices: Number(totalDevicesRow && totalDevicesRow.count) || 0
+      totalDevices: totalOnlineUsers,
+      totalOnlineUsers
     };
   }
 
@@ -180,6 +182,7 @@ class PresenceStore {
       peakOnline: Math.max(peakOnline, summary.online),
       snapshotCount,
       totalDevices: summary.totalDevices,
+      totalOnlineUsers: summary.totalOnlineUsers,
       buckets
     };
   }
@@ -283,13 +286,15 @@ function serializeHourlySnapshotBucket(row, bucketStartMs, bucketMs) {
   const hasSnapshot = Boolean(row);
   const online = hasSnapshot ? Number(row.online) || 0 : 0;
   const updatedAtMs = hasSnapshot ? Number(row.updated_at_ms) || 0 : 0;
+  const totalDevices = hasSnapshot ? Number(row.total_devices) || 0 : 0;
   return {
     bucketStart: new Date(bucketStartMs).toISOString(),
     bucketEnd: new Date(bucketStartMs + bucketMs).toISOString(),
     online,
     hasSnapshot,
     byState: hasSnapshot ? safeJsonObject(row.by_state_json) : {},
-    totalDevices: hasSnapshot ? Number(row.total_devices) || 0 : 0,
+    totalDevices,
+    totalOnlineUsers: totalDevices,
     recordedAt: updatedAtMs > 0 ? new Date(updatedAtMs).toISOString() : null
   };
 }

@@ -85,22 +85,19 @@ For production, set `PUBLIC_BASE_URL` to the public HTTPS origin and replace
 
 ## Cloud-Control Payload
 
-`GET /cloud-control.json` returns both old HTTP fields and the new WebSocket
-fields:
+`GET /cloud-control.json` returns the compact WebSocket heartbeat settings:
 
 ```json
 {
-  "heartbeatIntervalSeconds": 30,
-  "heartbeatRequestApiUrl": "https://presence.example.com/api/presence/heartbeat",
-  "heartbeatWsUrl": "wss://presence.example.com/api/presence/ws",
-  "presenceHeartbeatWsUrl": "wss://presence.example.com/api/presence/ws",
   "heartbeat": {
     "intervalSeconds": 30,
-    "apiUrl": "https://presence.example.com/api/presence/heartbeat",
     "wsUrl": "wss://presence.example.com/api/presence/ws"
   }
 }
 ```
+
+The HTTP heartbeat endpoint remains available only for compatibility; new app
+builds read `heartbeat.wsUrl` and report presence over WebSocket.
 
 ## WebSocket Messages
 
@@ -126,6 +123,7 @@ Server -> app:
   "type": "presence_ack",
   "ok": true,
   "online": 1,
+  "totalOnlineUsers": 1,
   "heartbeatIntervalSeconds": 30,
   "offlineTimeoutSeconds": 90,
   "storageBackend": "sqlite3"

@@ -46,6 +46,7 @@ test('presence service records heartbeat and returns summary/sessions/stats', as
   assert.equal(summary.statusCode, 200);
   assert.equal(summary.json().online, 1);
   assert.equal(summary.json().totalDevices, 1);
+  assert.equal(summary.json().totalOnlineUsers, 1);
   assert.deepEqual(summary.json().byState, { game: 1 });
 
   const unauthorized = await server.inject('/api/presence/sessions');
@@ -59,6 +60,7 @@ test('presence service records heartbeat and returns summary/sessions/stats', as
   const stats = await server.inject('/api/presence/stats?token=panel-secret&bucket_seconds=3600');
   assert.equal(stats.statusCode, 200);
   assert.equal(stats.json().currentOnline, 1);
+  assert.equal(stats.json().totalOnlineUsers, 1);
   assert.equal(stats.json().bucketSeconds, 3600);
   assert.ok(Array.isArray(stats.json().buckets));
 });
@@ -83,13 +85,8 @@ test('cloud-control exposes websocket heartbeat settings', async (t) => {
   const response = await server.inject('/cloud-control.json');
   assert.equal(response.statusCode, 200);
   assert.deepEqual(response.json(), {
-    heartbeatIntervalSeconds: 30,
-    heartbeatRequestApiUrl: 'https://presence.example.com/api/presence/heartbeat',
-    heartbeatWsUrl: 'wss://presence.example.com/api/presence/ws',
-    presenceHeartbeatWsUrl: 'wss://presence.example.com/api/presence/ws',
     heartbeat: {
       intervalSeconds: 30,
-      apiUrl: 'https://presence.example.com/api/presence/heartbeat',
       wsUrl: 'wss://presence.example.com/api/presence/ws'
     }
   });
@@ -203,6 +200,7 @@ test('presence websocket accepts status frames', async (t) => {
   const ack = await waitForSocketMessage(ws, (message) => message.type === 'presence_ack');
   assert.equal(ack.ok, true);
   assert.equal(ack.online, 1);
+  assert.equal(ack.totalOnlineUsers, 1);
   assert.equal(ack.storageBackend, 'sqlite3');
 
   const summary = await server.inject('/api/presence/summary');

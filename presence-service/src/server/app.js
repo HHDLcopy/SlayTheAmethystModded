@@ -66,7 +66,7 @@ async function buildServer(config = loadConfig()) {
       panelTokenConfigured: Boolean(resolvePresencePanelToken(config)),
       heartbeatIntervalSeconds: config.presenceHeartbeatIntervalSeconds,
       offlineTimeoutSeconds: config.presenceOfflineTimeoutSeconds,
-      heartbeatWsUrl: cloudControl.heartbeatWsUrl
+      heartbeatWsUrl: cloudControl.heartbeat.wsUrl
     };
   });
 
@@ -365,17 +365,11 @@ async function buildServer(config = loadConfig()) {
 
 function buildCloudControlResponse(config, request) {
   const baseUrl = config.publicBaseUrl || buildRequestBaseUrl(config, request);
-  const heartbeatRequestApiUrl = new URL('/api/presence/heartbeat', `${baseUrl}/`).toString();
   const heartbeatWsUrl = toWebSocketUrl(new URL('/api/presence/ws', `${baseUrl}/`).toString());
 
   return {
-    heartbeatIntervalSeconds: config.presenceHeartbeatIntervalSeconds,
-    heartbeatRequestApiUrl,
-    heartbeatWsUrl,
-    presenceHeartbeatWsUrl: heartbeatWsUrl,
     heartbeat: {
       intervalSeconds: config.presenceHeartbeatIntervalSeconds,
-      apiUrl: heartbeatRequestApiUrl,
       wsUrl: heartbeatWsUrl
     }
   };

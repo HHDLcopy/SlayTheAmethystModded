@@ -1,7 +1,84 @@
 (function () {
   'use strict';
 
-  const { createApp, computed, onBeforeUnmount, onMounted, reactive } = Vue;
+  const {
+    createApp,
+    computed,
+    nextTick,
+    onBeforeUnmount,
+    onMounted,
+    reactive,
+    ref,
+    watch
+  } = Vue;
+  const { createVuetify } = Vuetify;
+
+  const METRIC_ITEMS = [
+    {
+      key: 'online',
+      title: '当前在线',
+      icon: 'mdi-account-multiple',
+      color: 'primary',
+      value(snapshot) {
+        return String(Number(snapshot.online) || 0);
+      },
+      subtitle(snapshot) {
+        return '累计设备 ' + (Number(snapshot.totalDevices) || 0);
+      }
+    },
+    {
+      key: 'heartbeat',
+      title: '心跳间隔',
+      icon: 'mdi-heart-pulse',
+      color: 'success',
+      value(snapshot) {
+        return (Number(snapshot.heartbeatIntervalSeconds) || 0) + 's';
+      },
+      subtitle() {
+        return 'App WebSocket 上报';
+      }
+    },
+    {
+      key: 'timeout',
+      title: '离线阈值',
+      icon: 'mdi-timer-sand',
+      color: 'warning',
+      value(snapshot) {
+        return (Number(snapshot.offlineTimeoutSeconds) || 0) + 's';
+      },
+      subtitle() {
+        return '超时后移出在线列表';
+      }
+    },
+    {
+      key: 'storage',
+      title: '存储后端',
+      icon: 'mdi-database',
+      color: 'info',
+      value(snapshot) {
+        return snapshot.storageBackend || 'sqlite3';
+      },
+      subtitle(snapshot) {
+        return snapshot.checkedAt ? formatDateTime(snapshot.checkedAt) : '等待快照';
+      }
+    }
+  ];
+
+  const SESSION_HEADERS = [
+    { title: '设备', key: 'clientId', minWidth: 210 },
+    { title: '玩家名', key: 'playerName', minWidth: 130 },
+    { title: 'ID 类型', key: 'idType', minWidth: 150 },
+    { title: '状态', key: 'state', minWidth: 110 },
+    { title: '版本', key: 'appVersion', minWidth: 100 },
+    { title: '首次在线', key: 'firstSeenAt', minWidth: 170 },
+    { title: '最近心跳', key: 'lastSeenAt', minWidth: 180 },
+    { title: '剩余 TTL', key: 'expiresInSeconds', align: 'end', minWidth: 110 }
+  ];
+
+  const STATE_HEADERS = [
+    { title: '状态', key: 'state' },
+    { title: '人数', key: 'count', align: 'end' }
+  ];
 
   function buildPanelWebSocketUrl(token) {
     const url = new URL('/api/presence/panel/ws', window.location.href);
@@ -61,8 +138,110 @@
     return normalized.slice(0, 14) + '...' + normalized.slice(-8);
   }
 
+  function buildChartOption(stats) {
+    const buckets = Array.isArray(stats && stats.buckets) ? stats.buckets : [];
+    const samples = buckets
+      .filter((bucket) => bucket && bucket.hasSnapshot !== false)
+      .map((bucket) => ({
+        label: formatShortDateTime(bucket.bucketStart),
+        online: Math.max(0, Number(bucket.online) || 0),
+        totalDevices: Math.max(0, Number(bucket.totalDevices) || 0),
+        recordedAt: bucket.recordedAt ? formatDateTime(bucket.recordedAt) : '-'
+      }));
+
+    return {
+      color: ['#2563eb'],
+      animationDuration: 220,
+      tooltip: {
+        trigger: 'axis',
+        confine: true,
+        formatter(params) {
+          const item = params && params[0] && params[0].data;
+          if (!item) {
+            return '';
+          }
+          return [
+            '<strong>' + item.label + '</strong>',
+            '在线人数: ' + item.online,
+            '累计设备: ' + item.totalDevices,
+            '记录时间: ' + item.recordedAt
+          ].join('<br>');
+        }
+      },
+      grid: {
+        top: 28,
+        right: 18,
+        bottom: 42,
+        left: 42,
+        containLabel: true
+      },
+      xAxis: {
+        type: 'category',
+        boundaryGap: false,
+        data: samples.map((item) => item.label),
+        axisLabel: {
+          hideOverlap: true,
+          color: '#64748b'
+        },
+        axisLine: {
+          lineStyle: {
+            color: '#cbd5e1'
+          }
+        },
+        axisTick: {
+          show: false
+        }
+      },
+      yAxis: {
+        type: 'value',
+        minInterval: 1,
+        axisLabel: {
+          color: '#64748b'
+        },
+        splitLine: {
+          lineStyle: {
+            color: '#e2e8f0'
+          }
+        }
+      },
+      series: [
+        {
+          name: '在线人数',
+          type: 'line',
+          smooth: true,
+          showSymbol: samples.length <= 36,
+          symbolSize: 6,
+          lineStyle: {
+            width: 3
+          },
+          areaStyle: {
+            color: {
+              type: 'linear',
+              x: 0,
+              y: 0,
+              x2: 0,
+              y2: 1,
+              colorStops: [
+                { offset: 0, color: 'rgba(37, 99, 235, .22)' },
+                { offset: 1, color: 'rgba(37, 99, 235, .02)' }
+              ]
+            }
+          },
+          data: samples.map((item) => ({
+            ...item,
+            value: item.online
+          }))
+        }
+      ]
+    };
+  }
+
   createApp({
     setup() {
+      const chartEl = ref(null);
+      let chart = null;
+      let resizeObserver = null;
+
       const state = reactive({
         token: readTokenFromLocation(),
         inputToken: readTokenFromLocation(),
@@ -81,6 +260,7 @@
       const hasToken = computed(() => state.token.trim().length > 0);
       const isConnected = computed(() => state.connectionStatus === 'connected');
       const isError = computed(() => state.connectionStatus === 'error');
+      const isConnecting = computed(() => state.connectionStatus === 'connecting');
       const snapshot = computed(() => state.snapshot || {
         online: 0,
         byState: {},
@@ -100,8 +280,42 @@
         until: ''
       });
       const stateRows = computed(() => Object.entries(snapshot.value.byState || {})
-        .sort((left, right) => left[0].localeCompare(right[0])));
-      const chart = computed(() => buildChart(stats.value.buckets || []));
+        .sort((left, right) => left[0].localeCompare(right[0]))
+        .map((row) => ({
+          state: row[0],
+          count: Number(row[1]) || 0
+        })));
+      const sessions = computed(() => Array.isArray(snapshot.value.sessions)
+        ? snapshot.value.sessions
+        : []);
+      const metricItems = computed(() => METRIC_ITEMS.map((item) => ({
+        key: item.key,
+        title: item.title,
+        icon: item.icon,
+        color: item.color,
+        value: item.value(snapshot.value),
+        subtitle: item.subtitle(snapshot.value)
+      })));
+      const hasStatsSamples = computed(() => (stats.value.buckets || [])
+        .some((bucket) => bucket && bucket.hasSnapshot !== false));
+      const connectionColor = computed(() => {
+        if (isConnected.value) {
+          return 'success';
+        }
+        if (isError.value) {
+          return 'error';
+        }
+        return 'warning';
+      });
+      const connectionIcon = computed(() => {
+        if (isConnected.value) {
+          return 'mdi-lan-connect';
+        }
+        if (isError.value) {
+          return 'mdi-lan-disconnect';
+        }
+        return 'mdi-lan-pending';
+      });
 
       function login() {
         const token = state.inputToken.trim();
@@ -218,27 +432,76 @@
         send('refresh_stats');
       }
 
+      function tableItem(item) {
+        return item && item.raw ? item.raw : (item || {});
+      }
+
+      function ensureChart() {
+        if (!hasStatsSamples.value || !chartEl.value || typeof echarts === 'undefined') {
+          return;
+        }
+        if (!chart) {
+          chart = echarts.init(chartEl.value, null, {
+            renderer: 'canvas'
+          });
+        }
+        chart.setOption(buildChartOption(stats.value), true);
+      }
+
+      function resizeChart() {
+        if (chart) {
+          chart.resize();
+        }
+      }
+
+      watch(stats, () => {
+        nextTick(ensureChart);
+      }, { deep: true });
+
       onMounted(() => {
         if (hasToken.value) {
           connect();
         }
+        nextTick(ensureChart);
+        if (window.ResizeObserver && chartEl.value) {
+          resizeObserver = new ResizeObserver(resizeChart);
+          resizeObserver.observe(chartEl.value);
+        }
+        window.addEventListener('resize', resizeChart);
       });
 
       onBeforeUnmount(() => {
         disconnect(true);
+        window.removeEventListener('resize', resizeChart);
+        if (resizeObserver) {
+          resizeObserver.disconnect();
+          resizeObserver = null;
+        }
+        if (chart) {
+          chart.dispose();
+          chart = null;
+        }
       });
 
       return {
+        chartEl,
         state,
         hasToken,
         isConnected,
-        isError,
+        isConnecting,
         snapshot,
         stats,
         stateRows,
-        chart,
+        sessions,
+        metricItems,
+        hasStatsSamples,
+        connectionColor,
+        connectionIcon,
+        SESSION_HEADERS,
+        STATE_HEADERS,
         login,
         refreshAll,
+        tableItem,
         formatAge,
         formatDateTime,
         formatShortDateTime,
@@ -246,189 +509,221 @@
       };
     },
     template: `
-      <div v-if="!hasToken" class="login-wrap">
-        <form class="login" @submit.prevent="login">
-          <h1>在线情况面板</h1>
-          <p>请输入面板访问令牌。</p>
-          <label for="token">访问令牌</label>
-          <input id="token" v-model="state.inputToken" type="password" autocomplete="current-password" autofocus>
-          <button class="primary" type="submit">进入</button>
-        </form>
-      </div>
+      <v-app>
+        <v-main class="presence-shell">
+          <v-container v-if="!hasToken" class="login-container" fluid>
+            <v-card class="login-card" elevation="2">
+              <v-card-title class="text-h5">在线情况面板</v-card-title>
+              <v-card-text>
+                <v-form @submit.prevent="login">
+                  <v-text-field
+                    v-model="state.inputToken"
+                    label="访问令牌"
+                    type="password"
+                    autocomplete="current-password"
+                    variant="outlined"
+                    density="comfortable"
+                    autofocus
+                    hide-details
+                  ></v-text-field>
+                  <v-btn
+                    class="mt-4"
+                    color="primary"
+                    type="submit"
+                    block
+                    size="large"
+                    prepend-icon="mdi-login"
+                  >
+                    进入
+                  </v-btn>
+                </v-form>
+              </v-card-text>
+            </v-card>
+          </v-container>
 
-      <main v-else class="page">
-        <header class="topbar">
-          <div>
-            <h1>在线情况面板</h1>
-            <div class="muted">SlayTheAmethyst · WebSocket 实时同步 · {{ snapshot.checkedAt || '-' }}</div>
-          </div>
-          <div class="actions">
-            <div class="status-pill">
-              <span class="dot" :class="{ connected: isConnected, error: isError }"></span>
-              <span>{{ state.connectionMessage }}</span>
-            </div>
-            <button type="button" @click="refreshAll">刷新</button>
-          </div>
-        </header>
+          <v-container v-else class="page-container" fluid>
+            <v-toolbar class="top-toolbar" color="surface" rounded="lg" density="comfortable">
+              <template #prepend>
+                <v-icon icon="mdi-monitor-dashboard" size="28"></v-icon>
+              </template>
+              <v-toolbar-title>
+                <div class="title-line">在线情况面板</div>
+                <div class="subtitle-line">SlayTheAmethyst · WebSocket 实时同步 · {{ snapshot.checkedAt || '-' }}</div>
+              </v-toolbar-title>
+              <v-spacer></v-spacer>
+              <v-chip
+                class="mr-2"
+                :color="connectionColor"
+                :prepend-icon="connectionIcon"
+                variant="tonal"
+              >
+                {{ state.connectionMessage }}
+              </v-chip>
+              <v-btn
+                color="primary"
+                variant="flat"
+                prepend-icon="mdi-refresh"
+                :loading="isConnecting"
+                @click="refreshAll"
+              >
+                刷新
+              </v-btn>
+            </v-toolbar>
 
-        <section class="metrics" aria-label="Presence summary">
-          <div class="metric">
-            <div class="metric-label">当前在线</div>
-            <div class="metric-value">{{ Number(snapshot.online) || 0 }}</div>
-          </div>
-          <div class="metric">
-            <div class="metric-label">心跳间隔</div>
-            <div class="metric-value">{{ Number(snapshot.heartbeatIntervalSeconds) || 0 }}s</div>
-          </div>
-          <div class="metric">
-            <div class="metric-label">离线阈值</div>
-            <div class="metric-value">{{ Number(snapshot.offlineTimeoutSeconds) || 0 }}s</div>
-          </div>
-          <div class="metric">
-            <div class="metric-label">存储后端</div>
-            <div class="metric-value">{{ snapshot.storageBackend || 'sqlite3' }}</div>
-          </div>
-        </section>
+            <v-row class="mt-4" dense>
+              <v-col v-for="item in metricItems" :key="item.key" cols="12" sm="6" lg="3">
+                <v-card class="metric-card" elevation="1">
+                  <v-card-text>
+                    <div class="metric-heading">
+                      <v-avatar :color="item.color" variant="tonal" size="42">
+                        <v-icon :icon="item.icon"></v-icon>
+                      </v-avatar>
+                      <span>{{ item.title }}</span>
+                    </div>
+                    <div class="metric-value">{{ item.value }}</div>
+                    <div class="metric-subtitle">{{ item.subtitle }}</div>
+                  </v-card-text>
+                </v-card>
+              </v-col>
+            </v-row>
 
-        <section class="section">
-          <div class="section-header">
-            <div class="section-title">一周在线趋势</div>
-            <div class="muted">{{ formatShortDateTime(stats.since) }} - {{ formatShortDateTime(stats.until) }}</div>
-          </div>
-          <div class="chart-tools">
-            <span>峰值 <strong>{{ Number(stats.peakOnline) || 0 }}</strong></span>
-            <span>当前 <strong>{{ Number(stats.currentOnline) || 0 }}</strong></span>
-            <span>样本 <strong>{{ Number(stats.snapshotCount) || 0 }}/{{ (stats.buckets || []).length }}</strong></span>
-          </div>
-          <div class="chart">
-            <div v-if="!chart.hasSamples" class="empty">No weekly presence snapshots yet.</div>
-            <svg v-else viewBox="0 0 720 240" role="img" aria-label="最近一周在线人数折线图" preserveAspectRatio="none">
-              <line v-for="line in chart.gridLines" class="chart-grid" :x1="40" :x2="700" :y1="line.y" :y2="line.y"></line>
-              <path class="chart-area" :d="chart.areaPath"></path>
-              <polyline class="chart-line" :points="chart.points"></polyline>
-              <text class="chart-axis" x="40" y="228">{{ chart.firstLabel }}</text>
-              <text class="chart-axis" x="620" y="228">{{ chart.lastLabel }}</text>
-              <text class="chart-axis" x="8" y="28">{{ chart.maxOnline }}</text>
-              <text class="chart-axis" x="20" y="204">0</text>
-            </svg>
-          </div>
-        </section>
+            <v-card class="mt-4" elevation="1">
+              <v-card-title class="panel-title">
+                <div>
+                  <div>一周在线趋势</div>
+                  <div class="panel-subtitle">{{ formatShortDateTime(stats.since) }} - {{ formatShortDateTime(stats.until) }}</div>
+                </div>
+                <v-spacer></v-spacer>
+                <v-chip color="primary" variant="tonal">峰值 {{ Number(stats.peakOnline) || 0 }}</v-chip>
+                <v-chip color="success" variant="tonal">当前 {{ Number(stats.currentOnline) || 0 }}</v-chip>
+                <v-chip color="info" variant="tonal">样本 {{ Number(stats.snapshotCount) || 0 }}/{{ (stats.buckets || []).length }}</v-chip>
+              </v-card-title>
+              <v-card-text>
+                <div v-show="hasStatsSamples" ref="chartEl" class="presence-chart"></div>
+                <div v-if="!hasStatsSamples" class="empty-state">
+                  <v-icon icon="mdi-chart-line" size="44" color="primary"></v-icon>
+                  <div class="empty-title">暂无趋势样本</div>
+                  <div class="empty-text">打开面板后当前小时快照会自动写入，历史趋势按小时累积。</div>
+                </div>
+              </v-card-text>
+            </v-card>
 
-        <section class="section">
-          <div class="section-header">
-            <div class="section-title">状态统计</div>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>状态</th>
-                  <th class="number">人数</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-if="stateRows.length === 0">
-                  <td class="empty" colspan="2">No active states.</td>
-                </tr>
-                <tr v-for="row in stateRows" :key="row[0]">
-                  <td>{{ row[0] }}</td>
-                  <td class="number">{{ Number(row[1]) || 0 }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
+            <v-row class="mt-4" dense>
+              <v-col cols="12" lg="4">
+                <v-card elevation="1">
+                  <v-card-title class="panel-title">状态统计</v-card-title>
+                  <v-data-table
+                    :headers="STATE_HEADERS"
+                    :items="stateRows"
+                    density="comfortable"
+                    item-value="state"
+                    hide-default-footer
+                    no-data-text="No active states."
+                  >
+                    <template #item.state="{ item }">
+                      <v-chip color="primary" variant="tonal" size="small">{{ tableItem(item).state }}</v-chip>
+                    </template>
+                  </v-data-table>
+                </v-card>
+              </v-col>
 
-        <section class="section">
-          <div class="section-header">
-            <div class="section-title">在线会话</div>
-            <div class="muted">按最近心跳倒序</div>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>设备</th>
-                  <th>玩家名</th>
-                  <th>ID 类型</th>
-                  <th>状态</th>
-                  <th>版本</th>
-                  <th>首次在线</th>
-                  <th>最近心跳</th>
-                  <th>剩余 TTL</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-if="!snapshot.sessions || snapshot.sessions.length === 0">
-                  <td class="empty" colspan="8">No active game sessions.</td>
-                </tr>
-                <tr v-for="session in snapshot.sessions" :key="session.clientId">
-                  <td><code :title="session.clientId || ''">{{ maskIdentifier(session.clientId || session.deviceId || 'unknown') }}</code></td>
-                  <td>{{ session.playerName || '-' }}</td>
-                  <td>{{ session.idType || 'unknown' }}</td>
-                  <td>{{ session.state || 'unknown' }}</td>
-                  <td>{{ session.appVersion || '-' }}</td>
-                  <td>{{ formatDateTime(session.firstSeenAt) }}</td>
-                  <td>{{ formatDateTime(session.lastSeenAt) }}<br><span class="muted">{{ formatAge(session.ageSeconds) }}</span></td>
-                  <td>{{ Number(session.expiresInSeconds) || 0 }}s</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-      </main>
+              <v-col cols="12" lg="8">
+                <v-card elevation="1">
+                  <v-card-title class="panel-title">
+                    <div>
+                      <div>在线会话</div>
+                      <div class="panel-subtitle">按最近心跳倒序</div>
+                    </div>
+                  </v-card-title>
+                  <v-data-table
+                    :headers="SESSION_HEADERS"
+                    :items="sessions"
+                    density="comfortable"
+                    fixed-header
+                    height="520"
+                    item-value="clientId"
+                    no-data-text="No active game sessions."
+                    :items-per-page="25"
+                  >
+                    <template #item.clientId="{ item }">
+                      <code class="identifier" :title="tableItem(item).clientId || ''">
+                        {{ maskIdentifier(tableItem(item).clientId || tableItem(item).deviceId || 'unknown') }}
+                      </code>
+                    </template>
+                    <template #item.playerName="{ item }">
+                      {{ tableItem(item).playerName || '-' }}
+                    </template>
+                    <template #item.idType="{ item }">
+                      {{ tableItem(item).idType || 'unknown' }}
+                    </template>
+                    <template #item.state="{ item }">
+                      <v-chip color="primary" variant="tonal" size="small">{{ tableItem(item).state || 'unknown' }}</v-chip>
+                    </template>
+                    <template #item.appVersion="{ item }">
+                      {{ tableItem(item).appVersion || '-' }}
+                    </template>
+                    <template #item.firstSeenAt="{ item }">
+                      {{ formatDateTime(tableItem(item).firstSeenAt) }}
+                    </template>
+                    <template #item.lastSeenAt="{ item }">
+                      <div>{{ formatDateTime(tableItem(item).lastSeenAt) }}</div>
+                      <div class="table-subtitle">{{ formatAge(tableItem(item).ageSeconds) }}</div>
+                    </template>
+                    <template #item.expiresInSeconds="{ item }">
+                      {{ Number(tableItem(item).expiresInSeconds) || 0 }}s
+                    </template>
+                  </v-data-table>
+                </v-card>
+              </v-col>
+            </v-row>
+          </v-container>
+        </v-main>
+      </v-app>
     `
-  }).mount('#app');
-
-  function buildChart(buckets) {
-    const samples = (Array.isArray(buckets) ? buckets : [])
-      .filter((bucket) => bucket && bucket.hasSnapshot !== false)
-      .map((bucket) => ({
-        at: bucket.bucketStart,
-        online: Math.max(0, Number(bucket.online) || 0)
-      }));
-    if (samples.length === 0) {
-      return {
-        hasSamples: false,
-        points: '',
-        areaPath: '',
-        gridLines: [],
-        firstLabel: '-',
-        lastLabel: '-',
-        maxOnline: 0
-      };
-    }
-
-    const maxOnline = Math.max(1, ...samples.map((item) => item.online));
-    const x0 = 40;
-    const y0 = 202;
-    const width = 660;
-    const height = 176;
-    const denominator = Math.max(1, samples.length - 1);
-    const points = samples.map((item, index) => {
-      const x = x0 + (width * index / denominator);
-      const y = y0 - (height * item.online / maxOnline);
-      return {
-        x,
-        y,
-        text: x.toFixed(1) + ',' + y.toFixed(1)
-      };
-    });
-    const polyline = points.map((point) => point.text).join(' ');
-    const areaPath = 'M ' + x0 + ' ' + y0 + ' L ' +
-      points.map((point) => point.text).join(' L ') +
-      ' L ' + (x0 + width) + ' ' + y0 + ' Z';
-
-    return {
-      hasSamples: true,
-      points: polyline,
-      areaPath,
-      gridLines: [0, 1, 2, 3, 4].map((index) => ({
-        y: 26 + (176 * index / 4)
-      })),
-      firstLabel: formatShortDateTime(samples[0].at),
-      lastLabel: formatShortDateTime(samples[samples.length - 1].at),
-      maxOnline
-    };
-  }
+  })
+    .use(createVuetify({
+      icons: {
+        defaultSet: 'mdi'
+      },
+      theme: {
+        defaultTheme: window.matchMedia &&
+          window.matchMedia('(prefers-color-scheme: dark)').matches
+          ? 'dark'
+          : 'light',
+        themes: {
+          light: {
+            colors: {
+              background: '#f6f8fb',
+              surface: '#ffffff',
+              primary: '#2563eb',
+              success: '#0f9f6e',
+              warning: '#b7791f',
+              info: '#0284c7'
+            }
+          },
+          dark: {
+            colors: {
+              background: '#101418',
+              surface: '#171d24',
+              primary: '#7aa7ff',
+              success: '#61d394',
+              warning: '#e5b95f',
+              info: '#62c4f3'
+            }
+          }
+        }
+      },
+      defaults: {
+        VCard: {
+          rounded: 'lg'
+        },
+        VBtn: {
+          rounded: 'md'
+        },
+        VDataTable: {
+          hover: true
+        }
+      }
+    }))
+    .mount('#app');
 }());

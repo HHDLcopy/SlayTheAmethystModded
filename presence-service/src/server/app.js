@@ -15,6 +15,11 @@ const VUE_SCRIPT_PATH = path.join(
   path.dirname(require.resolve('vue/package.json')),
   'dist/vue.global.prod.js'
 );
+const VUETIFY_SCRIPT_PATH = require.resolve('vuetify/dist/vuetify.min.js');
+const VUETIFY_STYLE_PATH = require.resolve('vuetify/dist/vuetify.min.css');
+const ECHARTS_SCRIPT_PATH = require.resolve('echarts/dist/echarts.min.js');
+const MDI_STYLE_PATH = require.resolve('@mdi/font/css/materialdesignicons.min.css');
+const MDI_FONT_DIR = path.resolve(path.dirname(require.resolve('@mdi/font/package.json')), 'fonts');
 
 async function buildServer(config = loadConfig()) {
   const fastify = Fastify({
@@ -215,6 +220,42 @@ async function buildServer(config = loadConfig()) {
     reply.header('Cache-Control', 'public, max-age=604800, immutable');
     return sendFile(reply, VUE_SCRIPT_PATH, 'application/javascript; charset=utf-8');
   });
+  fastify.get('/presence/vendor/vuetify.min.js', async (_request, reply) => {
+    reply.header('Cache-Control', 'public, max-age=604800, immutable');
+    return sendFile(reply, VUETIFY_SCRIPT_PATH, 'application/javascript; charset=utf-8');
+  });
+  fastify.get('/presence/vendor/vuetify.min.css', async (_request, reply) => {
+    reply.header('Cache-Control', 'public, max-age=604800, immutable');
+    return sendFile(reply, VUETIFY_STYLE_PATH, 'text/css; charset=utf-8');
+  });
+  fastify.get('/presence/vendor/echarts.min.js', async (_request, reply) => {
+    reply.header('Cache-Control', 'public, max-age=604800, immutable');
+    return sendFile(reply, ECHARTS_SCRIPT_PATH, 'application/javascript; charset=utf-8');
+  });
+  fastify.get('/presence/vendor/materialdesignicons.min.css', async (_request, reply) => {
+    reply.header('Cache-Control', 'public, max-age=604800, immutable');
+    return sendFile(reply, MDI_STYLE_PATH, 'text/css; charset=utf-8');
+  });
+  fastify.get('/presence/vendor/fonts/:fileName', async (request, reply) => {
+    return sendMdiFont(request, reply);
+  });
+  fastify.get('/presence/fonts/:fileName', async (request, reply) => {
+    return sendMdiFont(request, reply);
+  });
+
+  function sendMdiFont(request, reply) {
+    const fileName = path.basename(String(request.params && request.params.fileName || ''));
+    if (!/^materialdesignicons-webfont\.(?:eot|ttf|woff|woff2)$/.test(fileName)) {
+      reply.code(404);
+      return {
+        ok: false,
+        error: 'not_found',
+        message: 'Font not found'
+      };
+    }
+    reply.header('Cache-Control', 'public, max-age=604800, immutable');
+    return sendFile(reply, path.join(MDI_FONT_DIR, fileName), resolveFontContentType(fileName));
+  }
 
   fastify.setErrorHandler((error, _request, reply) => {
     const statusCode = normalizeStatusCode(error);
@@ -445,6 +486,20 @@ function firstHeaderValue(value) {
     return value.length > 0 ? String(value[0] || '').trim() : '';
   }
   return String(value || '').trim();
+}
+
+function resolveFontContentType(fileName) {
+  const normalized = String(fileName || '').toLowerCase();
+  if (normalized.endsWith('.woff2')) {
+    return 'font/woff2';
+  }
+  if (normalized.endsWith('.woff')) {
+    return 'font/woff';
+  }
+  if (normalized.endsWith('.ttf')) {
+    return 'font/ttf';
+  }
+  return 'application/vnd.ms-fontobject';
 }
 
 function normalizeStatusCode(error) {

@@ -132,6 +132,41 @@ test('runtime options prefer server configuration over request overrides', async
   assert.equal(summary.json().offlineTimeoutSeconds, 90);
 });
 
+test('presence panel serves local frontend vendor assets', async (t) => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-presence-'));
+  const server = await buildServer({
+    ...loadConfig({ LOG_LEVEL: 'silent' }),
+    dbPath: path.join(tmpDir, 'presence.sqlite'),
+    presencePanelToken: 'panel-secret',
+    presenceHeartbeatIntervalSeconds: 30,
+    presenceOfflineTimeoutSeconds: 90,
+    logLevel: 'silent'
+  });
+  t.after(async () => {
+    await server.close();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+  await server.ready();
+
+  const paths = [
+    ['/presence', 'text/html'],
+    ['/presence/app.js', 'application/javascript'],
+    ['/presence/styles.css', 'text/css'],
+    ['/presence/vue.global.prod.js', 'application/javascript'],
+    ['/presence/vendor/vuetify.min.css', 'text/css'],
+    ['/presence/vendor/vuetify.min.js', 'application/javascript'],
+    ['/presence/vendor/echarts.min.js', 'application/javascript'],
+    ['/presence/vendor/materialdesignicons.min.css', 'text/css'],
+    ['/presence/fonts/materialdesignicons-webfont.woff2?v=7.4.47', 'font/woff2']
+  ];
+
+  for (const [url, contentType] of paths) {
+    const response = await server.inject(url);
+    assert.equal(response.statusCode, 200, url);
+    assert.match(response.headers['content-type'], new RegExp(contentType), url);
+  }
+});
+
 test('presence websocket accepts status frames', async (t) => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-presence-'));
   let ws = null;

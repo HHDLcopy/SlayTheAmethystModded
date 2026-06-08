@@ -6,6 +6,7 @@ import android.content.ContextWrapper
 import android.content.SharedPreferences
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
+import io.stamethyst.config.SpecialKeyInputMode
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -138,7 +139,7 @@ class ModManagerOptionalModIndexTest {
         )
 
         assertEquals(
-            listOf("basemod", "stslib", "amethystruntimecompat", "ramsaver", "alpha"),
+            listOf("basemod", "stslib", "amethystruntimecompat", "amethystfloatingtools", "ramsaver", "alpha"),
             ModManager.resolveLaunchModIds(context)
         )
 
@@ -151,7 +152,7 @@ class ModManagerOptionalModIndexTest {
         )
 
         assertEquals(
-            listOf("basemod", "stslib", "amethystruntimecompat", "ramsaver", "beta"),
+            listOf("basemod", "stslib", "amethystruntimecompat", "amethystfloatingtools", "ramsaver", "beta"),
             ModManager.resolveLaunchModIds(context)
         )
     }
@@ -192,7 +193,7 @@ class ModManagerOptionalModIndexTest {
         )
 
         assertEquals(
-            listOf("basemod", "stslib", "amethystruntimecompat", "ramsaver", "beta", "alpha", "gamma"),
+            listOf("basemod", "stslib", "amethystruntimecompat", "amethystfloatingtools", "ramsaver", "beta", "alpha", "gamma"),
             ModManager.resolveLaunchModIds(context)
         )
 
@@ -232,7 +233,7 @@ class ModManagerOptionalModIndexTest {
         )
 
         assertEquals(
-            listOf("basemod", "stslib", "amethystruntimecompat", "ramsaver", "alpha"),
+            listOf("basemod", "stslib", "amethystruntimecompat", "amethystfloatingtools", "ramsaver", "alpha"),
             ModManager.resolveLaunchModIds(context)
         )
     }
@@ -251,12 +252,32 @@ class ModManagerOptionalModIndexTest {
             assertTrue(ramSaver.installed)
             assertFalse(ramSaver.enabled)
             assertEquals(
-                listOf("basemod", "stslib", "amethystruntimecompat"),
+                listOf("basemod", "stslib", "amethystruntimecompat", "amethystfloatingtools"),
                 ModManager.resolveLaunchModIds(context)
             )
         } finally {
             LauncherConfig.setRamSaverEnabled(context, LauncherConfig.DEFAULT_RAM_SAVER_ENABLED)
         }
+    }
+
+    @Test
+    fun resolveLaunchModIds_excludesFloatingToolsWhenSpecialKeyModeDoesNotUseBuiltInMod() {
+        val roots = TestRoots.create("mod-manager-floating-tools-disabled")
+        val context = roots.context
+        installRequiredLaunchMods(context)
+        LauncherConfig.saveSpecialKeyInputMode(context, SpecialKeyInputMode.LEGACY_FLOATING_WINDOW)
+
+        assertEquals(
+            listOf("basemod", "stslib", "amethystruntimecompat", "ramsaver"),
+            ModManager.resolveLaunchModIds(context)
+        )
+
+        LauncherConfig.saveSpecialKeyInputMode(context, SpecialKeyInputMode.DISABLED)
+
+        assertEquals(
+            listOf("basemod", "stslib", "amethystruntimecompat", "ramsaver"),
+            ModManager.resolveLaunchModIds(context)
+        )
     }
 
     private fun installRequiredLaunchMods(context: Context) {
@@ -278,6 +299,12 @@ class ModManagerOptionalModIndexTest {
             modId = "amethystruntimecompat",
             name = "Amethyst Runtime Compat",
             lastModified = 7_000L
+        )
+        writeOptionalModJar(
+            file = RuntimePaths.importedAmethystFloatingToolsJar(context),
+            modId = "amethystfloatingtools",
+            name = "Amethyst Floating Tools",
+            lastModified = 7_500L
         )
         writeOptionalModJar(
             file = RuntimePaths.importedRamSaverJar(context),

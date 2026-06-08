@@ -38,14 +38,20 @@ val releaseStorePassword = readReleaseSigningProperty("RELEASE_STORE_PASSWORD", 
 val releaseKeyAlias = readReleaseSigningProperty("RELEASE_KEY_ALIAS", "release.keyAlias")
 val releaseKeyPassword = readReleaseSigningProperty("RELEASE_KEY_PASSWORD", "release.keyPassword")
 val defaultResourcePackDownloadUrl =
-    "https://github.com/ModinMobileSTS/SlayTheAmethystResource/releases/download/Resource/resources.zip"
+    "https://github.com/ModinMobileSTS/SlayTheAmethystResource/releases/download/v1.1/resources.zip"
+val defaultCloudControlConfigUrl =
+    "https://github.com/ModinMobileSTS/SlayTheAmethystResource/releases/download/Resource/cloud-control.json"
 val resourcePackDownloadUrl = readGradleProperty(
     "resourcePack.downloadUrl",
     readLocalProperty("resourcePack.downloadUrl").ifEmpty { defaultResourcePackDownloadUrl }
 )
 val resourcePackVersion = readGradleProperty(
     "resourcePack.version",
-    readLocalProperty("resourcePack.version").ifEmpty { "resources-v1" }
+    readLocalProperty("resourcePack.version").ifEmpty { "resources-v1.1" }
+)
+val cloudControlConfigUrl = readGradleProperty(
+    "cloudControl.configUrl",
+    readLocalProperty("cloudControl.configUrl").ifEmpty { defaultCloudControlConfigUrl }
 )
 val hasReleaseSigning = listOf(
     releaseStoreFilePath,
@@ -86,6 +92,7 @@ android {
         buildConfigField("String", "FEEDBACK_GITHUB_REPO", "\"SlayTheAmethystModded\"")
         buildConfigField("String", "RESOURCE_PACK_DOWNLOAD_URL", resourcePackDownloadUrl.toBuildConfigStringLiteral())
         buildConfigField("String", "RESOURCE_PACK_VERSION", resourcePackVersion.toBuildConfigStringLiteral())
+        buildConfigField("String", "CLOUD_CONTROL_CONFIG_URL", cloudControlConfigUrl.toBuildConfigStringLiteral())
 
         ndk {
             //noinspection ChromeOsAbiSupport

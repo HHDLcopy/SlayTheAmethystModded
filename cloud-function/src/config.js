@@ -5,10 +5,6 @@ const {
   DEFAULT_BUNDLE_MAX_BYTES
 } = require('./constants');
 const {
-  DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
-  DEFAULT_OFFLINE_TIMEOUT_SECONDS
-} = require('./presence');
-const {
   parsePositiveInteger,
   parseBoolean,
   parseCsv,
@@ -47,21 +43,7 @@ function loadConfig() {
     notificationStateReleasePrefix: normalizeReleasePrefix(
       readOptionalEnv('GITHUB_NOTIFICATION_STATE_RELEASE_PREFIX') || 'feedback-mail-state'
     ),
-    presenceHeartbeatIntervalSeconds: parsePositiveInteger(
-      process.env.PRESENCE_HEARTBEAT_INTERVAL_SECONDS,
-      DEFAULT_HEARTBEAT_INTERVAL_SECONDS
-    ),
-    presenceOfflineTimeoutSeconds: parsePositiveInteger(
-      process.env.PRESENCE_OFFLINE_TIMEOUT_SECONDS,
-      DEFAULT_OFFLINE_TIMEOUT_SECONDS
-    ),
-    presencePanelToken: readOptionalEnv('PRESENCE_PANEL_TOKEN'),
-    presenceStorageUrl: readOptionalEnv('PRESENCE_STORAGE_URL'),
-    presenceStorageSecret: readOptionalEnv('PRESENCE_STORAGE_SECRET'),
-    presenceStorageTimeoutMs: parsePositiveInteger(
-      process.env.PRESENCE_STORAGE_TIMEOUT_MS,
-      3000
-    )
+    cloudControlConfigUrl: readOptionalEnv('CLOUD_CONTROL_CONFIG_URL')
   };
 }
 

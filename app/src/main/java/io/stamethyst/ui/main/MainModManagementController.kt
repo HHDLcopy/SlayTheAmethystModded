@@ -1467,6 +1467,10 @@ internal class MainModManagementController(
             ModManager.MOD_ID_STSLIB ->
                 RuntimePaths.importedStsLibJar(host).exists() || hasBundledAsset(host, "components/mods/StSLib.jar")
 
+            ModManager.MOD_ID_AMETHYST_FLOATING_TOOLS ->
+                RuntimePaths.importedAmethystFloatingToolsJar(host).exists() ||
+                    hasBundledAsset(host, "components/mods/AmethystFloatingTools.jar")
+
             ModManager.MOD_ID_RAM_SAVER ->
                 RuntimePaths.importedRamSaverJar(host).exists() || hasBundledAsset(host, "components/mods/RamSaver.jar")
 

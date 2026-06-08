@@ -165,7 +165,7 @@ enum class UpdateSource(
             return ordered.toList()
         }
 
-        private fun isMirrorableGithubUrl(targetUrl: String): Boolean {
+        internal fun isMirrorableGithubUrl(targetUrl: String): Boolean {
             val host = runCatching { URL(targetUrl).host.lowercase(Locale.ROOT) }.getOrNull()
                 ?: return false
             return host in mirrorableGithubHosts || host.endsWith(".githubusercontent.com")

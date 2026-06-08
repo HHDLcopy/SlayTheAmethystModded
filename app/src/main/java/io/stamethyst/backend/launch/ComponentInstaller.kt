@@ -297,6 +297,15 @@ object ComponentInstaller {
         )
         ensureBundledMod(
             context = context,
+            modLabel = "AmethystFloatingTools.jar",
+            resources = resources,
+            assetPath = "components/mods/AmethystFloatingTools.jar",
+            targetFile = RuntimePaths.importedAmethystFloatingToolsJar(context),
+            validator = ModJarSupport::validateAmethystFloatingToolsJar,
+            replaceExisting = forceReplaceExisting
+        )
+        ensureBundledMod(
+            context = context,
             modLabel = "RamSaver.jar",
             resources = resources,
             assetPath = "components/mods/RamSaver.jar",
@@ -313,6 +322,7 @@ object ComponentInstaller {
                     RuntimePaths.importedBaseModJar(context),
                     RuntimePaths.importedStsLibJar(context),
                     RuntimePaths.importedAmethystRuntimeCompatJar(context),
+                    RuntimePaths.importedAmethystFloatingToolsJar(context),
                     RuntimePaths.importedRamSaverJar(context)
                 ).map(::buildFileState)
             )

@@ -1,0 +1,6 @@
+{
+  "heartbeat": {
+    "intervalSeconds": 30,
+    "wsUrl": "wss://heartbeat.nas.apricityx.top:23163/api/presence/ws"
+  }
+}

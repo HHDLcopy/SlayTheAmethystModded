@@ -80,6 +80,8 @@ internal object LauncherSettingsDiagnosticsFormatter {
                 LauncherSettingsDiagnosticsSection(
                     title = "InputAndUi",
                     entries = listOf(
+                        "specialKeyInputMode" to
+                            LauncherConfig.readSpecialKeyInputMode(context).persistedValue,
                         "showFloatingMouseWindow" to formatBoolean(
                             LauncherConfig.readShowFloatingMouseWindow(context)
                         ),

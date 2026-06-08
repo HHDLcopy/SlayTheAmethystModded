@@ -120,6 +120,10 @@ object RuntimePaths {
         File(requiredModsDir(context), "AmethystRuntimeCompat.jar")
 
     @JvmStatic
+    fun importedAmethystFloatingToolsJar(context: Context): File =
+        File(requiredModsDir(context), "AmethystFloatingTools.jar")
+
+    @JvmStatic
     fun importedRamSaverJar(context: Context): File = File(requiredModsDir(context), "RamSaver.jar")
 
     @JvmStatic

@@ -71,6 +71,7 @@ import androidx.compose.ui.unit.dp
 import io.stamethyst.R
 import io.stamethyst.backend.update.UpdateSource
 import io.stamethyst.config.LauncherThemeColor
+import io.stamethyst.config.SpecialKeyInputMode
 import io.stamethyst.config.TouchMouseInteractionMode
 import io.stamethyst.config.TouchscreenInputMode
 import io.stamethyst.navigation.Route
@@ -110,6 +111,34 @@ private fun TouchMouseInteractionMode.description(): String {
                 R.string.settings_touch_mouse_interaction_mode_open_menu_desc
             TouchMouseInteractionMode.TOGGLE_BUTTON_ON_TAP ->
                 R.string.settings_touch_mouse_interaction_mode_toggle_button_desc
+        }
+    )
+}
+
+@Composable
+private fun SpecialKeyInputMode.displayName(): String {
+    return stringResource(
+        when (this) {
+            SpecialKeyInputMode.LEGACY_FLOATING_WINDOW ->
+                R.string.settings_special_key_input_mode_legacy_floating_window
+            SpecialKeyInputMode.BUILT_IN_MOD ->
+                R.string.settings_special_key_input_mode_built_in_mod
+            SpecialKeyInputMode.DISABLED ->
+                R.string.settings_special_key_input_mode_disabled
+        }
+    )
+}
+
+@Composable
+private fun SpecialKeyInputMode.description(): String {
+    return stringResource(
+        when (this) {
+            SpecialKeyInputMode.LEGACY_FLOATING_WINDOW ->
+                R.string.settings_special_key_input_mode_legacy_floating_window_desc
+            SpecialKeyInputMode.BUILT_IN_MOD ->
+                R.string.settings_special_key_input_mode_built_in_mod_desc
+            SpecialKeyInputMode.DISABLED ->
+                R.string.settings_special_key_input_mode_disabled_desc
         }
     )
 }
@@ -352,8 +381,8 @@ fun LauncherFirstRunSetupScreen(
                                 onTouchscreenInputModeChanged = { mode ->
                                     viewModel.onTouchscreenInputModeChanged(activity, mode)
                                 },
-                                onShowFloatingMouseWindowChanged = { enabled ->
-                                    viewModel.onShowFloatingMouseWindowChanged(activity, enabled)
+                                onSpecialKeyInputModeChanged = { mode ->
+                                    viewModel.onSpecialKeyInputModeChanged(activity, mode)
                                 },
                                 onTouchMouseInteractionModeChanged = { mode ->
                                     viewModel.onTouchMouseInteractionModeChanged(activity, mode)
@@ -614,7 +643,7 @@ private fun FirstRunInputStep(
     onPlayerNameChanged: (String) -> Unit,
     onSavePlayerName: () -> Boolean,
     onTouchscreenInputModeChanged: (TouchscreenInputMode) -> Unit,
-    onShowFloatingMouseWindowChanged: (Boolean) -> Unit,
+    onSpecialKeyInputModeChanged: (SpecialKeyInputMode) -> Unit,
     onTouchMouseInteractionModeChanged: (TouchMouseInteractionMode) -> Unit,
     onTouchDoubleClickAsRightClickChanged: (Boolean) -> Unit,
 ) {
@@ -655,19 +684,29 @@ private fun FirstRunInputStep(
         )
         HorizontalDivider()
         Text(
-            text = stringResource(R.string.settings_input_floating_title),
+            text = stringResource(R.string.settings_special_key_input_mode_title),
             style = MaterialTheme.typography.titleSmall,
         )
-        SwitchSettingRow(
-            checked = uiState.showFloatingMouseWindow,
+        SettingsDropdownField(
+            label = stringResource(R.string.settings_special_key_input_mode_title),
+            valueText = uiState.specialKeyInputMode.displayName(),
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_touch_mouse_floating_window_visible),
-            disabledText = stringResource(R.string.settings_touch_mouse_floating_window_hidden),
-            description = stringResource(R.string.settings_first_run_input_floating_window_desc),
-            onCheckedChange = onShowFloatingMouseWindowChanged,
+            supportingText = stringResource(R.string.settings_special_key_input_mode_desc),
+            options = SpecialKeyInputMode.entries,
+            optionLabel = { mode -> mode.displayName() },
+            optionDescription = { mode -> mode.description() },
+            onOptionSelected = onSpecialKeyInputModeChanged,
+        )
+        SwitchSettingRow(
+            checked = uiState.touchDoubleClickAsRightClick,
+            enabled = !uiState.busy,
+            enabledText = stringResource(R.string.settings_touch_double_click_as_right_click_enabled),
+            disabledText = stringResource(R.string.settings_touch_double_click_as_right_click_disabled),
+            description = stringResource(R.string.settings_first_run_input_double_click_desc),
+            onCheckedChange = onTouchDoubleClickAsRightClickChanged,
         )
         AnimatedVisibility(
-            visible = uiState.showFloatingMouseWindow,
+            visible = uiState.specialKeyInputMode == SpecialKeyInputMode.LEGACY_FLOATING_WINDOW,
             enter = expandVertically() + fadeIn(),
             exit = shrinkVertically() + fadeOut(),
         ) {
@@ -684,14 +723,6 @@ private fun FirstRunInputStep(
                     optionLabel = { mode -> mode.displayName() },
                     optionDescription = { mode -> mode.description() },
                     onOptionSelected = onTouchMouseInteractionModeChanged,
-                )
-                SwitchSettingRow(
-                    checked = uiState.touchDoubleClickAsRightClick,
-                    enabled = !uiState.busy,
-                    enabledText = stringResource(R.string.settings_touch_double_click_as_right_click_enabled),
-                    disabledText = stringResource(R.string.settings_touch_double_click_as_right_click_disabled),
-                    description = stringResource(R.string.settings_first_run_input_double_click_desc),
-                    onCheckedChange = onTouchDoubleClickAsRightClickChanged,
                 )
             }
         }

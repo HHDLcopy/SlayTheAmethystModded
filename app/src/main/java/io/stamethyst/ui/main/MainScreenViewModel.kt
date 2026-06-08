@@ -50,6 +50,9 @@ import io.stamethyst.backend.steamcloud.SteamCloudUploadPlan
 import io.stamethyst.backend.mods.StsDesktopJarPatcher
 import io.stamethyst.backend.mods.StsJarValidator
 import io.stamethyst.backend.resources.RuntimeResourceProvider
+import io.stamethyst.backend.update.GithubMirrorFallback
+import io.stamethyst.backend.update.MtsComponentUpdateProgress
+import io.stamethyst.backend.update.MtsComponentUpdateService
 import io.stamethyst.backend.update.UpdateMirrorManager
 import io.stamethyst.backend.workshop.WorkshopDownloadTaskRecord
 import io.stamethyst.backend.workshop.WorkshopDownloadTaskStatus
@@ -126,6 +129,8 @@ class MainScreenViewModel : ViewModel() {
         val details: WorkshopItemDetails? = null,
     )
 
+    data object PendingMtsComponentUpdate
+
     data class CrashRecoveryState(
         val code: Int,
         val isSignal: Boolean,
@@ -198,6 +203,7 @@ class MainScreenViewModel : ViewModel() {
         val showModFileNameRemovalNotice: Boolean = false,
         val steamCloudIndicator: SteamCloudIndicatorUi = SteamCloudIndicatorUi(),
         val pendingWorkshopJarSelection: PendingWorkshopJarSelection? = null,
+        val pendingMtsComponentUpdate: PendingMtsComponentUpdate? = null,
     )
 
     sealed interface Effect {
@@ -223,6 +229,7 @@ class MainScreenViewModel : ViewModel() {
     private val importedStsJarValidationExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val workshopUpdateExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val modNameMigrationExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val mtsComponentUpdateExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private var currentModSuggestions: Map<String, String> = emptyMap()
     private var currentReadModSuggestionKeys: Set<String> = emptySet()
     private var pendingLaunchUnreadSuggestionModNames: List<String> = emptyList()
@@ -250,6 +257,10 @@ class MainScreenViewModel : ViewModel() {
     private var modNameMigrationInsufficientNoticeShown = false
     private var modNameMigrationFailureSuppressed = false
     private var nextWorkshopJarSelectionRequestId = 1L
+    @Volatile
+    private var mtsComponentUpdateCheckInFlight = false
+    @Volatile
+    private var mtsComponentUpdateDismissedForSession = false
 
     var uiState by mutableStateOf(UiState())
         private set
@@ -302,12 +313,14 @@ class MainScreenViewModel : ViewModel() {
             hasBaseMod = dependencyAvailability.hasBaseMod,
             hasStsLib = dependencyAvailability.hasStsLib,
             hasRuntimeCompat = dependencyAvailability.hasRuntimeCompat,
+            hasFloatingTools = dependencyAvailability.hasFloatingTools,
             hasRamSaver = dependencyAvailability.hasRamSaver,
             storageIssue = storageIssue
         )
         lastFullRefreshAtElapsedMs = SystemClock.elapsedRealtime()
         maybeStartStoredModNameMigration(host)
         maybePromptPendingWorkshopJarSelection(host)
+        // Keep the ModTheSpire update implementation available, but do not auto-check it.
     }
 
     fun refreshIfStale(host: Activity) {
@@ -807,6 +820,148 @@ class MainScreenViewModel : ViewModel() {
             )
         }?.let { pending ->
             uiState = uiState.copy(pendingWorkshopJarSelection = pending)
+        }
+    }
+
+    private fun maybeCheckMtsComponentUpdate(host: Activity) {
+        if (mtsComponentUpdateDismissedForSession ||
+            mtsComponentUpdateCheckInFlight ||
+            uiState.busy ||
+            uiState.pendingMtsComponentUpdate != null
+        ) {
+            return
+        }
+        mtsComponentUpdateCheckInFlight = true
+        mtsComponentUpdateExecutor.execute {
+            val isOutdated = runCatching {
+                MtsComponentUpdateService.isBundledMtsOutdated(host.applicationContext)
+            }.getOrDefault(false)
+            host.runOnUiThread {
+                mtsComponentUpdateCheckInFlight = false
+                if (host.isFinishing || host.isDestroyed) {
+                    return@runOnUiThread
+                }
+                if (
+                    isOutdated &&
+                    !mtsComponentUpdateDismissedForSession &&
+                    uiState.pendingMtsComponentUpdate == null
+                ) {
+                    uiState = uiState.copy(
+                        pendingMtsComponentUpdate = PendingMtsComponentUpdate
+                    )
+                }
+            }
+        }
+    }
+
+    fun dismissMtsComponentUpdatePrompt() {
+        mtsComponentUpdateDismissedForSession = true
+        if (uiState.pendingMtsComponentUpdate != null) {
+            uiState = uiState.copy(pendingMtsComponentUpdate = null)
+        }
+    }
+
+    fun installMtsComponentUpdate(host: Activity) {
+        if (uiState.busy || uiState.pendingMtsComponentUpdate == null) {
+            return
+        }
+        uiState = uiState.copy(pendingMtsComponentUpdate = null)
+        setBusy(
+            busy = true,
+            message = UiText.StringResource(R.string.main_mts_component_update_downloading),
+            operation = UiBusyOperation.MTS_COMPONENT_UPDATE,
+            progressPercent = 0,
+        )
+        val preferredSource = UpdateMirrorManager.current(host)
+        mtsComponentUpdateExecutor.execute {
+            try {
+                val result = MtsComponentUpdateService.installUpdate(
+                    context = host.applicationContext,
+                    preferredUserSource = preferredSource,
+                ) { progress ->
+                    host.runOnUiThread {
+                        if (!uiState.busy ||
+                            uiState.busyOperation != UiBusyOperation.MTS_COMPONENT_UPDATE
+                        ) {
+                            return@runOnUiThread
+                        }
+                        setBusy(
+                            busy = true,
+                            message = UiText.DynamicString(
+                                buildMtsComponentUpdateProgressMessage(host, progress)
+                            ),
+                            operation = UiBusyOperation.MTS_COMPONENT_UPDATE,
+                            progressPercent = progress.progressPercent,
+                        )
+                    }
+                }
+                mtsComponentUpdateDismissedForSession = true
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    _effects.tryEmit(
+                        Effect.ShowSnackbar(
+                            message = UiText.StringResource(
+                                R.string.main_mts_component_update_completed,
+                                result.source.displayName
+                            ),
+                            duration = LauncherTransientNoticeDuration.SHORT,
+                        )
+                    )
+                    refresh(host)
+                }
+            } catch (error: Throwable) {
+                val summary = GithubMirrorFallback.summarize(error)
+                mtsComponentUpdateDismissedForSession = true
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    _effects.tryEmit(
+                        Effect.ShowSnackbar(
+                            message = UiText.StringResource(
+                                R.string.main_mts_component_update_failed,
+                                summary
+                            ),
+                            duration = LauncherTransientNoticeDuration.LONG,
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    private fun buildMtsComponentUpdateProgressMessage(
+        host: Activity,
+        progress: MtsComponentUpdateProgress,
+    ): String {
+        val downloadedText = formatMtsComponentUpdateByteSize(progress.downloadedBytes)
+        val totalText = progress.totalBytes?.let { formatMtsComponentUpdateByteSize(it) }
+        return if (totalText != null) {
+            host.getString(
+                R.string.main_mts_component_update_downloading_with_total,
+                progress.source.displayName,
+                downloadedText,
+                totalText,
+            )
+        } else {
+            host.getString(
+                R.string.main_mts_component_update_downloading_without_total,
+                progress.source.displayName,
+                downloadedText,
+            )
+        }
+    }
+
+    private fun formatMtsComponentUpdateByteSize(bytes: Long): String {
+        val units = arrayOf("B", "KB", "MB", "GB")
+        var value = bytes.coerceAtLeast(0L).toDouble()
+        var unitIndex = 0
+        while (value >= 1024.0 && unitIndex < units.lastIndex) {
+            value /= 1024.0
+            unitIndex++
+        }
+        return if (unitIndex == 0) {
+            "${value.toLong()} ${units[unitIndex]}"
+        } else {
+            String.format(Locale.US, "%.1f %s", value, units[unitIndex])
         }
     }
 
@@ -1514,6 +1669,7 @@ class MainScreenViewModel : ViewModel() {
         val hasBaseMod: Boolean,
         val hasStsLib: Boolean,
         val hasRuntimeCompat: Boolean,
+        val hasFloatingTools: Boolean,
         val hasRamSaver: Boolean
     )
 
@@ -1532,6 +1688,7 @@ class MainScreenViewModel : ViewModel() {
             hasBaseMod = isRequiredModAvailable(host, ModManager.MOD_ID_BASEMOD),
             hasStsLib = isRequiredModAvailable(host, ModManager.MOD_ID_STSLIB),
             hasRuntimeCompat = isRequiredModAvailable(host, ModManager.MOD_ID_AMETHYST_RUNTIME_COMPAT),
+            hasFloatingTools = isRequiredModAvailable(host, ModManager.MOD_ID_AMETHYST_FLOATING_TOOLS),
             hasRamSaver = isRequiredModAvailable(host, ModManager.MOD_ID_RAM_SAVER)
         )
     }
@@ -1753,6 +1910,7 @@ class MainScreenViewModel : ViewModel() {
         hasBaseMod: Boolean,
         hasStsLib: Boolean,
         hasRuntimeCompat: Boolean,
+        hasFloatingTools: Boolean,
         hasRamSaver: Boolean
     ): List<ModItemUi> {
         val requiredModsById = requiredMods.associateBy { normalizeModId(it.modId) }
@@ -1804,6 +1962,22 @@ class MainScreenViewModel : ViewModel() {
                 description = host.getString(R.string.main_dependency_runtime_compat_description),
                 installed = hasRuntimeCompat
             )
+        val floatingTools = requiredModsById[ModManager.MOD_ID_AMETHYST_FLOATING_TOOLS]
+            ?.copy(enabled = hasFloatingTools)
+            ?: buildSyntheticDependencyMod(
+                storageKey = "__dependency__/AmethystFloatingTools.jar",
+                modId = ModManager.MOD_ID_AMETHYST_FLOATING_TOOLS,
+                displayName = "AmethystFloatingTools.jar",
+                version = host.getString(
+                    if (hasFloatingTools) {
+                        R.string.settings_status_available
+                    } else {
+                        R.string.settings_status_missing
+                    }
+                ),
+                description = host.getString(R.string.main_dependency_floating_tools_description),
+                installed = hasFloatingTools
+            )
         val ramSaver = requiredModsById[ModManager.MOD_ID_RAM_SAVER]
             ?.copy(enabled = hasRamSaver)
             ?: buildSyntheticDependencyMod(
@@ -1852,6 +2026,7 @@ class MainScreenViewModel : ViewModel() {
             baseMod,
             stsLib,
             runtimeCompat,
+            floatingTools,
             ramSaver
         )
     }
@@ -2234,9 +2409,9 @@ class MainScreenViewModel : ViewModel() {
                             progressMessage = data.getString(SteamCloudSyncProcessService.EXTRA_PROGRESS_MESSAGE)
                                 ?.takeIf { it.isNotBlank() }
                                 ?: currentIndicator.progressMessage,
-                            progressPercent = data.steamCloudLongOrNull(
+                            progressPercent = data.steamCloudIntOrNull(
                                 SteamCloudSyncProcessService.EXTRA_PROGRESS_PERCENT
-                            )?.toInt() ?: currentIndicator.progressPercent,
+                            ) ?: currentIndicator.progressPercent,
                             currentPath = data.getString(
                                 SteamCloudSyncProcessService.EXTRA_PROGRESS_CURRENT_PATH
                             ).orEmpty(),
@@ -2422,6 +2597,16 @@ class MainScreenViewModel : ViewModel() {
             getLong(key)
         } else {
             null
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun Bundle.steamCloudIntOrNull(key: String): Int? {
+        if (!containsKey(key)) return null
+        return when (val value = get(key)) {
+            is Int -> value
+            is Number -> value.toInt()
+            else -> null
         }
     }
 
@@ -3042,6 +3227,7 @@ class MainScreenViewModel : ViewModel() {
             hasBaseMod = dependencyAvailability.hasBaseMod,
             hasStsLib = dependencyAvailability.hasStsLib,
             hasRuntimeCompat = dependencyAvailability.hasRuntimeCompat,
+            hasFloatingTools = dependencyAvailability.hasFloatingTools,
             hasRamSaver = dependencyAvailability.hasRamSaver,
             storageIssue = detectStorageIssue(host)
         )
@@ -3054,6 +3240,7 @@ class MainScreenViewModel : ViewModel() {
         hasBaseMod: Boolean,
         hasStsLib: Boolean,
         hasRuntimeCompat: Boolean,
+        hasFloatingTools: Boolean,
         hasRamSaver: Boolean,
         storageIssue: StorageIssueUi?
     ) {
@@ -3078,6 +3265,7 @@ class MainScreenViewModel : ViewModel() {
                 hasBaseMod = hasBaseMod,
                 hasStsLib = hasStsLib,
                 hasRuntimeCompat = hasRuntimeCompat,
+                hasFloatingTools = hasFloatingTools,
                 hasRamSaver = hasRamSaver
             ),
             optionalMods = snapshot.optionalMods,
@@ -3323,6 +3511,10 @@ class MainScreenViewModel : ViewModel() {
                 RuntimePaths.importedAmethystRuntimeCompatJar(host).exists() ||
                     hasBundledAsset(host, "components/mods/AmethystRuntimeCompat.jar")
 
+            ModManager.MOD_ID_AMETHYST_FLOATING_TOOLS ->
+                RuntimePaths.importedAmethystFloatingToolsJar(host).exists() ||
+                    hasBundledAsset(host, "components/mods/AmethystFloatingTools.jar")
+
             ModManager.MOD_ID_RAM_SAVER ->
                 RuntimePaths.importedRamSaverJar(host).exists() || hasBundledAsset(host, "components/mods/RamSaver.jar")
 
@@ -3353,6 +3545,7 @@ class MainScreenViewModel : ViewModel() {
         suggestionExecutor.shutdownNow()
         workshopUpdateExecutor.shutdownNow()
         modNameMigrationExecutor.shutdownNow()
+        mtsComponentUpdateExecutor.shutdownNow()
         modManagementController.shutdown()
         super.onCleared()
     }

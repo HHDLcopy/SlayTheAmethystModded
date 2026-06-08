@@ -49,8 +49,11 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.stamethyst.R
+import io.stamethyst.backend.launch.StartupProgressCallback
 import io.stamethyst.backend.launch.progressText
 import io.stamethyst.backend.resources.ExternalResourcePackService
+import io.stamethyst.backend.resources.ResourcePackDownloadMirrorSwitchController
+import io.stamethyst.backend.resources.ResourcePackSlowDownloadMirrorSwitch
 import io.stamethyst.backend.update.GithubMirrorFallback
 import io.stamethyst.backend.update.LauncherUpdateService
 import io.stamethyst.backend.update.UpdateMirrorManager
@@ -86,11 +89,31 @@ fun LauncherResourceGate(
     var selectedMirror by remember {
         mutableStateOf(UpdateMirrorManager.current(context))
     }
+    val mirrorSwitchController = remember { ResourcePackDownloadMirrorSwitchController() }
+    var slowDownloadSwitch by remember {
+        mutableStateOf<ResourcePackSlowDownloadMirrorSwitch?>(null)
+    }
     var retryNonce by remember { mutableIntStateOf(0) }
     var readyNotified by remember { mutableStateOf(false) }
     var resolvingFullRelease by remember { mutableStateOf(false) }
 
+    LaunchedEffect(mirrorSwitchController) {
+        val listener: (ResourcePackSlowDownloadMirrorSwitch?) -> Unit = { prompt ->
+            coroutineScope.launch {
+                slowDownloadSwitch = prompt
+            }
+        }
+        mirrorSwitchController.addSlowDownloadListener(listener)
+        try {
+            kotlinx.coroutines.awaitCancellation()
+        } finally {
+            mirrorSwitchController.removeSlowDownloadListener(listener)
+        }
+    }
+
     LaunchedEffect(retryNonce) {
+        mirrorSwitchController.clearSlowDownloadPrompt()
+        slowDownloadSwitch = null
         if (retryNonce == 0 && ExternalResourcePackService.isAvailable(applicationContext)) {
             gateState = ResourceGateState.Ready
             return@LaunchedEffect
@@ -102,18 +125,24 @@ fun LauncherResourceGate(
         )
         runCatching {
             withContext(Dispatchers.IO) {
-                ExternalResourcePackService.ensureAvailable(applicationContext) { percent, message ->
-                    gateState = ResourceGateState.Preparing(
-                        percent = percent.coerceIn(0, 100),
-                        message = message
-                    )
-                }
+                ExternalResourcePackService.ensureAvailable(
+                    context = applicationContext,
+                    progressCallback = StartupProgressCallback { percent, message ->
+                        gateState = ResourceGateState.Preparing(
+                            percent = percent.coerceIn(0, 100),
+                            message = message
+                        )
+                    },
+                    mirrorSwitchController = mirrorSwitchController
+                )
             }
         }.fold(
             onSuccess = {
+                mirrorSwitchController.clearSlowDownloadPrompt()
                 gateState = ResourceGateState.Ready
             },
             onFailure = { error ->
+                mirrorSwitchController.clearSlowDownloadPrompt()
                 gateState = ResourceGateState.Failed(
                     summary = GithubMirrorFallback.summarize(error)
                         .ifBlank { error.javaClass.simpleName }
@@ -137,10 +166,19 @@ fun LauncherResourceGate(
         state = gateState,
         selectedMirror = selectedMirror,
         availableMirrors = remember { UpdateMirrorManager.selectableSources() },
+        slowDownloadSwitch = slowDownloadSwitch,
         onMirrorSelected = { source ->
             selectedMirror = source
             UpdateMirrorManager.saveCurrent(context, source)
             retryNonce++
+        },
+        onSlowDownloadMirrorSwitch = {
+            val prompt = slowDownloadSwitch
+            if (prompt != null) {
+                selectedMirror = prompt.nextSource
+                UpdateMirrorManager.saveCurrent(context, prompt.nextSource)
+                mirrorSwitchController.requestSwitchToNextMirror()
+            }
         },
         onRetry = { retryNonce++ },
         onOpenFullRelease = {
@@ -176,7 +214,9 @@ private fun ResourcePreparationScreen(
     state: ResourceGateState,
     selectedMirror: UpdateSource,
     availableMirrors: List<UpdateSource>,
+    slowDownloadSwitch: ResourcePackSlowDownloadMirrorSwitch?,
     onMirrorSelected: (UpdateSource) -> Unit,
+    onSlowDownloadMirrorSwitch: () -> Unit,
     onRetry: () -> Unit,
     onOpenFullRelease: () -> Unit,
     resolvingFullRelease: Boolean,
@@ -234,6 +274,18 @@ private fun ResourcePreparationScreen(
                             text = preparing.message,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    if (preparing != null && slowDownloadSwitch != null) {
+                        Text(
+                            text = stringResource(R.string.resource_gate_slow_download_switch_mirror),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            textDecoration = TextDecoration.Underline,
+                            modifier = Modifier
+                                .clickable(onClick = onSlowDownloadMirrorSwitch)
+                                .padding(vertical = 4.dp)
                         )
                     }
 

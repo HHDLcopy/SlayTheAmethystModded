@@ -91,12 +91,14 @@ import io.stamethyst.R
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.BootOverlayAnimation
 import io.stamethyst.config.BootOverlayStyle
+import io.stamethyst.config.CloudControlConfig
 import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeController
 import io.stamethyst.config.LauncherThemeMode
 import io.stamethyst.config.RenderSurfaceBackend
 import io.stamethyst.config.RuntimePaths
+import io.stamethyst.config.SpecialKeyInputMode
 import io.stamethyst.config.SteamCloudSaveMode
 import io.stamethyst.config.StsExternalStorageAccess
 import io.stamethyst.config.TouchMouseInteractionMode
@@ -124,6 +126,7 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
+import java.util.concurrent.FutureTask
 import java.util.concurrent.locks.Condition
 import java.util.concurrent.locks.ReentrantLock
 import java.util.jar.Manifest
@@ -141,6 +144,18 @@ private fun TouchMouseInteractionMode.displayNameResId(): Int {
             R.string.settings_touch_mouse_interaction_mode_open_menu
         TouchMouseInteractionMode.TOGGLE_BUTTON_ON_TAP ->
             R.string.settings_touch_mouse_interaction_mode_toggle_button
+    }
+}
+
+@StringRes
+private fun SpecialKeyInputMode.displayNameResId(): Int {
+    return when (this) {
+        SpecialKeyInputMode.LEGACY_FLOATING_WINDOW ->
+            R.string.settings_special_key_input_mode_legacy_floating_window
+        SpecialKeyInputMode.BUILT_IN_MOD ->
+            R.string.settings_special_key_input_mode_built_in_mod
+        SpecialKeyInputMode.DISABLED ->
+            R.string.settings_special_key_input_mode_disabled
     }
 }
 
@@ -185,6 +200,12 @@ class SettingsScreenViewModel : ViewModel() {
     data class UpdateHistoryDialogState(
         val metadataSourceDisplayName: String,
         val entries: List<UpdateHistoryEntryState>,
+    )
+
+    data class CloudControlConfigDialogState(
+        val sourceDisplayName: String,
+        val requestUrl: String,
+        val rawText: String,
     )
 
     data class RendererBackendOptionState(
@@ -265,6 +286,8 @@ class SettingsScreenViewModel : ViewModel() {
         val jvmHeapStepMb: Int = LauncherPreferences.JVM_HEAP_STEP_MB,
         val backBehavior: BackBehavior = LauncherPreferences.DEFAULT_BACK_BEHAVIOR,
         val manualDismissBootOverlay: Boolean = LauncherPreferences.DEFAULT_MANUAL_DISMISS_BOOT_OVERLAY,
+        val specialKeyInputMode: SpecialKeyInputMode =
+            LauncherPreferences.DEFAULT_SPECIAL_KEY_INPUT_MODE,
         val showFloatingMouseWindow: Boolean = LauncherPreferences.DEFAULT_SHOW_FLOATING_MOUSE_WINDOW,
         val touchMouseInteractionMode: TouchMouseInteractionMode =
             LauncherPreferences.DEFAULT_TOUCH_MOUSE_INTERACTION_MODE,
@@ -318,6 +341,8 @@ class SettingsScreenViewModel : ViewModel() {
         val updatePromptState: UpdatePromptState? = null,
         val releaseHistoryLoading: Boolean = false,
         val releaseHistoryDialogState: UpdateHistoryDialogState? = null,
+        val cloudControlConfigLoading: Boolean = false,
+        val cloudControlConfigDialogState: CloudControlConfigDialogState? = null,
         val nativeLibraryMarketPackages: List<NativeLibraryMarketPackageState> = emptyList(),
         val nativeLibraryMarketLoading: Boolean = false,
         val nativeLibraryMarketErrorText: String? = null,
@@ -409,6 +434,9 @@ class SettingsScreenViewModel : ViewModel() {
     private var nativeLibraryMarketCatalog: List<NativeLibraryMarketCatalogEntry> = emptyList()
     private var pendingSteamCloudCodeFuture: CompletableFuture<String>? = null
     private var pendingSteamCloudConfirmationFuture: CompletableFuture<Boolean>? = null
+    private var pendingSteamCloudLoginTask: Future<*>? = null
+    private var pendingSteamCloudLoginCancellationHandle: SteamCloudAuthCoordinator.CancellationHandle? = null
+    private var steamCloudLoginGeneration: Long = 0L
     private var quickStartSteamImportTask: Future<*>? = null
     private var quickStartSteamImportCompletion: ((Boolean) -> Unit)? = null
     private var quickStartSteamPauseController: PauseController? = null
@@ -558,6 +586,46 @@ class SettingsScreenViewModel : ViewModel() {
     fun dismissReleaseHistoryDialog() {
         if (uiState.releaseHistoryDialogState != null) {
             uiState = uiState.copy(releaseHistoryDialogState = null)
+        }
+    }
+
+    fun onOpenCloudControlConfig(host: Activity) {
+        if (uiState.busy || uiState.cloudControlConfigLoading) {
+            return
+        }
+        uiState = uiState.copy(cloudControlConfigLoading = true)
+        executor.execute {
+            try {
+                val remoteConfig = CloudControlConfig.fetchRemoteConfigText(host)
+                host.runOnUiThread {
+                    uiState = uiState.copy(
+                        cloudControlConfigLoading = false,
+                        cloudControlConfigDialogState = CloudControlConfigDialogState(
+                            sourceDisplayName = remoteConfig.sourceDisplayName,
+                            requestUrl = remoteConfig.requestUrl,
+                            rawText = remoteConfig.rawText
+                        )
+                    )
+                }
+            } catch (error: Throwable) {
+                host.runOnUiThread {
+                    uiState = uiState.copy(cloudControlConfigLoading = false)
+                    showToast(
+                        host,
+                        host.getString(
+                            R.string.settings_developer_cloud_control_load_failed,
+                            GithubMirrorFallback.summarize(error)
+                        ),
+                        Toast.LENGTH_LONG
+                    )
+                }
+            }
+        }
+    }
+
+    fun dismissCloudControlConfigDialog() {
+        if (uiState.cloudControlConfigDialogState != null) {
+            uiState = uiState.copy(cloudControlConfigDialogState = null)
         }
     }
 
@@ -974,6 +1042,12 @@ class SettingsScreenViewModel : ViewModel() {
                     importedJar = RuntimePaths.importedAmethystRuntimeCompatJar(host),
                     bundledAssetPath = "components/mods/AmethystRuntimeCompat.jar"
                 )
+                val coreFloatingToolsStatus = resolveCoreDependencyStatus(
+                    host = host,
+                    label = "Amethyst Floating Tools",
+                    importedJar = RuntimePaths.importedAmethystFloatingToolsJar(host),
+                    bundledAssetPath = "components/mods/AmethystFloatingTools.jar"
+                )
                 val coreRamSaverStatus = resolveCoreDependencyStatus(
                     host = host,
                     label = "Ram Saver",
@@ -1044,6 +1118,7 @@ class SettingsScreenViewModel : ViewModel() {
                     coreBaseModStatus = coreBaseModStatus,
                     coreStsLibStatus = coreStsLibStatus,
                     coreRuntimeCompatStatus = coreRuntimeCompatStatus,
+                    coreFloatingToolsStatus = coreFloatingToolsStatus,
                     coreRamSaverStatus = coreRamSaverStatus,
                     deviceRuntimeStatus = deviceRuntimeStatus
                 )
@@ -1144,9 +1219,13 @@ class SettingsScreenViewModel : ViewModel() {
             return false
         }
 
-        cancelPendingSteamCloudChallenge("Steam Cloud login restarted.")
+        cancelActiveSteamCloudLogin("Steam Cloud login restarted.", clearBusy = false)
         setBusy(true, UiText.StringResource(R.string.settings_busy_steam_cloud_login))
-        executor.execute {
+        val cancellationHandle = SteamCloudAuthCoordinator.CancellationHandle()
+        val loginGeneration = steamCloudLoginGeneration + 1L
+        steamCloudLoginGeneration = loginGeneration
+        pendingSteamCloudLoginCancellationHandle = cancellationHandle
+        val loginTask = FutureTask<Unit> {
             try {
                 val existingGuardData = runCatching {
                     SteamCloudAuthStore.readAuthMaterial(host)?.guardData.orEmpty()
@@ -1165,7 +1244,12 @@ class SettingsScreenViewModel : ViewModel() {
                     username = normalizedUsername,
                     password = password,
                     existingGuardData = existingGuardData,
-                    prompt = buildSteamCloudAuthPrompt(host),
+                    prompt = buildSteamCloudAuthPrompt(
+                        host = host,
+                        cancellationHandle = cancellationHandle,
+                        loginGeneration = loginGeneration,
+                    ),
+                    cancellationHandle = cancellationHandle,
                 )
                 SteamCloudAuthStore.recordAuthSuccess(
                     host,
@@ -1225,7 +1309,12 @@ class SettingsScreenViewModel : ViewModel() {
                 val shouldPromptSteamCloudSaveModeSwitch =
                     LauncherPreferences.readSteamCloudSaveMode(host) != SteamCloudSaveMode.STEAM_CLOUD
                 host.runOnUiThread {
+                    if (steamCloudLoginGeneration != loginGeneration) {
+                        return@runOnUiThread
+                    }
                     clearPendingSteamCloudChallengeState()
+                    pendingSteamCloudLoginCancellationHandle = null
+                    pendingSteamCloudLoginTask = null
                     dismissSteamCloudManifestDialog()
                     dismissSteamCloudUploadPlanDialog()
                     dismissSteamCloudPushConfirmDialog()
@@ -1245,13 +1334,19 @@ class SettingsScreenViewModel : ViewModel() {
                 }
             } catch (error: Throwable) {
                 val summary = summarizeSteamCloudError(host, error)
-                if (error !is CancellationException) {
+                val loginCancelled = cancellationHandle.isCancelled || isSteamCloudLoginCancellation(error)
+                if (!loginCancelled) {
                     runCatching { SteamCloudAuthStore.recordFailure(host, summary) }
                 }
                 host.runOnUiThread {
+                    if (steamCloudLoginGeneration != loginGeneration) {
+                        return@runOnUiThread
+                    }
                     clearPendingSteamCloudChallengeState()
+                    pendingSteamCloudLoginCancellationHandle = null
+                    pendingSteamCloudLoginTask = null
                     dismissSteamCloudManifestDialog()
-                    if (error is CancellationException) {
+                    if (loginCancelled) {
                         showToast(host, UiText.StringResource(R.string.settings_steam_cloud_login_cancelled))
                     } else {
                         showToast(
@@ -1264,8 +1359,17 @@ class SettingsScreenViewModel : ViewModel() {
                     }
                     refreshStatus(host)
                 }
+            } finally {
+                if (pendingSteamCloudLoginCancellationHandle === cancellationHandle &&
+                    steamCloudLoginGeneration == loginGeneration
+                ) {
+                    pendingSteamCloudLoginCancellationHandle = null
+                    pendingSteamCloudLoginTask = null
+                }
             }
         }
+        pendingSteamCloudLoginTask = loginTask
+        executor.execute(loginTask)
         return true
     }
 
@@ -1906,8 +2010,11 @@ class SettingsScreenViewModel : ViewModel() {
         future.complete(true)
     }
 
-    fun onCancelSteamCloudChallenge() {
-        cancelPendingSteamCloudChallenge("Steam Cloud login cancelled by user.")
+    fun onCancelSteamCloudChallenge(host: Activity? = null) {
+        cancelActiveSteamCloudLogin("Steam Cloud login cancelled by user.", clearBusy = true)
+        host?.let {
+            showToast(it, UiText.StringResource(R.string.settings_steam_cloud_login_cancelled))
+        }
     }
 
     fun onSaveSteamCloudPhase0Credentials(
@@ -2508,12 +2615,15 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(host)
     }
 
-    fun onShowFloatingMouseWindowChanged(host: Activity, enabled: Boolean) {
+    fun onSpecialKeyInputModeChanged(host: Activity, mode: SpecialKeyInputMode) {
         if (uiState.busy) {
             return
         }
-        uiState = uiState.copy(showFloatingMouseWindow = enabled)
-        saveShowFloatingMouseWindowSelection(host, enabled)
+        uiState = uiState.copy(
+            specialKeyInputMode = mode,
+            showFloatingMouseWindow = mode == SpecialKeyInputMode.LEGACY_FLOATING_WINDOW
+        )
+        saveSpecialKeyInputModeSelection(host, mode)
         refreshStatus(host)
     }
 
@@ -3278,6 +3388,7 @@ class SettingsScreenViewModel : ViewModel() {
             stringDeduplicationEnabled = jvm.stringDeduplicationEnabled,
             backBehavior = input.backBehavior,
             manualDismissBootOverlay = input.manualDismissBootOverlay,
+            specialKeyInputMode = input.specialKeyInputMode,
             showFloatingMouseWindow = input.showFloatingMouseWindow,
             touchMouseInteractionMode = input.touchMouseInteractionMode,
             touchDoubleClickAsRightClick = input.touchDoubleClickAsRightClick,
@@ -3664,6 +3775,7 @@ class SettingsScreenViewModel : ViewModel() {
         coreBaseModStatus: CoreDependencyStatus,
         coreStsLibStatus: CoreDependencyStatus,
         coreRuntimeCompatStatus: CoreDependencyStatus,
+        coreFloatingToolsStatus: CoreDependencyStatus,
         coreRamSaverStatus: CoreDependencyStatus,
         deviceRuntimeStatus: DeviceRuntimeStatus
     ): String {
@@ -3684,6 +3796,7 @@ class SettingsScreenViewModel : ViewModel() {
         lines += formatCoreDependencyLine(host, coreBaseModStatus)
         lines += formatCoreDependencyLine(host, coreStsLibStatus)
         lines += formatCoreDependencyLine(host, coreRuntimeCompatStatus)
+        lines += formatCoreDependencyLine(host, coreFloatingToolsStatus)
         lines += formatCoreDependencyLine(host, coreRamSaverStatus)
         lines += host.getString(
             R.string.settings_status_optional_mods,
@@ -3884,8 +3997,8 @@ class SettingsScreenViewModel : ViewModel() {
             toggleStateText(host, input.manualDismissBootOverlay)
         )
         lines += host.getString(
-            R.string.status_floating_touch_mouse_window_format,
-            toggleStateText(host, input.showFloatingMouseWindow)
+            R.string.settings_status_special_key_input_mode,
+            host.getString(input.specialKeyInputMode.displayNameResId())
         )
         lines += host.getString(
             R.string.status_touch_mouse_interaction_format,
@@ -4414,8 +4527,8 @@ class SettingsScreenViewModel : ViewModel() {
         LauncherPreferences.saveManualDismissBootOverlay(host, enabled)
     }
 
-    private fun saveShowFloatingMouseWindowSelection(host: Activity, enabled: Boolean) {
-        LauncherPreferences.saveShowFloatingMouseWindow(host, enabled)
+    private fun saveSpecialKeyInputModeSelection(host: Activity, mode: SpecialKeyInputMode) {
+        LauncherPreferences.saveSpecialKeyInputMode(host, mode)
     }
 
     private fun saveTouchMouseInteractionModeSelection(
@@ -4749,17 +4862,27 @@ class SettingsScreenViewModel : ViewModel() {
     }
 
     override fun onCleared() {
-        cancelPendingSteamCloudChallenge("Settings screen cleared.")
+        cancelActiveSteamCloudLogin("Settings screen cleared.", clearBusy = false)
         executor.shutdownNow()
         super.onCleared()
     }
 
-    private fun buildSteamCloudAuthPrompt(host: Activity): SteamCloudClient.AuthPrompt {
+    private fun buildSteamCloudAuthPrompt(
+        host: Activity,
+        cancellationHandle: SteamCloudAuthCoordinator.CancellationHandle,
+        loginGeneration: Long,
+    ): SteamCloudClient.AuthPrompt {
         return object : SteamCloudClient.AuthPrompt {
             override fun getDeviceCode(previousCodeWasIncorrect: Boolean): CompletableFuture<String> {
                 val future = CompletableFuture<String>()
                 host.runOnUiThread {
-                    cancelPendingSteamCloudChallenge("Steam Cloud device code prompt replaced.")
+                    if (!isActiveSteamCloudLogin(cancellationHandle, loginGeneration)) {
+                        future.completeExceptionally(
+                            CancellationException("Steam Cloud login cancelled by user.")
+                        )
+                        return@runOnUiThread
+                    }
+                    cancelPendingSteamCloudChallenge("Steam Cloud device code prompt replaced.", clearState = false)
                     pendingSteamCloudCodeFuture = future
                     uiState = uiState.copy(
                         steamCloudLoginChallenge = SteamCloudLoginChallenge(
@@ -4777,7 +4900,13 @@ class SettingsScreenViewModel : ViewModel() {
             ): CompletableFuture<String> {
                 val future = CompletableFuture<String>()
                 host.runOnUiThread {
-                    cancelPendingSteamCloudChallenge("Steam Cloud email code prompt replaced.")
+                    if (!isActiveSteamCloudLogin(cancellationHandle, loginGeneration)) {
+                        future.completeExceptionally(
+                            CancellationException("Steam Cloud login cancelled by user.")
+                        )
+                        return@runOnUiThread
+                    }
+                    cancelPendingSteamCloudChallenge("Steam Cloud email code prompt replaced.", clearState = false)
                     pendingSteamCloudCodeFuture = future
                     uiState = uiState.copy(
                         steamCloudLoginChallenge = SteamCloudLoginChallenge(
@@ -4793,7 +4922,10 @@ class SettingsScreenViewModel : ViewModel() {
             override fun acceptDeviceConfirmation(): CompletableFuture<Boolean> {
                 val future = CompletableFuture.completedFuture(true)
                 host.runOnUiThread {
-                    cancelPendingSteamCloudChallenge("Steam Cloud device confirmation prompt replaced.")
+                    if (!isActiveSteamCloudLogin(cancellationHandle, loginGeneration)) {
+                        return@runOnUiThread
+                    }
+                    cancelPendingSteamCloudChallenge("Steam Cloud device confirmation prompt replaced.", clearState = false)
                     pendingSteamCloudConfirmationFuture = null
                     uiState = uiState.copy(
                         steamCloudLoginChallenge = SteamCloudLoginChallenge(
@@ -4814,10 +4946,40 @@ class SettingsScreenViewModel : ViewModel() {
         }
     }
 
-    private fun cancelPendingSteamCloudChallenge(reason: String) {
+    private fun cancelPendingSteamCloudChallenge(reason: String, clearState: Boolean = true) {
         pendingSteamCloudCodeFuture?.completeExceptionally(CancellationException(reason))
         pendingSteamCloudConfirmationFuture?.completeExceptionally(CancellationException(reason))
-        clearPendingSteamCloudChallengeState()
+        pendingSteamCloudCodeFuture = null
+        pendingSteamCloudConfirmationFuture = null
+        if (clearState) {
+            clearPendingSteamCloudChallengeState()
+        }
+    }
+
+    private fun cancelActiveSteamCloudLogin(reason: String, clearBusy: Boolean) {
+        steamCloudLoginGeneration += 1L
+        cancelPendingSteamCloudChallenge(reason)
+        pendingSteamCloudLoginCancellationHandle?.cancel()
+        pendingSteamCloudLoginCancellationHandle = null
+        pendingSteamCloudLoginTask?.cancel(true)
+        pendingSteamCloudLoginTask = null
+        if (clearBusy && uiState.busy) {
+            setBusy(false, null)
+        }
+    }
+
+    private fun isSteamCloudLoginCancellation(error: Throwable): Boolean {
+        return generateSequence(error) { current -> current.cause?.takeUnless { it === current } }
+            .any { current -> current is CancellationException }
+    }
+
+    private fun isActiveSteamCloudLogin(
+        cancellationHandle: SteamCloudAuthCoordinator.CancellationHandle,
+        loginGeneration: Long,
+    ): Boolean {
+        return pendingSteamCloudLoginCancellationHandle === cancellationHandle &&
+            steamCloudLoginGeneration == loginGeneration &&
+            !cancellationHandle.isCancelled
     }
 
     private fun buildSteamCloudCredentialsSummary(

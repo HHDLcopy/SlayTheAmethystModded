@@ -93,6 +93,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -122,6 +123,7 @@ import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeMode
 import io.stamethyst.config.RenderSurfaceBackend
+import io.stamethyst.config.SpecialKeyInputMode
 import io.stamethyst.config.SteamCloudSaveMode
 import io.stamethyst.config.TouchMouseInteractionMode
 import io.stamethyst.config.TouchscreenInputMode
@@ -278,8 +280,8 @@ fun LauncherSettingsGameScreen(
         onTouchIndicatorEnabledChanged = { enabled ->
             viewModel.onTouchIndicatorEnabledChanged(activity, enabled)
         },
-        onShowFloatingMouseWindowChanged = { enabled ->
-            viewModel.onShowFloatingMouseWindowChanged(activity, enabled)
+        onSpecialKeyInputModeChanged = { mode ->
+            viewModel.onSpecialKeyInputModeChanged(activity, mode)
         },
         onTouchMouseInteractionModeChanged = { mode ->
             viewModel.onTouchMouseInteractionModeChanged(activity, mode)
@@ -509,6 +511,10 @@ fun LauncherDeveloperSettingsScreen(
         onGlBridgeSwapHeartbeatDebugChanged = { enabled ->
             viewModel.onGlBridgeSwapHeartbeatDebugChanged(activity, enabled)
         },
+        onOpenCloudControlConfig = {
+            viewModel.onOpenCloudControlConfig(activity)
+        },
+        onDismissCloudControlConfigDialog = viewModel::dismissCloudControlConfigDialog,
         onResetLauncherSettingsToDefaults = {
             viewModel.onResetLauncherSettingsToDefaults(activity)
         },
@@ -537,7 +543,8 @@ private fun LauncherSettingsScreenPreview() {
             jvmHeapStepMb = 128,
             backBehavior = BackBehavior.EXIT_TO_LAUNCHER,
             manualDismissBootOverlay = false,
-            showFloatingMouseWindow = true,
+            specialKeyInputMode = SpecialKeyInputMode.BUILT_IN_MOD,
+            showFloatingMouseWindow = false,
             touchMouseInteractionMode = TouchMouseInteractionMode.OPEN_MENU_ON_TAP,
             builtInSoftKeyboardEnabled = true,
             hapticFeedbackEnabled = true,
@@ -798,7 +805,7 @@ private fun LauncherSettingsGameScreenContent(
     onBackBehaviorChanged: (BackBehavior) -> Unit = {},
     onTouchscreenInputModeChanged: (TouchscreenInputMode) -> Unit = {},
     onTouchIndicatorEnabledChanged: (Boolean) -> Unit = {},
-    onShowFloatingMouseWindowChanged: (Boolean) -> Unit = {},
+    onSpecialKeyInputModeChanged: (SpecialKeyInputMode) -> Unit = {},
     onTouchMouseInteractionModeChanged: (TouchMouseInteractionMode) -> Unit = {},
     onTouchDoubleClickAsRightClickChanged: (Boolean) -> Unit = {},
     onBuiltInSoftKeyboardChanged: (Boolean) -> Unit = {},
@@ -837,7 +844,7 @@ private fun LauncherSettingsGameScreenContent(
                     onBackBehaviorChanged = onBackBehaviorChanged,
                     onTouchscreenInputModeChanged = onTouchscreenInputModeChanged,
                     onTouchIndicatorEnabledChanged = onTouchIndicatorEnabledChanged,
-                    onShowFloatingMouseWindowChanged = onShowFloatingMouseWindowChanged,
+                    onSpecialKeyInputModeChanged = onSpecialKeyInputModeChanged,
                     onTouchMouseInteractionModeChanged = onTouchMouseInteractionModeChanged,
                     onTouchDoubleClickAsRightClickChanged = onTouchDoubleClickAsRightClickChanged,
                     onBuiltInSoftKeyboardChanged = onBuiltInSoftKeyboardChanged,
@@ -2982,6 +2989,8 @@ private fun LauncherDeveloperSettingsScreenContent(
     onGpuResourceDiagChanged: (Boolean) -> Unit = {},
     onGdxPadCursorDebugChanged: (Boolean) -> Unit = {},
     onGlBridgeSwapHeartbeatDebugChanged: (Boolean) -> Unit = {},
+    onOpenCloudControlConfig: () -> Unit = {},
+    onDismissCloudControlConfigDialog: () -> Unit = {},
     onResetLauncherSettingsToDefaults: () -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -3016,6 +3025,8 @@ private fun LauncherDeveloperSettingsScreenContent(
                     onSustainedPerformanceModeChanged = onSustainedPerformanceModeChanged,
                     onCompendiumUpgradeTouchFixEnabledChanged =
                         onCompendiumUpgradeTouchFixEnabledChanged,
+                    onOpenCloudControlConfig = onOpenCloudControlConfig,
+                    onDismissCloudControlConfigDialog = onDismissCloudControlConfigDialog,
                 )
             }
         }
@@ -3515,6 +3526,8 @@ private fun SettingsDeveloperRuntimeSection(
     onManualDismissBootOverlayChanged: (Boolean) -> Unit,
     onSustainedPerformanceModeChanged: (Boolean) -> Unit,
     onCompendiumUpgradeTouchFixEnabledChanged: (Boolean) -> Unit,
+    onOpenCloudControlConfig: () -> Unit,
+    onDismissCloudControlConfigDialog: () -> Unit,
 ) {
     var showGameModeDialog by rememberSaveable { mutableStateOf(false) }
 
@@ -3559,6 +3572,23 @@ private fun SettingsDeveloperRuntimeSection(
         onCheckedChange = onCompendiumUpgradeTouchFixEnabledChanged
     )
 
+    if (uiState.cloudControlConfigLoading) {
+        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+    }
+
+    SettingsActionListItem(
+        title = stringResource(
+            if (uiState.cloudControlConfigLoading) {
+                R.string.settings_developer_cloud_control_loading
+            } else {
+                R.string.settings_developer_cloud_control_title
+            }
+        ),
+        supportingText = stringResource(R.string.settings_developer_cloud_control_desc),
+        enabled = !uiState.busy && !uiState.cloudControlConfigLoading,
+        onClick = onOpenCloudControlConfig
+    )
+
     if (showGameModeDialog) {
         AlertDialog(
             onDismissRequest = { showGameModeDialog = false },
@@ -3580,6 +3610,54 @@ private fun SettingsDeveloperRuntimeSection(
             confirmButton = {
                 TextButton(onClick = { showGameModeDialog = false }) {
                     Text(stringResource(R.string.settings_system_game_mode_acknowledge))
+                }
+            }
+        )
+    }
+
+    uiState.cloudControlConfigDialogState?.let { dialogState ->
+        AlertDialog(
+            onDismissRequest = onDismissCloudControlConfigDialog,
+            title = { Text(stringResource(R.string.settings_developer_cloud_control_dialog_title)) },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 480.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = stringResource(
+                            R.string.settings_developer_cloud_control_dialog_source,
+                            dialogState.sourceDisplayName
+                        ),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    SelectionContainer {
+                        Text(
+                            text = stringResource(
+                                R.string.settings_developer_cloud_control_dialog_url,
+                                dialogState.requestUrl
+                            ),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    HorizontalDivider()
+                    SelectionContainer {
+                        Text(
+                            text = dialogState.rawText.ifBlank {
+                                stringResource(R.string.settings_developer_cloud_control_empty)
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                HapticTextButton(onClick = onDismissCloudControlConfigDialog) {
+                    Text(stringResource(R.string.common_action_close))
                 }
             }
         )
@@ -3854,7 +3932,7 @@ private fun SettingsInputSection(
     onBackBehaviorChanged: (BackBehavior) -> Unit,
     onTouchscreenInputModeChanged: (TouchscreenInputMode) -> Unit,
     onTouchIndicatorEnabledChanged: (Boolean) -> Unit,
-    onShowFloatingMouseWindowChanged: (Boolean) -> Unit,
+    onSpecialKeyInputModeChanged: (SpecialKeyInputMode) -> Unit,
     onTouchMouseInteractionModeChanged: (TouchMouseInteractionMode) -> Unit,
     onTouchDoubleClickAsRightClickChanged: (Boolean) -> Unit,
     onBuiltInSoftKeyboardChanged: (Boolean) -> Unit,
@@ -3881,14 +3959,13 @@ private fun SettingsInputSection(
         )
         HorizontalDivider()
         Text(
-            text = stringResource(R.string.settings_input_floating_title),
+            text = stringResource(R.string.settings_special_key_input_mode_title),
             style = MaterialTheme.typography.titleSmall
         )
         SettingsFloatingMouseSection(
             uiState = uiState,
-            onShowFloatingMouseWindowChanged = onShowFloatingMouseWindowChanged,
+            onSpecialKeyInputModeChanged = onSpecialKeyInputModeChanged,
             onTouchMouseInteractionModeChanged = onTouchMouseInteractionModeChanged,
-            onTouchDoubleClickAsRightClickChanged = onTouchDoubleClickAsRightClickChanged,
             onBuiltInSoftKeyboardChanged = onBuiltInSoftKeyboardChanged,
             onAutoSwitchLeftAfterRightClickChanged = onAutoSwitchLeftAfterRightClickChanged,
         )
@@ -4068,58 +4145,57 @@ internal fun SettingsInputBasicsSection(
 @Composable
 internal fun SettingsFloatingMouseSection(
     uiState: SettingsScreenViewModel.UiState,
-    onShowFloatingMouseWindowChanged: (Boolean) -> Unit,
+    onSpecialKeyInputModeChanged: (SpecialKeyInputMode) -> Unit,
     onTouchMouseInteractionModeChanged: (TouchMouseInteractionMode) -> Unit,
-    onTouchDoubleClickAsRightClickChanged: (Boolean) -> Unit,
     onBuiltInSoftKeyboardChanged: (Boolean) -> Unit,
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit,
 ) {
-    SwitchSettingRow(
-        checked = uiState.showFloatingMouseWindow,
-        enabled = !uiState.busy,
-        enabledText = stringResource(R.string.settings_touch_mouse_floating_window_visible),
-        disabledText = stringResource(R.string.settings_touch_mouse_floating_window_hidden),
-        description = stringResource(R.string.settings_touch_mouse_floating_window_desc),
-        onCheckedChange = onShowFloatingMouseWindowChanged
-    )
-
     SettingsDropdownField(
-        label = stringResource(R.string.settings_touch_mouse_interaction_label),
-        valueText = uiState.touchMouseInteractionMode.displayName(),
+        label = stringResource(R.string.settings_special_key_input_mode_title),
+        valueText = uiState.specialKeyInputMode.displayName(),
         enabled = !uiState.busy,
-        supportingText = stringResource(R.string.settings_touch_mouse_interaction_desc),
-        options = TouchMouseInteractionMode.entries,
+        supportingText = stringResource(R.string.settings_special_key_input_mode_desc),
+        options = SpecialKeyInputMode.entries,
         optionLabel = { mode -> mode.displayName() },
         optionDescription = { mode -> mode.description() },
-        onOptionSelected = onTouchMouseInteractionModeChanged
+        onOptionSelected = onSpecialKeyInputModeChanged
     )
 
-    SwitchSettingRow(
-        checked = uiState.touchDoubleClickAsRightClick,
-        enabled = !uiState.busy,
-        enabledText = stringResource(R.string.settings_touch_double_click_as_right_click_enabled),
-        disabledText = stringResource(R.string.settings_touch_double_click_as_right_click_disabled),
-        description = stringResource(R.string.settings_touch_double_click_as_right_click_desc),
-        onCheckedChange = onTouchDoubleClickAsRightClickChanged
-    )
+    val useLegacyFloatingWindow =
+        uiState.specialKeyInputMode == SpecialKeyInputMode.LEGACY_FLOATING_WINDOW
 
-    SwitchSettingRow(
-        checked = uiState.builtInSoftKeyboardEnabled,
-        enabled = !uiState.busy,
-        enabledText = stringResource(R.string.settings_built_in_soft_keyboard_enabled),
-        disabledText = stringResource(R.string.settings_built_in_soft_keyboard_disabled),
-        description = stringResource(R.string.settings_built_in_soft_keyboard_desc),
-        onCheckedChange = onBuiltInSoftKeyboardChanged
-    )
+    if (useLegacyFloatingWindow) {
+        SettingsDropdownField(
+            label = stringResource(R.string.settings_touch_mouse_interaction_label),
+            valueText = uiState.touchMouseInteractionMode.displayName(),
+            enabled = !uiState.busy,
+            supportingText = stringResource(R.string.settings_touch_mouse_interaction_desc),
+            options = TouchMouseInteractionMode.entries,
+            optionLabel = { mode -> mode.displayName() },
+            optionDescription = { mode -> mode.description() },
+            onOptionSelected = onTouchMouseInteractionModeChanged
+        )
+    }
 
-    SwitchSettingRow(
-        checked = uiState.autoSwitchLeftAfterRightClick,
-        enabled = !uiState.busy,
-        enabledText = stringResource(R.string.settings_auto_switch_left_enabled),
-        disabledText = stringResource(R.string.settings_auto_switch_left_disabled),
-        description = stringResource(R.string.settings_auto_switch_left_desc),
-        onCheckedChange = onAutoSwitchLeftAfterRightClickChanged
-    )
+    if (useLegacyFloatingWindow) {
+        SwitchSettingRow(
+            checked = uiState.builtInSoftKeyboardEnabled,
+            enabled = !uiState.busy,
+            enabledText = stringResource(R.string.settings_built_in_soft_keyboard_enabled),
+            disabledText = stringResource(R.string.settings_built_in_soft_keyboard_disabled),
+            description = stringResource(R.string.settings_built_in_soft_keyboard_desc),
+            onCheckedChange = onBuiltInSoftKeyboardChanged
+        )
+
+        SwitchSettingRow(
+            checked = uiState.autoSwitchLeftAfterRightClick,
+            enabled = !uiState.busy,
+            enabledText = stringResource(R.string.settings_auto_switch_left_enabled),
+            disabledText = stringResource(R.string.settings_auto_switch_left_disabled),
+            description = stringResource(R.string.settings_auto_switch_left_desc),
+            onCheckedChange = onAutoSwitchLeftAfterRightClickChanged
+        )
+    }
 }
 
 @Composable
@@ -4875,6 +4951,34 @@ private fun TouchMouseInteractionMode.description(): String {
                 R.string.settings_touch_mouse_interaction_mode_open_menu_desc
             TouchMouseInteractionMode.TOGGLE_BUTTON_ON_TAP ->
                 R.string.settings_touch_mouse_interaction_mode_toggle_button_desc
+        }
+    )
+}
+
+@Composable
+private fun SpecialKeyInputMode.displayName(): String {
+    return stringResource(
+        when (this) {
+            SpecialKeyInputMode.LEGACY_FLOATING_WINDOW ->
+                R.string.settings_special_key_input_mode_legacy_floating_window
+            SpecialKeyInputMode.BUILT_IN_MOD ->
+                R.string.settings_special_key_input_mode_built_in_mod
+            SpecialKeyInputMode.DISABLED ->
+                R.string.settings_special_key_input_mode_disabled
+        }
+    )
+}
+
+@Composable
+private fun SpecialKeyInputMode.description(): String {
+    return stringResource(
+        when (this) {
+            SpecialKeyInputMode.LEGACY_FLOATING_WINDOW ->
+                R.string.settings_special_key_input_mode_legacy_floating_window_desc
+            SpecialKeyInputMode.BUILT_IN_MOD ->
+                R.string.settings_special_key_input_mode_built_in_mod_desc
+            SpecialKeyInputMode.DISABLED ->
+                R.string.settings_special_key_input_mode_disabled_desc
         }
     )
 }

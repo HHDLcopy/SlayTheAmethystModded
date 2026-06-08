@@ -27,6 +27,7 @@ import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeMode
 import io.stamethyst.config.RenderSurfaceBackend
+import io.stamethyst.config.SpecialKeyInputMode
 import io.stamethyst.config.TouchMouseInteractionMode
 import io.stamethyst.ui.preferences.LauncherPreferences
 import java.text.SimpleDateFormat
@@ -71,6 +72,7 @@ internal object SettingsRepository {
     data class InputSnapshot(
         val backBehavior: BackBehavior,
         val manualDismissBootOverlay: Boolean,
+        val specialKeyInputMode: SpecialKeyInputMode,
         val showFloatingMouseWindow: Boolean,
         val touchMouseInteractionMode: TouchMouseInteractionMode,
         val touchDoubleClickAsRightClick: Boolean,
@@ -190,6 +192,7 @@ internal object SettingsRepository {
             input = InputSnapshot(
                 backBehavior = LauncherPreferences.readBackBehavior(context),
                 manualDismissBootOverlay = LauncherPreferences.readManualDismissBootOverlay(context),
+                specialKeyInputMode = LauncherPreferences.readSpecialKeyInputMode(context),
                 showFloatingMouseWindow = LauncherPreferences.readShowFloatingMouseWindow(context),
                 touchMouseInteractionMode = LauncherPreferences.readTouchMouseInteractionMode(context),
                 touchDoubleClickAsRightClick = LauncherPreferences.readTouchDoubleClickAsRightClick(context),
@@ -306,9 +309,9 @@ internal object SettingsRepository {
             context,
             LauncherPreferences.DEFAULT_MANUAL_DISMISS_BOOT_OVERLAY
         )
-        LauncherPreferences.saveShowFloatingMouseWindow(
+        LauncherPreferences.saveSpecialKeyInputMode(
             context,
-            LauncherPreferences.DEFAULT_SHOW_FLOATING_MOUSE_WINDOW
+            LauncherPreferences.DEFAULT_SPECIAL_KEY_INPUT_MODE
         )
         LauncherPreferences.saveTouchMouseInteractionMode(
             context,

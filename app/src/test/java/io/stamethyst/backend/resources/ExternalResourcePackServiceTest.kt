@@ -8,6 +8,30 @@ import org.junit.Test
 
 class ExternalResourcePackServiceTest {
     @Test
+    fun mirrorSwitchController_notifiesPromptAndRecordsSwitchRequest() {
+        val controller = ResourcePackDownloadMirrorSwitchController()
+        val prompts = ArrayList<ResourcePackSlowDownloadMirrorSwitch?>()
+        val listener = { prompt: ResourcePackSlowDownloadMirrorSwitch? ->
+            prompts += prompt
+        }
+        controller.addSlowDownloadListener(listener)
+
+        val initialVersion = controller.switchRequestVersion()
+        val prompt = ResourcePackSlowDownloadMirrorSwitch(
+            currentSource = UpdateSource.GH_PROXY_VIP,
+            nextSource = UpdateSource.GH_LLKK
+        )
+        controller.publishSlowDownloadPrompt(prompt)
+
+        assertEquals(prompt, prompts.last())
+        assertTrue(controller.requestSwitchToNextMirror())
+        assertTrue(controller.hasSwitchRequestSince(initialVersion))
+        assertEquals(null, prompts.last())
+
+        controller.removeSlowDownloadListener(listener)
+    }
+
+    @Test
     fun orderResourcePackDownloadCandidates_prefersReachableFastestLinks() {
         val ordered = ExternalResourcePackService.orderResourcePackDownloadCandidates(
             listOf(

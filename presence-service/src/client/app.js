@@ -89,11 +89,6 @@
     { title: '剩余 TTL', key: 'expiresInSeconds', align: 'end', minWidth: 110 }
   ];
 
-  const STATE_HEADERS = [
-    { title: '状态', key: 'state' },
-    { title: '人数', key: 'count', align: 'end' }
-  ];
-
   function normalizeServiceBaseUrl(value, fallbackValue) {
     const rawValue = String(value || fallbackValue || '').trim();
     const normalized = rawValue.endsWith('/') ? rawValue.slice(0, -1) : rawValue;
@@ -343,12 +338,6 @@
         since: '',
         until: ''
       });
-      const stateRows = computed(() => Object.entries(snapshot.value.byState || {})
-        .sort((left, right) => left[0].localeCompare(right[0]))
-        .map((row) => ({
-          state: row[0],
-          count: Number(row[1]) || 0
-        })));
       const sessions = computed(() => Array.isArray(snapshot.value.sessions)
         ? snapshot.value.sessions
         : []);
@@ -581,7 +570,6 @@
         isConnecting,
         snapshot,
         stats,
-        stateRows,
         sessions,
         metricItems,
         hasStatsSamples,
@@ -590,7 +578,6 @@
         connectionIcon,
         STATS_WINDOW_ITEMS,
         SESSION_HEADERS,
-        STATE_HEADERS,
         login,
         refreshAll,
         selectStatsWindow,
@@ -720,25 +707,7 @@
             </v-card>
 
             <v-row class="mt-4" dense>
-              <v-col cols="12" lg="4">
-                <v-card elevation="1">
-                  <v-card-title class="panel-title">状态统计</v-card-title>
-                  <v-data-table
-                    :headers="STATE_HEADERS"
-                    :items="stateRows"
-                    density="comfortable"
-                    item-value="state"
-                    hide-default-footer
-                    no-data-text="No active states."
-                  >
-                    <template #item.state="{ item }">
-                      <v-chip color="primary" variant="tonal" size="small">{{ tableItem(item).state }}</v-chip>
-                    </template>
-                  </v-data-table>
-                </v-card>
-              </v-col>
-
-              <v-col cols="12" lg="8">
+              <v-col cols="12">
                 <v-card elevation="1">
                   <v-card-title class="panel-title">
                     <div>

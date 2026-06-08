@@ -1216,6 +1216,26 @@ internal fun LauncherMainRoute(
         )
     }
 
+    if (uiState.pendingMtsComponentUpdate != null && hostActivity != null) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = viewModel::dismissMtsComponentUpdatePrompt,
+            title = { Text(text = stringResource(R.string.main_mts_component_update_title)) },
+            text = { Text(text = stringResource(R.string.main_mts_component_update_message)) },
+            confirmButton = {
+                TextButton(
+                    onClick = { viewModel.installMtsComponentUpdate(hostActivity) }
+                ) {
+                    Text(text = stringResource(R.string.main_mts_component_update_action_update))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissMtsComponentUpdatePrompt) {
+                    Text(text = stringResource(R.string.update_dialog_action_later))
+                }
+            }
+        )
+    }
+
     if (uiState.expectedBackExitNoticeVisible) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = viewModel::dismissExpectedBackExitNotice,

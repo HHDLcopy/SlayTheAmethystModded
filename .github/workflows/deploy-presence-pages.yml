@@ -2,11 +2,6 @@ name: Deploy Presence Pages
 
 on:
   workflow_dispatch:
-    inputs:
-      presence_panel_url:
-        description: "Presence panel URL without token"
-        required: true
-        default: "https://1315061624-boxfc2p5fb.ap-guangzhou.tencentscf.com/presence"
 
 permissions:
   contents: read
@@ -19,48 +14,61 @@ concurrency:
 
 jobs:
   deploy:
-    name: Fetch presence panel and deploy Pages
+    name: Build and deploy static presence panel
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: presence-service/package-lock.json
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
         with:
           enablement: true
 
-      - name: Fetch presence panel HTML
+      - name: Install frontend dependencies
+        working-directory: presence-service
+        run: npm ci --omit=dev --ignore-scripts
+
+      - name: Build Pages artifact
         shell: bash
-        env:
-          PRESENCE_PANEL_URL: ${{ inputs.presence_panel_url }}
-          PRESENCE_PANEL_TOKEN: ${{ secrets.PRESENCE_PANEL_TOKEN }}
         run: |
           set -euo pipefail
 
-          if [ -z "${PRESENCE_PANEL_TOKEN:-}" ]; then
-            echo "Missing PRESENCE_PANEL_TOKEN repository secret." >&2
+          pages_root="$RUNNER_TEMP/presence-pages"
+          rm -rf "$pages_root"
+          mkdir -p "$pages_root/vendor" "$pages_root/fonts" "$pages_root/vendor/fonts"
+
+          cp presence-service/src/client/app.js "$pages_root/app.js"
+          cp presence-service/src/client/styles.css "$pages_root/styles.css"
+          cp presence-service/src/client/index.html "$pages_root/index.html"
+
+          perl -0pi -e 's#/presence/vendor/#./vendor/#g; s#/presence/fonts/#./fonts/#g; s#/presence/#./#g' "$pages_root/index.html"
+
+          cp presence-service/node_modules/vue/dist/vue.global.prod.js "$pages_root/vue.global.prod.js"
+          cp presence-service/node_modules/vuetify/dist/vuetify.min.js "$pages_root/vendor/vuetify.min.js"
+          cp presence-service/node_modules/vuetify/dist/vuetify.min.css "$pages_root/vendor/vuetify.min.css"
+          cp presence-service/node_modules/echarts/dist/echarts.min.js "$pages_root/vendor/echarts.min.js"
+          cp presence-service/node_modules/@mdi/font/css/materialdesignicons.min.css "$pages_root/vendor/materialdesignicons.min.css"
+          cp presence-service/node_modules/@mdi/font/fonts/materialdesignicons-webfont.* "$pages_root/fonts/"
+          cp presence-service/node_modules/@mdi/font/fonts/materialdesignicons-webfont.* "$pages_root/vendor/fonts/"
+
+          if ! grep -qi "<html" "$pages_root/index.html"; then
+            echo "Presence panel entrypoint does not look like HTML." >&2
             exit 1
           fi
 
-          panel_url="$(node -e '
-            const rawUrl = process.env.PRESENCE_PANEL_URL || "";
-            const token = process.env.PRESENCE_PANEL_TOKEN || "";
-            const url = new URL(rawUrl);
-            url.searchParams.set("token", token);
-            process.stdout.write(url.toString());
-          ')"
-
-          pages_root="$RUNNER_TEMP/presence-pages"
-          mkdir -p "$pages_root"
-
-          curl --fail --silent --show-error --location \
-            --header "Accept: text/html" \
-            --output "$pages_root/index.html" \
-            "$panel_url"
-
-          if ! grep -qi "<html" "$pages_root/index.html"; then
-            echo "Downloaded presence panel response does not look like HTML." >&2
+          if grep -q '"/presence/' "$pages_root/index.html"; then
+            echo "Pages entrypoint still contains absolute /presence/ asset URLs." >&2
             exit 1
           fi
 

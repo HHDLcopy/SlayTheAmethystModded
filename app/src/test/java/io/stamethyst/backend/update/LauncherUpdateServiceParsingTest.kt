@@ -132,6 +132,17 @@ class LauncherUpdateServiceParsingTest {
     }
 
     @Test
+    fun buildUrl_prefixesCloudControlReleaseAssetUrl() {
+        val cloudControlUrl =
+            "https://github.com/ModinMobileSTS/SlayTheAmethystResource/releases/download/Resource/cloud-control.json"
+
+        assertEquals(
+            "https://gh-proxy.com/$cloudControlUrl",
+            UpdateSource.GH_PROXY_COM.buildUrl(cloudControlUrl)
+        )
+    }
+
+    @Test
     fun userSelectableSources_includeOfficialSource() {
         assertTrue(UpdateSource.userSelectableSources().contains(UpdateSource.OFFICIAL))
     }

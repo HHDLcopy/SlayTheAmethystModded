@@ -19,11 +19,75 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
 import java.nio.charset.StandardCharsets
+import java.util.ArrayDeque
 import java.util.Locale
+import java.util.concurrent.CopyOnWriteArraySet
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
+import okhttp3.Call
 import okhttp3.OkHttpClient
 import okhttp3.Request
+
+data class ResourcePackSlowDownloadMirrorSwitch(
+    val currentSource: UpdateSource,
+    val nextSource: UpdateSource
+)
+
+class ResourcePackDownloadMirrorSwitchController {
+    private val switchRequests = AtomicLong(0L)
+    private val currentCall = AtomicReference<Call?>()
+    private val listeners =
+        CopyOnWriteArraySet<(ResourcePackSlowDownloadMirrorSwitch?) -> Unit>()
+
+    @Volatile
+    private var currentPrompt: ResourcePackSlowDownloadMirrorSwitch? = null
+
+    fun addSlowDownloadListener(listener: (ResourcePackSlowDownloadMirrorSwitch?) -> Unit) {
+        listeners += listener
+        listener(currentPrompt)
+    }
+
+    fun removeSlowDownloadListener(listener: (ResourcePackSlowDownloadMirrorSwitch?) -> Unit) {
+        listeners -= listener
+    }
+
+    fun clearSlowDownloadPrompt() {
+        publishSlowDownloadPrompt(null)
+    }
+
+    fun requestSwitchToNextMirror(): Boolean {
+        switchRequests.incrementAndGet()
+        publishSlowDownloadPrompt(null)
+        currentCall.get()?.cancel()
+        return true
+    }
+
+    internal fun switchRequestVersion(): Long = switchRequests.get()
+
+    internal fun hasSwitchRequestSince(version: Long): Boolean =
+        switchRequests.get() != version
+
+    internal fun publishSlowDownloadPrompt(prompt: ResourcePackSlowDownloadMirrorSwitch?) {
+        if (currentPrompt == prompt) {
+            return
+        }
+        currentPrompt = prompt
+        listeners.forEach { listener ->
+            listener(prompt)
+        }
+    }
+
+    internal fun trackCall(call: Call) {
+        currentCall.set(call)
+    }
+
+    internal fun clearCall(call: Call) {
+        currentCall.compareAndSet(call, null)
+    }
+}
 
 object ExternalResourcePackService {
     private const val CONNECT_TIMEOUT_MS = 8_000
@@ -32,6 +96,8 @@ object ExternalResourcePackService {
     private const val PROBE_READ_TIMEOUT_MS = 6_000
     private const val USER_AGENT = "SlayTheAmethyst-ResourcePack"
     private const val DOWNLOAD_PROGRESS_REPORT_STEP_BYTES = 256L * 1024L
+    private const val SLOW_DOWNLOAD_WINDOW_NANOS = 10_000_000_000L
+    private const val SLOW_DOWNLOAD_THRESHOLD_BYTES_PER_SECOND = 512L * 1024L
 
     private val externalizedAssetRootPaths = listOf(
         "components/jre",
@@ -137,6 +203,16 @@ object ExternalResourcePackService {
     @JvmStatic
     @Throws(IOException::class)
     fun ensureAvailable(context: Context, progressCallback: StartupProgressCallback?) {
+        ensureAvailable(context, progressCallback, null)
+    }
+
+    @JvmStatic
+    @Throws(IOException::class)
+    fun ensureAvailable(
+        context: Context,
+        progressCallback: StartupProgressCallback?,
+        mirrorSwitchController: ResourcePackDownloadMirrorSwitchController?
+    ) {
         throwIfInterrupted()
         RuntimePaths.ensureBaseDirs(context)
         reportProgress(
@@ -193,7 +269,8 @@ object ExternalResourcePackService {
                 context = context,
                 resourcePackUrl = resourcePackUrl,
                 targetFile = downloadFile,
-                progressCallback = progressCallback
+                progressCallback = progressCallback,
+                mirrorSwitchController = mirrorSwitchController
             )
             throwIfInterrupted()
             reportProgress(
@@ -295,7 +372,8 @@ object ExternalResourcePackService {
         context: Context,
         resourcePackUrl: String,
         targetFile: File,
-        progressCallback: StartupProgressCallback?
+        progressCallback: StartupProgressCallback?,
+        mirrorSwitchController: ResourcePackDownloadMirrorSwitchController?
     ) {
         val downloadClients = GithubAcceleratedHttp.createClientPair(
             context = context,
@@ -324,8 +402,9 @@ object ExternalResourcePackService {
             context = context
         )
         val failures = ArrayList<GithubMirrorFallbackFailure>()
-        orderedCandidates.forEach { candidate ->
+        for ((index, candidate) in orderedCandidates.withIndex()) {
             throwIfInterrupted()
+            mirrorSwitchController?.publishSlowDownloadPrompt(null)
             reportProgress(
                 progressCallback,
                 10,
@@ -340,11 +419,25 @@ object ExternalResourcePackService {
                     requestUrl = candidate.requestUrl,
                     targetFile = targetFile,
                     progressCallback = progressCallback,
-                    context = context
+                    context = context,
+                    mirrorSwitchContext = mirrorSwitchController?.let { controller ->
+                        ResourcePackDownloadMirrorSwitchContext(
+                            controller = controller,
+                            switchRequestVersion = controller.switchRequestVersion(),
+                            currentSource = candidate.source,
+                            nextSource = orderedCandidates.getOrNull(index + 1)?.source
+                        )
+                    }
                 )
+                mirrorSwitchController?.publishSlowDownloadPrompt(null)
                 return
             } catch (error: Throwable) {
+                if (error is ResourcePackMirrorSwitchRequestedException) {
+                    continue
+                }
                 failures += GithubMirrorFallbackFailure(candidate.source, error)
+            } finally {
+                mirrorSwitchController?.publishSlowDownloadPrompt(null)
             }
         }
         throw GithubMirrorFallbackException(failures)
@@ -474,69 +567,201 @@ object ExternalResourcePackService {
         requestUrl: String,
         targetFile: File,
         progressCallback: StartupProgressCallback?,
-        context: Context
+        context: Context,
+        mirrorSwitchContext: ResourcePackDownloadMirrorSwitchContext?
     ) {
         throwIfInterrupted()
+        mirrorSwitchContext?.throwIfSwitchRequested()
         val request = Request.Builder()
             .url(requestUrl)
             .get()
             .header("User-Agent", USER_AGENT)
             .build()
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                throw IOException("HTTP ${response.code}")
-            }
-            val parent = targetFile.parentFile
-                ?: throw IOException("Resource pack target has no parent: ${targetFile.absolutePath}")
-            if (!parent.exists() && !parent.mkdirs()) {
-                throw IOException("Failed to create directory: ${parent.absolutePath}")
-            }
-            val tempFile = File(parent, "${targetFile.name}.part")
-            val totalBytes = response.body.contentLength().takeIf { it > 0L }
-            response.body.byteStream().use { input ->
-                FileOutputStream(tempFile, false).use { output ->
-                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                    var downloadedBytes = 0L
-                    var lastReportBytes = 0L
-                    while (true) {
-                        throwIfInterrupted()
-                        val read = input.read(buffer)
-                        if (read < 0) {
-                            break
-                        }
-                        if (read == 0) {
-                            continue
-                        }
-                        output.write(buffer, 0, read)
-                        downloadedBytes += read
-                        val shouldReport = downloadedBytes - lastReportBytes >=
-                            DOWNLOAD_PROGRESS_REPORT_STEP_BYTES ||
-                            totalBytes?.let { downloadedBytes >= it } == true
-                        if (shouldReport) {
-                            reportProgress(
-                                progressCallback,
-                                mapDownloadPercent(downloadedBytes, totalBytes),
-                                context.progressText(
-                                    R.string.startup_progress_downloading_external_resources,
-                                    formatBytes(downloadedBytes),
-                                    totalBytes?.let(::formatBytes).orEmpty()
+        val call = client.newCall(request)
+        mirrorSwitchContext?.controller?.trackCall(call)
+        mirrorSwitchContext?.markDownloadStarted()
+        val slowDownloadTicker = mirrorSwitchContext?.startSlowDownloadTicker()
+        try {
+            call.execute().use { response ->
+                mirrorSwitchContext?.throwIfSwitchRequested()
+                if (!response.isSuccessful) {
+                    throw IOException("HTTP ${response.code}")
+                }
+                val parent = targetFile.parentFile
+                    ?: throw IOException("Resource pack target has no parent: ${targetFile.absolutePath}")
+                if (!parent.exists() && !parent.mkdirs()) {
+                    throw IOException("Failed to create directory: ${parent.absolutePath}")
+                }
+                val tempFile = File(parent, "${targetFile.name}.part")
+                val totalBytes = response.body.contentLength().takeIf { it > 0L }
+                response.body.byteStream().use { input ->
+                    FileOutputStream(tempFile, false).use { output ->
+                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                        var downloadedBytes = 0L
+                        var lastReportBytes = 0L
+                        while (true) {
+                            throwIfInterrupted()
+                            mirrorSwitchContext?.throwIfSwitchRequested()
+                            val read = input.read(buffer)
+                            if (read < 0) {
+                                break
+                            }
+                            if (read == 0) {
+                                continue
+                            }
+                            output.write(buffer, 0, read)
+                            downloadedBytes += read
+                            mirrorSwitchContext?.recordDownloadProgress(downloadedBytes)
+                            val shouldReport = downloadedBytes - lastReportBytes >=
+                                DOWNLOAD_PROGRESS_REPORT_STEP_BYTES ||
+                                totalBytes?.let { downloadedBytes >= it } == true
+                            if (shouldReport) {
+                                reportProgress(
+                                    progressCallback,
+                                    mapDownloadPercent(downloadedBytes, totalBytes),
+                                    context.progressText(
+                                        R.string.startup_progress_downloading_external_resources,
+                                        formatBytes(downloadedBytes),
+                                        totalBytes?.let(::formatBytes).orEmpty()
+                                    )
                                 )
-                            )
-                            lastReportBytes = downloadedBytes
+                                lastReportBytes = downloadedBytes
+                            }
                         }
                     }
                 }
+                if (targetFile.exists() && !targetFile.delete()) {
+                    tempFile.delete()
+                    throw IOException("Failed to replace file: ${targetFile.absolutePath}")
+                }
+                if (!tempFile.renameTo(targetFile)) {
+                    copyFile(tempFile, targetFile)
+                    tempFile.delete()
+                }
             }
-            if (targetFile.exists() && !targetFile.delete()) {
-                tempFile.delete()
-                throw IOException("Failed to replace file: ${targetFile.absolutePath}")
+        } catch (error: Throwable) {
+            if (mirrorSwitchContext?.isSwitchRequested() == true) {
+                throw ResourcePackMirrorSwitchRequestedException()
             }
-            if (!tempFile.renameTo(targetFile)) {
-                copyFile(tempFile, targetFile)
-                tempFile.delete()
+            throw error
+        } finally {
+            slowDownloadTicker?.close()
+            mirrorSwitchContext?.controller?.clearCall(call)
+        }
+    }
+
+    private data class ResourcePackDownloadMirrorSwitchContext(
+        val controller: ResourcePackDownloadMirrorSwitchController,
+        val switchRequestVersion: Long,
+        val currentSource: UpdateSource,
+        val nextSource: UpdateSource?
+    ) {
+        private val speedMonitor = ResourcePackSlowDownloadSpeedMonitor()
+        private val latestDownloadedBytes = AtomicLong(0L)
+
+        fun markDownloadStarted() {
+            val now = System.nanoTime()
+            latestDownloadedBytes.set(0L)
+            speedMonitor.reset(now, 0L)
+        }
+
+        fun startSlowDownloadTicker(): AutoCloseable? {
+            if (nextSource == null) {
+                return null
+            }
+            val running = AtomicBoolean(true)
+            val thread = Thread({
+                while (running.get() && !Thread.currentThread().isInterrupted) {
+                    try {
+                        Thread.sleep(1_000L)
+                    } catch (_: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        break
+                    }
+                    recordDownloadProgress(latestDownloadedBytes.get())
+                }
+            }, "STS-ResourcePackSlowDownloadTicker").apply {
+                isDaemon = true
+                start()
+            }
+            return AutoCloseable {
+                running.set(false)
+                thread.interrupt()
+            }
+        }
+
+        @Synchronized
+        fun recordDownloadProgress(downloadedBytes: Long) {
+            latestDownloadedBytes.set(downloadedBytes)
+            if (nextSource == null) {
+                return
+            }
+            if (speedMonitor.record(System.nanoTime(), downloadedBytes)) {
+                controller.publishSlowDownloadPrompt(
+                    ResourcePackSlowDownloadMirrorSwitch(
+                        currentSource = currentSource,
+                        nextSource = nextSource
+                    )
+                )
+            }
+        }
+
+        fun throwIfSwitchRequested() {
+            if (isSwitchRequested()) {
+                throw ResourcePackMirrorSwitchRequestedException()
+            }
+        }
+
+        fun isSwitchRequested(): Boolean =
+            controller.hasSwitchRequestSince(switchRequestVersion)
+    }
+
+    private data class ResourcePackDownloadSpeedSample(
+        val timeNanos: Long,
+        val downloadedBytes: Long
+    )
+
+    private class ResourcePackSlowDownloadSpeedMonitor {
+        private val samples = ArrayDeque<ResourcePackDownloadSpeedSample>()
+
+        fun reset(nowNanos: Long, downloadedBytes: Long) {
+            samples.clear()
+            samples.addLast(ResourcePackDownloadSpeedSample(nowNanos, downloadedBytes))
+        }
+
+        fun record(nowNanos: Long, downloadedBytes: Long): Boolean {
+            if (samples.isEmpty()) {
+                reset(nowNanos, downloadedBytes)
+                return false
+            }
+            samples.addLast(ResourcePackDownloadSpeedSample(nowNanos, downloadedBytes))
+            prune(nowNanos)
+            val first = samples.peekFirst() ?: return false
+            val elapsedNanos = nowNanos - first.timeNanos
+            if (elapsedNanos < SLOW_DOWNLOAD_WINDOW_NANOS) {
+                return false
+            }
+            val bytesInWindow = (downloadedBytes - first.downloadedBytes).coerceAtLeast(0L)
+            val bytesPerSecond = bytesInWindow.toDouble() * 1_000_000_000.0 / elapsedNanos.toDouble()
+            return bytesPerSecond < SLOW_DOWNLOAD_THRESHOLD_BYTES_PER_SECOND
+        }
+
+        private fun prune(nowNanos: Long) {
+            while (samples.size > 1) {
+                val first = samples.removeFirst()
+                val second = samples.peekFirst()
+                if (second != null && nowNanos - second.timeNanos >= SLOW_DOWNLOAD_WINDOW_NANOS) {
+                    continue
+                }
+                samples.addFirst(first)
+                break
             }
         }
     }
+
+    private class ResourcePackMirrorSwitchRequestedException : IOException(
+        "Resource pack mirror switch requested."
+    )
 
     private fun mapDownloadPercent(downloadedBytes: Long, totalBytes: Long?): Int {
         if (totalBytes == null || totalBytes <= 0L) {

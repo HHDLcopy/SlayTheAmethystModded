@@ -12,6 +12,20 @@
     watch
   } = Vue;
   const { createVuetify } = Vuetify;
+  const HOUR_SECONDS = 60 * 60;
+  const PRESENCE_SERVICE_BASE_URL = normalizeServiceBaseUrl(
+    window.PRESENCE_SERVICE_BASE_URL,
+    'https://heartbeat.nas.apricityx.top:23163'
+  );
+
+  const STATS_WINDOW_ITEMS = [
+    { title: '24小时', value: 24 * HOUR_SECONDS },
+    { title: '3天', value: 3 * 24 * HOUR_SECONDS },
+    { title: '7天', value: 7 * 24 * HOUR_SECONDS },
+    { title: '14天', value: 14 * 24 * HOUR_SECONDS },
+    { title: '30天', value: 30 * 24 * HOUR_SECONDS }
+  ];
+  const DEFAULT_STATS_WINDOW_SECONDS = 7 * 24 * HOUR_SECONDS;
 
   const METRIC_ITEMS = [
     {
@@ -22,8 +36,8 @@
       value(snapshot) {
         return String(Number(snapshot.online) || 0);
       },
-      subtitle(snapshot) {
-        return '累计设备 ' + (Number(snapshot.totalDevices) || 0);
+      subtitle() {
+        return '按最近心跳计算';
       }
     },
     {
@@ -39,15 +53,15 @@
       }
     },
     {
-      key: 'timeout',
-      title: '离线阈值',
-      icon: 'mdi-timer-sand',
+      key: 'totalOnline',
+      title: '累计在线',
+      icon: 'mdi-counter',
       color: 'warning',
       value(snapshot) {
-        return (Number(snapshot.offlineTimeoutSeconds) || 0) + 's';
+        return String(getTotalOnlineUsers(snapshot));
       },
       subtitle() {
-        return '超时后移出在线列表';
+        return '历史唯一上报设备';
       }
     },
     {
@@ -75,18 +89,34 @@
     { title: '剩余 TTL', key: 'expiresInSeconds', align: 'end', minWidth: 110 }
   ];
 
-  const STATE_HEADERS = [
-    { title: '状态', key: 'state' },
-    { title: '人数', key: 'count', align: 'end' }
-  ];
+  function normalizeServiceBaseUrl(value, fallbackValue) {
+    const rawValue = String(value || fallbackValue || '').trim();
+    const normalized = rawValue.endsWith('/') ? rawValue.slice(0, -1) : rawValue;
+    if (!normalized) {
+      return '';
+    }
+    try {
+      return new URL(normalized).origin;
+    } catch (_error) {
+      return new URL(fallbackValue).origin;
+    }
+  }
 
-  function buildPanelWebSocketUrl(token) {
-    const url = new URL('/api/presence/panel/ws', window.location.href);
-    url.protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  function buildServiceUrl(pathname) {
+    return new URL(pathname, PRESENCE_SERVICE_BASE_URL + '/');
+  }
+
+  function toWebSocketUrl(url) {
+    return String(url || '').replace(/^https:/i, 'wss:').replace(/^http:/i, 'ws:');
+  }
+
+  function buildPanelWebSocketUrl(token, windowSeconds) {
+    const url = buildServiceUrl('/api/presence/panel/ws');
     if (token) {
       url.searchParams.set('token', token);
     }
-    return url.toString();
+    url.searchParams.set('window_seconds', String(normalizeStatsWindowSeconds(windowSeconds)));
+    return toWebSocketUrl(url.toString());
   }
 
   function readTokenFromLocation() {
@@ -127,6 +157,18 @@
     return Math.max(0, seconds) + 's ago';
   }
 
+  function normalizeStatsWindowSeconds(value) {
+    const parsed = Number(value) || DEFAULT_STATS_WINDOW_SECONDS;
+    const matched = STATS_WINDOW_ITEMS.find((item) => item.value === parsed);
+    return matched ? matched.value : DEFAULT_STATS_WINDOW_SECONDS;
+  }
+
+  function formatStatsWindowLabel(value) {
+    const normalized = normalizeStatsWindowSeconds(value);
+    const matched = STATS_WINDOW_ITEMS.find((item) => item.value === normalized);
+    return matched ? matched.title : '7天';
+  }
+
   function maskIdentifier(value) {
     const normalized = String(value || '').trim();
     if (!normalized) {
@@ -138,6 +180,14 @@
     return normalized.slice(0, 14) + '...' + normalized.slice(-8);
   }
 
+  function getTotalOnlineUsers(snapshot) {
+    const explicitValue = Number(snapshot && snapshot.totalOnlineUsers);
+    if (Number.isFinite(explicitValue)) {
+      return Math.max(0, explicitValue);
+    }
+    return Math.max(0, Number(snapshot && snapshot.totalDevices) || 0);
+  }
+
   function buildChartOption(stats) {
     const buckets = Array.isArray(stats && stats.buckets) ? stats.buckets : [];
     const samples = buckets
@@ -145,7 +195,7 @@
       .map((bucket) => ({
         label: formatShortDateTime(bucket.bucketStart),
         online: Math.max(0, Number(bucket.online) || 0),
-        totalDevices: Math.max(0, Number(bucket.totalDevices) || 0),
+        totalOnlineUsers: getTotalOnlineUsers(bucket),
         recordedAt: bucket.recordedAt ? formatDateTime(bucket.recordedAt) : '-'
       }));
 
@@ -162,8 +212,8 @@
           }
           return [
             '<strong>' + item.label + '</strong>',
-            '在线人数: ' + item.online,
-            '累计设备: ' + item.totalDevices,
+            '该时刻在线: ' + item.online,
+            '累计在线: ' + item.totalOnlineUsers,
             '记录时间: ' + item.recordedAt
           ].join('<br>');
         }
@@ -194,6 +244,11 @@
       },
       yAxis: {
         type: 'value',
+        name: '该时刻在线人数',
+        nameTextStyle: {
+          color: '#64748b',
+          fontSize: 12
+        },
         minInterval: 1,
         axisLabel: {
           color: '#64748b'
@@ -206,7 +261,7 @@
       },
       series: [
         {
-          name: '在线人数',
+          name: '该时刻在线人数',
           type: 'line',
           smooth: true,
           showSymbol: samples.length <= 36,
@@ -254,6 +309,7 @@
         config: null,
         snapshot: null,
         stats: null,
+        selectedStatsWindowSeconds: DEFAULT_STATS_WINDOW_SECONDS,
         lastError: ''
       });
 
@@ -269,22 +325,19 @@
         checkedAt: '',
         storageBackend: 'sqlite3',
         totalDevices: 0,
+        totalOnlineUsers: 0,
         sessions: []
       });
       const stats = computed(() => state.stats || {
         peakOnline: 0,
         currentOnline: 0,
+        totalOnlineUsers: 0,
+        windowSeconds: state.selectedStatsWindowSeconds,
         snapshotCount: 0,
         buckets: [],
         since: '',
         until: ''
       });
-      const stateRows = computed(() => Object.entries(snapshot.value.byState || {})
-        .sort((left, right) => left[0].localeCompare(right[0]))
-        .map((row) => ({
-          state: row[0],
-          count: Number(row[1]) || 0
-        })));
       const sessions = computed(() => Array.isArray(snapshot.value.sessions)
         ? snapshot.value.sessions
         : []);
@@ -298,6 +351,7 @@
       })));
       const hasStatsSamples = computed(() => (stats.value.buckets || [])
         .some((bucket) => bucket && bucket.hasSnapshot !== false));
+      const selectedStatsWindowLabel = computed(() => formatStatsWindowLabel(state.selectedStatsWindowSeconds));
       const connectionColor = computed(() => {
         if (isConnected.value) {
           return 'success';
@@ -340,7 +394,7 @@
         state.manuallyClosed = false;
         state.connectionStatus = 'connecting';
         state.connectionMessage = '连接中';
-        const ws = new WebSocket(buildPanelWebSocketUrl(state.token));
+        const ws = new WebSocket(buildPanelWebSocketUrl(state.token, state.selectedStatsWindowSeconds));
         state.ws = ws;
 
         ws.addEventListener('open', () => {
@@ -409,6 +463,9 @@
         }
         if (message.type === 'stats') {
           state.stats = message.data || null;
+          if (state.stats && state.stats.windowSeconds) {
+            state.selectedStatsWindowSeconds = normalizeStatsWindowSeconds(state.stats.windowSeconds);
+          }
           return;
         }
         if (message.type === 'error') {
@@ -427,9 +484,26 @@
         ws.send(JSON.stringify({ type }));
       }
 
+      function sendStatsRefresh() {
+        const ws = state.ws;
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          connect();
+          return;
+        }
+        ws.send(JSON.stringify({
+          type: 'refresh_stats',
+          windowSeconds: state.selectedStatsWindowSeconds
+        }));
+      }
+
       function refreshAll() {
         send('refresh');
-        send('refresh_stats');
+        sendStatsRefresh();
+      }
+
+      function selectStatsWindow(windowSeconds) {
+        state.selectedStatsWindowSeconds = normalizeStatsWindowSeconds(windowSeconds);
+        sendStatsRefresh();
       }
 
       function tableItem(item) {
@@ -457,6 +531,10 @@
       watch(stats, () => {
         nextTick(ensureChart);
       }, { deep: true });
+
+      watch(() => state.selectedStatsWindowSeconds, () => {
+        nextTick(ensureChart);
+      });
 
       onMounted(() => {
         if (hasToken.value) {
@@ -486,21 +564,23 @@
       return {
         chartEl,
         state,
+        PRESENCE_SERVICE_BASE_URL,
         hasToken,
         isConnected,
         isConnecting,
         snapshot,
         stats,
-        stateRows,
         sessions,
         metricItems,
         hasStatsSamples,
+        selectedStatsWindowLabel,
         connectionColor,
         connectionIcon,
+        STATS_WINDOW_ITEMS,
         SESSION_HEADERS,
-        STATE_HEADERS,
         login,
         refreshAll,
+        selectStatsWindow,
         tableItem,
         formatAge,
         formatDateTime,
@@ -548,7 +628,7 @@
               </template>
               <v-toolbar-title>
                 <div class="title-line">在线情况面板</div>
-                <div class="subtitle-line">SlayTheAmethyst · WebSocket 实时同步 · {{ snapshot.checkedAt || '-' }}</div>
+                <div class="subtitle-line">SlayTheAmethyst · {{ PRESENCE_SERVICE_BASE_URL }} · {{ snapshot.checkedAt || '-' }}</div>
               </v-toolbar-title>
               <v-spacer></v-spacer>
               <v-chip
@@ -590,12 +670,30 @@
             <v-card class="mt-4" elevation="1">
               <v-card-title class="panel-title">
                 <div>
-                  <div>一周在线趋势</div>
+                  <div>{{ selectedStatsWindowLabel }}在线趋势</div>
                   <div class="panel-subtitle">{{ formatShortDateTime(stats.since) }} - {{ formatShortDateTime(stats.until) }}</div>
                 </div>
                 <v-spacer></v-spacer>
+                <v-btn-toggle
+                  v-model="state.selectedStatsWindowSeconds"
+                  class="stats-window-toggle"
+                  color="primary"
+                  density="comfortable"
+                  divided
+                  mandatory
+                  variant="outlined"
+                  @update:model-value="selectStatsWindow"
+                >
+                  <v-btn
+                    v-for="item in STATS_WINDOW_ITEMS"
+                    :key="item.value"
+                    :value="item.value"
+                    size="small"
+                  >
+                    {{ item.title }}
+                  </v-btn>
+                </v-btn-toggle>
                 <v-chip color="primary" variant="tonal">峰值 {{ Number(stats.peakOnline) || 0 }}</v-chip>
-                <v-chip color="success" variant="tonal">当前 {{ Number(stats.currentOnline) || 0 }}</v-chip>
                 <v-chip color="info" variant="tonal">样本 {{ Number(stats.snapshotCount) || 0 }}/{{ (stats.buckets || []).length }}</v-chip>
               </v-card-title>
               <v-card-text>
@@ -609,25 +707,7 @@
             </v-card>
 
             <v-row class="mt-4" dense>
-              <v-col cols="12" lg="4">
-                <v-card elevation="1">
-                  <v-card-title class="panel-title">状态统计</v-card-title>
-                  <v-data-table
-                    :headers="STATE_HEADERS"
-                    :items="stateRows"
-                    density="comfortable"
-                    item-value="state"
-                    hide-default-footer
-                    no-data-text="No active states."
-                  >
-                    <template #item.state="{ item }">
-                      <v-chip color="primary" variant="tonal" size="small">{{ tableItem(item).state }}</v-chip>
-                    </template>
-                  </v-data-table>
-                </v-card>
-              </v-col>
-
-              <v-col cols="12" lg="8">
+              <v-col cols="12">
                 <v-card elevation="1">
                   <v-card-title class="panel-title">
                     <div>

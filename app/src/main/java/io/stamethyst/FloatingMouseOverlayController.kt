@@ -359,6 +359,12 @@ internal class FloatingMouseOverlayController(
         showSoftKeyboard(reason)
     }
 
+    fun requestSystemSoftKeyboard(reason: String) {
+        hideFloatingMouseExpandedMenu()
+        builtInKeyboardController?.hide(refocusRenderView = false)
+        imeController?.requestShow(reason = reason)
+    }
+
     fun isSoftKeyboardSessionActive(): Boolean {
         return builtInKeyboardController?.isVisible() == true ||
             imeController?.shouldHoldRenderSurfaceStable() == true

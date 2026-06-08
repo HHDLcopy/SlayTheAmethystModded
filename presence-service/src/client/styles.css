@@ -74,10 +74,15 @@ body {
 .panel-title {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   min-height: 64px;
   font-size: 16px;
   font-weight: 650;
+}
+
+.stats-window-toggle {
+  flex: 0 0 auto;
 }
 
 .presence-chart {
@@ -157,5 +162,14 @@ body {
 
   .presence-chart {
     height: 270px;
+  }
+
+  .stats-window-toggle {
+    width: 100%;
+  }
+
+  .stats-window-toggle .v-btn {
+    flex: 1 1 0;
+    min-width: 0;
   }
 }

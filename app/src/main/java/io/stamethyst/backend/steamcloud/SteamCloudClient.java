@@ -971,6 +971,23 @@ public final class SteamCloudClient implements AutoCloseable {
         );
     }
 
+    void recordProtocolAuthDiagnostic(String message) {
+        recordDiagnosticEvent("protocol_auth " + message);
+    }
+
+    void applyProtocolAuthDiagnostics(
+        String steamId64,
+        String allowedChallenges,
+        String lastPrompt,
+        boolean updatedGuardData
+    ) {
+        credentialsAuthSteamId64 = sanitizeSingleLine(steamId64);
+        currentSteamId64 = credentialsAuthSteamId64;
+        allowedChallengesDescription = sanitizeSingleLine(allowedChallenges);
+        lastAuthPromptDescription = sanitizeSingleLine(lastPrompt);
+        guardDataUpdated = updatedGuardData;
+    }
+
     private <T> T waitForStage(CompletableFuture<T> future, long timeoutMs, String stage) throws Exception {
         currentStage = stage;
         recordDiagnosticEvent("stage_begin name=" + stage + " timeoutMs=" + timeoutMs);
@@ -1928,7 +1945,7 @@ public final class SteamCloudClient implements AutoCloseable {
         private final String guardData;
         private final String steamId64;
 
-        private AuthMaterial(String accountName, String refreshToken, String guardData, String steamId64) {
+        AuthMaterial(String accountName, String refreshToken, String guardData, String steamId64) {
             this.accountName = accountName;
             this.refreshToken = refreshToken;
             this.guardData = guardData;

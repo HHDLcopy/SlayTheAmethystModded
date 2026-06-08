@@ -44,6 +44,7 @@ object LauncherConfig {
     private const val PREF_KEY_BACK_BEHAVIOR = "back_behavior"
     private const val PREF_KEY_BACK_IMMEDIATE_EXIT = "back_immediate_exit"
     private const val PREF_KEY_MANUAL_DISMISS_BOOT_OVERLAY = "manual_dismiss_boot_overlay"
+    private const val PREF_KEY_SPECIAL_KEY_INPUT_MODE = "special_key_input_mode"
     private const val PREF_KEY_SHOW_FLOATING_MOUSE_WINDOW = "show_floating_mouse_window"
     private const val PREF_KEY_TOUCH_MOUSE_INTERACTION_MODE = "touch_mouse_interaction_mode"
     private const val PREF_KEY_TOUCH_MOUSE_NEW_INTERACTION = "touch_mouse_new_interaction"
@@ -244,7 +245,8 @@ object LauncherConfig {
     val DEFAULT_BOOT_OVERLAY_STYLE: BootOverlayStyle = BootOverlayStyle.MODERN
     val DEFAULT_BOOT_OVERLAY_ANIMATION: BootOverlayAnimation =
         BootOverlayAnimation.CARD_SHUFFLE
-    const val DEFAULT_SHOW_FLOATING_MOUSE_WINDOW = true
+    val DEFAULT_SPECIAL_KEY_INPUT_MODE: SpecialKeyInputMode = SpecialKeyInputMode.BUILT_IN_MOD
+    const val DEFAULT_SHOW_FLOATING_MOUSE_WINDOW = false
     val DEFAULT_TOUCH_MOUSE_INTERACTION_MODE: TouchMouseInteractionMode =
         TouchMouseInteractionMode.OPEN_MENU_ON_TAP
     const val DEFAULT_BUILT_IN_SOFT_KEYBOARD_ENABLED = true
@@ -477,17 +479,49 @@ object LauncherConfig {
         }
     }
 
+    fun readSpecialKeyInputMode(context: Context): SpecialKeyInputMode {
+        val preferences = prefs(context)
+        val stored = preferences.getString(PREF_KEY_SPECIAL_KEY_INPUT_MODE, null)
+        SpecialKeyInputMode.fromPersistedValue(stored)?.let { return it }
+
+        if (preferences.contains(PREF_KEY_SHOW_FLOATING_MOUSE_WINDOW)) {
+            return if (preferences.getBoolean(
+                    PREF_KEY_SHOW_FLOATING_MOUSE_WINDOW,
+                    true
+                )
+            ) {
+                SpecialKeyInputMode.BUILT_IN_MOD
+            } else {
+                SpecialKeyInputMode.DISABLED
+            }
+        }
+
+        return DEFAULT_SPECIAL_KEY_INPUT_MODE
+    }
+
+    fun saveSpecialKeyInputMode(context: Context, mode: SpecialKeyInputMode) {
+        prefs(context).edit {
+            putString(PREF_KEY_SPECIAL_KEY_INPUT_MODE, mode.persistedValue)
+            putBoolean(
+                PREF_KEY_SHOW_FLOATING_MOUSE_WINDOW,
+                mode == SpecialKeyInputMode.LEGACY_FLOATING_WINDOW
+            )
+        }
+    }
+
     fun readShowFloatingMouseWindow(context: Context): Boolean {
-        return prefs(context).getBoolean(
-            PREF_KEY_SHOW_FLOATING_MOUSE_WINDOW,
-            DEFAULT_SHOW_FLOATING_MOUSE_WINDOW
-        )
+        return readSpecialKeyInputMode(context) == SpecialKeyInputMode.LEGACY_FLOATING_WINDOW
     }
 
     fun saveShowFloatingMouseWindow(context: Context, enabled: Boolean) {
-        prefs(context).edit {
-            putBoolean(PREF_KEY_SHOW_FLOATING_MOUSE_WINDOW, enabled)
-        }
+        saveSpecialKeyInputMode(
+            context,
+            if (enabled) {
+                SpecialKeyInputMode.LEGACY_FLOATING_WINDOW
+            } else {
+                SpecialKeyInputMode.DISABLED
+            }
+        )
     }
 
     fun readTouchMouseInteractionMode(context: Context): TouchMouseInteractionMode {

@@ -1054,6 +1054,7 @@ internal object SettingsFileService {
             uniqueComponents.add(JarImportInspectionService.RESERVED_COMPONENT_STSLIB)
             uniqueComponents.add(JarImportInspectionService.RESERVED_COMPONENT_MTS)
             uniqueComponents.add(JarImportInspectionService.RESERVED_COMPONENT_AMETHYST_RUNTIME_COMPAT)
+            uniqueComponents.add(JarImportInspectionService.RESERVED_COMPONENT_AMETHYST_FLOATING_TOOLS)
             uniqueComponents.add(JarImportInspectionService.RESERVED_COMPONENT_RAM_SAVER)
         }
 
@@ -2154,6 +2155,11 @@ internal object SettingsFileService {
             ModManager.MOD_ID_AMETHYST_RUNTIME_COMPAT ->
                 JarImportInspectionService.RESERVED_COMPONENT_AMETHYST_RUNTIME_COMPAT
 
+            JarImportInspectionService.RESERVED_COMPONENT_AMETHYST_FLOATING_TOOLS.lowercase(Locale.ROOT),
+            "amethystfloatingtools.jar",
+            ModManager.MOD_ID_AMETHYST_FLOATING_TOOLS ->
+                JarImportInspectionService.RESERVED_COMPONENT_AMETHYST_FLOATING_TOOLS
+
             JarImportInspectionService.RESERVED_COMPONENT_RAM_SAVER.lowercase(Locale.ROOT),
             "ramsaver.jar",
             ModManager.MOD_ID_RAM_SAVER -> JarImportInspectionService.RESERVED_COMPONENT_RAM_SAVER
@@ -2237,6 +2243,11 @@ internal object SettingsFileService {
             "AmethystRuntimeCompat.jar",
             "components/mods/AmethystRuntimeCompat.jar",
             RuntimePaths.importedAmethystRuntimeCompatJar(host)
+        )
+        addAssetIfMissing(
+            "AmethystFloatingTools.jar",
+            "components/mods/AmethystFloatingTools.jar",
+            RuntimePaths.importedAmethystFloatingToolsJar(host)
         )
         addAssetIfMissing(
             "RamSaver.jar",

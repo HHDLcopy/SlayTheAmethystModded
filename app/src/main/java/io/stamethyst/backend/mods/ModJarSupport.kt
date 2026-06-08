@@ -12,6 +12,7 @@ import java.util.zip.ZipFile
 
 object ModJarSupport {
     private const val EXPECTED_AMETHYST_RUNTIME_COMPAT_VERSION = "1.0.29"
+    private const val EXPECTED_AMETHYST_FLOATING_TOOLS_VERSION = "1.0.0"
     private const val EXPECTED_RAM_SAVER_VERSION = "0.3.1-amethyst.3"
 
     class ModManifestInfo(
@@ -121,6 +122,32 @@ object ModJarSupport {
             throw IOException(
                 "Invalid RamSaver.jar: version is $version, " +
                     "expected $EXPECTED_RAM_SAVER_VERSION"
+            )
+        }
+    }
+
+    @JvmStatic
+    @Throws(IOException::class)
+    fun validateAmethystFloatingToolsJar(jarFile: File?) {
+        if (jarFile == null || !jarFile.isFile) {
+            throw IOException("AmethystFloatingTools.jar not found")
+        }
+        ZipFile(jarFile).use { zipFile ->
+            if (zipFile.getEntry("io/stamethyst/floatingtools/AmethystFloatingTools.class") == null) {
+                throw IOException(
+                    "Invalid AmethystFloatingTools.jar: missing floating tools entry class"
+                )
+            }
+        }
+        val modId = ModJarManifestParser.normalizeModId(resolveModId(jarFile))
+        if (ModManager.MOD_ID_AMETHYST_FLOATING_TOOLS != modId) {
+            throw IOException("Invalid AmethystFloatingTools.jar: modid is $modId")
+        }
+        val version = readModManifest(jarFile).version.trim()
+        if (version != EXPECTED_AMETHYST_FLOATING_TOOLS_VERSION) {
+            throw IOException(
+                "Invalid AmethystFloatingTools.jar: version is $version, " +
+                    "expected $EXPECTED_AMETHYST_FLOATING_TOOLS_VERSION"
             )
         }
     }

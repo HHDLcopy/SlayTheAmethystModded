@@ -57,6 +57,7 @@ import io.stamethyst.navigation.Route
 import io.stamethyst.navigation.currentNavigator
 import io.stamethyst.ui.Icons
 import io.stamethyst.ui.icon.ArrowBack
+import io.stamethyst.ui.icon.Close
 import java.util.Locale
 import kotlinx.coroutines.delay
 
@@ -76,8 +77,6 @@ fun LauncherSteamCloudGuardScreen(
     val navigator = currentNavigator
     val uiState = viewModel.uiState
     val challenge = uiState.steamCloudLoginChallenge
-    val canNavigateBack =
-        !uiState.busy || (challenge != null && challenge.kind != SteamCloudLoginChallengeKind.DEVICE_CONFIRMATION)
 
     LaunchedEffect(activity) {
         viewModel.bind(activity)
@@ -101,14 +100,18 @@ fun LauncherSteamCloudGuardScreen(
         }
     }
 
-    fun handleBack() {
-        when {
-            challenge != null && challenge.kind != SteamCloudLoginChallengeKind.DEVICE_CONFIRMATION -> {
-                viewModel.onCancelSteamCloudChallenge()
-                navigator.goBack()
-            }
+    fun cancelAndReturn() {
+        viewModel.onCancelSteamCloudChallenge(activity)
+        if (!navigator.popTo(returnToLoginRoute)) {
+            navigator.goBack()
+        }
+    }
 
-            !uiState.busy -> navigator.goBack()
+    fun handleBack() {
+        if (challenge != null || uiState.busy) {
+            cancelAndReturn()
+        } else {
+            navigator.goBack()
         }
     }
 
@@ -121,11 +124,21 @@ fun LauncherSteamCloudGuardScreen(
                 navigationIcon = {
                     IconButton(
                         onClick = ::handleBack,
-                        enabled = canNavigateBack
                     ) {
                         Icon(
                             imageVector = Icons.ArrowBack,
                             contentDescription = stringResource(R.string.common_content_desc_back)
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(
+                        onClick = ::cancelAndReturn,
+                        enabled = challenge != null || uiState.busy
+                    ) {
+                        Icon(
+                            imageVector = Icons.Close,
+                            contentDescription = stringResource(android.R.string.cancel)
                         )
                     }
                 }

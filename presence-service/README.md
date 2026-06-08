@@ -19,7 +19,7 @@ HTTP endpoints.
 - Public online summary: `GET /api/presence/summary`
 - Public online count alias: `GET /api/presence/online-count`
 - Protected session list: `GET /api/presence/sessions?token=...`
-- Protected one-week hourly stats: `GET /api/presence/stats?token=...&bucket_seconds=3600`
+- Protected hourly stats: `GET /api/presence/stats?token=...&bucket_seconds=3600&window_seconds=604800`
 - Vue3 panel: `GET /presence`
 - Panel WebSocket: `GET /api/presence/panel/ws?token=...`
 - Cloud-control config: `GET /cloud-control.json`
@@ -85,22 +85,19 @@ For production, set `PUBLIC_BASE_URL` to the public HTTPS origin and replace
 
 ## Cloud-Control Payload
 
-`GET /cloud-control.json` returns both old HTTP fields and the new WebSocket
-fields:
+`GET /cloud-control.json` returns the compact WebSocket heartbeat settings:
 
 ```json
 {
-  "heartbeatIntervalSeconds": 30,
-  "heartbeatRequestApiUrl": "https://presence.example.com/api/presence/heartbeat",
-  "heartbeatWsUrl": "wss://presence.example.com/api/presence/ws",
-  "presenceHeartbeatWsUrl": "wss://presence.example.com/api/presence/ws",
   "heartbeat": {
     "intervalSeconds": 30,
-    "apiUrl": "https://presence.example.com/api/presence/heartbeat",
     "wsUrl": "wss://presence.example.com/api/presence/ws"
   }
 }
 ```
+
+The HTTP heartbeat endpoint remains available only for compatibility; new app
+builds read `heartbeat.wsUrl` and report presence over WebSocket.
 
 ## WebSocket Messages
 
@@ -126,6 +123,7 @@ Server -> app:
   "type": "presence_ack",
   "ok": true,
   "online": 1,
+  "totalOnlineUsers": 1,
   "heartbeatIntervalSeconds": 30,
   "offlineTimeoutSeconds": 90,
   "storageBackend": "sqlite3"
@@ -133,4 +131,6 @@ Server -> app:
 ```
 
 Panel messages use `type: "snapshot"` and `type: "stats"` with payloads matching
-the compatibility HTTP JSON responses.
+the compatibility HTTP JSON responses. Send `type: "refresh_stats"` with
+`windowSeconds` to switch the trend window; supported panel choices are 24
+hours, 3 days, 7 days, 14 days, and 30 days.

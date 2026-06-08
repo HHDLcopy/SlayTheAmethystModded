@@ -163,6 +163,10 @@ class GameInputHandler(
         floatingMouseController?.requestSoftKeyboard(reason)
     }
 
+    fun requestSystemSoftKeyboardForGameTextInput(reason: String) {
+        floatingMouseController?.requestSystemSoftKeyboard(reason)
+    }
+
     fun isSoftKeyboardSessionActive(): Boolean {
         return floatingMouseController?.isSoftKeyboardSessionActive() == true
     }

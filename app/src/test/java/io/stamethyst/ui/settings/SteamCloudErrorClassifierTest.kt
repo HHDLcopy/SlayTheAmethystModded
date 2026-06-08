@@ -27,6 +27,16 @@ class SteamCloudErrorClassifierTest {
     }
 
     @Test
+    fun classify_keepsWrappedExplicitUserCancellationAsUserCancelled() {
+        val error = CompletionException(CancellationException("Steam Cloud login cancelled by user."))
+
+        assertEquals(
+            SteamCloudErrorKind.USER_CANCELLED,
+            SteamCloudErrorClassifier.classify(error)
+        )
+    }
+
+    @Test
     fun classify_treatsBlankCancellationAsAuthConnectionCancellation() {
         val error = CancellationException()
 
@@ -44,6 +54,30 @@ class SteamCloudErrorClassifierTest {
 
         assertEquals(
             SteamCloudErrorKind.INVALID_CREDENTIALS,
+            SteamCloudErrorClassifier.classify(error)
+        )
+    }
+
+    @Test
+    fun classify_treatsProtocolInvalidPasswordResultAsInvalidCredentials() {
+        val error = CompletionException(
+            RuntimeException("Steam 登录失败: 账号名或密码错误 (EResult=5)")
+        )
+
+        assertEquals(
+            SteamCloudErrorKind.INVALID_CREDENTIALS,
+            SteamCloudErrorClassifier.classify(error)
+        )
+    }
+
+    @Test
+    fun classify_treatsProtocolAuthCompletionTimeoutAsGuardWaitTimeout() {
+        val error = CompletionException(
+            RuntimeException("Timed out waiting for Steam auth completion after 240000ms.")
+        )
+
+        assertEquals(
+            SteamCloudErrorKind.AUTH_WATCHDOG_DISCONNECT,
             SteamCloudErrorClassifier.classify(error)
         )
     }

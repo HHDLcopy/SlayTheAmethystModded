@@ -5,6 +5,7 @@ enum class UiBusyOperation {
     MOD_IMPORT,
     MOD_NAME_MIGRATION,
     NATIVE_LIBRARY_INSTALL,
+    MTS_COMPONENT_UPDATE,
     GAME_PROCESS_CLEANUP,
     STEAM_CLOUD_SYNC,
     OTHER_BUSY
@@ -16,6 +17,7 @@ enum class UiBusyOperation {
             MOD_IMPORT,
             MOD_NAME_MIGRATION,
             NATIVE_LIBRARY_INSTALL,
+            MTS_COMPONENT_UPDATE,
             GAME_PROCESS_CLEANUP,
             STEAM_CLOUD_SYNC -> true
             NONE,

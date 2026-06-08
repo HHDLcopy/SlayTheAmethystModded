@@ -1,59 +1,44 @@
 # Cloud Function
 
-This directory contains the feedback relay cloud function used by the Android client.
+This directory contains the Tencent SCF feedback relay used by the Android
+client.
+
+Presence heartbeats, online count, and the operator panel have moved out of this
+cloud function. The standalone implementation now lives in
+`../presence-service` and uses:
+
+```text
+Android app -> Fastify WebSocket -> SQLite3
+```
 
 ## Endpoint
 
-The Android client is now hardcoded to:
-
-```text
-http://1315061624-boxfc2p5fb.ap-guangzhou.tencentscf.com/api/sts-feedback
-```
-
-The Android client submits to:
+The Android client submits feedback to:
 
 ```text
 POST /api/sts-feedback
 ```
 
-The local relay implementation in this repository also accepts `POST /` as a compatibility route, but the app does not rely on it.
+The local relay implementation also accepts `POST /` as a compatibility route,
+but the app does not rely on it.
 
-The Android game process sends presence heartbeats to:
+`GET /cloud-control.json` remains as a compatibility pointer only. It no longer
+serves presence heartbeat settings; deploy `presence-service` and publish its
+`/cloud-control.json` instead.
 
-```text
-POST /api/presence/heartbeat
-```
+## What It Does
 
-The launcher can query the online count from either route:
+1. Receives the Android client's `multipart/form-data` feedback request.
+2. Validates the optional `X-Feedback-Key`.
+3. Uploads the diagnostic bundle and metadata JSON to GitHub Release assets in a dedicated diagnostics repository.
+4. Trims noisy diagnostic sections from feature-request issue bodies.
+5. Removes public email addresses from issue bodies and replaces them with a private mail-notification status section.
+6. Creates a GitHub issue in the target repository.
+7. If the user opted in, stores private mail notification state in Release assets and sends a styled creation email.
+8. Receives `POST /github/webhook` issue events and sends a progress email when the target issue is commented or closed.
+9. Returns `issueNumber` and `issueUrl` to the client.
 
-```text
-GET /api/presence/summary
-GET /api/presence/online-count
-```
-
-The operator panel is available at:
-
-```text
-GET /presence?token=<PRESENCE_PANEL_TOKEN>
-GET /api/presence/panel?token=<PRESENCE_PANEL_TOKEN>
-GET /api/presence/sessions?token=<PRESENCE_PANEL_TOKEN>
-GET /api/presence/stats?token=<PRESENCE_PANEL_TOKEN>
-```
-
-## What it does
-
-1. Receives the Android client's `multipart/form-data` request
-2. Validates the optional `X-Feedback-Key`
-3. Uploads the diagnostic bundle and metadata JSON to GitHub Release assets in a dedicated diagnostics repository
-4. Trims the `环境信息`, `启用模组快照`, and `latest.log 关键行` sections from feature-request issue bodies
-5. Removes public email addresses from issue bodies and replaces them with a private mail-notification status section
-6. Creates a GitHub issue in the target repository
-7. If the user opted in, stores private mail notification state in Release assets and sends a styled creation email
-8. Receives `POST /github/webhook` issue events and sends a progress email when the target issue is commented or closed
-9. Tracks game-process presence heartbeats through the configured presence storage backend
-10. Returns `issueNumber` and `issueUrl` to the client
-
-## Required environment variables
+## Required Environment Variables
 
 ```text
 GITHUB_OWNER
@@ -63,7 +48,7 @@ GITHUB_APP_INSTALLATION_ID
 GITHUB_APP_PRIVATE_KEY
 ```
 
-## Optional environment variables
+## Optional Environment Variables
 
 ```text
 PORT=9000
@@ -87,12 +72,7 @@ SMTP_PASSWORD=
 SMTP_FROM=
 SMTP_REPLY_TO=
 BUNDLE_MAX_BYTES=26214400
-PRESENCE_HEARTBEAT_INTERVAL_SECONDS=600
-PRESENCE_OFFLINE_TIMEOUT_SECONDS=1500
-PRESENCE_PANEL_TOKEN=
-PRESENCE_STORAGE_URL=https://sts.presence.mctown.online
-PRESENCE_STORAGE_SECRET=
-PRESENCE_STORAGE_TIMEOUT_MS=3000
+CLOUD_CONTROL_CONFIG_URL=https://presence.example.com/cloud-control.json
 ```
 
 Notes:
@@ -100,7 +80,7 @@ Notes:
 - If `FEEDBACK_SHARED_SECRET` is set, the function requires `X-Feedback-Key`.
 - GitHub operations are attributed to the GitHub App when `GITHUB_APP_*` variables are configured.
 - `GITHUB_TOKEN` is kept only as a compatibility fallback when App auth is not configured.
-- The relay stores diagnostics as Release assets, not Git commits, so the repository history does not grow with every upload.
+- The relay stores diagnostics as Release assets, not Git commits, so repository history does not grow with every upload.
 - `GITHUB_DIAGNOSTICS_REPO` defaults to `SlayTheDiagnostics`.
 - `GITHUB_NOTIFICATION_STATE_REPO` defaults to the diagnostics repository and stores one small JSON asset per issue for mail state tracking.
 - The GitHub App installation should cover both the issue repository and `SlayTheDiagnostics`.
@@ -110,20 +90,8 @@ Notes:
 - If SMTP is not configured, issues are still created and notification state is still stored, but no email is sent.
 - `POST /github/webhook` must be configured as the GitHub App or repository webhook URL, and `GITHUB_WEBHOOK_SECRET` must match the webhook secret configured in GitHub.
 - The webhook must subscribe to both `issues` and `issue_comment` events if you want close and comment emails to be sent.
-- Presence state uses process memory by default for local development. Set `PRESENCE_STORAGE_URL` and `PRESENCE_STORAGE_SECRET` to use the Cloudflare Worker + D1 storage backend, which is shared across SCF instances and survives cold starts.
-- `PRESENCE_STORAGE_URL` should be the Worker origin. Production currently uses the custom Worker domain `https://sts.presence.mctown.online` instead of the `workers.dev` domain.
-- `PRESENCE_STORAGE_SECRET` must match the Worker secret with the same name. It is only used between Tencent SCF and the Cloudflare Worker; Android clients do not receive it.
-- `PRESENCE_STORAGE_TIMEOUT_MS` defaults to `3000`.
-- Presence heartbeat and online-count APIs are intentionally public and do not require `X-Feedback-Key`.
-- Presence clients are keyed by `client_id`. The Android client sends a SHA-256 hash derived from `Settings.Secure.ANDROID_ID`, with a local install ID fallback when Android ID is unavailable, and includes the current player name when available.
-- The presence panel requires `PRESENCE_PANEL_TOKEN`. If it is not configured, it falls back to `FEEDBACK_SHARED_SECRET`; if neither is configured, the panel is disabled.
-- The presence panel renders once, polls `GET /api/presence/sessions` every 60 seconds, and polls `GET /api/presence/stats` every 5 minutes instead of refreshing the whole page.
-- The presence panel renders the weekly online chart with the bundled ECharts asset served from `GET /api/presence/assets/echarts.min.js`.
-- The presence panel can switch between `source=cf` and `source=memory`. The cloud function keeps a best-effort in-process memory view while still returning Cloudflare D1 by default when `PRESENCE_STORAGE_URL` is configured.
-- A client is treated as offline when its latest heartbeat is older than `PRESENCE_OFFLINE_TIMEOUT_SECONDS`. Production should use a 600-second client heartbeat and a 1500-second offline threshold so one missed heartbeat does not immediately drop the user.
-- `GET /api/presence/stats` requires the presence panel token and returns the last week of online statistics from hourly snapshots. It uses 1-hour buckets.
 
-## Local run
+## Local Run
 
 ```powershell
 npm install
@@ -151,11 +119,14 @@ GET /healthz
 POST /github/webhook
 ```
 
-## Packaging for Tencent SCF
+## Packaging For Tencent SCF
 
-Deploy from a zip whose root directly contains `app.js`, `node_modules/`, and `scf_bootstrap`.
+Deploy from a zip whose root directly contains `app.js`, `node_modules/`, and
+`scf_bootstrap`.
 
-On Windows, do not zip the working tree manually from Explorer if `scf_bootstrap` has been checked out with `CRLF`; the custom runtime may fail to start with an error like `[./scf_bootstrap] no such file or directory`.
+On Windows, do not zip the working tree manually from Explorer if
+`scf_bootstrap` has been checked out with `CRLF`; the custom runtime may fail to
+start with an error like `[./scf_bootstrap] no such file or directory`.
 
 Use the repository packaging script instead:
 
@@ -163,4 +134,6 @@ Use the repository packaging script instead:
 .\scripts\package-cloud-function.ps1
 ```
 
-It writes `artifacts/cloud-function-scf.zip` and forces `cloud-function/scf_bootstrap` to UTF-8 without BOM and `LF` line endings inside the archive.
+It writes `artifacts/cloud-function-scf.zip` and forces
+`cloud-function/scf_bootstrap` to UTF-8 without BOM and `LF` line endings inside
+the archive.

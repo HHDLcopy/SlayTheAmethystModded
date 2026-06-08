@@ -21,6 +21,7 @@ import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeMode
 import io.stamethyst.config.RenderSurfaceBackend
+import io.stamethyst.config.SpecialKeyInputMode
 import io.stamethyst.config.SteamCloudSaveMode
 import io.stamethyst.config.TouchMouseInteractionMode
 import io.stamethyst.backend.workshop.SteamLanguagePreference
@@ -32,6 +33,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_BACK_IMMEDIATE_EXIT
     val DEFAULT_MANUAL_DISMISS_BOOT_OVERLAY: Boolean
         get() = LauncherConfig.DEFAULT_MANUAL_DISMISS_BOOT_OVERLAY
+    val DEFAULT_SPECIAL_KEY_INPUT_MODE: SpecialKeyInputMode
+        get() = LauncherConfig.DEFAULT_SPECIAL_KEY_INPUT_MODE
     val DEFAULT_BOOT_OVERLAY_ANIMATION: BootOverlayAnimation
         get() = LauncherConfig.DEFAULT_BOOT_OVERLAY_ANIMATION
     val DEFAULT_BOOT_OVERLAY_STYLE: BootOverlayStyle
@@ -229,6 +232,14 @@ object LauncherPreferences {
 
     fun setDeveloperSettingsWarningDismissed(context: Context, dismissed: Boolean) {
         LauncherConfig.setDeveloperSettingsWarningDismissed(context, dismissed)
+    }
+
+    fun readSpecialKeyInputMode(context: Context): SpecialKeyInputMode {
+        return LauncherConfig.readSpecialKeyInputMode(context)
+    }
+
+    fun saveSpecialKeyInputMode(context: Context, mode: SpecialKeyInputMode) {
+        LauncherConfig.saveSpecialKeyInputMode(context, mode)
     }
 
     fun readShowFloatingMouseWindow(context: Context): Boolean {

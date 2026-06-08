@@ -94,7 +94,7 @@ fun LauncherSteamCloudLoginScreen(
     fun handleBack() {
         when {
             loginChallenge != null -> {
-                viewModel.onCancelSteamCloudChallenge()
+                viewModel.onCancelSteamCloudChallenge(activity)
                 navigator.goBack()
             }
 

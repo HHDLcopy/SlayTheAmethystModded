@@ -41,6 +41,9 @@ internal object SteamCloudErrorClassifier {
         if (isSteamCloudAuthWatchdogDisconnect(message)) {
             return SteamCloudErrorKind.AUTH_WATCHDOG_DISCONNECT
         }
+        if (isSteamCloudAuthCompletionTimeout(message)) {
+            return SteamCloudErrorKind.AUTH_WATCHDOG_DISCONNECT
+        }
         return SteamCloudErrorKind.OTHER
     }
 
@@ -101,10 +104,17 @@ internal object SteamCloudErrorClassifier {
             normalized.contains("watchdog")
     }
 
+    private fun isSteamCloudAuthCompletionTimeout(message: String): Boolean {
+        val normalized = message.lowercase(Locale.US)
+        return normalized.contains("timed out waiting for steam auth completion")
+    }
+
     private fun isSteamInvalidCredentials(message: String): Boolean {
         val normalized = message.lowercase(Locale.US)
         return normalized.contains("invalidpassword") ||
-            normalized.contains("invalid password")
+            normalized.contains("invalid password") ||
+            normalized.contains("eresult=5") ||
+            normalized.contains("账号名或密码错误")
     }
 
     private fun isSteamCloudUploadDisconnect(message: String): Boolean {

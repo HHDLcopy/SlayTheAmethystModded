@@ -804,8 +804,9 @@ internal class GameSessionCoordinator(
     }
 
     private fun updateFloatingMouseVisibility() {
+        val showAndroidFloatingMouse = config.showFloatingMouseWindow
         inputHandler.updateFloatingMouseVisibility(
-            config.showFloatingMouseWindow,
+            showAndroidFloatingMouse,
             jvmLaunchController.runtimeLifecycleReady,
             bootOverlayController.isDismissed,
             backExitRequested
@@ -894,7 +895,12 @@ internal class GameSessionCoordinator(
             return
         }
         lastKeyboardRequestPayload = payload
-        inputHandler.requestSoftKeyboardForGameTextInput("game_text_input")
+        val source = payload.lineSequence().firstOrNull()?.trim().orEmpty()
+        if (source.startsWith("system_keyboard:")) {
+            inputHandler.requestSystemSoftKeyboardForGameTextInput("game_text_input_system")
+        } else {
+            inputHandler.requestSoftKeyboardForGameTextInput("game_text_input")
+        }
     }
 
     private fun pollInGameFilePickerRequest() {

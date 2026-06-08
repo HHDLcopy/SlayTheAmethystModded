@@ -4,6 +4,7 @@ import android.app.Application;
 
 import io.stamethyst.backend.crash.LauncherCrashReporter;
 import io.stamethyst.backend.diag.MemoryDiagnosticsLogger;
+import io.stamethyst.config.CloudControlConfig;
 import io.stamethyst.config.LauncherThemeController;
 import net.kdt.pojavlaunch.MainActivity;
 
@@ -16,6 +17,7 @@ public class StsApplication extends Application {
         LauncherThemeController.applySavedThemeMode(getApplicationContext());
         MemoryDiagnosticsLogger.install(getApplicationContext());
         MainActivity.init(getApplicationContext());
+        CloudControlConfig.refreshOnAppStart(getApplicationContext());
     }
 
     @Override

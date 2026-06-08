@@ -30,6 +30,8 @@ internal object JarImportInspectionService {
     internal const val RESERVED_COMPONENT_MTS = ReservedCoreModComponents.MTS
     internal const val RESERVED_COMPONENT_AMETHYST_RUNTIME_COMPAT =
         ReservedCoreModComponents.AMETHYST_RUNTIME_COMPAT
+    internal const val RESERVED_COMPONENT_AMETHYST_FLOATING_TOOLS =
+        ReservedCoreModComponents.AMETHYST_FLOATING_TOOLS
     internal const val RESERVED_COMPONENT_RAM_SAVER = ReservedCoreModComponents.RAM_SAVER
     private const val MTS_LOADER_ENTRY = "com/evacipated/cardcrawl/modthespire/Loader.class"
 

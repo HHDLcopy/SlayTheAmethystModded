@@ -13,6 +13,7 @@ import io.stamethyst.backend.render.VirtualResolutionMode
 import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
+import io.stamethyst.config.SpecialKeyInputMode
 import io.stamethyst.config.TouchscreenInputMode
 import net.kdt.pojavlaunch.AWTCanvasView
 import org.lwjgl.glfw.CallbackBridge
@@ -241,6 +242,24 @@ object StsLaunchSpec {
                 } else {
                     "false"
                 }
+        )
+        args.add(
+            "-Damethyst.floating_tools.enabled=" +
+                if (isMtsLaunchMode(launchMode) &&
+                    LauncherConfig.readSpecialKeyInputMode(context) == SpecialKeyInputMode.BUILT_IN_MOD
+                ) {
+                    "true"
+                } else {
+                    "false"
+                }
+        )
+        args.add(
+            "-Damethyst.floating_tools.interaction_mode=" +
+                LauncherConfig.readTouchMouseInteractionMode(context).persistedValue
+        )
+        args.add(
+            "-Damethyst.floating_tools.built_in_keyboard=" +
+                if (LauncherConfig.isBuiltInSoftKeyboardEnabled(context)) "true" else "false"
         )
         args.add("-Duser.language=${Locale.getDefault().language}")
         args.add("-Duser.timezone=${TimeZone.getDefault().id}")

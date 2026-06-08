@@ -7,7 +7,10 @@ const {
   parsePositiveInteger
 } = require('./config');
 
-const STATS_WINDOW_SECONDS = 7 * 24 * 60 * 60;
+const DEFAULT_STATS_WINDOW_SECONDS = 7 * 24 * 60 * 60;
+const MIN_STATS_WINDOW_SECONDS = 24 * 60 * 60;
+const MAX_STATS_WINDOW_SECONDS = 30 * 24 * 60 * 60;
+const STATS_WINDOW_SECONDS = DEFAULT_STATS_WINDOW_SECONDS;
 const DEFAULT_STATS_BUCKET_SECONDS = 60 * 60;
 const MIN_STATS_BUCKET_SECONDS = 60 * 60;
 const MAX_STATS_BUCKET_SECONDS = 60 * 60;
@@ -89,6 +92,7 @@ class PresenceStore {
     }
 
     const totalDevicesRow = await this.database.get('SELECT COUNT(*) AS count FROM presence_sessions');
+    const totalOnlineUsers = Number(totalDevicesRow && totalDevicesRow.count) || 0;
 
     return {
       online,
@@ -97,7 +101,8 @@ class PresenceStore {
       offlineTimeoutSeconds: runtimeOptions.offlineTimeoutSeconds,
       checkedAt: new Date(nowMs).toISOString(),
       storageBackend: 'sqlite3',
-      totalDevices: Number(totalDevicesRow && totalDevicesRow.count) || 0
+      totalDevices: totalOnlineUsers,
+      totalOnlineUsers
     };
   }
 
@@ -133,8 +138,9 @@ class PresenceStore {
   async buildStats(query, nowMs = Date.now()) {
     const runtimeOptions = this.runtimeOptions(query, null);
     const bucketSeconds = resolveStatsBucketSeconds(query);
+    const windowSeconds = resolveStatsWindowSeconds(query);
     const bucketMs = bucketSeconds * 1000;
-    const bucketCount = Math.ceil(STATS_WINDOW_SECONDS / bucketSeconds);
+    const bucketCount = Math.ceil(windowSeconds / bucketSeconds);
     const untilBucketMs = floorToBucketMs(nowMs, bucketMs);
     const sinceBucketMs = untilBucketMs - ((bucketCount - 1) * bucketMs);
     const summary = await this.recordHourlySnapshot(nowMs, {
@@ -172,14 +178,15 @@ class PresenceStore {
     }
 
     return {
-      windowSeconds: STATS_WINDOW_SECONDS,
+      windowSeconds,
       bucketSeconds,
       since: new Date(sinceBucketMs).toISOString(),
       until: new Date(nowMs).toISOString(),
       currentOnline: summary.online,
-      peakOnline: Math.max(peakOnline, summary.online),
+      peakOnline,
       snapshotCount,
       totalDevices: summary.totalDevices,
+      totalOnlineUsers: summary.totalOnlineUsers,
       buckets
     };
   }
@@ -217,7 +224,7 @@ class PresenceStore {
     ]);
     await this.database.run(
       'DELETE FROM presence_hourly_snapshots WHERE snapshot_hour_ms < ?',
-      [snapshotHourMs - (STATS_WINDOW_SECONDS * 1000)]
+      [snapshotHourMs - (MAX_STATS_WINDOW_SECONDS * 1000)]
     );
 
     return {
@@ -273,6 +280,13 @@ function resolveStatsBucketSeconds(query) {
   return Math.max(MIN_STATS_BUCKET_SECONDS, Math.min(MAX_STATS_BUCKET_SECONDS, parsed));
 }
 
+function resolveStatsWindowSeconds(query) {
+  const parsed = parsePositiveInteger(firstNonEmpty(
+    query && (query.window_seconds || query.windowSeconds || query.statsWindowSeconds)
+  ), DEFAULT_STATS_WINDOW_SECONDS);
+  return Math.max(MIN_STATS_WINDOW_SECONDS, Math.min(MAX_STATS_WINDOW_SECONDS, parsed));
+}
+
 function resolveHeartbeatWriteIntervalMs(runtimeOptions) {
   const intervalSeconds = Number(runtimeOptions && runtimeOptions.heartbeatIntervalSeconds) ||
     DEFAULT_HEARTBEAT_INTERVAL_SECONDS;
@@ -283,13 +297,15 @@ function serializeHourlySnapshotBucket(row, bucketStartMs, bucketMs) {
   const hasSnapshot = Boolean(row);
   const online = hasSnapshot ? Number(row.online) || 0 : 0;
   const updatedAtMs = hasSnapshot ? Number(row.updated_at_ms) || 0 : 0;
+  const totalDevices = hasSnapshot ? Number(row.total_devices) || 0 : 0;
   return {
     bucketStart: new Date(bucketStartMs).toISOString(),
     bucketEnd: new Date(bucketStartMs + bucketMs).toISOString(),
     online,
     hasSnapshot,
     byState: hasSnapshot ? safeJsonObject(row.by_state_json) : {},
-    totalDevices: hasSnapshot ? Number(row.total_devices) || 0 : 0,
+    totalDevices,
+    totalOnlineUsers: totalDevices,
     recordedAt: updatedAtMs > 0 ? new Date(updatedAtMs).toISOString() : null
   };
 }
@@ -350,9 +366,13 @@ module.exports = {
   PresenceStore,
   STATS_WINDOW_SECONDS,
   HOUR_MS,
+  DEFAULT_STATS_WINDOW_SECONDS,
+  MAX_STATS_WINDOW_SECONDS,
+  MIN_STATS_WINDOW_SECONDS,
   httpError,
   parseHeartbeat,
   resolveRuntimeOptions,
   resolveStatsBucketSeconds,
+  resolveStatsWindowSeconds,
   serializeSession
 };

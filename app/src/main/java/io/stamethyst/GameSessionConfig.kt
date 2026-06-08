@@ -11,6 +11,7 @@ import io.stamethyst.backend.render.VirtualResolutionMode
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RenderSurfaceBackend
+import io.stamethyst.config.SpecialKeyInputMode
 import io.stamethyst.config.TouchMouseInteractionMode
 
 internal data class GameSessionConfig(
@@ -81,7 +82,9 @@ internal data class GameSessionConfig(
                 ),
                 forceJvmCrash = intent.getBooleanExtra(StsGameActivity.EXTRA_FORCE_JVM_CRASH, false),
                 forceRuntimeCrash = intent.getBooleanExtra(StsGameActivity.EXTRA_FORCE_RUNTIME_CRASH, false),
-                showFloatingMouseWindow = LauncherConfig.readShowFloatingMouseWindow(context),
+                showFloatingMouseWindow =
+                    LauncherConfig.readSpecialKeyInputMode(context) ==
+                        SpecialKeyInputMode.LEGACY_FLOATING_WINDOW,
                 showGamePerformanceOverlay = LauncherConfig.isGamePerformanceOverlayEnabled(context),
                 mirrorJvmLogsToLogcat = LauncherConfig.isJvmLogcatMirrorEnabled(context),
                 touchMouseInteractionMode = LauncherConfig.readTouchMouseInteractionMode(context),

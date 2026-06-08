@@ -6,11 +6,7 @@ import io.stamethyst.BuildConfig
 import io.stamethyst.config.LauncherConfig
 import org.json.JSONObject
 import org.json.JSONTokener
-import java.io.BufferedReader
 import java.io.IOException
-import java.io.InputStreamReader
-import java.net.HttpURLConnection
-import java.net.URL
 import java.security.MessageDigest
 import java.nio.charset.StandardCharsets
 import java.util.Locale
@@ -25,92 +21,29 @@ data class GamePresenceSummary(
 )
 
 object GamePresenceClient {
-    const val HEARTBEAT_INTERVAL_MS = 600_000L
-    const val OFFLINE_TIMEOUT_MS = 1_500_000L
+    const val DEFAULT_HEARTBEAT_INTERVAL_MS = 30_000L
+    const val OFFLINE_TIMEOUT_MS = 90_000L
 
-    private const val RESPONSE_PREVIEW_LIMIT = 320
-    private const val CONNECT_TIMEOUT_MS = 8_000
-    private const val READ_TIMEOUT_MS = 12_000
-
-    fun sendHeartbeat(
+    fun buildHeartbeatPayload(
         context: Context,
         launchMode: String
-    ): GamePresenceSummary {
+    ): JSONObject {
         val identity = GamePresenceIdentity.resolve(context)
-        val payload = JSONObject().apply {
+        return JSONObject().apply {
+            put("type", "presence")
             put("client_id", identity.clientId)
             put("device_id", identity.deviceId)
             put("id_type", identity.idType)
             put("state", "game")
+            put("launch_mode", launchMode)
             put("player_name", LauncherConfig.readPlayerName(context))
             put("app_version", BuildConfig.VERSION_NAME)
             put("version_code", BuildConfig.VERSION_CODE)
             put("sent_at", System.currentTimeMillis())
         }
-        return postJson(
-            path = "/api/presence/heartbeat",
-            payload = payload
-        )
     }
 
-    fun fetchOnlineSummary(): GamePresenceSummary {
-        val connection = openConnection("/api/presence/summary").apply {
-            requestMethod = "GET"
-            doInput = true
-        }
-
-        val responseCode = connection.responseCode
-        val responseText = readResponseText(connection)
-        if (responseCode !in 200..299) {
-            throw IOException(
-                "Online count request failed ($responseCode): ${summarizeResponseText(responseText)}"
-            )
-        }
-        return parseSummary(responseText)
-    }
-
-    private fun postJson(
-        path: String,
-        payload: JSONObject
-    ): GamePresenceSummary {
-        val connection = openConnection(path).apply {
-            requestMethod = "POST"
-            doInput = true
-            doOutput = true
-            setRequestProperty("Content-Type", "application/json; charset=UTF-8")
-        }
-
-        connection.outputStream.use { output ->
-            output.write(payload.toString().toByteArray(StandardCharsets.UTF_8))
-            output.flush()
-        }
-
-        val responseCode = connection.responseCode
-        val responseText = readResponseText(connection)
-        if (responseCode !in 200..299) {
-            throw IOException(
-                "Presence heartbeat failed ($responseCode): ${summarizeResponseText(responseText)}"
-            )
-        }
-        return parseSummary(responseText)
-    }
-
-    private fun openConnection(path: String): HttpURLConnection {
-        val baseUrl = BuildConfig.FEEDBACK_BASE_URL.trim().trimEnd('/')
-        if (baseUrl.isEmpty()) {
-            throw IOException("Feedback base URL not configured in this build.")
-        }
-
-        return (URL("$baseUrl$path").openConnection() as HttpURLConnection).apply {
-            connectTimeout = CONNECT_TIMEOUT_MS
-            readTimeout = READ_TIMEOUT_MS
-            useCaches = false
-            setRequestProperty("Accept", "application/json")
-            setRequestProperty("User-Agent", "SlayTheAmethyst/${BuildConfig.VERSION_NAME}")
-        }
-    }
-
-    private fun parseSummary(responseText: String): GamePresenceSummary {
+    fun parseSummary(responseText: String): GamePresenceSummary {
         val response = parseJsonObject(responseText)
             ?: throw IOException("Presence API returned an invalid response.")
         return GamePresenceSummary(
@@ -118,7 +51,7 @@ object GamePresenceClient {
             checkedAt = response.optString("checkedAt").trim().ifEmpty { null },
             heartbeatIntervalSeconds = response.optInt(
                 "heartbeatIntervalSeconds",
-                (HEARTBEAT_INTERVAL_MS / 1000L).toInt()
+                (DEFAULT_HEARTBEAT_INTERVAL_MS / 1000L).toInt()
             ),
             offlineTimeoutSeconds = response.optInt(
                 "offlineTimeoutSeconds",
@@ -126,37 +59,6 @@ object GamePresenceClient {
             ),
             rawResponse = responseText
         )
-    }
-
-    private fun readResponseText(connection: HttpURLConnection): String {
-        val stream = try {
-            if (connection.responseCode in 200..299) {
-                connection.inputStream
-            } else {
-                connection.errorStream
-            }
-        } catch (_: Throwable) {
-            connection.errorStream
-        } ?: return ""
-        stream.use { input ->
-            InputStreamReader(input, StandardCharsets.UTF_8).use { reader ->
-                BufferedReader(reader).use { buffered ->
-                    return buffered.readText()
-                }
-            }
-        }
-    }
-
-    private fun summarizeResponseText(responseText: String): String {
-        val normalized = responseText.trim()
-        if (normalized.isEmpty()) {
-            return "empty response"
-        }
-        return if (normalized.length > RESPONSE_PREVIEW_LIMIT) {
-            normalized.take(RESPONSE_PREVIEW_LIMIT) + "..."
-        } else {
-            normalized
-        }
     }
 
     private fun parseJsonObject(text: String): JSONObject? {

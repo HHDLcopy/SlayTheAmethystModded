@@ -33,25 +33,6 @@ const {
   updateGithubIssueState
 } = require('./github');
 const {
-  parsePresenceHeartbeatRequest,
-  recordPresenceHeartbeat,
-  buildPresenceSummary,
-  buildPresenceSnapshot,
-  buildPresenceStats
-} = require('./presence');
-const {
-  hasPresenceStorage,
-  recordPresenceHeartbeatInStorage,
-  fetchPresenceSummaryFromStorage,
-  fetchPresenceSnapshotFromStorage,
-  fetchPresenceStatsFromStorage
-} = require('./presenceStorage');
-const {
-  enforcePresencePanelAccess,
-  renderPresencePanel,
-  renderPresencePanelUnauthorized
-} = require('./presencePanel');
-const {
   maybeHandleIssueCreatedNotification,
   maybeHandleIssueClosedNotification,
   maybeHandleIssueCommentNotification
@@ -61,8 +42,6 @@ const {
   normalizeErrorCode,
   normalizeErrorMessage
 } = require('./utils');
-
-const ECHARTS_ASSET_PATH = require.resolve('echarts/dist/echarts.min.js');
 
 function createApp(config) {
   const upload = multer({
@@ -96,14 +75,25 @@ function createApp(config) {
     });
   });
 
-  app.get('/api/presence/assets/echarts.min.js', (_req, res) => {
+  app.get('/cloud-control.json', (_req, res) => {
+    if (config.cloudControlConfigUrl) {
+      res
+        .set('Cache-Control', 'no-cache')
+        .redirect(302, config.cloudControlConfigUrl);
+      return;
+    }
+
     res
       .set({
-        'Content-Type': 'application/javascript; charset=utf-8',
-        'Cache-Control': 'public, max-age=604800, immutable',
-        'Content-Disposition': 'inline'
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'no-cache'
       })
-      .sendFile(ECHARTS_ASSET_PATH);
+      .status(410)
+      .json({
+        ok: false,
+        error: 'presence_moved',
+        message: 'Presence cloud-control moved to the standalone presence-service.'
+      });
   });
 
   const handleFeedbackSubmission = async (req, res, next) => {
@@ -312,93 +302,6 @@ function createApp(config) {
     }
   };
 
-  const handlePresenceHeartbeat = async (req, res, next) => {
-    try {
-      const heartbeatRequest = parsePresenceHeartbeatRequest(req);
-      const memorySummary = recordPresenceHeartbeat(heartbeatRequest, config);
-      const storageHeartbeat = hasPresenceStorage(config)
-        ? await recordPresenceHeartbeatInStorage(heartbeatRequest, config)
-        : null;
-      const summary = storageHeartbeat
-        ? mergeHeartbeatStorageResponse(memorySummary, storageHeartbeat)
-        : memorySummary;
-      res.json({
-        ok: true,
-        ...summary
-      });
-    } catch (error) {
-      next(error);
-    }
-  };
-
-  const handlePresenceSummary = async (req, res, next) => {
-    try {
-      const summary = resolvePresenceDataSource(req, config) === 'cf'
-        ? await fetchPresenceSummaryFromStorage(config)
-        : buildPresenceSummary(config);
-      res.json({
-        ok: true,
-        ...summary
-      });
-    } catch (error) {
-      next(error);
-    }
-  };
-
-  const handlePresenceSessions = async (req, res, next) => {
-    try {
-      enforcePresencePanelAccess(req, config);
-
-      const snapshot = resolvePresenceDataSource(req, config) === 'cf'
-        ? await fetchPresenceSnapshotFromStorage(config)
-        : buildPresenceSnapshot(config);
-      res.json({
-        ok: true,
-        ...snapshot
-      });
-    } catch (error) {
-      next(error);
-    }
-  };
-
-  const handlePresenceStats = async (req, res, next) => {
-    try {
-      enforcePresencePanelAccess(req, config);
-
-      const stats = resolvePresenceDataSource(req, config) === 'cf'
-        ? await fetchPresenceStatsFromStorage(config, req.query)
-        : buildPresenceStats(config, req.query);
-      res.json({
-        ok: true,
-        ...stats
-      });
-    } catch (error) {
-      next(error);
-    }
-  };
-
-  const handlePresencePanel = async (req, res, next) => {
-    try {
-      enforcePresencePanelAccess(req, config);
-      const dataSource = resolvePresenceDataSource(req, config);
-      const snapshot = dataSource === 'cf'
-        ? await fetchPresenceSnapshotFromStorage(config)
-        : buildPresenceSnapshot(config);
-      sendHtmlResponse(res, 200, renderPresencePanel(snapshot, config, req, dataSource));
-    } catch (error) {
-      const isPanelAccessError = error &&
-        (error.statusCode === 401 || (
-          error.statusCode === 503 &&
-          /presence panel token/i.test(String(error.message || ''))
-        ));
-      if (isPanelAccessError) {
-        sendHtmlResponse(res, error.statusCode, renderPresencePanelUnauthorized(req, config));
-        return;
-      }
-      next(error);
-    }
-  };
-
   app.post('/', upload.fields([
     { name: 'bundle', maxCount: 1 },
     { name: 'screenshots', maxCount: 4 }
@@ -413,13 +316,6 @@ function createApp(config) {
     { name: 'log_bundle', maxCount: 1 }
   ]), handleIssueMessage);
   app.post('/api/feedback-issues/state', handleIssueState);
-  app.post('/api/presence/heartbeat', handlePresenceHeartbeat);
-  app.get('/api/presence/summary', handlePresenceSummary);
-  app.get('/api/presence/online-count', handlePresenceSummary);
-  app.get('/api/presence/sessions', handlePresenceSessions);
-  app.get('/api/presence/stats', handlePresenceStats);
-  app.get('/presence', handlePresencePanel);
-  app.get('/api/presence/panel', handlePresencePanel);
   app.post('/github/webhook', handleGithubWebhook);
 
   app.use((error, _req, res, _next) => {
@@ -441,49 +337,6 @@ function createApp(config) {
   });
 
   return app;
-}
-
-function resolvePresenceDataSource(req, config) {
-  const requested = String(
-    req && req.query && (req.query.source || req.query.backend) || ''
-  ).trim().toLowerCase();
-  if (requested === 'memory' || requested === 'mem' || requested === 'local') {
-    return 'memory';
-  }
-  if (
-    requested === 'cf' ||
-    requested === 'cloudflare' ||
-    requested === 'cloudflare-d1' ||
-    requested === 'd1' ||
-    requested === 'storage'
-  ) {
-    return hasPresenceStorage(config) ? 'cf' : 'memory';
-  }
-  return hasPresenceStorage(config) ? 'cf' : 'memory';
-}
-
-function sendHtmlResponse(res, statusCode, html) {
-  res
-    .status(statusCode)
-    .set({
-      'Content-Type': 'text/html; charset=utf-8',
-      'Content-Disposition': 'inline'
-    })
-    .send(html);
-}
-
-function mergeHeartbeatStorageResponse(memorySummary, storageHeartbeat) {
-  const hasStorageOnline = Number.isFinite(Number(storageHeartbeat && storageHeartbeat.online));
-  const hasStorageByState = storageHeartbeat &&
-    storageHeartbeat.byState &&
-    typeof storageHeartbeat.byState === 'object' &&
-    !Array.isArray(storageHeartbeat.byState);
-  return {
-    ...memorySummary,
-    ...storageHeartbeat,
-    online: hasStorageOnline ? Number(storageHeartbeat.online) : memorySummary.online,
-    byState: hasStorageByState ? storageHeartbeat.byState : memorySummary.byState
-  };
 }
 
 module.exports = {

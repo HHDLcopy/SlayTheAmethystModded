@@ -4,6 +4,7 @@ import android.content.Context
 import io.stamethyst.backend.resources.RuntimeResourceProvider
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
+import io.stamethyst.config.SpecialKeyInputMode
 import java.io.BufferedReader
 import java.io.BufferedWriter
 import java.io.File
@@ -23,6 +24,7 @@ object ModManager {
     const val MOD_ID_BASEMOD = "basemod"
     const val MOD_ID_STSLIB = "stslib"
     const val MOD_ID_AMETHYST_RUNTIME_COMPAT = "amethystruntimecompat"
+    const val MOD_ID_AMETHYST_FLOATING_TOOLS = "amethystfloatingtools"
     const val MOD_ID_RAM_SAVER = "ramsaver"
     const val OPTIONAL_MOD_PRIORITY_MIN = 0
     const val OPTIONAL_MOD_PRIORITY_MAX = 10
@@ -32,6 +34,7 @@ object ModManager {
             MOD_ID_BASEMOD,
             MOD_ID_STSLIB,
             MOD_ID_AMETHYST_RUNTIME_COMPAT,
+            MOD_ID_AMETHYST_FLOATING_TOOLS,
             MOD_ID_RAM_SAVER
         )
     )
@@ -153,6 +156,9 @@ object ModManager {
         if (MOD_ID_AMETHYST_RUNTIME_COMPAT == normalized) {
             return hasBundledAsset(context, "components/mods/AmethystRuntimeCompat.jar")
         }
+        if (MOD_ID_AMETHYST_FLOATING_TOOLS == normalized) {
+            return hasBundledAsset(context, "components/mods/AmethystFloatingTools.jar")
+        }
         if (MOD_ID_RAM_SAVER == normalized) {
             return hasBundledAsset(context, "components/mods/RamSaver.jar")
         }
@@ -170,6 +176,9 @@ object ModManager {
         }
         if (MOD_ID_AMETHYST_RUNTIME_COMPAT == normalized) {
             return RuntimePaths.importedAmethystRuntimeCompatJar(context)
+        }
+        if (MOD_ID_AMETHYST_FLOATING_TOOLS == normalized) {
+            return RuntimePaths.importedAmethystFloatingToolsJar(context)
         }
         if (MOD_ID_RAM_SAVER == normalized) {
             return RuntimePaths.importedRamSaverJar(context)
@@ -498,6 +507,14 @@ object ModManager {
         result.add(
             buildRequiredEntry(
                 context,
+                MOD_ID_AMETHYST_FLOATING_TOOLS,
+                "Amethyst Floating Tools",
+                RuntimePaths.importedAmethystFloatingToolsJar(context)
+            )
+        )
+        result.add(
+            buildRequiredEntry(
+                context,
                 MOD_ID_RAM_SAVER,
                 "Ram Saver",
                 RuntimePaths.importedRamSaverJar(context)
@@ -615,6 +632,14 @@ object ModManager {
                 "AmethystRuntimeCompat.jar"
             )
         )
+        if (LauncherConfig.readSpecialKeyInputMode(context) == SpecialKeyInputMode.BUILT_IN_MOD) {
+            launchModFiles.add(
+                resolveRequiredLaunchModFile(
+                    RuntimePaths.importedAmethystFloatingToolsJar(context),
+                    "AmethystFloatingTools.jar"
+                )
+            )
+        }
         if (LauncherConfig.isRamSaverEnabled(context)) {
             launchModFiles.add(
                 resolveRequiredLaunchModFile(
@@ -647,6 +672,16 @@ object ModManager {
             MOD_ID_AMETHYST_RUNTIME_COMPAT,
             "AmethystRuntimeCompat.jar"
         )
+        val floatingToolsId =
+            if (LauncherConfig.readSpecialKeyInputMode(context) == SpecialKeyInputMode.BUILT_IN_MOD) {
+                resolveRequiredLaunchModId(
+                    RuntimePaths.importedAmethystFloatingToolsJar(context),
+                    MOD_ID_AMETHYST_FLOATING_TOOLS,
+                    "AmethystFloatingTools.jar"
+                )
+            } else {
+                null
+            }
         val ramSaverId = if (LauncherConfig.isRamSaverEnabled(context)) {
             resolveRequiredLaunchModId(
                 RuntimePaths.importedRamSaverJar(context),
@@ -661,6 +696,7 @@ object ModManager {
         launchModIds.add(baseModId)
         launchModIds.add(stsLibId)
         launchModIds.add(runtimeCompatId)
+        floatingToolsId?.let(launchModIds::add)
         ramSaverId?.let(launchModIds::add)
         listEnabledOptionalLaunchEntries(context).forEach { entry ->
             launchModIds.add(entry.launchModId)
@@ -697,10 +733,13 @@ object ModManager {
         }
         val bundled = hasBundledRequiredModAsset(context, expectedModId)
         val available = installed || bundled
-        val enabled = if (expectedModId == MOD_ID_RAM_SAVER) {
-            available && LauncherConfig.isRamSaverEnabled(context)
-        } else {
-            available
+        val enabled = when (expectedModId) {
+            MOD_ID_RAM_SAVER ->
+                available && LauncherConfig.isRamSaverEnabled(context)
+            MOD_ID_AMETHYST_FLOATING_TOOLS ->
+                available && LauncherConfig.readSpecialKeyInputMode(context) == SpecialKeyInputMode.BUILT_IN_MOD
+            else ->
+                available
         }
         return InstalledMod(
             expectedModId,
@@ -719,7 +758,11 @@ object ModManager {
     }
 
     private fun hasBundledAsset(context: Context, assetPath: String): Boolean {
-        return RuntimeResourceProvider(context).exists(assetPath)
+        return try {
+            RuntimeResourceProvider(context).exists(assetPath)
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     @Throws(IOException::class)

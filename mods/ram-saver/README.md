@@ -46,6 +46,9 @@ Pins hot real textures for a bounded time when they are slow to materialize or r
 14. `optispire.RamSaver`
 Catches runtime failures while materializing a lazy file-backed texture, logs the failing path and exception, and substitutes a pinned 1x1 transparent fallback texture instead of letting render-thread PNG decode failures crash the game. This addresses crashes such as `Couldn't load file: HakureiReimuResources/images/ui/PowerShadow.png` / `decoder init failed for stream` when Ram Saver restores a mod texture during rendering. Type: crash fix implemented by `RamSaver.FileTextureSupplier` and the materialization fallback path in `RamSaver`.
 
+15. `com.badlogic.gdx.graphics.Texture`
+Materializes fake file-backed textures when mods call `Texture.bind()` or `Texture.bind(int)` directly instead of drawing through SpriteBatch. This addresses missing or incorrect shader effect textures, such as foil/noise/spectrum textures used by card visual-effect mods, when Ram Saver's fake wrappers would otherwise bind GL handle `0`. Type: rendering compatibility workaround implemented by the fake-texture `bind` overrides in `Texture`.
+
 ## Maintenance rule
 
 If you add another runtime/gameplay fix through this mod, update this README in the same change and describe:

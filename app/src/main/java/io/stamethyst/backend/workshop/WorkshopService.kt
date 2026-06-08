@@ -485,6 +485,9 @@ internal class WorkshopService(
             } else {
                 emptyMap()
             }
+            val commentThreadContext = localizedDetail?.commentThreadContext
+                ?: detail.toCommentThreadContext(publishedFileId)
+            val commentCount = localizedDetail?.commentCount
             WorkshopItemDetails(
                 summary = summary,
                 fileUrl = detail.fileUrl,
@@ -504,10 +507,10 @@ internal class WorkshopService(
                         )
                 },
                 commentsUrl = buildWorkshopCommentsUrl(publishedFileId, languagePreference.requestValue, page = 1),
-                commentThreadContext = localizedDetail?.commentThreadContext,
-                commentCount = localizedDetail?.commentCount,
-                commentTotalPages = localizedDetail?.commentCount?.let(::resolveCommentTotalPages),
-                hasNextCommentPage = localizedDetail?.commentCount?.let { count -> count > COMMENT_PAGE_SIZE } == true,
+                commentThreadContext = commentThreadContext,
+                commentCount = commentCount,
+                commentTotalPages = commentCount?.let(::resolveCommentTotalPages),
+                hasNextCommentPage = commentCount?.let { count -> count > COMMENT_PAGE_SIZE } == true,
             )
         }
     }
@@ -1508,6 +1511,7 @@ private data class PublishedFileDetailsResponse(
 @Serializable
 private data class PublishedFileDetailsDto(
     @SerialName("publishedfileid") val publishedFileId: String = "",
+    val creator: String? = null,
     val title: String = "",
     @SerialName("file_url") val fileUrl: String? = null,
     @SerialName("file_size") val fileSize: Long? = null,
@@ -1544,6 +1548,20 @@ private fun PublishedFileDetailsDto.toSummary(appId: UInt, fallbackPublishedFile
     downloadCount = subscriptions ?: 0L,
     rating = normalizedWorkshopRating(voteData?.score),
 )
+
+private fun PublishedFileDetailsDto.toCommentThreadContext(fallbackPublishedFileId: ULong): WorkshopCommentThreadContext? {
+    val ownerId = creator.orEmpty().trim().takeIf { it.isNotBlank() && it != "0" } ?: return null
+    val featureId = publishedFileId
+        .toULongOrNull()
+        ?.takeIf { it > 0uL }
+        ?.toString()
+        ?: fallbackPublishedFileId.toString()
+    return WorkshopCommentThreadContext(
+        ownerId = ownerId,
+        featureId = featureId,
+        feature2 = "-1",
+    )
+}
 
 private fun SteamPublishedFileQueryResult.toBrowseParseResult(page: Int, pageSize: Int): WorkshopBrowseParseResult =
     WorkshopBrowseParseResult(

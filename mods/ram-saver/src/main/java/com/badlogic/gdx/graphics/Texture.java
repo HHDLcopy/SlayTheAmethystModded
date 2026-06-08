@@ -367,6 +367,36 @@ public class Texture extends GLTexture {
     }
 
     @Override
+    public void bind() {
+        if (!isFake) {
+            super.bind();
+            return;
+        }
+
+        Texture t = getRealTexture("bind", true);
+        if (t != null) {
+            t.bind();
+            return;
+        }
+        super.bind();
+    }
+
+    @Override
+    public void bind(int unit) {
+        if (!isFake) {
+            super.bind(unit);
+            return;
+        }
+
+        Texture t = getRealTexture("bind_unit", true);
+        if (t != null) {
+            t.bind(unit);
+            return;
+        }
+        super.bind(unit);
+    }
+
+    @Override
     public void unsafeSetWrap(Texture.TextureWrap u, Texture.TextureWrap v, boolean force) {
         if (!isFake) {
             super.unsafeSetWrap(u, v, force);

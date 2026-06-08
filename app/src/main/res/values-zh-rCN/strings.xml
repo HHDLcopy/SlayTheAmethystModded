@@ -2296,7 +2296,7 @@
     <string name="workshop_detail_load_failed">详情加载失败</string>
     <string name="workshop_action_retry_detail">重试加载</string>
     <string name="workshop_detail_loading">正在加载模组详情</string>
-    <string name="workshop_comments_summary_loading">评论区加载中，每页显示 5 条。</string>
+    <string name="workshop_comments_summary_loading">评论区加载中</string>
     <string name="workshop_comments_summary_empty">暂无评论。</string>
     <string name="workshop_comments_summary_pages">当前第 %1$d / %2$d 页，Steam 共 %3$s 条评论。</string>
     <string name="workshop_comments_summary_page">当前第 %1$d 页，Steam 共 %2$s 条评论。</string>

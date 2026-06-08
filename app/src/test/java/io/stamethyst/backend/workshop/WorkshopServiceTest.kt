@@ -584,7 +584,7 @@ class WorkshopServiceTest {
     }
 
     @Test
-    fun getDetailsDoesNotRetryRateLimitedCommunityPageButKeepsLaterRequests() {
+    fun getDetailsUsesApiCreatorForCommentsWhenCommunityPageIsRateLimitedButKeepsLaterRequests() {
         detailsServer.enqueue(
             MockResponse.Builder()
                 .code(200)
@@ -595,6 +595,7 @@ class WorkshopServiceTest {
                         "publishedfiledetails": [
                           {
                             "publishedfileid": "2906539837",
+                            "creator": "76561198808881876",
                             "title": "Caffé In-Spire",
                             "consumer_app_id": 646570,
                             "description": "API description"
@@ -645,7 +646,10 @@ class WorkshopServiceTest {
         val first = runBlocking { service.getDetails(646570u, 2906539837uL) }
         val second = runBlocking { service.getDetails(646570u, 2906539838uL) }
 
-        assertEquals(null, first.commentThreadContext)
+        assertEquals("76561198808881876", first.commentThreadContext?.ownerId)
+        assertEquals("2906539837", first.commentThreadContext?.featureId)
+        assertEquals("-1", first.commentThreadContext?.feature2)
+        assertEquals(null, first.commentCount)
         assertEquals("76561198808881876", second.commentThreadContext?.ownerId)
         assertEquals("2906539838", second.commentThreadContext?.featureId)
         assertEquals(2, browseServer.requestCount)

@@ -1,8 +1,6 @@
 services:
   presence-service:
     image: ghcr.io/modinmobilests/slaytheamethyst-presence-service:latest
-    build:
-      context: ./presence-service
     container_name: sts-presence-service
     restart: unless-stopped
     ports:

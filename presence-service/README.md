@@ -71,6 +71,9 @@ Run with Docker Compose from the repository root:
 docker compose up -d presence-service
 ```
 
+On a server that only has `docker-compose.yaml`, Compose pulls the published
+GHCR image directly and does not need the `presence-service/` source directory.
+
 The compose file exposes the service on:
 
 ```text

@@ -19,7 +19,7 @@ HTTP endpoints.
 - Public online summary: `GET /api/presence/summary`
 - Public online count alias: `GET /api/presence/online-count`
 - Protected session list: `GET /api/presence/sessions?token=...`
-- Protected one-week hourly stats: `GET /api/presence/stats?token=...&bucket_seconds=3600`
+- Protected hourly stats: `GET /api/presence/stats?token=...&bucket_seconds=3600&window_seconds=604800`
 - Vue3 panel: `GET /presence`
 - Panel WebSocket: `GET /api/presence/panel/ws?token=...`
 - Cloud-control config: `GET /cloud-control.json`
@@ -131,4 +131,6 @@ Server -> app:
 ```
 
 Panel messages use `type: "snapshot"` and `type: "stats"` with payloads matching
-the compatibility HTTP JSON responses.
+the compatibility HTTP JSON responses. Send `type: "refresh_stats"` with
+`windowSeconds` to switch the trend window; supported panel choices are 24
+hours, 3 days, 7 days, 14 days, and 30 days.

@@ -7,7 +7,7 @@ const websocket = require('@fastify/websocket');
 
 const { loadConfig, firstNonEmpty } = require('./config');
 const { openDatabase } = require('./db');
-const { HOUR_MS, PresenceStore, httpError } = require('./presence');
+const { HOUR_MS, PresenceStore, httpError, resolveStatsWindowSeconds } = require('./presence');
 
 const SERVICE_NAME = 'sts-presence-service';
 const CLIENT_DIR = path.resolve(__dirname, '../client');
@@ -27,7 +27,7 @@ async function buildServer(config = loadConfig()) {
   });
   const database = await openDatabase(config.dbPath);
   const store = new PresenceStore(database, config);
-  const panelSockets = new Set();
+  const panelSockets = new Map();
   const timers = new Set();
   let snapshotBroadcastTimer = null;
 
@@ -164,7 +164,9 @@ async function buildServer(config = loadConfig()) {
       return;
     }
 
-    panelSockets.add(socket);
+    panelSockets.set(socket, {
+      statsWindowSeconds: resolveStatsWindowSeconds(request.query)
+    });
     sendJson(socket, {
       type: 'config',
       ok: true,
@@ -174,7 +176,7 @@ async function buildServer(config = loadConfig()) {
       offlineTimeoutSeconds: config.presenceOfflineTimeoutSeconds
     });
     sendPanelSnapshot(socket).catch((error) => fastify.log.warn(error));
-    sendPanelStats(socket).catch((error) => fastify.log.warn(error));
+    sendPanelStats(socket, request.query).catch((error) => fastify.log.warn(error));
 
     socket.on('message', async (message) => {
       try {
@@ -185,7 +187,7 @@ async function buildServer(config = loadConfig()) {
           return;
         }
         if (type === 'refresh_stats') {
-          await sendPanelStats(socket);
+          await sendPanelStats(socket, parsed);
           return;
         }
         if (type === 'ping') {
@@ -296,7 +298,7 @@ async function buildServer(config = loadConfig()) {
       clearTimeout(timer);
     }
     timers.clear();
-    for (const socket of panelSockets) {
+    for (const socket of panelSockets.keys()) {
       try {
         socket.close(1001, 'server stopping');
       } catch (_error) {
@@ -324,11 +326,19 @@ async function buildServer(config = loadConfig()) {
     });
   }
 
-  async function sendPanelStats(socket) {
+  async function sendPanelStats(socket, query) {
+    const windowSeconds = resolveStatsWindowSeconds(query);
+    const panelState = panelSockets.get(socket);
+    if (panelState) {
+      panelState.statsWindowSeconds = windowSeconds;
+    }
     sendJson(socket, {
       type: 'stats',
       ok: true,
-      data: await store.buildStats({ bucket_seconds: 3600 })
+      data: await store.buildStats({
+        bucket_seconds: 3600,
+        window_seconds: windowSeconds
+      })
     });
   }
 
@@ -337,7 +347,7 @@ async function buildServer(config = loadConfig()) {
       return;
     }
     const snapshot = await store.buildSnapshot();
-    for (const socket of Array.from(panelSockets)) {
+    for (const socket of Array.from(panelSockets.keys())) {
       sendJson(socket, {
         type: 'snapshot',
         ok: true,
@@ -350,12 +360,19 @@ async function buildServer(config = loadConfig()) {
     if (panelSockets.size === 0) {
       return;
     }
-    const stats = await store.buildStats({ bucket_seconds: 3600 });
-    for (const socket of Array.from(panelSockets)) {
+    const statsByWindow = new Map();
+    for (const [socket, panelState] of Array.from(panelSockets.entries())) {
+      const windowSeconds = resolveStatsWindowSeconds(panelState);
+      if (!statsByWindow.has(windowSeconds)) {
+        statsByWindow.set(windowSeconds, await store.buildStats({
+          bucket_seconds: 3600,
+          window_seconds: windowSeconds
+        }));
+      }
       sendJson(socket, {
         type: 'stats',
         ok: true,
-        data: stats
+        data: statsByWindow.get(windowSeconds)
       });
     }
   }

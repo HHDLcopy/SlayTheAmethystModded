@@ -9,6 +9,8 @@ const WebSocket = require('ws');
 
 const { buildServer } = require('../src/server/app');
 const { loadConfig } = require('../src/server/config');
+const { openDatabase } = require('../src/server/db');
+const { PresenceStore } = require('../src/server/presence');
 
 test('presence service records heartbeat and returns summary/sessions/stats', async (t) => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-presence-'));
@@ -57,12 +59,50 @@ test('presence service records heartbeat and returns summary/sessions/stats', as
   assert.equal(sessions.json().sessions.length, 1);
   assert.equal(sessions.json().sessions[0].playerName, 'Ironclad');
 
-  const stats = await server.inject('/api/presence/stats?token=panel-secret&bucket_seconds=3600');
+  const stats = await server.inject(
+    '/api/presence/stats?token=panel-secret&bucket_seconds=3600&window_seconds=86400'
+  );
   assert.equal(stats.statusCode, 200);
   assert.equal(stats.json().currentOnline, 1);
   assert.equal(stats.json().totalOnlineUsers, 1);
+  assert.equal(stats.json().windowSeconds, 86400);
   assert.equal(stats.json().bucketSeconds, 3600);
+  assert.equal(stats.json().buckets.length, 24);
   assert.ok(Array.isArray(stats.json().buckets));
+});
+
+test('presence stats trend uses hourly snapshots instead of live online count', async (t) => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-presence-'));
+  const database = await openDatabase(path.join(tmpDir, 'presence.sqlite'));
+  const store = new PresenceStore(database, {
+    presenceHeartbeatIntervalSeconds: 30,
+    presenceOfflineTimeoutSeconds: 90
+  });
+  t.after(async () => {
+    await database.close();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  const baseMs = Date.UTC(2026, 0, 1, 10, 0, 0);
+  await store.recordHourlySnapshot(baseMs, { minUpdateIntervalMs: 0 });
+  await store.recordHeartbeat({
+    client_id: 'client-live',
+    state: 'game'
+  }, baseMs + 60000);
+
+  const stats = await store.buildStats({
+    bucket_seconds: 3600,
+    window_seconds: 24 * 60 * 60
+  }, baseMs + 60000);
+  const currentBucket = stats.buckets[stats.buckets.length - 1];
+
+  assert.equal(stats.windowSeconds, 24 * 60 * 60);
+  assert.equal(stats.buckets.length, 24);
+  assert.equal(stats.currentOnline, 1);
+  assert.equal(stats.peakOnline, 0);
+  assert.equal(currentBucket.hasSnapshot, true);
+  assert.equal(currentBucket.bucketStart, new Date(baseMs).toISOString());
+  assert.equal(currentBucket.online, 0);
 });
 
 test('cloud-control exposes websocket heartbeat settings', async (t) => {

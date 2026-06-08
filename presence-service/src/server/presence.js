@@ -7,7 +7,10 @@ const {
   parsePositiveInteger
 } = require('./config');
 
-const STATS_WINDOW_SECONDS = 7 * 24 * 60 * 60;
+const DEFAULT_STATS_WINDOW_SECONDS = 7 * 24 * 60 * 60;
+const MIN_STATS_WINDOW_SECONDS = 24 * 60 * 60;
+const MAX_STATS_WINDOW_SECONDS = 30 * 24 * 60 * 60;
+const STATS_WINDOW_SECONDS = DEFAULT_STATS_WINDOW_SECONDS;
 const DEFAULT_STATS_BUCKET_SECONDS = 60 * 60;
 const MIN_STATS_BUCKET_SECONDS = 60 * 60;
 const MAX_STATS_BUCKET_SECONDS = 60 * 60;
@@ -135,8 +138,9 @@ class PresenceStore {
   async buildStats(query, nowMs = Date.now()) {
     const runtimeOptions = this.runtimeOptions(query, null);
     const bucketSeconds = resolveStatsBucketSeconds(query);
+    const windowSeconds = resolveStatsWindowSeconds(query);
     const bucketMs = bucketSeconds * 1000;
-    const bucketCount = Math.ceil(STATS_WINDOW_SECONDS / bucketSeconds);
+    const bucketCount = Math.ceil(windowSeconds / bucketSeconds);
     const untilBucketMs = floorToBucketMs(nowMs, bucketMs);
     const sinceBucketMs = untilBucketMs - ((bucketCount - 1) * bucketMs);
     const summary = await this.recordHourlySnapshot(nowMs, {
@@ -174,12 +178,12 @@ class PresenceStore {
     }
 
     return {
-      windowSeconds: STATS_WINDOW_SECONDS,
+      windowSeconds,
       bucketSeconds,
       since: new Date(sinceBucketMs).toISOString(),
       until: new Date(nowMs).toISOString(),
       currentOnline: summary.online,
-      peakOnline: Math.max(peakOnline, summary.online),
+      peakOnline,
       snapshotCount,
       totalDevices: summary.totalDevices,
       totalOnlineUsers: summary.totalOnlineUsers,
@@ -220,7 +224,7 @@ class PresenceStore {
     ]);
     await this.database.run(
       'DELETE FROM presence_hourly_snapshots WHERE snapshot_hour_ms < ?',
-      [snapshotHourMs - (STATS_WINDOW_SECONDS * 1000)]
+      [snapshotHourMs - (MAX_STATS_WINDOW_SECONDS * 1000)]
     );
 
     return {
@@ -274,6 +278,13 @@ function resolveStatsBucketSeconds(query) {
     query && (query.bucket_seconds || query.bucketSeconds)
   ), DEFAULT_STATS_BUCKET_SECONDS);
   return Math.max(MIN_STATS_BUCKET_SECONDS, Math.min(MAX_STATS_BUCKET_SECONDS, parsed));
+}
+
+function resolveStatsWindowSeconds(query) {
+  const parsed = parsePositiveInteger(firstNonEmpty(
+    query && (query.window_seconds || query.windowSeconds || query.statsWindowSeconds)
+  ), DEFAULT_STATS_WINDOW_SECONDS);
+  return Math.max(MIN_STATS_WINDOW_SECONDS, Math.min(MAX_STATS_WINDOW_SECONDS, parsed));
 }
 
 function resolveHeartbeatWriteIntervalMs(runtimeOptions) {
@@ -355,9 +366,13 @@ module.exports = {
   PresenceStore,
   STATS_WINDOW_SECONDS,
   HOUR_MS,
+  DEFAULT_STATS_WINDOW_SECONDS,
+  MAX_STATS_WINDOW_SECONDS,
+  MIN_STATS_WINDOW_SECONDS,
   httpError,
   parseHeartbeat,
   resolveRuntimeOptions,
   resolveStatsBucketSeconds,
+  resolveStatsWindowSeconds,
   serializeSession
 };

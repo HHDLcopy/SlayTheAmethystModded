@@ -20,6 +20,7 @@ import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.backend.runtime.RuntimePackInstaller
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.RuntimePaths
+import io.stamethyst.config.SpecialKeyInputMode
 import io.stamethyst.input.GameInputHandler
 import io.stamethyst.ui.LauncherTransientNoticeBus
 import net.kdt.pojavlaunch.LwjglGlfwKeycode
@@ -805,8 +806,11 @@ internal class GameSessionCoordinator(
 
     private fun updateFloatingMouseVisibility() {
         val showAndroidFloatingMouse = config.showFloatingMouseWindow
+        val showCustomSoftKeys =
+            config.showFloatingMouseWindow || config.specialKeyInputMode == SpecialKeyInputMode.BUILT_IN_MOD
         inputHandler.updateFloatingMouseVisibility(
             showAndroidFloatingMouse,
+            showCustomSoftKeys,
             jvmLaunchController.runtimeLifecycleReady,
             bootOverlayController.isDismissed,
             backExitRequested
@@ -896,7 +900,9 @@ internal class GameSessionCoordinator(
         }
         lastKeyboardRequestPayload = payload
         val source = payload.lineSequence().firstOrNull()?.trim().orEmpty()
-        if (source.startsWith("system_keyboard:")) {
+        if (source.startsWith("custom_button:")) {
+            inputHandler.requestCustomSoftKeyButtonForGameInput("game_custom_button")
+        } else if (source.startsWith("system_keyboard:")) {
             inputHandler.requestSystemSoftKeyboardForGameTextInput("game_text_input_system")
         } else {
             inputHandler.requestSoftKeyboardForGameTextInput("game_text_input")

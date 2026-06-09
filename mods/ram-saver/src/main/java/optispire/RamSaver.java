@@ -636,23 +636,32 @@ public class RamSaver {
     }
 
     public static <T> T getAsset(String id) {
+        return getAsset(id, true);
+    }
+    public static <T> T getAsset(String id, boolean refresh) {
         ManagedAsset asset = loadedAssets.get(id);
         if (asset != null) {
-            asset.refresh();
+            if (refresh) {
+                asset.refresh();
+            }
 
             //If item has been disposed, will return null
             //This results in loading the item again, replacing entry in loaded assets
             //And existing entry in loadedSets will not be modified
             T item = asset.item();
-            if (item == null) {
-                RamSaverDiag.logRepeat("asset_empty", id, asset.describe() + " " + inventoryDetails());
-            }
-            else {
-                RamSaverDiag.logRepeat("asset_hit", id, asset.describe() + " item=" + RamSaverDiag.describeObject(item));
+            if (RamSaverDiag.enabled()) {
+                if (item == null) {
+                    RamSaverDiag.logRepeat("asset_empty", id, asset.describe() + " " + inventoryDetails());
+                }
+                else {
+                    RamSaverDiag.logRepeat("asset_hit", id, "refresh=" + refresh + " " + asset.describe() + " item=" + RamSaverDiag.describeObject(item));
+                }
             }
             return item;
         }
-        RamSaverDiag.logStackRepeat("asset_miss", id, inventoryDetails());
+        if (RamSaverDiag.enabled()) {
+            RamSaverDiag.logStackRepeat("asset_miss", id, inventoryDetails());
+        }
         return null;
     }
     public static ManagedAsset getAssetHolder(String id) {
@@ -856,6 +865,31 @@ public class RamSaver {
                 id,
                 started,
                 "canAge=" + canAge + " loaded=" + textureDetails(loaded) + " " + inventoryDetails(),
+                false
+        );
+        return loaded;
+    }
+    public static Texture getTextureForBindFallback(String id) {
+        long started = RamSaverDiag.now();
+        Texture t = getAsset(id, false);
+
+        if (nullAssets.contains(id)) {
+            RamSaverDiag.logRepeat("get_bind_fallback_null_asset", id, inventoryDetails());
+            return t;
+        }
+
+        if (t != null && t.getTextureObjectHandle() != 0) {
+            RamSaverDiag.logRepeat("get_bind_fallback_cache_hit", id, textureDetails(t));
+            return t;
+        }
+
+        RamSaverDiag.logStackRepeat("get_bind_fallback_cache_miss", id, "existing=" + textureDetails(t) + " " + inventoryDetails());
+        Texture loaded = loadTexture(id, true);
+        RamSaverDiag.logDuration(
+                "get_bind_fallback_load_path",
+                id,
+                started,
+                "loaded=" + textureDetails(loaded) + " " + inventoryDetails(),
                 false
         );
         return loaded;

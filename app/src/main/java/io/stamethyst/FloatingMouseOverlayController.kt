@@ -1,5 +1,7 @@
 package io.stamethyst
 
+import android.content.Context
+import android.graphics.Rect
 import android.util.Log
 import android.os.SystemClock
 import android.view.Gravity
@@ -14,6 +16,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import io.stamethyst.config.TouchMouseInteractionMode
 import io.stamethyst.backend.bridge.AndroidGlfwKeycode
@@ -49,6 +52,32 @@ internal class FloatingMouseOverlayController(
         val toggleable: Boolean = false,
     )
 
+    private data class CustomSoftKeySpec(
+        val pickerLabel: String,
+        val buttonLabel: String,
+        val keyCode: Int,
+    )
+
+    private data class CustomSoftKeyButtonState(
+        val spec: CustomSoftKeySpec,
+        val view: FrameLayout,
+        var dragging: Boolean = false,
+        var longPressTriggered: Boolean = false,
+        var movedBeyondTapSlop: Boolean = false,
+        var overDeleteTarget: Boolean = false,
+        var longPressRunnable: Runnable? = null,
+        var downRawX: Float = 0f,
+        var downRawY: Float = 0f,
+        var lastRawX: Float = 0f,
+        var lastRawY: Float = 0f,
+        var downLeft: Int = 0,
+        var downTop: Int = 0,
+        var dragStartRawX: Float = 0f,
+        var dragStartRawY: Float = 0f,
+        var dragStartLeft: Int = 0,
+        var dragStartTop: Int = 0,
+    )
+
     companion object {
         private const val IME_LOG_TAG = "STS-IME"
         private const val FLOATING_MOUSE_IDLE_ALPHA = 0.2f
@@ -59,6 +88,20 @@ internal class FloatingMouseOverlayController(
         private const val FLOATING_MENU_ANIM_OFFSET_DP = 10
         private const val FLOATING_MOUSE_SIDE_INSET_DP = 18
         private const val FLOATING_MENU_ANCHOR_GAP_DP = 8
+        private const val CUSTOM_KEY_PREFS_NAME = "floating_mouse_custom_keys"
+        private const val CUSTOM_KEY_TUTORIAL_SHOWN_KEY = "custom_key_tutorial_shown"
+        private const val CUSTOM_KEY_DRAG_LONG_PRESS_MS = 1000L
+        private const val CUSTOM_KEY_BUTTON_SIZE_DP = 52
+        private const val CUSTOM_KEY_BUTTON_TEXT_SIZE_SP = 13f
+        private const val CUSTOM_KEY_BUTTON_INITIAL_OFFSET_DP = 24
+        private const val CUSTOM_KEY_BUTTON_PLACEMENT_GAP_DP = 8
+        private const val CUSTOM_KEY_BUTTON_PRESS_SCALE = 1.12f
+        private const val CUSTOM_KEY_BUTTON_TAP_SCALE = 1.18f
+        private const val CUSTOM_KEY_BUTTON_DRAG_SCALE = 1.16f
+        private const val CUSTOM_KEY_SCALE_ANIM_DURATION_MS = 120L
+        private const val CUSTOM_KEY_DELETE_TARGET_SIZE_DP = 72
+        private const val CUSTOM_KEY_DELETE_TARGET_BOTTOM_MARGIN_DP = 72
+        private const val CUSTOM_KEY_DELETE_TARGET_ANIM_DURATION_MS = 140L
         private const val SPECIAL_KEYS_BAR_PADDING_HORIZONTAL_DP = 8
         private const val SPECIAL_KEYS_BAR_PADDING_VERTICAL_DP = 6
         private const val SPECIAL_KEYS_BUTTON_HEIGHT_DP = 38
@@ -95,7 +138,9 @@ internal class FloatingMouseOverlayController(
         private const val AWT_VK_UP = 38
         private const val AWT_VK_RIGHT = 39
         private const val AWT_VK_DOWN = 40
+        private const val AWT_VK_F1 = 112
         private const val AWT_VK_DELETE = 127
+        private const val AWT_VK_BACK_QUOTE = 192
     }
 
     private var hostView: FrameLayout? = null
@@ -124,6 +169,14 @@ internal class FloatingMouseOverlayController(
 
     private val toggleSpecialKeyButtons = mutableMapOf<Int, View>()
     private val activeToggleSoftKeys = mutableMapOf<Int, SoftKeyboardTarget>()
+    private val customSoftKeyButtons = mutableListOf<CustomSoftKeyButtonState>()
+    private val customSoftKeyPrefs by lazy {
+        activity.getSharedPreferences(CUSTOM_KEY_PREFS_NAME, Context.MODE_PRIVATE)
+    }
+    private val customSoftKeySpecs = buildCustomSoftKeySpecs()
+    private var customSoftKeyDeleteTarget: FrameLayout? = null
+    private var customSoftKeyPickerDialog: AlertDialog? = null
+    private var customSoftKeyButtonsVisible = true
     private var lastSoftTextPayload = ""
     private var lastSoftTextSource = ""
     private var lastSoftTextAtMs = 0L
@@ -188,6 +241,14 @@ internal class FloatingMouseOverlayController(
                     return true
                 }
 
+                override fun onKey(androidKeyCode: Int): Boolean {
+                    return sendSyntheticSoftKey(androidKeyCode)
+                }
+
+                override fun onToggleKey(androidKeyCode: Int, active: Boolean): Boolean {
+                    return setToggleSpecialKey(androidKeyCode, active)
+                }
+
                 override fun onSystemKeyboardRequested() {
                     imeController?.requestShow(
                         reason = "builtin_keyboard_system_key",
@@ -202,6 +263,19 @@ internal class FloatingMouseOverlayController(
         )
         builtInController.attachToHost(host)
         builtInKeyboardController = builtInController
+
+        customSoftKeyDeleteTarget = createCustomSoftKeyDeleteTarget().also { deleteTarget ->
+            host.addView(
+                deleteTarget,
+                FrameLayout.LayoutParams(
+                    dpToPx(CUSTOM_KEY_DELETE_TARGET_SIZE_DP),
+                    dpToPx(CUSTOM_KEY_DELETE_TARGET_SIZE_DP),
+                    Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+                ).apply {
+                    bottomMargin = dpToPx(CUSTOM_KEY_DELETE_TARGET_BOTTOM_MARGIN_DP)
+                }
+            )
+        }
 
         val expandedMenu = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
@@ -281,13 +355,20 @@ internal class FloatingMouseOverlayController(
         hostView = null
     }
 
-    fun updateVisibility(shouldShow: Boolean) {
+    fun updateVisibility(
+        shouldShowFloatingMouseButton: Boolean,
+        shouldShowCustomSoftKeyButtons: Boolean,
+    ) {
         val button = floatingMouseButton ?: return
-        button.visibility = if (shouldShow) View.VISIBLE else View.GONE
-        if (!shouldShow) {
+        button.visibility = if (shouldShowFloatingMouseButton) View.VISIBLE else View.GONE
+        customSoftKeyButtonsVisible = shouldShowCustomSoftKeyButtons
+        customSoftKeyButtons.forEach { state ->
+            state.view.visibility = if (shouldShowCustomSoftKeyButtons) View.VISIBLE else View.GONE
+        }
+        if (!shouldShowFloatingMouseButton && !shouldShowCustomSoftKeyButtons) {
             hideSoftKeyboard()
         }
-        if (shouldShow) {
+        if (shouldShowFloatingMouseButton) {
             button.animate().cancel()
             button.alpha = if (floatingMouseMenuExpanded) {
                 FLOATING_MOUSE_ACTIVE_ALPHA
@@ -301,6 +382,16 @@ internal class FloatingMouseOverlayController(
             hideFloatingMouseExpandedMenu(animate = false)
             clearIdleRunnable()
             button.animate().cancel()
+        }
+        if (!shouldShowCustomSoftKeyButtons) {
+            hideCustomSoftKeyDeleteTarget(animate = false)
+            customSoftKeyButtons.forEach { state ->
+                cancelCustomSoftKeyLongPress(state)
+                state.dragging = false
+                state.longPressTriggered = false
+                state.movedBeyondTapSlop = false
+                animateCustomSoftKeyScale(state.view, 1f)
+            }
         }
     }
 
@@ -365,12 +456,54 @@ internal class FloatingMouseOverlayController(
         imeController?.requestShow(reason = reason)
     }
 
+    fun requestCustomSoftKeyButton(reason: String) {
+        logIme("requestCustomSoftKeyButton reason=$reason")
+        hideFloatingMouseExpandedMenu()
+        if (activity.isFinishing || activity.isDestroyed) {
+            return
+        }
+        val specs = customSoftKeySpecs
+        if (specs.isEmpty()) {
+            return
+        }
+        val labels = specs.map { it.pickerLabel }.toTypedArray()
+        customSoftKeyPickerDialog?.dismiss()
+        val dialog = AlertDialog.Builder(activity)
+            .setTitle(R.string.touch_mouse_custom_key_picker_title)
+            .setItems(labels) { dialogInterface, which ->
+                dialogInterface.dismiss()
+                specs.getOrNull(which)?.let(::addCustomSoftKeyButton)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .create()
+        customSoftKeyPickerDialog = dialog
+        dialog.setOnDismissListener {
+            if (customSoftKeyPickerDialog === dialog) {
+                customSoftKeyPickerDialog = null
+            }
+        }
+        dialog.show()
+    }
+
     fun isSoftKeyboardSessionActive(): Boolean {
         return builtInKeyboardController?.isVisible() == true ||
             imeController?.shouldHoldRenderSurfaceStable() == true
     }
 
     private fun detachViews() {
+        customSoftKeyPickerDialog?.dismiss()
+        customSoftKeyPickerDialog = null
+        customSoftKeyButtons.toList().forEach { state ->
+            cancelCustomSoftKeyLongPress(state)
+            state.view.animate().cancel()
+            (state.view.parent as? FrameLayout)?.removeView(state.view)
+        }
+        customSoftKeyButtons.clear()
+        customSoftKeyDeleteTarget?.let { target ->
+            target.animate().cancel()
+            (target.parent as? FrameLayout)?.removeView(target)
+        }
+        customSoftKeyDeleteTarget = null
         floatingMouseButton?.let { button ->
             (button.parent as? FrameLayout)?.removeView(button)
         }
@@ -981,9 +1114,390 @@ internal class FloatingMouseOverlayController(
         CallbackBridge.sendScroll(0.0, verticalOffset)
     }
 
-    private fun toggleSpecialKey(androidKeyCode: Int) {
+    private fun buildCustomSoftKeySpecs(): List<CustomSoftKeySpec> {
+        return buildList {
+            add(CustomSoftKeySpec("Esc", "Esc", KeyEvent.KEYCODE_ESCAPE))
+            add(CustomSoftKeySpec("~ / `", "~", KeyEvent.KEYCODE_GRAVE))
+            for (index in 1..12) {
+                val keyCode = KeyEvent.KEYCODE_F1 + (index - 1)
+                add(CustomSoftKeySpec("F$index", "F$index", keyCode))
+            }
+            add(CustomSoftKeySpec("Tab", "Tab", KeyEvent.KEYCODE_TAB))
+            add(CustomSoftKeySpec("Caps Lock", "Caps", KeyEvent.KEYCODE_CAPS_LOCK))
+            add(CustomSoftKeySpec("Enter", "Enter", KeyEvent.KEYCODE_ENTER))
+            add(CustomSoftKeySpec("Space", "Space", KeyEvent.KEYCODE_SPACE))
+            add(CustomSoftKeySpec("Backspace", "Bksp", KeyEvent.KEYCODE_DEL))
+            add(CustomSoftKeySpec("Delete", "Del", KeyEvent.KEYCODE_FORWARD_DEL))
+            add(CustomSoftKeySpec("Left", "Left", KeyEvent.KEYCODE_DPAD_LEFT))
+            add(CustomSoftKeySpec("Up", "Up", KeyEvent.KEYCODE_DPAD_UP))
+            add(CustomSoftKeySpec("Right", "Right", KeyEvent.KEYCODE_DPAD_RIGHT))
+            add(CustomSoftKeySpec("Down", "Down", KeyEvent.KEYCODE_DPAD_DOWN))
+        }
+    }
+
+    private fun addCustomSoftKeyButton(spec: CustomSoftKeySpec) {
+        val host = hostView ?: return
+        val buttonSize = dpToPx(CUSTOM_KEY_BUTTON_SIZE_DP)
+        val labelView = TextView(activity).apply {
+            text = spec.buttonLabel
+            gravity = Gravity.CENTER
+            includeFontPadding = false
+            setTextColor(0xFFFFFFFF.toInt())
+            textSize = CUSTOM_KEY_BUTTON_TEXT_SIZE_SP
+            maxLines = 1
+            isAllCaps = false
+            contentDescription = spec.pickerLabel
+        }
+        val button = FrameLayout(activity).apply {
+            background = customSoftKeyButtonBackground(active = false)
+            alpha = FLOATING_MOUSE_ACTIVE_ALPHA
+            elevation = dpToPx(8).toFloat()
+            isClickable = true
+            isFocusable = false
+            isFocusableInTouchMode = false
+            contentDescription = spec.pickerLabel
+            visibility = if (customSoftKeyButtonsVisible) View.VISIBLE else View.GONE
+            addView(
+                labelView,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    Gravity.CENTER
+                )
+            )
+        }
+        val state = CustomSoftKeyButtonState(spec = spec, view = button)
+        customSoftKeyButtons += state
+        host.addView(
+            button,
+            FrameLayout.LayoutParams(buttonSize, buttonSize, Gravity.TOP or Gravity.START).apply {
+                leftMargin = 0
+                topMargin = 0
+            }
+        )
+        placeCustomSoftKeyButton(host, button, buttonSize, customSoftKeyButtons.size - 1)
+        button.setOnTouchListener { _, event -> handleCustomSoftKeyTouch(state, event) }
+        button.bringToFront()
+        customSoftKeyDeleteTarget?.bringToFront()
+        button.scaleX = 0.82f
+        button.scaleY = 0.82f
+        button.animate()
+            .scaleX(1f)
+            .scaleY(1f)
+            .setDuration(CUSTOM_KEY_SCALE_ANIM_DURATION_MS)
+            .start()
+        maybeShowCustomSoftKeyTutorial()
+    }
+
+    private fun handleCustomSoftKeyTouch(state: CustomSoftKeyButtonState, event: MotionEvent): Boolean {
+        val button = state.view
+        val params = button.layoutParams as? FrameLayout.LayoutParams ?: return false
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                parentDisallowIntercept(button, disallow = true)
+                state.dragging = false
+                state.longPressTriggered = false
+                state.movedBeyondTapSlop = false
+                state.overDeleteTarget = false
+                state.downRawX = event.rawX
+                state.downRawY = event.rawY
+                state.lastRawX = event.rawX
+                state.lastRawY = event.rawY
+                state.downLeft = params.leftMargin
+                state.downTop = params.topMargin
+                button.background = customSoftKeyButtonBackground(active = true)
+                animateCustomSoftKeyScale(button, CUSTOM_KEY_BUTTON_PRESS_SCALE)
+                scheduleCustomSoftKeyLongPress(state)
+                return true
+            }
+
+            MotionEvent.ACTION_MOVE -> {
+                val dxFromDown = event.rawX - state.downRawX
+                val dyFromDown = event.rawY - state.downRawY
+                if (!state.movedBeyondTapSlop &&
+                    dxFromDown * dxFromDown + dyFromDown * dyFromDown >
+                    floatingMouseTouchSlop * floatingMouseTouchSlop
+                ) {
+                    state.movedBeyondTapSlop = true
+                }
+                state.lastRawX = event.rawX
+                state.lastRawY = event.rawY
+                if (state.dragging) {
+                    moveCustomSoftKeyButton(state, event.rawX, event.rawY)
+                    updateCustomSoftKeyDeleteTargetHighlight(state)
+                }
+                return true
+            }
+
+            MotionEvent.ACTION_UP -> {
+                parentDisallowIntercept(button, disallow = false)
+                cancelCustomSoftKeyLongPress(state)
+                val wasDragging = state.dragging
+                if (wasDragging) {
+                    if (state.overDeleteTarget) {
+                        removeCustomSoftKeyButton(state)
+                    } else {
+                        finishCustomSoftKeyInteraction(state)
+                    }
+                    hideCustomSoftKeyDeleteTarget()
+                    return true
+                }
+                if (!state.longPressTriggered && !state.movedBeyondTapSlop) {
+                    performCustomSoftKeyClick(state)
+                } else {
+                    finishCustomSoftKeyInteraction(state)
+                }
+                return true
+            }
+
+            MotionEvent.ACTION_CANCEL -> {
+                parentDisallowIntercept(button, disallow = false)
+                cancelCustomSoftKeyLongPress(state)
+                finishCustomSoftKeyInteraction(state)
+                hideCustomSoftKeyDeleteTarget()
+                return true
+            }
+
+            else -> return false
+        }
+    }
+
+    private fun scheduleCustomSoftKeyLongPress(state: CustomSoftKeyButtonState) {
+        cancelCustomSoftKeyLongPress(state)
+        val runnable = Runnable {
+            state.longPressRunnable = null
+            if (state.view.parent == null || state.dragging) {
+                return@Runnable
+            }
+            state.longPressTriggered = true
+            state.dragging = true
+            state.dragStartRawX = state.lastRawX
+            state.dragStartRawY = state.lastRawY
+            val params = state.view.layoutParams as? FrameLayout.LayoutParams ?: return@Runnable
+            state.dragStartLeft = params.leftMargin
+            state.dragStartTop = params.topMargin
+            LauncherHaptics.perform(state.view, HapticFeedbackConstants.LONG_PRESS)
+            animateCustomSoftKeyScale(state.view, CUSTOM_KEY_BUTTON_DRAG_SCALE)
+            showCustomSoftKeyDeleteTarget()
+            moveCustomSoftKeyButton(state, state.lastRawX, state.lastRawY)
+            updateCustomSoftKeyDeleteTargetHighlight(state)
+        }
+        state.longPressRunnable = runnable
+        state.view.postDelayed(runnable, CUSTOM_KEY_DRAG_LONG_PRESS_MS)
+    }
+
+    private fun cancelCustomSoftKeyLongPress(state: CustomSoftKeyButtonState) {
+        state.longPressRunnable?.let { state.view.removeCallbacks(it) }
+        state.longPressRunnable = null
+    }
+
+    private fun performCustomSoftKeyClick(state: CustomSoftKeyButtonState) {
+        LauncherHaptics.perform(state.view, HapticFeedbackConstants.KEYBOARD_TAP)
+        sendSyntheticSoftKey(state.spec.keyCode)
+        state.view.animate().cancel()
+        state.view.animate()
+            .scaleX(CUSTOM_KEY_BUTTON_TAP_SCALE)
+            .scaleY(CUSTOM_KEY_BUTTON_TAP_SCALE)
+            .setDuration(CUSTOM_KEY_SCALE_ANIM_DURATION_MS / 2)
+            .withEndAction {
+                finishCustomSoftKeyInteraction(state)
+            }
+            .start()
+    }
+
+    private fun finishCustomSoftKeyInteraction(state: CustomSoftKeyButtonState) {
+        state.dragging = false
+        state.longPressTriggered = false
+        state.movedBeyondTapSlop = false
+        state.overDeleteTarget = false
+        state.view.background = customSoftKeyButtonBackground(active = false)
+        animateCustomSoftKeyScale(state.view, 1f)
+        updateCustomSoftKeyDeleteTargetAppearance(active = false)
+    }
+
+    private fun moveCustomSoftKeyButton(state: CustomSoftKeyButtonState, rawX: Float, rawY: Float) {
+        val host = hostView ?: return
+        val params = state.view.layoutParams as? FrameLayout.LayoutParams ?: return
+        val dx = (rawX - state.dragStartRawX).roundToInt()
+        val dy = (rawY - state.dragStartRawY).roundToInt()
+        val maxLeft = (host.width - state.view.width).coerceAtLeast(0)
+        val maxTop = (host.height - state.view.height).coerceAtLeast(0)
+        params.leftMargin = (state.dragStartLeft + dx).coerceIn(0, maxLeft)
+        params.topMargin = (state.dragStartTop + dy).coerceIn(0, maxTop)
+        state.view.layoutParams = params
+    }
+
+    private fun removeCustomSoftKeyButton(state: CustomSoftKeyButtonState) {
+        cancelCustomSoftKeyLongPress(state)
+        customSoftKeyButtons.remove(state)
+        state.view.animate().cancel()
+        state.view.animate()
+            .alpha(0f)
+            .scaleX(0.72f)
+            .scaleY(0.72f)
+            .setDuration(CUSTOM_KEY_DELETE_TARGET_ANIM_DURATION_MS)
+            .withEndAction {
+                (state.view.parent as? FrameLayout)?.removeView(state.view)
+            }
+            .start()
+    }
+
+    private fun createCustomSoftKeyDeleteTarget(): FrameLayout {
+        val iconSize = dpToPx(30)
+        return FrameLayout(activity).apply {
+            visibility = View.GONE
+            alpha = 0f
+            scaleX = 0.88f
+            scaleY = 0.88f
+            elevation = dpToPx(12).toFloat()
+            isClickable = false
+            isFocusable = false
+            background = customSoftKeyDeleteTargetBackground(active = false)
+            addView(
+                ImageView(activity).apply {
+                    setImageResource(android.R.drawable.ic_menu_delete)
+                    setColorFilter(0xFFFFFFFF.toInt())
+                    scaleType = ImageView.ScaleType.CENTER_INSIDE
+                },
+                FrameLayout.LayoutParams(iconSize, iconSize, Gravity.CENTER)
+            )
+        }
+    }
+
+    private fun showCustomSoftKeyDeleteTarget() {
+        val target = customSoftKeyDeleteTarget ?: return
+        target.animate().cancel()
+        target.visibility = View.VISIBLE
+        target.bringToFront()
+        target.animate()
+            .alpha(1f)
+            .scaleX(1f)
+            .scaleY(1f)
+            .setDuration(CUSTOM_KEY_DELETE_TARGET_ANIM_DURATION_MS)
+            .start()
+    }
+
+    private fun hideCustomSoftKeyDeleteTarget(animate: Boolean = true) {
+        val target = customSoftKeyDeleteTarget ?: return
+        target.animate().cancel()
+        updateCustomSoftKeyDeleteTargetAppearance(active = false)
+        if (!animate || target.visibility != View.VISIBLE) {
+            target.visibility = View.GONE
+            target.alpha = 0f
+            target.scaleX = 0.88f
+            target.scaleY = 0.88f
+            return
+        }
+        target.animate()
+            .alpha(0f)
+            .scaleX(0.88f)
+            .scaleY(0.88f)
+            .setDuration(CUSTOM_KEY_DELETE_TARGET_ANIM_DURATION_MS)
+            .withEndAction {
+                target.visibility = View.GONE
+            }
+            .start()
+    }
+
+    private fun updateCustomSoftKeyDeleteTargetHighlight(state: CustomSoftKeyButtonState) {
+        val target = customSoftKeyDeleteTarget ?: return
+        val buttonRect = Rect()
+        val targetRect = Rect()
+        state.view.getGlobalVisibleRect(buttonRect)
+        target.getGlobalVisibleRect(targetRect)
+        val over = Rect.intersects(buttonRect, targetRect)
+        if (state.overDeleteTarget != over) {
+            state.overDeleteTarget = over
+            updateCustomSoftKeyDeleteTargetAppearance(over)
+        }
+    }
+
+    private fun updateCustomSoftKeyDeleteTargetAppearance(active: Boolean) {
+        val target = customSoftKeyDeleteTarget ?: return
+        target.background = customSoftKeyDeleteTargetBackground(active)
+        val scale = if (active) 1.12f else 1f
+        target.animate().cancel()
+        target.animate()
+            .scaleX(scale)
+            .scaleY(scale)
+            .setDuration(CUSTOM_KEY_DELETE_TARGET_ANIM_DURATION_MS)
+            .start()
+    }
+
+    private fun customSoftKeyButtonBackground(active: Boolean): android.graphics.drawable.GradientDrawable {
+        return android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+            cornerRadius = dpToPx(14).toFloat()
+            setColor(if (active) 0xE63F5F36.toInt() else 0xCC2B2B2B.toInt())
+            setStroke(dpToPx(1), if (active) 0xFF9BE071.toInt() else 0xFF5A5A5A.toInt())
+        }
+    }
+
+    private fun customSoftKeyDeleteTargetBackground(active: Boolean): android.graphics.drawable.GradientDrawable {
+        return android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.OVAL
+            setColor(if (active) 0xE6A92828.toInt() else 0xD6282828.toInt())
+            setStroke(dpToPx(2), if (active) 0xFFFF8A80.toInt() else 0xFF707070.toInt())
+        }
+    }
+
+    private fun animateCustomSoftKeyScale(view: View, scale: Float) {
+        view.animate().cancel()
+        view.animate()
+            .scaleX(scale)
+            .scaleY(scale)
+            .setDuration(CUSTOM_KEY_SCALE_ANIM_DURATION_MS)
+            .start()
+    }
+
+    private fun placeCustomSoftKeyButton(host: FrameLayout, button: FrameLayout, buttonSize: Int, index: Int) {
+        val offset = dpToPx(CUSTOM_KEY_BUTTON_INITIAL_OFFSET_DP)
+        val gap = dpToPx(CUSTOM_KEY_BUTTON_PLACEMENT_GAP_DP)
+        host.post {
+            val params = button.layoutParams as? FrameLayout.LayoutParams ?: return@post
+            val maxLeft = (host.width - buttonSize).coerceAtLeast(0)
+            val maxTop = (host.height - buttonSize).coerceAtLeast(0)
+            params.leftMargin = (offset + index * (buttonSize + gap)).coerceIn(0, maxLeft)
+            params.topMargin = (host.height / 2 - buttonSize / 2 + index * gap).coerceIn(0, maxTop)
+            button.layoutParams = params
+        }
+    }
+
+    private fun parentDisallowIntercept(view: View, disallow: Boolean) {
+        view.parent?.requestDisallowInterceptTouchEvent(disallow)
+    }
+
+    private fun maybeShowCustomSoftKeyTutorial() {
+        if (customSoftKeyPrefs.getBoolean(CUSTOM_KEY_TUTORIAL_SHOWN_KEY, false)) {
+            return
+        }
+        customSoftKeyPrefs.edit()
+            .putBoolean(CUSTOM_KEY_TUTORIAL_SHOWN_KEY, true)
+            .apply()
+        if (activity.isFinishing || activity.isDestroyed) {
+            return
+        }
+        AlertDialog.Builder(activity)
+            .setTitle(R.string.touch_mouse_custom_key_tutorial_title)
+            .setMessage(R.string.touch_mouse_custom_key_tutorial_message)
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
+    private fun toggleSpecialKey(androidKeyCode: Int): Boolean {
+        return setToggleSpecialKey(
+            androidKeyCode = androidKeyCode,
+            active = !activeToggleSoftKeys.containsKey(androidKeyCode)
+        )
+    }
+
+    private fun setToggleSpecialKey(androidKeyCode: Int, active: Boolean): Boolean {
         val activeTarget = activeToggleSoftKeys[androidKeyCode]
-        if (activeTarget != null) {
+        if (!active) {
+            if (activeTarget == null) {
+                updateToggleSpecialKeyUi(androidKeyCode, false)
+                return true
+            }
             logIme(
                 "toggleSpecialKey release " +
                     "android=${KeyEvent.keyCodeToString(androidKeyCode)} target=$activeTarget"
@@ -991,17 +1505,24 @@ internal class FloatingMouseOverlayController(
             dispatchKeyboardEvent(KeyEvent(KeyEvent.ACTION_UP, androidKeyCode), activeTarget)
             activeToggleSoftKeys.remove(androidKeyCode)
             updateToggleSpecialKeyUi(androidKeyCode, false)
-            return
+            return true
         }
 
+        if (activeTarget != null) {
+            updateToggleSpecialKeyUi(androidKeyCode, true)
+            return true
+        }
         val target = resolveSoftKeyboardTarget()
         logIme(
             "toggleSpecialKey press " +
                 "android=${KeyEvent.keyCodeToString(androidKeyCode)} target=$target"
         )
-        if (dispatchKeyboardEvent(KeyEvent(KeyEvent.ACTION_DOWN, androidKeyCode), target)) {
+        return if (dispatchKeyboardEvent(KeyEvent(KeyEvent.ACTION_DOWN, androidKeyCode), target)) {
             activeToggleSoftKeys[androidKeyCode] = target
             updateToggleSpecialKeyUi(androidKeyCode, true)
+            true
+        } else {
+            false
         }
     }
 
@@ -1163,12 +1684,14 @@ internal class FloatingMouseOverlayController(
     private fun sendSyntheticSoftKey(
         androidKeyCode: Int,
         target: SoftKeyboardTarget = resolveSoftKeyboardTarget()
-    ) {
+    ): Boolean {
         logIme("sendSyntheticSoftKey androidKey=${KeyEvent.keyCodeToString(androidKeyCode)} target=$target")
-        dispatchSoftKeyboardKeyEventToTarget(KeyEvent(KeyEvent.ACTION_DOWN, androidKeyCode), target)
+        val downHandled = dispatchSoftKeyboardKeyEventToTarget(KeyEvent(KeyEvent.ACTION_DOWN, androidKeyCode), target)
         if (!shouldDelaySoftKeyRelease(androidKeyCode, target)) {
-            dispatchSoftKeyboardKeyEventToTarget(KeyEvent(KeyEvent.ACTION_UP, androidKeyCode), target)
+            val upHandled = dispatchSoftKeyboardKeyEventToTarget(KeyEvent(KeyEvent.ACTION_UP, androidKeyCode), target)
+            return downHandled || upHandled
         }
+        return downHandled
     }
 
     private fun dispatchSoftKeyboardKeyEvent(event: KeyEvent): Boolean {
@@ -1346,6 +1869,9 @@ internal class FloatingMouseOverlayController(
             KeyEvent.KEYCODE_CTRL_LEFT, KeyEvent.KEYCODE_CTRL_RIGHT -> AWT_VK_CONTROL
             KeyEvent.KEYCODE_ALT_LEFT, KeyEvent.KEYCODE_ALT_RIGHT -> AWT_VK_ALT
             KeyEvent.KEYCODE_CAPS_LOCK -> AWT_VK_CAPS_LOCK
+            KeyEvent.KEYCODE_GRAVE -> AWT_VK_BACK_QUOTE
+            in KeyEvent.KEYCODE_F1..KeyEvent.KEYCODE_F12 ->
+                AWT_VK_F1 + (androidKeyCode - KeyEvent.KEYCODE_F1)
             else -> null
         }
     }

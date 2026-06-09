@@ -212,6 +212,10 @@ final class FloatingToolPanel {
                 expanded = false;
                 FloatingToolInputBridge.requestKeyboard("floating_tools_drawer");
                 break;
+            case ADD_KEY:
+                expanded = false;
+                FloatingToolInputBridge.requestCustomButton("floating_tools_drawer");
+                break;
             default:
                 break;
         }
@@ -335,6 +339,7 @@ final class FloatingToolPanel {
         addButton(Action.WHEEL, "Wheel", currentX, yPos -= spaceY, hit, hit);
         addButton(Action.MOUSE_MODE, rightMode ? "Right mouse" : "Left mouse", currentX, yPos -= spaceY, hit, hit);
         addButton(Action.KEYBOARD, "Keyboard", currentX, yPos -= spaceY, hit, hit);
+        addButton(Action.ADD_KEY, "Add key", currentX, yPos -= spaceY, hit, hit);
 
         float visual = RELIC_IMG_SIZE * s;
         drawerX = currentX - visual / 2f;
@@ -572,6 +577,9 @@ final class FloatingToolPanel {
             case KEYBOARD:
                 filename = "keyboard.png";
                 break;
+            case ADD_KEY:
+                filename = "add_key.png";
+                break;
             default:
                 break;
         }
@@ -732,6 +740,7 @@ final class FloatingToolPanel {
         WHEEL,
         MOUSE_MODE,
         KEYBOARD,
+        ADD_KEY,
         TAB_HANDLE
     }
 
@@ -779,6 +788,8 @@ final class FloatingToolPanel {
                     return "切换触摸点击的鼠标按钮。右键模式会保持启用，直到再次点击此图标切回左键。";
                 case KEYBOARD:
                     return "打开旧版 Android 侧键盘输入；根据启动器设置使用内置键盘或系统输入法。";
+                case ADD_KEY:
+                    return "添加一个 Android 侧自定义按键悬浮窗。悬浮窗由内置软键盘路径发送按键，可长按拖动并拖到垃圾桶删除。";
                 default:
                     return label;
             }

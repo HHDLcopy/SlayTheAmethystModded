@@ -147,12 +147,16 @@ class GameInputHandler(
 
     fun updateFloatingMouseVisibility(
         showFloatingMouseWindow: Boolean,
+        showCustomSoftKeyButtons: Boolean,
         runtimeLifecycleReady: Boolean,
         bootOverlayDismissed: Boolean,
         backExitRequested: Boolean
     ) {
-        val shouldShow = showFloatingMouseWindow && runtimeLifecycleReady && bootOverlayDismissed && !backExitRequested
-        floatingMouseController?.updateVisibility(shouldShow)
+        val overlayReady = runtimeLifecycleReady && bootOverlayDismissed && !backExitRequested
+        floatingMouseController?.updateVisibility(
+            shouldShowFloatingMouseButton = showFloatingMouseWindow && overlayReady,
+            shouldShowCustomSoftKeyButtons = showCustomSoftKeyButtons && overlayReady
+        )
     }
 
     fun hideSoftKeyboard() {
@@ -165,6 +169,10 @@ class GameInputHandler(
 
     fun requestSystemSoftKeyboardForGameTextInput(reason: String) {
         floatingMouseController?.requestSystemSoftKeyboard(reason)
+    }
+
+    fun requestCustomSoftKeyButtonForGameInput(reason: String) {
+        floatingMouseController?.requestCustomSoftKeyButton(reason)
     }
 
     fun isSoftKeyboardSessionActive(): Boolean {

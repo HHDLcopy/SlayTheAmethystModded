@@ -21,12 +21,14 @@ internal fun resolveWorkshopDependencyUiStates(
     dependencies: List<WorkshopItemSummary>,
     installedMods: List<WorkshopInstalledModRecord>,
     downloadTasks: List<WorkshopDownloadTaskUi>,
+    preparingDownloadIds: Set<ULong> = emptySet(),
 ): List<WorkshopDependencyUiState> = dependencies.map { dependency ->
     val defaultInstalled = dependency.isDefaultInstalledWorkshopDependency()
     val downloadState = resolveWorkshopModDownloadState(
         item = dependency,
         installedMods = installedMods,
         downloadTasks = downloadTasks,
+        preparingDownloadIds = preparingDownloadIds,
     )
     val installed = defaultInstalled || dependency.isInstalledOrQueued(installedMods, downloadTasks)
     WorkshopDependencyUiState(

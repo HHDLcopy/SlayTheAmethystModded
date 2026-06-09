@@ -30,6 +30,7 @@ object RuntimePaths {
     private const val IN_GAME_FILE_PICKER_REQUEST_FILE_NAME = ".in_game_file_picker_request"
     private const val IN_GAME_FILE_PICKER_RESULT_FILE_NAME = ".in_game_file_picker_result"
     private const val IN_GAME_FILE_PICKER_SELECTION_FILE_NAME = ".in_game_file_picker_selection"
+    private const val GAME_PRESENCE_STATE_FILE_NAME = ".game_presence_state"
     private const val RUNTIME_RESCUE_TOAST_REQUEST_FILE_NAME = ".runtime_rescue_toast_request"
     private const val JVM_HISTOGRAM_DIR_NAME = "jvm_histograms"
     private const val LOGCAT_DIR_NAME = "logcat"
@@ -40,6 +41,7 @@ object RuntimePaths {
     private const val LAUNCHER_LOGCAT_SYSTEM_CAPTURE_FILE_NAME = "launcher_logcat_system_capture.log"
     private const val LAUNCHER_CRASH_REPORT_DIR_NAME = "launcher_crash_reports"
     private const val LAUNCHER_CRASH_REPORT_PREFIX = "sts-launcher-crash-"
+    private const val BOOT_OVERLAY_IMAGE_DIR_NAME = "boot_overlay_images"
     private const val MTS_CLASSPATH_CACHE_MARKER_FILE_NAME = ".mts_classpath_cache"
     private const val OPTIONAL_MOD_LIBRARY_MIGRATION_MARKER_FILE_NAME = ".optional_mod_library_migrated"
     private const val ANDROID_EXTERNAL_STORAGE_ROOT = "storage"
@@ -202,6 +204,10 @@ object RuntimePaths {
         File(stsRoot(context), IN_GAME_FILE_PICKER_SELECTION_FILE_NAME)
 
     @JvmStatic
+    fun gamePresenceStateFile(context: Context): File =
+        File(stsRoot(context), GAME_PRESENCE_STATE_FILE_NAME)
+
+    @JvmStatic
     fun runtimeRescueToastRequestFile(context: Context): File =
         File(stsRoot(context), RUNTIME_RESCUE_TOAST_REQUEST_FILE_NAME)
 
@@ -282,6 +288,10 @@ object RuntimePaths {
     @JvmStatic
     fun launcherCrashReportsDir(context: Context): File =
         File(stsRoot(context), LAUNCHER_CRASH_REPORT_DIR_NAME)
+
+    @JvmStatic
+    fun bootOverlayImagesDir(context: Context): File =
+        File(componentRoot(context), BOOT_OVERLAY_IMAGE_DIR_NAME)
 
     @JvmStatic
     fun listLauncherCrashReportFiles(context: Context): List<File> {
@@ -605,6 +615,7 @@ object RuntimePaths {
         jvmHistogramsDir(context).mkdirs()
         logcatDir(context).mkdirs()
         launcherCrashReportsDir(context).mkdirs()
+        bootOverlayImagesDir(context).mkdirs()
         mtsLocalJreBinDir(context).mkdirs()
         lwjglDir(context).mkdirs()
         lwjgl2InjectorDir(context).mkdirs()

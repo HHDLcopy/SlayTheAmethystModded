@@ -373,7 +373,7 @@ public class Texture extends GLTexture {
             return;
         }
 
-        Texture t = getRealTexture("bind", true);
+        Texture t = RamSaver.getTextureForBindFallback(file == null ? null : file.path());
         if (t != null) {
             t.bind();
             return;
@@ -388,7 +388,7 @@ public class Texture extends GLTexture {
             return;
         }
 
-        Texture t = getRealTexture("bind_unit", true);
+        Texture t = RamSaver.getTextureForBindFallback(file == null ? null : file.path());
         if (t != null) {
             t.bind(unit);
             return;

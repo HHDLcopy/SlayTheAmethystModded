@@ -24,6 +24,7 @@ internal data class GameSessionConfig(
     val manualDismissBootOverlay: Boolean,
     val forceJvmCrash: Boolean,
     val forceRuntimeCrash: Boolean,
+    val specialKeyInputMode: SpecialKeyInputMode,
     val showFloatingMouseWindow: Boolean,
     val showGamePerformanceOverlay: Boolean,
     val mirrorJvmLogsToLogcat: Boolean,
@@ -69,6 +70,8 @@ internal data class GameSessionConfig(
             val effectiveTargetFps =
                 AndroidGameModeSupport.resolveTargetFps(requestedTargetFps, systemGameMode)
 
+            val specialKeyInputMode = LauncherConfig.readSpecialKeyInputMode(context)
+
             return GameSessionConfig(
                 renderScale = effectiveRenderScale,
                 requestedRenderScale = requestedRenderScale,
@@ -82,9 +85,9 @@ internal data class GameSessionConfig(
                 ),
                 forceJvmCrash = intent.getBooleanExtra(StsGameActivity.EXTRA_FORCE_JVM_CRASH, false),
                 forceRuntimeCrash = intent.getBooleanExtra(StsGameActivity.EXTRA_FORCE_RUNTIME_CRASH, false),
+                specialKeyInputMode = specialKeyInputMode,
                 showFloatingMouseWindow =
-                    LauncherConfig.readSpecialKeyInputMode(context) ==
-                        SpecialKeyInputMode.LEGACY_FLOATING_WINDOW,
+                    specialKeyInputMode == SpecialKeyInputMode.LEGACY_FLOATING_WINDOW,
                 showGamePerformanceOverlay = LauncherConfig.isGamePerformanceOverlayEnabled(context),
                 mirrorJvmLogsToLogcat = LauncherConfig.isJvmLogcatMirrorEnabled(context),
                 touchMouseInteractionMode = LauncherConfig.readTouchMouseInteractionMode(context),

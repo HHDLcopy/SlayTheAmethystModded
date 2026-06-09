@@ -14,6 +14,8 @@ import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.backend.render.RendererSelectionMode
 import io.stamethyst.backend.render.VirtualResolutionMode
 import io.stamethyst.config.BackBehavior
+import io.stamethyst.config.BootOverlayImageConfig
+import io.stamethyst.config.BootOverlayImageMode
 import io.stamethyst.config.BootOverlayAnimation
 import io.stamethyst.config.BootOverlayStyle
 import io.stamethyst.config.GpuResourceGuardianMode
@@ -39,6 +41,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_BOOT_OVERLAY_ANIMATION
     val DEFAULT_BOOT_OVERLAY_STYLE: BootOverlayStyle
         get() = LauncherConfig.DEFAULT_BOOT_OVERLAY_STYLE
+    val DEFAULT_BOOT_OVERLAY_IMAGE_MODE: BootOverlayImageMode
+        get() = LauncherConfig.DEFAULT_BOOT_OVERLAY_IMAGE_MODE
     val DEFAULT_TARGET_FPS: Int
         get() = LauncherConfig.DEFAULT_TARGET_FPS
     val TARGET_FPS_OPTIONS: IntArray
@@ -79,6 +83,12 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_THEME_MODE
     val DEFAULT_THEME_COLOR: LauncherThemeColor
         get() = LauncherConfig.DEFAULT_THEME_COLOR
+    val DEFAULT_HOME_CHROME_TRANSPARENCY: Float
+        get() = LauncherConfig.DEFAULT_HOME_CHROME_TRANSPARENCY
+    val MIN_HOME_CHROME_TRANSPARENCY: Float
+        get() = LauncherConfig.MIN_HOME_CHROME_TRANSPARENCY
+    val MAX_HOME_CHROME_TRANSPARENCY: Float
+        get() = LauncherConfig.MAX_HOME_CHROME_TRANSPARENCY
     val DEFAULT_SHOW_FLOATING_MOUSE_WINDOW: Boolean
         get() = LauncherConfig.DEFAULT_SHOW_FLOATING_MOUSE_WINDOW
     val DEFAULT_TOUCH_MOUSE_INTERACTION_MODE: TouchMouseInteractionMode
@@ -218,6 +228,19 @@ object LauncherPreferences {
     fun saveBootOverlayAnimation(context: Context, animation: BootOverlayAnimation) {
         LauncherConfig.saveBootOverlayAnimation(context, animation)
     }
+
+    fun readBootOverlayImageConfig(context: Context): BootOverlayImageConfig {
+        return LauncherConfig.readBootOverlayImageConfig(context)
+    }
+
+    fun saveBootOverlayImageConfig(context: Context, config: BootOverlayImageConfig) {
+        LauncherConfig.saveBootOverlayImageConfig(context, config)
+    }
+
+    fun clearBootOverlayImageConfig(context: Context) {
+        LauncherConfig.clearBootOverlayImageConfig(context)
+    }
+
     fun isBasicTutorialNoticeDismissed(context: Context): Boolean {
         return LauncherConfig.isBasicTutorialNoticeDismissed(context)
     }
@@ -344,6 +367,18 @@ object LauncherPreferences {
 
     fun saveThemeColor(context: Context, themeColor: LauncherThemeColor) {
         LauncherConfig.saveThemeColor(context, themeColor)
+    }
+
+    fun readHomeChromeTransparency(context: Context): Float {
+        return LauncherConfig.readHomeChromeTransparency(context)
+    }
+
+    fun saveHomeChromeTransparency(context: Context, transparency: Float) {
+        LauncherConfig.saveHomeChromeTransparency(context, transparency)
+    }
+
+    fun normalizeHomeChromeTransparency(transparency: Float): Float {
+        return LauncherConfig.normalizeHomeChromeTransparency(transparency)
     }
 
     fun readShowModFileName(context: Context): Boolean {

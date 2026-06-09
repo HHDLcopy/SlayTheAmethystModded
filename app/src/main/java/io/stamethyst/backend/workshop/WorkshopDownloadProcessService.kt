@@ -494,6 +494,33 @@ class WorkshopDownloadProcessService : Service() {
                                     service = service,
                                     details = details,
                                 )
+                                val currentTask = taskStore.find(details.summary.publishedFileId)
+                                if (currentTask?.status != WorkshopDownloadTaskStatus.Completed) {
+                                    val importStageMessage = currentTask?.message
+                                        ?.takeIf { it.isNotBlank() }
+                                        ?: "下载完成，准备导入修补"
+                                    taskStore.update(details.summary.publishedFileId) {
+                                        it.copy(
+                                            status = WorkshopDownloadTaskStatus.Downloading,
+                                            message = importStageMessage,
+                                            progressPercent = it.progressPercent ?: 100,
+                                            updatedAtMillis = System.currentTimeMillis(),
+                                            preservePartialDownload = false,
+                                        )
+                                    }
+                                    metadataStore.updateState(
+                                        appId = details.summary.appId,
+                                        publishedFileId = details.summary.publishedFileId,
+                                        state = WorkshopModCardState.Downloading,
+                                        statusText = importStageMessage,
+                                    )
+                                    sendProgress(
+                                        receiver = receiver,
+                                        message = importStageMessage,
+                                        taskStatus = "Downloading",
+                                        progressPercent = currentTask?.progressPercent ?: 100,
+                                    )
+                                }
                                 taskStore.appendLog(details.summary.publishedFileId, "状态变更：$message")
                                 return@collect
                             }

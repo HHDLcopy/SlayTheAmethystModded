@@ -25,6 +25,8 @@ public class LwjglGlfwKeycode {
     public static final short GLFW_KEY_8 = 56;
     public static final short GLFW_KEY_9 = 57;
 
+    public static final short GLFW_KEY_GRAVE_ACCENT = 96;
+
     public static final short GLFW_KEY_A = 65;
     public static final short GLFW_KEY_B = 66;
     public static final short GLFW_KEY_C = 67;
@@ -74,6 +76,8 @@ public class LwjglGlfwKeycode {
     public static final short GLFW_KEY_F10 = 299;
     public static final short GLFW_KEY_F11 = 300;
     public static final short GLFW_KEY_F12 = 301;
+
+    public static final short GLFW_KEY_CAPS_LOCK = 280;
 
     public static final short GLFW_KEY_LEFT_SHIFT = 340;
     public static final short GLFW_KEY_LEFT_CONTROL = 341;

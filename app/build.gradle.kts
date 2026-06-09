@@ -231,6 +231,7 @@ dependencies {
     implementation(libs.android.zstd)
     implementation(libs.ow2.asm)
     implementation(libs.ow2.asm.tree)
+    implementation(libs.lottie.compose)
     implementation(project(":workshop-core"))
     implementation(project(":steam-protocol"))
 

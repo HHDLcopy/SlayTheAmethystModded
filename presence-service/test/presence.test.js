@@ -193,6 +193,7 @@ test('presence panel serves local frontend vendor assets', async (t) => {
     ['/presence', 'text/html'],
     ['/presence/app.js', 'application/javascript'],
     ['/presence/styles.css', 'text/css'],
+    ['/presence/launcher-icon.png', 'image/png'],
     ['/presence/vue.global.prod.js', 'application/javascript'],
     ['/presence/vendor/vuetify.min.css', 'text/css'],
     ['/presence/vendor/vuetify.min.js', 'application/javascript'],

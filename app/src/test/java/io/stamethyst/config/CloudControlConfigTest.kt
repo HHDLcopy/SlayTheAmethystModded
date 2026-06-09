@@ -74,7 +74,13 @@ class CloudControlConfigTest {
     }
 
     @Test
-    fun defaultSettings_doesNotFallbackToScfPresenceEndpoint() {
-        assertEquals("", CloudControlConfig.defaultSettings().heartbeatWsUrl)
+    fun defaultSettings_matchCurrentCloudControlPayload() {
+        val defaults = CloudControlConfig.defaultSettings()
+
+        assertEquals(30, defaults.heartbeatIntervalSeconds)
+        assertEquals(
+            "wss://heartbeat.nas.apricityx.top:23163/api/presence/ws",
+            defaults.heartbeatWsUrl
+        )
     }
 }

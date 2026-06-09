@@ -95,16 +95,20 @@ async function handleHeartbeat(request, env, url) {
       state,
       player_name,
       app_version,
+      device_model,
+      android_version,
       first_seen_at_ms,
       last_seen_at_ms
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(client_id) DO UPDATE SET
       device_id = excluded.device_id,
       id_type = excluded.id_type,
       state = excluded.state,
       player_name = excluded.player_name,
       app_version = excluded.app_version,
+      device_model = excluded.device_model,
+      android_version = excluded.android_version,
       last_seen_at_ms = excluded.last_seen_at_ms
     WHERE presence_sessions.last_seen_at_ms <= ?
   `).bind(
@@ -114,6 +118,8 @@ async function handleHeartbeat(request, env, url) {
     heartbeat.state,
     heartbeat.playerName,
     heartbeat.appVersion,
+    heartbeat.deviceModel,
+    heartbeat.androidVersion,
     nowMs,
     nowMs,
     writeCutoffMs
@@ -176,6 +182,8 @@ async function buildPresenceSnapshot(env, runtimeOptions, nowMs = Date.now()) {
       state,
       player_name,
       app_version,
+      device_model,
+      android_version,
       first_seen_at_ms,
       last_seen_at_ms
     FROM presence_sessions
@@ -311,6 +319,8 @@ function serializeSession(row, runtimeOptions, nowMs) {
     state: String(row.state || 'unknown'),
     playerName: String(row.player_name || ''),
     appVersion: String(row.app_version || ''),
+    deviceModel: String(row.device_model || ''),
+    androidVersion: String(row.android_version || ''),
     firstSeenAt: firstSeenAtMs > 0 ? new Date(firstSeenAtMs).toISOString() : null,
     lastSeenAt: lastSeenAtMs > 0 ? new Date(lastSeenAtMs).toISOString() : null,
     ageSeconds,
@@ -335,7 +345,9 @@ function parseHeartbeat(body) {
     idType: normalizeOptionalString(firstNonEmpty(body.id_type, body.idType)),
     state: normalizeOptionalString(firstNonEmpty(body.state, body.phase)) || 'game',
     playerName: normalizeOptionalString(firstNonEmpty(body.player_name, body.playerName)),
-    appVersion: normalizeOptionalString(firstNonEmpty(body.app_version, body.appVersion))
+    appVersion: normalizeOptionalString(firstNonEmpty(body.app_version, body.appVersion)),
+    deviceModel: normalizeOptionalString(firstNonEmpty(body.device_model, body.deviceModel)),
+    androidVersion: normalizeOptionalString(firstNonEmpty(body.android_version, body.androidVersion))
   };
 }
 

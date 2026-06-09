@@ -10,8 +10,10 @@ import android.os.Build
 import android.view.HapticFeedbackConstants
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -30,6 +32,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -82,6 +85,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -95,6 +99,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -102,6 +107,7 @@ import androidx.compose.ui.unit.dp
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import io.stamethyst.R
+import io.stamethyst.BootOverlayArtBackground
 import io.stamethyst.backend.steamcloud.SteamCloudAvatarCacheStore
 import io.stamethyst.backend.steamcloud.SteamCloudConflict
 import io.stamethyst.backend.steamcloud.SteamCloudConflictKind
@@ -118,6 +124,9 @@ import io.stamethyst.backend.update.UpdateSource
 import io.stamethyst.backend.workshop.SteamLanguagePreference
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.BootOverlayAnimation
+import io.stamethyst.config.BootOverlayImageConfig
+import io.stamethyst.config.BootOverlayImageMode
+import io.stamethyst.config.BootOverlayImageSlot
 import io.stamethyst.config.BootOverlayStyle
 import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.config.LauncherThemeColor
@@ -138,6 +147,7 @@ import io.stamethyst.ui.UiBusyOperation
 import io.stamethyst.ui.haptics.LauncherHaptics
 import io.stamethyst.ui.icon.ArrowBack
 import io.stamethyst.ui.loading.BootAnimationPreviewGrid
+import io.stamethyst.ui.resources.FileImage
 import io.stamethyst.ui.openBasicTutorial
 import io.stamethyst.ui.modimport.ModImportRequestBus
 import io.stamethyst.ui.preferences.LauncherPreferences
@@ -145,6 +155,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -209,12 +220,20 @@ fun LauncherSettingsLauncherScreen(
         onThemeColorChanged = { themeColor ->
             viewModel.onThemeColorChanged(activity, themeColor)
         },
+        onHomeChromeTransparencyChanged = { transparency ->
+            viewModel.onHomeChromeTransparencyChanged(activity, transparency)
+        },
         onBootOverlayStyleChanged = { style ->
             viewModel.onBootOverlayStyleChanged(activity, style)
         },
         onBootOverlayAnimationChanged = { animation ->
             viewModel.onBootOverlayAnimationChanged(activity, animation)
         },
+        onBootOverlayImageModeChanged = { mode ->
+            viewModel.onBootOverlayImageModeChanged(activity, mode)
+        },
+        onPickBootOverlayImage = viewModel::onPickBootOverlayImage,
+        onResetBootOverlayImages = { viewModel.onResetBootOverlayImages(activity) },
         onShowModFileNameChanged = { enabled ->
             viewModel.onShowModFileNameChanged(activity, enabled)
         },
@@ -687,8 +706,12 @@ private fun LauncherSettingsLauncherScreenContent(
     onOpenBasicTutorial: () -> Unit = {},
     onThemeModeChanged: (LauncherThemeMode) -> Unit = {},
     onThemeColorChanged: (LauncherThemeColor) -> Unit = {},
+    onHomeChromeTransparencyChanged: (Float) -> Unit = {},
     onBootOverlayStyleChanged: (BootOverlayStyle) -> Unit = {},
     onBootOverlayAnimationChanged: (BootOverlayAnimation) -> Unit = {},
+    onBootOverlayImageModeChanged: (BootOverlayImageMode) -> Unit = {},
+    onPickBootOverlayImage: (BootOverlayImageSlot) -> Unit = {},
+    onResetBootOverlayImages: () -> Unit = {},
     onShowModFileNameChanged: (Boolean) -> Unit = {},
     onAutoCheckUpdatesChanged: (Boolean) -> Unit = {},
     onPreferredUpdateMirrorChanged: (UpdateSource) -> Unit = {},
@@ -724,8 +747,12 @@ private fun LauncherSettingsLauncherScreenContent(
                     uiState = uiState,
                     onThemeModeChanged = onThemeModeChanged,
                     onThemeColorChanged = onThemeColorChanged,
+                    onHomeChromeTransparencyChanged = onHomeChromeTransparencyChanged,
                     onBootOverlayStyleChanged = onBootOverlayStyleChanged,
                     onBootOverlayAnimationChanged = onBootOverlayAnimationChanged,
+                    onBootOverlayImageModeChanged = onBootOverlayImageModeChanged,
+                    onPickBootOverlayImage = onPickBootOverlayImage,
+                    onResetBootOverlayImages = onResetBootOverlayImages,
                     onShowModFileNameChanged = onShowModFileNameChanged,
                 )
             }
@@ -1782,14 +1809,26 @@ internal fun SettingsAppearanceSection(
     uiState: SettingsScreenViewModel.UiState,
     onThemeModeChanged: (LauncherThemeMode) -> Unit,
     onThemeColorChanged: (LauncherThemeColor) -> Unit,
+    onHomeChromeTransparencyChanged: (Float) -> Unit,
     onBootOverlayStyleChanged: (BootOverlayStyle) -> Unit,
     onBootOverlayAnimationChanged: (BootOverlayAnimation) -> Unit,
+    onBootOverlayImageModeChanged: (BootOverlayImageMode) -> Unit,
+    onPickBootOverlayImage: (BootOverlayImageSlot) -> Unit,
+    onResetBootOverlayImages: () -> Unit,
     onShowModFileNameChanged: (Boolean) -> Unit,
 ) {
+    val view = LocalView.current
     var showThemeModeDialog by rememberSaveable { mutableStateOf(false) }
     var showThemeColorDialog by rememberSaveable { mutableStateOf(false) }
     var showBootOverlayStyleDialog by rememberSaveable { mutableStateOf(false) }
     var showBootOverlayAnimationDialog by rememberSaveable { mutableStateOf(false) }
+    var showBootOverlayCustomImageDialog by rememberSaveable { mutableStateOf(false) }
+    var homeChromeTransparencySliderValue by remember(uiState.homeChromeTransparency) {
+        mutableFloatStateOf(uiState.homeChromeTransparency)
+    }
+    var lastHomeChromeTransparencyStep by remember(uiState.homeChromeTransparency) {
+        mutableIntStateOf(homeChromeTransparencyToStep(uiState.homeChromeTransparency))
+    }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         SettingsActionListItem(
@@ -1815,6 +1854,43 @@ internal fun SettingsAppearanceSection(
             style = MaterialTheme.typography.bodySmall
         )
 
+        Text(
+            text = stringResource(R.string.settings_home_chrome_transparency_title),
+            style = MaterialTheme.typography.bodyMedium
+        )
+        Text(
+            text = formatHomeChromeTransparency(homeChromeTransparencySliderValue),
+            style = MaterialTheme.typography.bodySmall
+        )
+        Text(
+            text = stringResource(R.string.settings_home_chrome_transparency_desc),
+            style = MaterialTheme.typography.bodySmall
+        )
+        Slider(
+            value = homeChromeTransparencySliderValue,
+            onValueChange = { value ->
+                val normalized = LauncherPreferences.normalizeHomeChromeTransparency(value)
+                homeChromeTransparencySliderValue = normalized
+                val step = homeChromeTransparencyToStep(normalized)
+                if (step != lastHomeChromeTransparencyStep) {
+                    lastHomeChromeTransparencyStep = step
+                    performHapticFeedback(view, HapticFeedbackConstants.CLOCK_TICK)
+                }
+            },
+            onValueChangeFinished = {
+                onHomeChromeTransparencyChanged(homeChromeTransparencySliderValue)
+            },
+            valueRange = LauncherPreferences.MIN_HOME_CHROME_TRANSPARENCY..
+                LauncherPreferences.MAX_HOME_CHROME_TRANSPARENCY,
+            steps = (
+                ((LauncherPreferences.MAX_HOME_CHROME_TRANSPARENCY -
+                    LauncherPreferences.MIN_HOME_CHROME_TRANSPARENCY) / 0.05f)
+                    .roundToInt() - 1
+                ).coerceAtLeast(0),
+            enabled = !uiState.busy,
+            modifier = Modifier.fillMaxWidth()
+        )
+
         SettingsActionListItem(
             title = stringResource(R.string.settings_boot_overlay_style_title),
             supportingText = bootOverlayStyleDisplayName(uiState.bootOverlayStyle),
@@ -1825,6 +1901,19 @@ internal fun SettingsAppearanceSection(
             text = stringResource(R.string.settings_boot_overlay_style_desc),
             style = MaterialTheme.typography.bodySmall
         )
+
+        if (uiState.bootOverlayStyle == BootOverlayStyle.MODERN) {
+            SettingsActionListItem(
+                title = stringResource(R.string.settings_boot_overlay_custom_image_title),
+                supportingText = bootOverlayCustomImageSummary(uiState.bootOverlayImageConfig),
+                enabled = !uiState.busy,
+                onClick = { showBootOverlayCustomImageDialog = true }
+            )
+            Text(
+                text = stringResource(R.string.settings_boot_overlay_custom_image_desc),
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
 
         if (uiState.bootOverlayStyle.supportsLoadingAnimation) {
             SettingsActionListItem(
@@ -1857,6 +1946,30 @@ internal fun SettingsAppearanceSection(
             confirmButton = {
                 HapticTextButton(onClick = { showBootOverlayStyleDialog = false }) {
                     Text(stringResource(R.string.main_folder_dialog_confirm))
+                }
+            }
+        )
+    }
+
+    if (showBootOverlayCustomImageDialog) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text(stringResource(R.string.settings_boot_overlay_custom_image_dialog_title)) },
+            text = {
+                BootOverlayCustomImageDialogContent(
+                    config = uiState.bootOverlayImageConfig,
+                    enabled = !uiState.busy,
+                    onModeChanged = onBootOverlayImageModeChanged,
+                    onPickImage = onPickBootOverlayImage,
+                    onReset = onResetBootOverlayImages,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 520.dp)
+                )
+            },
+            confirmButton = {
+                HapticTextButton(onClick = { showBootOverlayCustomImageDialog = false }) {
+                    Text(stringResource(R.string.common_action_close))
                 }
             }
         )
@@ -1956,6 +2069,350 @@ private fun bootOverlayStyleDisplayName(style: BootOverlayStyle): String {
             BootOverlayStyle.MATERIAL_LOG -> R.string.settings_boot_overlay_style_material_log
         }
     )
+}
+
+@Composable
+private fun bootOverlayCustomImageSummary(config: BootOverlayImageConfig): String {
+    return when {
+        !config.hasCustomImages -> stringResource(R.string.settings_boot_overlay_custom_image_default)
+        config.mode == BootOverlayImageMode.SINGLE ->
+            stringResource(R.string.settings_boot_overlay_custom_image_single_summary)
+        else -> stringResource(R.string.settings_boot_overlay_custom_image_dual_summary)
+    }
+}
+
+@Composable
+private fun BootOverlayCustomImageDialogContent(
+    config: BootOverlayImageConfig,
+    enabled: Boolean,
+    onModeChanged: (BootOverlayImageMode) -> Unit,
+    onPickImage: (BootOverlayImageSlot) -> Unit,
+    onReset: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val scrollState = rememberScrollState()
+    Column(
+        modifier = modifier.verticalScroll(scrollState),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        BootOverlayCustomImagePreview(
+            config = config,
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(16f / 9f)
+        )
+        BootOverlayImageModeSelector(
+            mode = config.mode,
+            enabled = enabled,
+            onModeChanged = onModeChanged
+        )
+        Crossfade(
+            targetState = config.mode,
+            animationSpec = tween(durationMillis = 260),
+            label = "boot_overlay_image_mode_crossfade"
+        ) { mode ->
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                BootOverlayImageSlotPicker(
+                    slot = BootOverlayImageSlot.START,
+                    config = config,
+                    enabled = enabled,
+                    title = stringResource(
+                        if (mode == BootOverlayImageMode.SINGLE) {
+                            R.string.settings_boot_overlay_custom_image_single_pick
+                        } else {
+                            R.string.settings_boot_overlay_custom_image_start_pick
+                        }
+                    ),
+                    description = stringResource(
+                        if (mode == BootOverlayImageMode.SINGLE) {
+                            R.string.settings_boot_overlay_custom_image_single_pick_desc
+                        } else {
+                            R.string.settings_boot_overlay_custom_image_start_pick_desc
+                        }
+                    ),
+                    onPickImage = onPickImage
+                )
+                if (mode == BootOverlayImageMode.DUAL) {
+                    BootOverlayImageSlotPicker(
+                        slot = BootOverlayImageSlot.END,
+                        config = config,
+                        enabled = enabled,
+                        title = stringResource(R.string.settings_boot_overlay_custom_image_end_pick),
+                        description = stringResource(R.string.settings_boot_overlay_custom_image_end_pick_desc),
+                        onPickImage = onPickImage
+                    )
+                }
+            }
+        }
+        HapticTextButton(
+            onClick = onReset,
+            enabled = enabled && config.hasCustomImages
+        ) {
+            Text(stringResource(R.string.settings_boot_overlay_custom_image_reset))
+        }
+    }
+}
+
+@Composable
+private fun BootOverlayCustomImagePreview(
+    config: BootOverlayImageConfig,
+    modifier: Modifier = Modifier,
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color.Black)
+            .border(
+                width = 1.dp,
+                color = colorScheme.outlineVariant.copy(alpha = 0.52f),
+                shape = RoundedCornerShape(8.dp)
+            )
+    ) {
+        Crossfade(
+            targetState = config,
+            animationSpec = tween(durationMillis = 260),
+            label = "boot_overlay_custom_image_preview_crossfade",
+            modifier = Modifier.fillMaxSize()
+        ) { previewConfig ->
+            BootOverlayArtBackground(
+                imageConfig = previewConfig,
+                revealProgress = 0.56f,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        colorStops = arrayOf(
+                            0.00f to Color.Black.copy(alpha = 0.10f),
+                            0.56f to Color.Black.copy(alpha = 0.08f),
+                            1.00f to Color.Black.copy(alpha = 0.70f)
+                        )
+                    )
+                )
+        )
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.boot_overlay_title_starting),
+                color = Color.White,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            BootProgressBarPreview(progress = 0.56f)
+            Text(
+                text = stringResource(R.string.settings_boot_overlay_custom_image_preview_status),
+                color = Color.White.copy(alpha = 0.86f),
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+private fun BootProgressBarPreview(
+    progress: Float,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(6.dp)
+            .clip(RoundedCornerShape(999.dp))
+            .background(Color.White.copy(alpha = 0.22f))
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
+                .fillMaxWidth(progress.coerceIn(0f, 1f))
+                .background(
+                    Brush.horizontalGradient(
+                        colors = listOf(
+                            MaterialTheme.colorScheme.primary,
+                            MaterialTheme.colorScheme.tertiary,
+                            MaterialTheme.colorScheme.secondary
+                        )
+                    )
+                )
+        )
+    }
+}
+
+@Composable
+private fun BootOverlayImageModeSelector(
+    mode: BootOverlayImageMode,
+    enabled: Boolean,
+    onModeChanged: (BootOverlayImageMode) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        BootOverlayImageModeOption(
+            selected = mode == BootOverlayImageMode.SINGLE,
+            enabled = enabled,
+            title = stringResource(R.string.settings_boot_overlay_custom_image_single_mode),
+            onClick = { onModeChanged(BootOverlayImageMode.SINGLE) },
+            modifier = Modifier.weight(1f)
+        )
+        BootOverlayImageModeOption(
+            selected = mode == BootOverlayImageMode.DUAL,
+            enabled = enabled,
+            title = stringResource(R.string.settings_boot_overlay_custom_image_dual_mode),
+            onClick = { onModeChanged(BootOverlayImageMode.DUAL) },
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+@Composable
+private fun BootOverlayImageModeOption(
+    selected: Boolean,
+    enabled: Boolean,
+    title: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(8.dp)
+    Row(
+        modifier = modifier
+            .height(46.dp)
+            .clip(shape)
+            .background(
+                colorScheme.surfaceVariant.copy(alpha = if (selected) 0.34f else 0.16f)
+            )
+            .border(
+                width = if (selected) 2.dp else 1.dp,
+                color = if (selected) {
+                    colorScheme.primary
+                } else {
+                    colorScheme.outlineVariant.copy(alpha = 0.52f)
+                },
+                shape = shape
+            )
+            .hapticClickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RadioButton(
+            selected = selected,
+            onClick = null,
+            enabled = enabled,
+            modifier = Modifier.size(28.dp)
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelLarge,
+            color = if (selected) colorScheme.primary else colorScheme.onSurfaceVariant,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
+@Composable
+private fun BootOverlayImageSlotPicker(
+    slot: BootOverlayImageSlot,
+    config: BootOverlayImageConfig,
+    enabled: Boolean,
+    title: String,
+    description: String,
+    onPickImage: (BootOverlayImageSlot) -> Unit,
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    val imagePath = config.imagePathFor(slot)
+    val imageVersion = when (slot) {
+        BootOverlayImageSlot.START -> config.startImageVersion
+        BootOverlayImageSlot.END -> config.endImageVersion
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(colorScheme.surfaceContainerHigh)
+            .hapticClickable(enabled = enabled, onClick = { onPickImage(slot) })
+            .padding(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(width = 84.dp, height = 48.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(colorScheme.surfaceVariant.copy(alpha = 0.50f))
+                .border(
+                    width = 1.dp,
+                    color = colorScheme.outlineVariant.copy(alpha = 0.48f),
+                    shape = RoundedCornerShape(6.dp)
+                )
+        ) {
+            if (imagePath != null) {
+                FileImage(
+                    path = imagePath,
+                    version = imageVersion,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Text(
+                    text = stringResource(R.string.settings_boot_overlay_custom_image_default_badge),
+                    color = colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelSmall,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .padding(horizontal = 6.dp)
+                )
+            }
+        }
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(
+                text = title,
+                color = colorScheme.onSurface,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = imagePath?.let(::bootOverlayImageFileName) ?: description,
+                color = colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Icon(
+            painter = painterResource(R.drawable.ic_chevron_right),
+            contentDescription = null,
+            tint = colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(24.dp)
+        )
+    }
+}
+
+private fun bootOverlayImageFileName(path: String): String {
+    return File(path).name.ifBlank { path }
 }
 
 @Composable
@@ -3913,6 +4370,16 @@ private fun renderScaleToStep(value: Float): Int {
     return ((value - RenderScaleService.MIN_RENDER_SCALE) / 0.01f).roundToInt()
 }
 
+private fun homeChromeTransparencyToStep(value: Float): Int {
+    return (
+        (value - LauncherPreferences.MIN_HOME_CHROME_TRANSPARENCY) / 0.05f
+        ).roundToInt()
+}
+
+private fun formatHomeChromeTransparency(value: Float): String {
+    return "${(value * 100f).roundToInt()}%"
+}
+
 private fun heapSliderToStep(value: Float, min: Int, step: Int): Int {
     val safeStep = step.coerceAtLeast(1)
     return ((value - min.toFloat()) / safeStep.toFloat()).roundToInt()
@@ -4741,6 +5208,12 @@ fun SettingsEffectsHandler(
     val exportLogsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         viewModel.onLogsExportPicked(activity, uri)
     }
+    var pendingBootOverlayImageSlot by remember { mutableStateOf<BootOverlayImageSlot?>(null) }
+    val bootOverlayImageLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        val slot = pendingBootOverlayImageSlot ?: return@rememberLauncherForActivityResult
+        pendingBootOverlayImageSlot = null
+        viewModel.onBootOverlayImagePicked(activity, slot, uri)
+    }
 
     LaunchedEffect(viewModel) {
         viewModel.effects.collect { effect ->
@@ -4773,6 +5246,16 @@ fun SettingsEffectsHandler(
 
                 is SettingsScreenViewModel.Effect.OpenExportLogsPicker -> {
                     exportLogsLauncher.launch(effect.fileName)
+                }
+
+                is SettingsScreenViewModel.Effect.OpenBootOverlayImagePicker -> {
+                    pendingBootOverlayImageSlot = effect.slot
+                    bootOverlayImageLauncher.launch(
+                        PickVisualMediaRequest(
+                            mediaType = ActivityResultContracts.PickVisualMedia.ImageOnly,
+                            defaultTab = ActivityResultContracts.PickVisualMedia.DefaultTab.PhotosTab
+                        )
+                    )
                 }
 
                 is SettingsScreenViewModel.Effect.ShareJvmLogsBundle -> {

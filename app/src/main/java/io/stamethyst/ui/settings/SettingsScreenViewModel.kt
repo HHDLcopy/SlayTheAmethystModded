@@ -90,6 +90,9 @@ import io.stamethyst.backend.workshop.WorkshopPreviewCacheStore
 import io.stamethyst.R
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.BootOverlayAnimation
+import io.stamethyst.config.BootOverlayImageConfig
+import io.stamethyst.config.BootOverlayImageMode
+import io.stamethyst.config.BootOverlayImageSlot
 import io.stamethyst.config.BootOverlayStyle
 import io.stamethyst.config.CloudControlConfig
 import io.stamethyst.config.GpuResourceGuardianMode
@@ -169,6 +172,7 @@ class SettingsScreenViewModel : ViewModel() {
         data class OpenExportModsPicker(val fileName: String) : Effect
         data class OpenExportSavesPicker(val fileName: String) : Effect
         data class OpenExportLogsPicker(val fileName: String) : Effect
+        data class OpenBootOverlayImagePicker(val slot: BootOverlayImageSlot) : Effect
         data class ShareJvmLogsBundle(val payload: JvmLogsSharePayload) : Effect
         data object OpenCompatibility : Effect
         data object OpenMobileGluesSettings : Effect
@@ -273,10 +277,15 @@ class SettingsScreenViewModel : ViewModel() {
             LauncherPreferences.DEFAULT_GPU_RESOURCE_GUARDIAN_PRESSURE_DOWNSCALE_ENABLED,
         val themeMode: LauncherThemeMode = LauncherPreferences.DEFAULT_THEME_MODE,
         val themeColor: LauncherThemeColor = LauncherPreferences.DEFAULT_THEME_COLOR,
+        val homeChromeTransparency: Float =
+            LauncherPreferences.DEFAULT_HOME_CHROME_TRANSPARENCY,
         val bootOverlayStyle: BootOverlayStyle =
             LauncherPreferences.DEFAULT_BOOT_OVERLAY_STYLE,
         val bootOverlayAnimation: BootOverlayAnimation =
             LauncherPreferences.DEFAULT_BOOT_OVERLAY_ANIMATION,
+        val bootOverlayImageConfig: BootOverlayImageConfig = BootOverlayImageConfig(
+            mode = LauncherPreferences.DEFAULT_BOOT_OVERLAY_IMAGE_MODE
+        ),
         val selectedJvmHeapMaxMb: Int = LauncherPreferences.DEFAULT_JVM_HEAP_MAX_MB,
         val compressedPointersEnabled: Boolean = LauncherPreferences.DEFAULT_JVM_COMPRESSED_POINTERS_ENABLED,
         val stringDeduplicationEnabled: Boolean =
@@ -489,8 +498,10 @@ class SettingsScreenViewModel : ViewModel() {
         uiState = uiState.copy(
             themeMode = SettingsRepository.loadThemeMode(host),
             themeColor = SettingsRepository.loadThemeColor(host),
+            homeChromeTransparency = SettingsRepository.loadHomeChromeTransparency(host),
             bootOverlayStyle = SettingsRepository.loadBootOverlayStyle(host),
-            bootOverlayAnimation = SettingsRepository.loadBootOverlayAnimation(host)
+            bootOverlayAnimation = SettingsRepository.loadBootOverlayAnimation(host),
+            bootOverlayImageConfig = SettingsRepository.loadBootOverlayImageConfig(host)
         )
     }
 
@@ -502,6 +513,15 @@ class SettingsScreenViewModel : ViewModel() {
     fun onThemeColorChanged(host: Activity, themeColor: LauncherThemeColor) {
         saveThemeColorSelection(host, themeColor)
         syncThemeAppearance(host)
+    }
+
+    fun onHomeChromeTransparencyChanged(host: Activity, transparency: Float) {
+        val normalized = LauncherPreferences.normalizeHomeChromeTransparency(transparency)
+        if (uiState.busy || uiState.homeChromeTransparency == normalized) {
+            return
+        }
+        uiState = uiState.copy(homeChromeTransparency = normalized)
+        saveHomeChromeTransparencySelection(host, normalized)
     }
 
     fun onBootOverlayAnimationChanged(host: Activity, animation: BootOverlayAnimation) {
@@ -521,6 +541,55 @@ class SettingsScreenViewModel : ViewModel() {
         saveBootOverlayStyleSelection(host, style)
         refreshStatus(host)
     }
+
+    fun onBootOverlayImageModeChanged(host: Activity, mode: BootOverlayImageMode) {
+        if (uiState.busy || uiState.bootOverlayImageConfig.mode == mode) {
+            return
+        }
+        val nextConfig = BootOverlayImageService.saveMode(host, mode)
+        uiState = uiState.copy(bootOverlayImageConfig = nextConfig)
+        refreshStatus(host)
+    }
+
+    fun onPickBootOverlayImage(slot: BootOverlayImageSlot) {
+        if (uiState.busy) {
+            return
+        }
+        _effects.tryEmit(Effect.OpenBootOverlayImagePicker(slot))
+    }
+
+    fun onBootOverlayImagePicked(host: Activity, slot: BootOverlayImageSlot, uri: Uri?) {
+        if (uiState.busy || uri == null) {
+            return
+        }
+        try {
+            val nextConfig = BootOverlayImageService.importImage(host, slot, uri)
+            uiState = uiState.copy(bootOverlayImageConfig = nextConfig)
+            showToast(host, UiText.StringResource(R.string.settings_boot_overlay_custom_image_saved), Toast.LENGTH_SHORT)
+            refreshStatus(host)
+        } catch (error: Throwable) {
+            showToast(
+                host,
+                UiText.StringResource(
+                    R.string.settings_boot_overlay_custom_image_failed,
+                    error.message ?: error.javaClass.simpleName
+                ),
+                Toast.LENGTH_LONG
+            )
+            refreshStatus(host)
+        }
+    }
+
+    fun onResetBootOverlayImages(host: Activity) {
+        if (uiState.busy) {
+            return
+        }
+        val nextConfig = BootOverlayImageService.reset(host)
+        uiState = uiState.copy(bootOverlayImageConfig = nextConfig)
+        showToast(host, UiText.StringResource(R.string.settings_boot_overlay_custom_image_reset), Toast.LENGTH_SHORT)
+        refreshStatus(host)
+    }
+
     fun onPreferredUpdateMirrorChanged(host: Activity, source: UpdateSource) {
         if (!source.userSelectable) {
             return
@@ -3355,8 +3424,10 @@ class SettingsScreenViewModel : ViewModel() {
         uiState = uiState.copy(
             themeMode = snapshot.themeMode,
             themeColor = snapshot.themeColor,
+            homeChromeTransparency = snapshot.homeChromeTransparency,
             bootOverlayStyle = snapshot.bootOverlayStyle,
             bootOverlayAnimation = snapshot.bootOverlayAnimation,
+            bootOverlayImageConfig = snapshot.bootOverlayImageConfig,
             playerName = snapshot.playerName,
             selectedRenderScale = rendering.renderScale,
             selectedTargetFps = rendering.targetFps,
@@ -4724,6 +4795,10 @@ class SettingsScreenViewModel : ViewModel() {
 
     private fun saveThemeColorSelection(host: Activity, themeColor: LauncherThemeColor) {
         LauncherPreferences.saveThemeColor(host, themeColor)
+    }
+
+    private fun saveHomeChromeTransparencySelection(host: Activity, transparency: Float) {
+        LauncherPreferences.saveHomeChromeTransparency(host, transparency)
     }
 
     private fun saveBootOverlayAnimationSelection(

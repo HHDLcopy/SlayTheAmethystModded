@@ -12,6 +12,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import io.stamethyst.backend.resources.RuntimeResourceProvider
+import java.io.File
 
 object RuntimeUiResourcePaths {
     const val BOOT_OVERLAY_BACKGROUND_BRIGHT = "ui/boot_bright.png"
@@ -42,6 +43,29 @@ fun RuntimeResourceImage(
 }
 
 @Composable
+fun FileImage(
+    path: String,
+    version: Long,
+    contentDescription: String?,
+    modifier: Modifier = Modifier,
+    alignment: Alignment = Alignment.Center,
+    contentScale: ContentScale = ContentScale.Fit,
+    alpha: Float = 1.0f,
+    colorFilter: ColorFilter? = null
+) {
+    val bitmap = rememberFileImageBitmap(path, version) ?: return
+    Image(
+        bitmap = bitmap,
+        contentDescription = contentDescription,
+        modifier = modifier,
+        alignment = alignment,
+        contentScale = contentScale,
+        alpha = alpha,
+        colorFilter = colorFilter
+    )
+}
+
+@Composable
 fun rememberRuntimeResourceImageBitmap(path: String): ImageBitmap? {
     val context = LocalContext.current
     val provider = remember(context) { RuntimeResourceProvider(context) }
@@ -56,5 +80,19 @@ fun rememberRuntimeResourceImageBitmap(path: String): ImageBitmap? {
                 }
             }.getOrNull()
         }
+    }
+}
+
+@Composable
+fun rememberFileImageBitmap(path: String?, version: Long): ImageBitmap? {
+    return remember(path, version) {
+        val filePath = path?.takeIf { it.isNotBlank() } ?: return@remember null
+        val file = File(filePath)
+        if (!file.isFile) {
+            return@remember null
+        }
+        runCatching {
+            BitmapFactory.decodeFile(file.absolutePath)?.asImageBitmap()
+        }.getOrNull()
     }
 }

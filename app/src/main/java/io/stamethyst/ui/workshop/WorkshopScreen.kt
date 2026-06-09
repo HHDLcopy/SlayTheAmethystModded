@@ -5,6 +5,9 @@ package io.stamethyst.ui.workshop
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.ColorFilter
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffColorFilter
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -56,6 +59,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -85,6 +89,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
@@ -118,6 +123,13 @@ import io.stamethyst.ui.SearchHistoryStore
 import io.stamethyst.ui.SearchHistorySuggestions
 import io.stamethyst.ui.icon.ArrowBack
 import io.stamethyst.ui.icon.KeyboardArrowUp
+import com.airbnb.lottie.LottieProperty
+import com.airbnb.lottie.compose.LottieAnimation
+import com.airbnb.lottie.compose.LottieCompositionSpec
+import com.airbnb.lottie.compose.LottieConstants
+import com.airbnb.lottie.compose.rememberLottieComposition
+import com.airbnb.lottie.compose.rememberLottieDynamicProperties
+import com.airbnb.lottie.compose.rememberLottieDynamicProperty
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -385,6 +397,7 @@ internal fun WorkshopScreen(
                                 item = item,
                                 installedMods = state.installedMods,
                                 downloadTaskStatuses = downloadTaskStatuses,
+                                preparingDownloadIds = state.preparingDownloadIds,
                             )
                             WorkshopItemCard(
                                 modifier = workshopListPlacementAnimation(enabled = !useFloatingHeader),
@@ -1356,10 +1369,15 @@ internal fun WorkshopDownloadActionButton(
             enabled = enabled,
             onClick = onClick,
         ) {
-            Icon(
-                painter = painterResource(state.actionIconRes),
-                contentDescription = stringResource(state.actionLabelResId),
-            )
+            val contentDescription = stringResource(state.actionLabelResId)
+            if (state == WorkshopModDownloadState.Downloading) {
+                WorkshopDownloadingAnimatedIcon(contentDescription = contentDescription)
+            } else {
+                Icon(
+                    painter = painterResource(state.actionIconRes),
+                    contentDescription = contentDescription,
+                )
+            }
         }
         return
     }
@@ -1398,6 +1416,30 @@ internal fun WorkshopDownloadActionButton(
             onClick = onClick,
         ) { Text(stringResource(state.actionLabelResId)) }
     }
+}
+
+@Composable
+private fun WorkshopDownloadingAnimatedIcon(
+    contentDescription: String,
+    modifier: Modifier = Modifier,
+) {
+    val composition by rememberLottieComposition(LottieCompositionSpec.RawRes(R.raw.workshop_downloading))
+    val tint = LocalContentColor.current
+    val colorFilter: ColorFilter = remember(tint) {
+        PorterDuffColorFilter(tint.toArgb(), PorterDuff.Mode.SRC_IN)
+    }
+    val dynamicProperties = rememberLottieDynamicProperties(
+        rememberLottieDynamicProperty(LottieProperty.COLOR_FILTER, colorFilter, "**"),
+    )
+    LottieAnimation(
+        composition = composition,
+        modifier = modifier
+            .size(48.dp)
+            .semantics { this.contentDescription = contentDescription },
+        iterations = LottieConstants.IterateForever,
+        dynamicProperties = dynamicProperties,
+        safeMode = true,
+    )
 }
 
 @Composable

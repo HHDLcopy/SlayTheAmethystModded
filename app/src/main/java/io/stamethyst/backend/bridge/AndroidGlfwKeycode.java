@@ -27,6 +27,8 @@ public final class AndroidGlfwKeycode {
         MAP.put(KeyEvent.KEYCODE_CTRL_RIGHT, LwjglGlfwKeycode.GLFW_KEY_RIGHT_CONTROL);
         MAP.put(KeyEvent.KEYCODE_ALT_LEFT, LwjglGlfwKeycode.GLFW_KEY_LEFT_ALT);
         MAP.put(KeyEvent.KEYCODE_ALT_RIGHT, LwjglGlfwKeycode.GLFW_KEY_RIGHT_ALT);
+        MAP.put(KeyEvent.KEYCODE_CAPS_LOCK, LwjglGlfwKeycode.GLFW_KEY_CAPS_LOCK);
+        MAP.put(KeyEvent.KEYCODE_GRAVE, LwjglGlfwKeycode.GLFW_KEY_GRAVE_ACCENT);
 
         MAP.put(KeyEvent.KEYCODE_A, LwjglGlfwKeycode.GLFW_KEY_A);
         MAP.put(KeyEvent.KEYCODE_B, LwjglGlfwKeycode.GLFW_KEY_B);

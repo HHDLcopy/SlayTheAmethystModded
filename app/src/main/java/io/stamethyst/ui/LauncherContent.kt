@@ -166,6 +166,7 @@ fun LauncherContent(
     val feedbackInboxState by FeedbackInboxCoordinator.uiState.collectAsState()
     val mainUiState = mainViewModel.uiState
     val settingsUiState = settingsViewModel.uiState
+    val homeChromeAlphaScale = 1f - settingsUiState.homeChromeTransparency
     val updateNotice = settingsUiState.availableUpdatePromptState?.let { promptState ->
         LauncherUpdateNoticeUiState(
             currentVersion = promptState.currentVersion,
@@ -399,6 +400,7 @@ fun LauncherContent(
                             onOpenWorkshopDetails = ::openWorkshopItemDetails,
                             onOpenInstalledWorkshopDetails = ::openInstalledWorkshopDetails,
                             onBatchSelectionModeChange = { modsBatchSelectionMode = it },
+                            homeChromeAlphaScale = homeChromeAlphaScale,
                             userScrollEnabled = !modsBatchSelectionMode && !showOverlayNav,
                             handleMainEffects = !showOverlayNav,
                             modifier = Modifier
@@ -805,6 +807,7 @@ fun LauncherContent(
                     LauncherDockBar(
                         hazeState = launcherDockHazeState,
                         currentRoute = dockPageRoute,
+                        materialAlphaScale = homeChromeAlphaScale,
                         onSelectRoute = { route -> selectDockRoute(route) },
                     )
                 }
@@ -1045,6 +1048,7 @@ private fun LauncherDockPager(
     onOpenWorkshopDetails: (WorkshopItemSummary) -> Unit,
     onOpenInstalledWorkshopDetails: (ModItemUi) -> Unit,
     onBatchSelectionModeChange: (Boolean) -> Unit,
+    homeChromeAlphaScale: Float,
     userScrollEnabled: Boolean,
     handleMainEffects: Boolean,
 ) {
@@ -1102,6 +1106,7 @@ private fun LauncherDockPager(
                         onOpenFeedbackSubscriptions = onOpenFeedbackSubscriptions,
                         onUpdateNoticeClick = settingsViewModel::showUpdatePrompt,
                         showSteamCloudBottomSheetHost = currentDockRoute == Route.Main,
+                        homeChromeAlphaScale = homeChromeAlphaScale,
                     )
                 }
 
@@ -1117,6 +1122,7 @@ private fun LauncherDockPager(
                         workshopUpdateCheckState = workshopUpdateCheckState,
                         onBatchSelectionModeChange = onBatchSelectionModeChange,
                         showSteamCloudBottomSheetHost = currentDockRoute == Route.Mods,
+                        homeChromeAlphaScale = homeChromeAlphaScale,
                         onCheckWorkshopUpdates = {
                             WorkshopUpdateCheckCoordinator.requestCheck(
                                 context = context.applicationContext,
@@ -1166,6 +1172,7 @@ private fun LauncherDockBar(
     modifier: Modifier = Modifier,
     hazeState: HazeState,
     currentRoute: Route?,
+    materialAlphaScale: Float,
     onSelectRoute: (Route) -> Unit,
 ) {
     val selectedRoute = currentRoute.launcherDockRoute() ?: Route.Main
@@ -1176,6 +1183,7 @@ private fun LauncherDockBar(
         shape = RoundedCornerShape(0.dp),
         contentPadding = PaddingValues(0.dp),
         showBorder = false,
+        materialAlphaScale = materialAlphaScale,
     ) {
         Row(
             modifier = Modifier

@@ -54,14 +54,18 @@ body {
   align-items: stretch;
 }
 
-.overview-row > .v-col,
-.distribution-card,
-.metrics-overview-card {
+.overview-row > .v-col {
   display: flex;
+  align-items: stretch;
+}
+
+.overview-row > .v-col > .v-card {
+  flex: 1 1 auto;
 }
 
 .distribution-card,
 .metrics-overview-card {
+  display: flex;
   flex-direction: column;
   width: 100%;
 }
@@ -116,10 +120,13 @@ body {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-template-rows: repeat(2, minmax(0, 1fr));
+  align-content: stretch;
   gap: 14px;
+  min-height: 430px;
 }
 
 .metric-card {
+  height: 100%;
   min-height: 174px;
   position: relative;
   overflow: hidden;
@@ -168,6 +175,7 @@ body {
 }
 
 .metric-value {
+  color: rgb(var(--metric-color));
   margin-top: 28px;
   font-size: 38px;
   font-weight: 760;
@@ -277,6 +285,7 @@ body {
   .metric-grid {
     grid-template-columns: 1fr;
     grid-template-rows: none;
+    min-height: 0;
   }
 
   .metric-card {

@@ -61,10 +61,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.stamethyst.config.BootOverlayAnimation
+import io.stamethyst.config.BootOverlayImageConfig
 import io.stamethyst.config.BootOverlayStyle
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.ui.loading.BootLoadingAnimation
+import io.stamethyst.ui.resources.FileImage
 import io.stamethyst.ui.resources.RuntimeResourceImage
 import io.stamethyst.ui.resources.RuntimeUiResourcePaths
 import io.stamethyst.ui.theme.LauncherTheme
@@ -223,6 +225,7 @@ class BootOverlayController(
         val themeColor = LauncherConfig.readThemeColor(activity)
         val bootOverlayStyle = LauncherConfig.readBootOverlayStyle(activity)
         val loadingAnimation = LauncherConfig.readBootOverlayAnimation(activity)
+        val bootOverlayImageConfig = LauncherConfig.readBootOverlayImageConfig(activity)
         bootOverlay?.setContent {
             LauncherTheme(
                 themeMode = themeMode,
@@ -232,6 +235,7 @@ class BootOverlayController(
                     uiState = overlayUiState,
                     overlayStyle = bootOverlayStyle,
                     loadingAnimation = loadingAnimation,
+                    imageConfig = bootOverlayImageConfig,
                     manualDismissBootOverlay = manualDismissBootOverlay,
                     onDismissClick = {
                         if (!manualDismissBootOverlay || bootOverlayDismissed) {
@@ -660,6 +664,7 @@ private fun BootOverlayPanel(
     uiState: BootOverlayUiState,
     overlayStyle: BootOverlayStyle,
     loadingAnimation: BootOverlayAnimation,
+    imageConfig: BootOverlayImageConfig,
     manualDismissBootOverlay: Boolean,
     onDismissClick: () -> Unit
 ) {
@@ -677,6 +682,7 @@ private fun BootOverlayPanel(
         BootOverlayStyle.MODERN -> ModernBootOverlayPanel(
             uiState = uiState,
             animatedProgress = animatedProgress,
+            imageConfig = imageConfig,
             manualDismissBootOverlay = manualDismissBootOverlay,
             onDismissClick = onDismissClick
         )
@@ -706,6 +712,7 @@ private fun BootOverlayPanel(
 private fun ModernBootOverlayPanel(
     uiState: BootOverlayUiState,
     animatedProgress: Float,
+    imageConfig: BootOverlayImageConfig,
     manualDismissBootOverlay: Boolean,
     onDismissClick: () -> Unit
 ) {
@@ -725,25 +732,10 @@ private fun ModernBootOverlayPanel(
     ) {
         var artHintExpanded by remember { mutableStateOf(false) }
         val revealProgress = animatedProgress.coerceIn(0f, 1f)
-        RuntimeResourceImage(
-            path = RuntimeUiResourcePaths.BOOT_OVERLAY_BACKGROUND_DARK,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            alignment = Alignment.TopStart,
+        BootOverlayArtBackground(
+            imageConfig = imageConfig,
+            revealProgress = revealProgress,
             modifier = Modifier.fillMaxSize()
-        )
-        RuntimeResourceImage(
-            path = RuntimeUiResourcePaths.BOOT_OVERLAY_BACKGROUND_BRIGHT,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            alignment = Alignment.TopStart,
-            modifier = Modifier
-                .fillMaxSize()
-                .drawWithContent {
-                    clipRect(right = size.width * revealProgress) {
-                        this@drawWithContent.drawContent()
-                    }
-                }
         )
         Box(
             modifier = Modifier
@@ -825,6 +817,57 @@ private fun ModernBootOverlayPanel(
                 }
             }
         }
+    }
+}
+
+@Composable
+internal fun BootOverlayArtBackground(
+    imageConfig: BootOverlayImageConfig,
+    revealProgress: Float,
+    modifier: Modifier = Modifier
+) {
+    val startImagePath = imageConfig.resolvedStartImagePath()
+    val endImagePath = imageConfig.resolvedEndImagePath()
+    if (startImagePath != null) {
+        FileImage(
+            path = startImagePath,
+            version = imageConfig.resolvedStartImageVersion(),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            alignment = Alignment.TopStart,
+            modifier = modifier
+        )
+    } else {
+        RuntimeResourceImage(
+            path = RuntimeUiResourcePaths.BOOT_OVERLAY_BACKGROUND_DARK,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            alignment = Alignment.TopStart,
+            modifier = modifier
+        )
+    }
+    val revealedModifier = modifier.drawWithContent {
+        clipRect(right = size.width * revealProgress.coerceIn(0f, 1f)) {
+            this@drawWithContent.drawContent()
+        }
+    }
+    if (endImagePath != null) {
+        FileImage(
+            path = endImagePath,
+            version = imageConfig.resolvedEndImageVersion(),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            alignment = Alignment.TopStart,
+            modifier = revealedModifier
+        )
+    } else {
+        RuntimeResourceImage(
+            path = RuntimeUiResourcePaths.BOOT_OVERLAY_BACKGROUND_BRIGHT,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            alignment = Alignment.TopStart,
+            modifier = revealedModifier
+        )
     }
 }
 

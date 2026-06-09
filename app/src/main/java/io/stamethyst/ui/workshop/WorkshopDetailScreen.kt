@@ -243,6 +243,7 @@ internal fun WorkshopDetailScreen(
                                     item = details.summary,
                                     installedMods = state.installedMods,
                                     downloadTasks = WorkshopDownloadCenterStore.tasks,
+                                    preparingDownloadIds = state.preparingDownloadIds,
                                 ),
                                 subscriptionLoading = state.detailSubscriptionLoadingId == details.summary.publishedFileId ||
                                     subscriptionStatus == WorkshopDetailSubscriptionStatus.Checking,
@@ -278,6 +279,7 @@ internal fun WorkshopDetailScreen(
                     dependencies = details.dependencies,
                     installedMods = state.installedMods,
                     downloadTasks = WorkshopDownloadCenterStore.tasks,
+                    preparingDownloadIds = state.preparingDownloadIds,
                 )
                 if (dependencies.isNotEmpty()) {
                     item(key = "workshop-detail-dependencies") {

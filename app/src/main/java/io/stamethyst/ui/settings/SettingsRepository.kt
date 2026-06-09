@@ -22,6 +22,7 @@ import io.stamethyst.backend.workshop.BaiduTranslationCredentialsRepository
 import io.stamethyst.backend.workshop.SteamLanguagePreference
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.BootOverlayAnimation
+import io.stamethyst.config.BootOverlayImageConfig
 import io.stamethyst.config.BootOverlayStyle
 import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.config.LauncherThemeColor
@@ -38,8 +39,10 @@ internal object SettingsRepository {
     data class SettingsSnapshot(
         val themeMode: LauncherThemeMode,
         val themeColor: LauncherThemeColor,
+        val homeChromeTransparency: Float,
         val bootOverlayStyle: BootOverlayStyle,
         val bootOverlayAnimation: BootOverlayAnimation,
+        val bootOverlayImageConfig: BootOverlayImageConfig,
         val playerName: String,
         val rendering: RenderingSnapshot,
         val jvm: JvmSnapshot,
@@ -144,12 +147,20 @@ internal object SettingsRepository {
         return LauncherPreferences.readThemeColor(context)
     }
 
+    fun loadHomeChromeTransparency(context: Context): Float {
+        return LauncherPreferences.readHomeChromeTransparency(context)
+    }
+
     fun loadBootOverlayAnimation(context: Context): BootOverlayAnimation {
         return LauncherPreferences.readBootOverlayAnimation(context)
     }
 
     fun loadBootOverlayStyle(context: Context): BootOverlayStyle {
         return LauncherPreferences.readBootOverlayStyle(context)
+    }
+
+    fun loadBootOverlayImageConfig(context: Context): BootOverlayImageConfig {
+        return LauncherPreferences.readBootOverlayImageConfig(context)
     }
 
     fun loadSettingsSnapshot(context: Context): SettingsSnapshot {
@@ -167,8 +178,10 @@ internal object SettingsRepository {
         return SettingsSnapshot(
             themeMode = LauncherPreferences.readThemeMode(context),
             themeColor = LauncherPreferences.readThemeColor(context),
+            homeChromeTransparency = LauncherPreferences.readHomeChromeTransparency(context),
             bootOverlayStyle = LauncherPreferences.readBootOverlayStyle(context),
             bootOverlayAnimation = LauncherPreferences.readBootOverlayAnimation(context),
+            bootOverlayImageConfig = LauncherPreferences.readBootOverlayImageConfig(context),
             playerName = LauncherPreferences.readPlayerName(context),
             rendering = RenderingSnapshot(
                 renderScale = RenderScaleService.readValue(context),
@@ -275,6 +288,10 @@ internal object SettingsRepository {
     fun resetLauncherSettingsToDefaults(context: Context) {
         LauncherPreferences.saveThemeMode(context, LauncherPreferences.DEFAULT_THEME_MODE)
         LauncherPreferences.saveThemeColor(context, LauncherPreferences.DEFAULT_THEME_COLOR)
+        LauncherPreferences.saveHomeChromeTransparency(
+            context,
+            LauncherPreferences.DEFAULT_HOME_CHROME_TRANSPARENCY
+        )
         LauncherPreferences.saveBootOverlayStyle(
             context,
             LauncherPreferences.DEFAULT_BOOT_OVERLAY_STYLE
@@ -283,6 +300,7 @@ internal object SettingsRepository {
             context,
             LauncherPreferences.DEFAULT_BOOT_OVERLAY_ANIMATION
         )
+        BootOverlayImageService.reset(context)
         LauncherPreferences.savePlayerName(context, LauncherPreferences.DEFAULT_PLAYER_NAME)
         RenderScaleService.reset(context)
         LauncherPreferences.saveTargetFps(context, LauncherPreferences.DEFAULT_TARGET_FPS)

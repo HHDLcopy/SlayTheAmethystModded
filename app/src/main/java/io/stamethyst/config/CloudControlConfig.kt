@@ -35,6 +35,7 @@ data class CloudControlRemoteConfigText(
 
 object CloudControlConfig {
     const val DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 30
+    const val DEFAULT_HEARTBEAT_WS_URL = "wss://heartbeat.nas.apricityx.top:23163/api/presence/ws"
     const val MIN_HEARTBEAT_INTERVAL_SECONDS = 30
     const val MAX_HEARTBEAT_INTERVAL_SECONDS = 3_600
 
@@ -84,7 +85,7 @@ object CloudControlConfig {
 
     @JvmStatic
     fun defaultHeartbeatWsUrl(): String =
-        ""
+        DEFAULT_HEARTBEAT_WS_URL
 
     fun fetchRemoteConfigText(context: Context): CloudControlRemoteConfigText {
         val configUrl = BuildConfig.CLOUD_CONTROL_CONFIG_URL.trim()

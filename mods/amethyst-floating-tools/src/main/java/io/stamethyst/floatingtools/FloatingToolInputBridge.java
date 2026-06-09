@@ -101,6 +101,11 @@ final class FloatingToolInputBridge {
         writeKeyboardRequest(source, true);
     }
 
+    static void requestCustomButton(String source) {
+        String cleanSource = source == null || source.trim().isEmpty() ? "floating_tools" : source.trim();
+        writeKeyboardRequest("custom_button:" + cleanSource, false);
+    }
+
     private static void writeKeyboardRequest(String source, boolean forceSystemKeyboard) {
         String path = System.getProperty("amethyst.in_game_keyboard_request", "").trim();
         if (path.isEmpty()) {

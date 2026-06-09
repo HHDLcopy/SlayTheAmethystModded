@@ -49,5 +49,23 @@
 - Dependency: `org.tukaani:xz`
 - License: Refer to upstream project terms.
 
+## Material Line Icons
+- Source: https://github.com/cyberalien/line-md
+- Local usage: Workshop market static download/status icon shapes in `app/src/main/res/drawable/ic_workshop_*.xml`.
+- License: MIT.
+
+## Lottie Android / Compose Runtime
+- Dependency: `com.airbnb.android:lottie-compose`
+- Source: https://github.com/airbnb/lottie-android
+- Local usage: Renders the Workshop market animated download status icons from `app/src/main/res/raw/workshop_useanimations_*.json`.
+- License: Apache License 2.0.
+
+## useAnimations Animated Icons
+- Source: https://useanimations.com/
+- Package source: https://github.com/useAnimations/react-useanimations
+- Local usage: Workshop market animated download, loading, and checkmark icon assets at `app/src/main/res/raw/workshop_useanimations_*.json`.
+- Local modifications: The original Lottie JSON assets are rendered with the launcher's current icon tint at runtime.
+- License: Creative Commons Attribution 4.0 International (CC BY 4.0) with useAnimations attribution required by upstream.
+
 Note: This file is a practical attribution summary for this minimal prototype.
 For redistribution/commercial compliance, audit all transitive dependencies and include full license texts as required.

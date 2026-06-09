@@ -78,8 +78,15 @@ object LauncherConfig {
         "mobileglues_fsr1_quality_preset"
     private const val PREF_KEY_THEME_MODE = "theme_mode"
     private const val PREF_KEY_THEME_COLOR = "theme_color"
+    private const val PREF_KEY_HOME_CHROME_TRANSPARENCY = "home_chrome_transparency"
     private const val PREF_KEY_BOOT_OVERLAY_STYLE = "boot_overlay_style"
     private const val PREF_KEY_BOOT_OVERLAY_ANIMATION = "boot_overlay_animation"
+    private const val PREF_KEY_BOOT_OVERLAY_IMAGE_MODE = "boot_overlay_image_mode"
+    private const val PREF_KEY_BOOT_OVERLAY_START_IMAGE_PATH = "boot_overlay_start_image_path"
+    private const val PREF_KEY_BOOT_OVERLAY_END_IMAGE_PATH = "boot_overlay_end_image_path"
+    private const val PREF_KEY_BOOT_OVERLAY_START_IMAGE_VERSION =
+        "boot_overlay_start_image_version"
+    private const val PREF_KEY_BOOT_OVERLAY_END_IMAGE_VERSION = "boot_overlay_end_image_version"
     private const val PREF_KEY_SHOW_MOD_FILE_NAME = "show_mod_file_name"
     private const val PREF_KEY_MOBILE_HUD_ENABLED = "mobile_hud_enabled"
     private const val PREF_KEY_COMPENDIUM_UPGRADE_TOUCH_FIX_ENABLED =
@@ -242,9 +249,13 @@ object LauncherConfig {
         MobileGluesFsr1QualityPreset.DISABLED
     val DEFAULT_THEME_MODE: LauncherThemeMode = LauncherThemeMode.FOLLOW_SYSTEM
     val DEFAULT_THEME_COLOR: LauncherThemeColor = LauncherThemeColor.COLORLESS
+    const val DEFAULT_HOME_CHROME_TRANSPARENCY = 0.0f
+    const val MIN_HOME_CHROME_TRANSPARENCY = 0.0f
+    const val MAX_HOME_CHROME_TRANSPARENCY = 0.8f
     val DEFAULT_BOOT_OVERLAY_STYLE: BootOverlayStyle = BootOverlayStyle.MODERN
     val DEFAULT_BOOT_OVERLAY_ANIMATION: BootOverlayAnimation =
         BootOverlayAnimation.CARD_SHUFFLE
+    val DEFAULT_BOOT_OVERLAY_IMAGE_MODE: BootOverlayImageMode = BootOverlayImageMode.DUAL
     val DEFAULT_SPECIAL_KEY_INPUT_MODE: SpecialKeyInputMode = SpecialKeyInputMode.BUILT_IN_MOD
     const val DEFAULT_SHOW_FLOATING_MOUSE_WINDOW = false
     val DEFAULT_TOUCH_MOUSE_INTERACTION_MODE: TouchMouseInteractionMode =
@@ -456,6 +467,60 @@ object LauncherConfig {
     fun saveBootOverlayAnimation(context: Context, animation: BootOverlayAnimation) {
         prefs(context).edit {
             putString(PREF_KEY_BOOT_OVERLAY_ANIMATION, animation.persistedValue)
+        }
+    }
+
+    fun readBootOverlayImageConfig(context: Context): BootOverlayImageConfig {
+        val preferences = prefs(context)
+        val mode = BootOverlayImageMode.fromPersistedValue(
+            preferences.getString(
+                PREF_KEY_BOOT_OVERLAY_IMAGE_MODE,
+                DEFAULT_BOOT_OVERLAY_IMAGE_MODE.persistedValue
+            )
+        ) ?: DEFAULT_BOOT_OVERLAY_IMAGE_MODE
+        val startImagePath = preferences
+            .getString(PREF_KEY_BOOT_OVERLAY_START_IMAGE_PATH, null)
+            ?.takeIf { isReadableFilePath(it) }
+        val endImagePath = preferences
+            .getString(PREF_KEY_BOOT_OVERLAY_END_IMAGE_PATH, null)
+            ?.takeIf { isReadableFilePath(it) }
+        val startImageVersion = preferences.getLong(
+            PREF_KEY_BOOT_OVERLAY_START_IMAGE_VERSION,
+            0L
+        )
+        val endImageVersion = preferences.getLong(
+            PREF_KEY_BOOT_OVERLAY_END_IMAGE_VERSION,
+            0L
+        )
+        return BootOverlayImageConfig(
+            mode = mode,
+            startImagePath = startImagePath,
+            endImagePath = endImagePath,
+            startImageVersion = startImageVersion,
+            endImageVersion = endImageVersion
+        )
+    }
+
+    fun saveBootOverlayImageConfig(
+        context: Context,
+        config: BootOverlayImageConfig
+    ) {
+        prefs(context).edit {
+            putString(PREF_KEY_BOOT_OVERLAY_IMAGE_MODE, config.mode.persistedValue)
+            putStringOrRemove(PREF_KEY_BOOT_OVERLAY_START_IMAGE_PATH, config.startImagePath)
+            putStringOrRemove(PREF_KEY_BOOT_OVERLAY_END_IMAGE_PATH, config.endImagePath)
+            putLong(PREF_KEY_BOOT_OVERLAY_START_IMAGE_VERSION, config.startImageVersion)
+            putLong(PREF_KEY_BOOT_OVERLAY_END_IMAGE_VERSION, config.endImageVersion)
+        }
+    }
+
+    fun clearBootOverlayImageConfig(context: Context) {
+        prefs(context).edit {
+            remove(PREF_KEY_BOOT_OVERLAY_IMAGE_MODE)
+            remove(PREF_KEY_BOOT_OVERLAY_START_IMAGE_PATH)
+            remove(PREF_KEY_BOOT_OVERLAY_END_IMAGE_PATH)
+            remove(PREF_KEY_BOOT_OVERLAY_START_IMAGE_VERSION)
+            remove(PREF_KEY_BOOT_OVERLAY_END_IMAGE_VERSION)
         }
     }
 
@@ -779,6 +844,31 @@ object LauncherConfig {
     fun saveThemeColor(context: Context, themeColor: LauncherThemeColor) {
         prefs(context).edit {
             putString(PREF_KEY_THEME_COLOR, themeColor.persistedValue)
+        }
+    }
+
+    fun readHomeChromeTransparency(context: Context): Float {
+        val stored = prefs(context).getFloat(
+            PREF_KEY_HOME_CHROME_TRANSPARENCY,
+            DEFAULT_HOME_CHROME_TRANSPARENCY
+        )
+        return normalizeHomeChromeTransparency(stored)
+    }
+
+    fun saveHomeChromeTransparency(context: Context, transparency: Float) {
+        prefs(context).edit {
+            putFloat(
+                PREF_KEY_HOME_CHROME_TRANSPARENCY,
+                normalizeHomeChromeTransparency(transparency)
+            )
+        }
+    }
+
+    fun normalizeHomeChromeTransparency(transparency: Float): Float {
+        return if (transparency.isFinite()) {
+            transparency.coerceIn(MIN_HOME_CHROME_TRANSPARENCY, MAX_HOME_CHROME_TRANSPARENCY)
+        } else {
+            DEFAULT_HOME_CHROME_TRANSPARENCY
         }
     }
 
@@ -2412,6 +2502,23 @@ object LauncherConfig {
             .replace('\r', ' ')
             .replace('\n', ' ')
             .trim()
+    }
+
+    private fun SharedPreferences.Editor.putStringOrRemove(
+        key: String,
+        value: String?
+    ): SharedPreferences.Editor {
+        return if (value.isNullOrBlank()) {
+            remove(key)
+        } else {
+            putString(key, value)
+        }
+    }
+
+    private fun isReadableFilePath(path: String): Boolean {
+        return path.isNotBlank() && File(path).let { file ->
+            file.isFile && file.canRead()
+        }
     }
 
     private fun syncLauncherManagedPreferenceFiles(

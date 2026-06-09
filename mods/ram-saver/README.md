@@ -46,8 +46,20 @@ Pins hot real textures for a bounded time when they are slow to materialize or r
 14. `optispire.RamSaver`
 Catches runtime failures while materializing a lazy file-backed texture, logs the failing path and exception, and substitutes a pinned 1x1 transparent fallback texture instead of letting render-thread PNG decode failures crash the game. This addresses crashes such as `Couldn't load file: HakureiReimuResources/images/ui/PowerShadow.png` / `decoder init failed for stream` when Ram Saver restores a mod texture during rendering. Type: crash fix implemented by `RamSaver.FileTextureSupplier` and the materialization fallback path in `RamSaver`.
 
-15. `com.badlogic.gdx.graphics.Texture`
-Materializes fake file-backed textures when mods call `Texture.bind()` or `Texture.bind(int)` directly instead of drawing through SpriteBatch. This addresses missing or incorrect shader effect textures, such as foil/noise/spectrum textures used by card visual-effect mods, when Ram Saver's fake wrappers would otherwise bind GL handle `0`. Type: rendering compatibility workaround implemented by the fake-texture `bind` overrides in `Texture`.
+15. `com.badlogic.gdx.graphics.Texture` and `optispire.RamSaver`
+Materializes fake file-backed textures when mods call `Texture.bind()` or `Texture.bind(int)` directly, but uses a non-refreshing cache lookup before loading so ordinary asset aging is not touched on every bind. This addresses missing or incorrect shader effect textures, such as foil/noise/spectrum textures used by card visual-effect mods, while avoiding the per-frame residency refresh and budget bookkeeping that made the direct-bind compatibility path too heavy. Type: rendering compatibility/performance workaround implemented by the fake-texture `bind` overrides in `Texture` and `RamSaver.getTextureForBindFallback`.
+
+16. `optispire.patches.SpriteCacheFakeTextures`
+Temporarily swaps fake textures stored in `SpriteCache` private cache entries to real textures only for `SpriteCache.draw(int)` and `SpriteCache.draw(int, int, int)`, using the same non-refreshing bind fallback as direct `Texture.bind()`, then restores the fake objects after drawing. This addresses cached mesh render paths that bind textures directly from `SpriteCache.Cache.textures` and would otherwise bind fake GL handle `0` or refresh texture residency every frame. Type: rendering compatibility/performance workaround implemented by `SpriteCacheFakeTextures`.
+
+17. `optispire.patches.DecalMaterialFakeTexture`
+Temporarily swaps the texture inside `DecalMaterial.textureRegion` to a real texture for `DecalMaterial.set()` through the non-refreshing bind fallback, then restores the fake texture after the material has bound texture unit `0`. This addresses decal/g3d render paths that call `Texture.bind(0)` directly and avoids repeatedly refreshing texture residency from the material bind path. Type: rendering compatibility/performance workaround implemented by `DecalMaterialFakeTexture`.
+
+18. `optispire.patches.TextureDescriptorFakeTexture`
+Makes `TextureDescriptor.hashCode()` and `TextureDescriptor.compareTo(TextureDescriptor)` fake-texture-safe by using the fake texture's file identity as a stable sort/hash key instead of asking the fake texture for a real GL handle. This addresses g3d material sorting and texture-binder bookkeeping paths that could otherwise decode/upload real textures just to hash or compare descriptors. Type: memory-management/performance workaround implemented by `TextureDescriptorFakeTexture`.
+
+19. `optispire.patches.TextureDescriptorFakeTexture`
+Reads the `TextureDescriptor.compareTo(TextureDescriptor)` argument through ModTheSpire's `__args` array instead of a named `other` patch parameter. This addresses startup failures with `PatchingException: Illegal patch parameter: No matching parameter with name "other"` when the target libGDX method parameter name is unavailable or differs from the patch method name. Type: startup crash fix implemented by `TextureDescriptorFakeTexture`.
 
 ## Maintenance rule
 

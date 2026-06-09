@@ -48,6 +48,7 @@
     '#facc15',
     '#fde68a'
   ];
+  const DARK_SCHEME_QUERY = '(prefers-color-scheme: dark)';
 
   const METRIC_ITEMS = [
     {
@@ -212,7 +213,72 @@
     return Math.max(0, Number(snapshot && snapshot.totalDevices) || 0);
   }
 
+  function getPreferredThemeName() {
+    if (typeof window !== 'undefined' && window.matchMedia &&
+      window.matchMedia(DARK_SCHEME_QUERY).matches) {
+      return 'dark';
+    }
+    return 'light';
+  }
+
+  function normalizeRgbComponents(value) {
+    const normalized = String(value || '').trim();
+    if (!normalized) {
+      return '';
+    }
+    if (normalized.includes(',')) {
+      return normalized;
+    }
+    return normalized
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 3)
+      .join(', ');
+  }
+
+  function readThemeRgb(name, fallback) {
+    if (typeof window === 'undefined' || !window.getComputedStyle || typeof document === 'undefined') {
+      return fallback;
+    }
+    const themeRoot = document.querySelector('.v-theme--dark, .v-theme--light') || document.documentElement;
+    const value = window.getComputedStyle(themeRoot)
+      .getPropertyValue('--v-theme-' + name);
+    return normalizeRgbComponents(value) || fallback;
+  }
+
+  function rgb(components) {
+    return 'rgb(' + components + ')';
+  }
+
+  function rgba(components, alpha) {
+    return 'rgba(' + components + ', ' + alpha + ')';
+  }
+
+  function buildChartPalette() {
+    const dark = getPreferredThemeName() === 'dark';
+    const fallbackOnSurface = dark ? '248, 250, 252' : '17, 24, 39';
+    const fallbackSurface = dark ? '23, 29, 36' : '255, 255, 255';
+    const fallbackPrimary = dark ? '122, 167, 255' : '37, 99, 235';
+    const onSurface = readThemeRgb('on-surface', fallbackOnSurface);
+    const surface = readThemeRgb('surface', fallbackSurface);
+    const primary = readThemeRgb('primary', fallbackPrimary);
+
+    return {
+      primary: rgb(primary),
+      axisText: rgba(onSurface, .66),
+      axisLine: rgba(onSurface, .22),
+      centerText: rgb(onSurface),
+      emptySlice: rgba(onSurface, .12),
+      ringBorder: rgb(surface),
+      secondaryText: rgba(onSurface, .68),
+      splitLine: rgba(onSurface, .13),
+      trendAreaEnd: rgba(primary, .03),
+      trendAreaStart: rgba(primary, .24)
+    };
+  }
+
   function buildChartOption(stats) {
+    const palette = buildChartPalette();
     const buckets = Array.isArray(stats && stats.buckets) ? stats.buckets : [];
     const samples = buckets
       .filter((bucket) => bucket && bucket.hasSnapshot !== false)
@@ -224,7 +290,7 @@
       }));
 
     return {
-      color: ['#2563eb'],
+      color: [palette.primary],
       animationDuration: 220,
       tooltip: {
         trigger: 'axis',
@@ -255,11 +321,11 @@
         data: samples.map((item) => item.label),
         axisLabel: {
           hideOverlap: true,
-          color: '#64748b'
+          color: palette.axisText
         },
         axisLine: {
           lineStyle: {
-            color: '#cbd5e1'
+            color: palette.axisLine
           }
         },
         axisTick: {
@@ -270,16 +336,16 @@
         type: 'value',
         name: '该时刻在线人数',
         nameTextStyle: {
-          color: '#64748b',
+          color: palette.axisText,
           fontSize: 12
         },
         minInterval: 1,
         axisLabel: {
-          color: '#64748b'
+          color: palette.axisText
         },
         splitLine: {
           lineStyle: {
-            color: '#e2e8f0'
+            color: palette.splitLine
           }
         }
       },
@@ -301,8 +367,8 @@
               x2: 0,
               y2: 1,
               colorStops: [
-                { offset: 0, color: 'rgba(37, 99, 235, .22)' },
-                { offset: 1, color: 'rgba(37, 99, 235, .02)' }
+                { offset: 0, color: palette.trendAreaStart },
+                { offset: 1, color: palette.trendAreaEnd }
               ]
             }
           },
@@ -316,6 +382,7 @@
   }
 
   function buildDistributionChartOption(distribution) {
+    const palette = buildChartPalette();
     const deviceModels = distribution.deviceModels;
     const appVersions = distribution.appVersions;
     const androidVersions = distribution.androidVersions;
@@ -343,7 +410,7 @@
           top: '42%',
           style: {
             text: String(total),
-            fill: '#111827',
+            fill: palette.centerText,
             fontSize: 34,
             fontWeight: 800,
             textAlign: 'center'
@@ -355,21 +422,21 @@
           top: '52%',
           style: {
             text: hasAnyData ? 'online' : 'no sessions',
-            fill: '#64748b',
+            fill: palette.secondaryText,
             fontSize: 12,
             textAlign: 'center'
           }
         }
       ],
       series: [
-        buildDistributionRingSeries('机型分布', ['24%', '36%'], deviceModels, DEVICE_MODEL_COLORS),
-        buildDistributionRingSeries('App 版本分布', ['43%', '55%'], appVersions, APP_VERSION_COLORS),
-        buildDistributionRingSeries('Android 版本分布', ['62%', '74%'], androidVersions, ANDROID_VERSION_COLORS)
+        buildDistributionRingSeries('机型分布', ['24%', '36%'], deviceModels, DEVICE_MODEL_COLORS, palette),
+        buildDistributionRingSeries('App 版本分布', ['43%', '55%'], appVersions, APP_VERSION_COLORS, palette),
+        buildDistributionRingSeries('Android 版本分布', ['62%', '74%'], androidVersions, ANDROID_VERSION_COLORS, palette)
       ]
     };
   }
 
-  function buildDistributionRingSeries(name, radius, data, colorSet) {
+  function buildDistributionRingSeries(name, radius, data, colorSet, palette) {
     const normalizedData = data.length > 0 ? data : [{ name: '暂无数据', value: 1, empty: true }];
     return {
       name,
@@ -380,7 +447,7 @@
       minAngle: 4,
       silent: data.length === 0,
       itemStyle: {
-        borderColor: '#fff',
+        borderColor: palette.ringBorder,
         borderWidth: 2
       },
       label: {
@@ -392,7 +459,7 @@
         label: {
           show: data.length > 0,
           formatter: '{b}\n{d}%',
-          color: '#0f172a',
+          color: palette.centerText,
           fontSize: 13,
           fontWeight: 650
         }
@@ -403,7 +470,7 @@
       data: normalizedData.map((item, index) => ({
         ...item,
         itemStyle: {
-          color: item.empty ? '#e5e7eb' : colorSet[index % colorSet.length]
+          color: item.empty ? palette.emptySlice : colorSet[index % colorSet.length]
         }
       }))
     };
@@ -459,6 +526,8 @@
       let distributionChart = null;
       let resizeObserver = null;
       let distributionResizeObserver = null;
+      let themeMediaQuery = null;
+      const vuetifyTheme = Vuetify.useTheme ? Vuetify.useTheme() : null;
 
       const state = reactive({
         token: readTokenFromLocation(),
@@ -707,6 +776,16 @@
         }
       }
 
+      function syncThemeToSystem() {
+        if (vuetifyTheme && vuetifyTheme.global && vuetifyTheme.global.name) {
+          vuetifyTheme.global.name.value = getPreferredThemeName();
+        }
+        nextTick(() => {
+          ensureChart();
+          ensureDistributionChart();
+        });
+      }
+
       watch(stats, () => {
         nextTick(ensureChart);
       }, { deep: true });
@@ -733,12 +812,28 @@
           distributionResizeObserver = new ResizeObserver(resizeChart);
           distributionResizeObserver.observe(distributionChartEl.value);
         }
+        if (window.matchMedia) {
+          themeMediaQuery = window.matchMedia(DARK_SCHEME_QUERY);
+          if (themeMediaQuery.addEventListener) {
+            themeMediaQuery.addEventListener('change', syncThemeToSystem);
+          } else if (themeMediaQuery.addListener) {
+            themeMediaQuery.addListener(syncThemeToSystem);
+          }
+        }
         window.addEventListener('resize', resizeChart);
       });
 
       onBeforeUnmount(() => {
         disconnect(true);
         window.removeEventListener('resize', resizeChart);
+        if (themeMediaQuery) {
+          if (themeMediaQuery.removeEventListener) {
+            themeMediaQuery.removeEventListener('change', syncThemeToSystem);
+          } else if (themeMediaQuery.removeListener) {
+            themeMediaQuery.removeListener(syncThemeToSystem);
+          }
+          themeMediaQuery = null;
+        }
         if (resizeObserver) {
           resizeObserver.disconnect();
           resizeObserver = null;
@@ -1005,10 +1100,7 @@
         defaultSet: 'mdi'
       },
       theme: {
-        defaultTheme: window.matchMedia &&
-          window.matchMedia('(prefers-color-scheme: dark)').matches
-          ? 'dark'
-          : 'light',
+        defaultTheme: getPreferredThemeName(),
         themes: {
           light: {
             colors: {

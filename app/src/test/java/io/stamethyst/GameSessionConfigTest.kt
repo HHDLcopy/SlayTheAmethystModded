@@ -7,6 +7,7 @@ import io.stamethyst.backend.render.RendererSelectionMode
 import io.stamethyst.backend.render.VirtualResolutionMode
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.RenderSurfaceBackend
+import io.stamethyst.config.SpecialKeyInputMode
 import io.stamethyst.config.TouchMouseInteractionMode
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -47,6 +48,7 @@ class GameSessionConfigTest {
             manualDismissBootOverlay = false,
             forceJvmCrash = false,
             forceRuntimeCrash = false,
+            specialKeyInputMode = SpecialKeyInputMode.DISABLED,
             showFloatingMouseWindow = false,
             showGamePerformanceOverlay = false,
             mirrorJvmLogsToLogcat = false,

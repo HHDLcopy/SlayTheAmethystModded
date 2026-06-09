@@ -28,6 +28,7 @@ internal fun resolveWorkshopModDownloadState(
     item: WorkshopItemSummary,
     installedMods: List<WorkshopInstalledModRecord>,
     downloadTasks: List<WorkshopDownloadTaskUi>,
+    preparingDownloadIds: Set<ULong> = emptySet(),
 ): WorkshopModDownloadState {
     val task = downloadTasks.firstOrNull { it.publishedFileId == item.publishedFileId }
     return resolveWorkshopModDownloadState(
@@ -35,6 +36,7 @@ internal fun resolveWorkshopModDownloadState(
         installedMods = installedMods,
         taskStatus = task?.status,
         taskMessage = task?.message.orEmpty(),
+        preparingDownloadIds = preparingDownloadIds,
     )
 }
 
@@ -42,10 +44,12 @@ internal fun resolveWorkshopModDownloadState(
     item: WorkshopItemSummary,
     installedMods: List<WorkshopInstalledModRecord>,
     downloadTaskStatuses: Map<ULong, WorkshopDownloadTaskStatus>,
+    preparingDownloadIds: Set<ULong> = emptySet(),
 ): WorkshopModDownloadState = resolveWorkshopModDownloadState(
     item = item,
     installedMods = installedMods,
     taskStatus = downloadTaskStatuses[item.publishedFileId],
+    preparingDownloadIds = preparingDownloadIds,
 )
 
 private fun resolveWorkshopModDownloadState(
@@ -53,8 +57,10 @@ private fun resolveWorkshopModDownloadState(
     installedMods: List<WorkshopInstalledModRecord>,
     taskStatus: WorkshopDownloadTaskStatus?,
     taskMessage: String = "",
+    preparingDownloadIds: Set<ULong> = emptySet(),
 ): WorkshopModDownloadState {
     if (WorkshopDownloadBlocklist.isBlocked(item)) return WorkshopModDownloadState.Unavailable
+    if (item.publishedFileId in preparingDownloadIds) return WorkshopModDownloadState.Queued
     val installed = installedMods.firstOrNull {
         it.appId == item.appId && it.publishedFileId == item.publishedFileId
     }

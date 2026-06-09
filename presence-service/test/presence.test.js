@@ -37,7 +37,9 @@ test('presence service records heartbeat and returns summary/sessions/stats', as
       id_type: 'test',
       state: 'game',
       player_name: 'Ironclad',
-      app_version: '1.2.3'
+      app_version: '1.2.3',
+      device_model: 'Google Pixel 8',
+      android_version: 'Android 15 (SDK 35)'
     }
   });
   assert.equal(heartbeat.statusCode, 200);
@@ -58,6 +60,8 @@ test('presence service records heartbeat and returns summary/sessions/stats', as
   assert.equal(sessions.statusCode, 200);
   assert.equal(sessions.json().sessions.length, 1);
   assert.equal(sessions.json().sessions[0].playerName, 'Ironclad');
+  assert.equal(sessions.json().sessions[0].deviceModel, 'Google Pixel 8');
+  assert.equal(sessions.json().sessions[0].androidVersion, 'Android 15 (SDK 35)');
 
   const stats = await server.inject(
     '/api/presence/stats?token=panel-secret&bucket_seconds=3600&window_seconds=86400'
@@ -234,7 +238,9 @@ test('presence websocket accepts status frames', async (t) => {
     id_type: 'test',
     state: 'game',
     player_name: 'Silent',
-    app_version: '1.2.3'
+    app_version: '1.2.3',
+    device_model: 'Samsung SM-S9280',
+    android_version: 'Android 14 (SDK 34)'
   }));
 
   const ack = await waitForSocketMessage(ws, (message) => message.type === 'presence_ack');
@@ -246,6 +252,11 @@ test('presence websocket accepts status frames', async (t) => {
   const summary = await server.inject('/api/presence/summary');
   assert.equal(summary.statusCode, 200);
   assert.equal(summary.json().online, 1);
+
+  const sessions = await server.inject('/api/presence/sessions?token=panel-secret');
+  assert.equal(sessions.statusCode, 200);
+  assert.equal(sessions.json().sessions[0].deviceModel, 'Samsung SM-S9280');
+  assert.equal(sessions.json().sessions[0].androidVersion, 'Android 14 (SDK 34)');
 });
 
 function waitForSocketOpen(ws) {

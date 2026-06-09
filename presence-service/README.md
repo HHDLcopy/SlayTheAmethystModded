@@ -112,6 +112,8 @@ App -> server:
   "state": "game",
   "player_name": "Player",
   "app_version": "1.4.8",
+  "device_model": "Google Pixel 8",
+  "android_version": "Android 15 (SDK 35)",
   "sent_at": 1760000000000
 }
 ```

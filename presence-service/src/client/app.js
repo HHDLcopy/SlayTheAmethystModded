@@ -81,6 +81,8 @@
   const SESSION_HEADERS = [
     { title: '设备', key: 'clientId', minWidth: 210 },
     { title: '玩家名', key: 'playerName', minWidth: 130 },
+    { title: '机型', key: 'deviceModel', minWidth: 160 },
+    { title: 'Android', key: 'androidVersion', minWidth: 130 },
     { title: 'ID 类型', key: 'idType', minWidth: 150 },
     { title: '状态', key: 'state', minWidth: 110 },
     { title: '版本', key: 'appVersion', minWidth: 100 },
@@ -732,6 +734,14 @@
                     </template>
                     <template #item.playerName="{ item }">
                       {{ tableItem(item).playerName || '-' }}
+                    </template>
+                    <template #item.deviceModel="{ item }">
+                      <span :title="tableItem(item).deviceModel || ''">
+                        {{ tableItem(item).deviceModel || '-' }}
+                      </span>
+                    </template>
+                    <template #item.androidVersion="{ item }">
+                      {{ tableItem(item).androidVersion || '-' }}
                     </template>
                     <template #item.idType="{ item }">
                       {{ tableItem(item).idType || 'unknown' }}

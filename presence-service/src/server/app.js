@@ -483,7 +483,11 @@ function copyHeartbeatTopLevelFields(message) {
     'player_name',
     'playerName',
     'app_version',
-    'appVersion'
+    'appVersion',
+    'device_model',
+    'deviceModel',
+    'android_version',
+    'androidVersion'
   ]) {
     if (message && Object.prototype.hasOwnProperty.call(message, key)) {
       copied[key] = message[key];

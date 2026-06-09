@@ -106,6 +106,8 @@ async function initializeDatabase(database) {
       state TEXT NOT NULL DEFAULT 'game',
       player_name TEXT NOT NULL DEFAULT '',
       app_version TEXT NOT NULL DEFAULT '',
+      device_model TEXT NOT NULL DEFAULT '',
+      android_version TEXT NOT NULL DEFAULT '',
       first_seen_at_ms INTEGER NOT NULL,
       last_seen_at_ms INTEGER NOT NULL
     );
@@ -119,6 +121,20 @@ async function initializeDatabase(database) {
       updated_at_ms INTEGER NOT NULL
     );
   `);
+  await database.exec(`
+    ALTER TABLE presence_sessions ADD COLUMN device_model TEXT NOT NULL DEFAULT '';
+  `).catch((error) => {
+    if (!/duplicate column name/i.test(String(error && error.message))) {
+      throw error;
+    }
+  });
+  await database.exec(`
+    ALTER TABLE presence_sessions ADD COLUMN android_version TEXT NOT NULL DEFAULT '';
+  `).catch((error) => {
+    if (!/duplicate column name/i.test(String(error && error.message))) {
+      throw error;
+    }
+  });
 }
 
 module.exports = {

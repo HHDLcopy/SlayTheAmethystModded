@@ -55,7 +55,7 @@ class CloudControlConfigTest {
     fun parseSettings_clampsIntervalAndFallsBackInvalidUrl() {
         val defaults = CloudControlSettings(
             heartbeatIntervalSeconds = 600,
-            heartbeatWsUrl = "wss://default.example.com/api/presence/ws"
+            heartbeatWsUrl = ""
         )
 
         val parsed = CloudControlConfig.parseSettings(
@@ -71,5 +71,10 @@ class CloudControlConfigTest {
         assertNotNull(parsed)
         assertEquals(CloudControlConfig.MIN_HEARTBEAT_INTERVAL_SECONDS, parsed?.heartbeatIntervalSeconds)
         assertEquals(defaults.heartbeatWsUrl, parsed?.heartbeatWsUrl)
+    }
+
+    @Test
+    fun defaultSettings_doesNotFallbackToScfPresenceEndpoint() {
+        assertEquals("", CloudControlConfig.defaultSettings().heartbeatWsUrl)
     }
 }

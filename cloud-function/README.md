@@ -1,6 +1,6 @@
 # Cloud Function
 
-This directory contains the Tencent SCF feedback relay used by the Android
+This directory contains the Tencent SCF feedback/log relay used by the Android
 client.
 
 Presence heartbeats, online count, and the operator panel have moved out of this
@@ -10,6 +10,22 @@ cloud function. The standalone implementation now lives in
 ```text
 Android app -> Fastify WebSocket -> SQLite3
 ```
+
+## Current Scope
+
+SCF heartbeat/presence support is deprecated. Do not configure SCF as a game
+heartbeat target, and do not route client heartbeats through SCF to Cloudflare
+Worker storage.
+
+SCF is only responsible for:
+
+- uploading feedback/log diagnostic bundles;
+- creating and updating feedback issues;
+- fetching feedback issue lists or state used by the launcher;
+- relaying GitHub webhook events for feedback mail notifications.
+
+New clients should read cloud-control from `presence-service` and report game or
+launcher presence to `heartbeat.wsUrl`.
 
 ## Endpoint
 
@@ -22,9 +38,21 @@ POST /api/sts-feedback
 The local relay implementation also accepts `POST /` as a compatibility route,
 but the app does not rely on it.
 
+Feedback issue information endpoints:
+
+```text
+GET  /api/feedback-issues/browse
+POST /api/feedback-issues/message
+POST /api/feedback-issues/state
+POST /github/webhook
+```
+
+SCF exposes no heartbeat/presence endpoint.
+
 `GET /cloud-control.json` remains as a compatibility pointer only. It no longer
-serves presence heartbeat settings; deploy `presence-service` and publish its
-`/cloud-control.json` instead.
+serves or owns presence heartbeat settings. If `CLOUD_CONTROL_CONFIG_URL` is
+configured, SCF redirects to the `presence-service` `/cloud-control.json`; if it
+is not configured, SCF returns `410 presence_moved`.
 
 ## What It Does
 

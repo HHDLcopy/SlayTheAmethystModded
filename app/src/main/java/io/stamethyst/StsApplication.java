@@ -4,6 +4,8 @@ import android.app.Application;
 
 import io.stamethyst.backend.crash.LauncherCrashReporter;
 import io.stamethyst.backend.diag.MemoryDiagnosticsLogger;
+import io.stamethyst.backend.presence.GamePresenceReporter;
+import io.stamethyst.backend.process.AppProcess;
 import io.stamethyst.config.CloudControlConfig;
 import io.stamethyst.config.LauncherThemeController;
 import net.kdt.pojavlaunch.MainActivity;
@@ -17,7 +19,10 @@ public class StsApplication extends Application {
         LauncherThemeController.applySavedThemeMode(getApplicationContext());
         MemoryDiagnosticsLogger.install(getApplicationContext());
         MainActivity.init(getApplicationContext());
-        CloudControlConfig.refreshOnAppStart(getApplicationContext());
+        if (AppProcess.isDefaultProcess(getApplicationContext())) {
+            CloudControlConfig.refreshOnAppStart(getApplicationContext());
+            GamePresenceReporter.install(this);
+        }
     }
 
     @Override

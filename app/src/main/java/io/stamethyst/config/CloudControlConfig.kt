@@ -48,6 +48,9 @@ object CloudControlConfig {
     private val listeners = CopyOnWriteArraySet<() -> Unit>()
 
     @Volatile
+    private var startupRefreshCompleted = false
+
+    @Volatile
     private var currentSettings: CloudControlSettings = defaultSettings()
 
     @JvmStatic
@@ -58,6 +61,9 @@ object CloudControlConfig {
 
     @JvmStatic
     fun heartbeatWsUrl(): String = current().heartbeatWsUrl
+
+    @JvmStatic
+    fun isStartupRefreshCompleted(): Boolean = startupRefreshCompleted
 
     @JvmStatic
     fun addListener(listener: () -> Unit) {
@@ -78,7 +84,7 @@ object CloudControlConfig {
 
     @JvmStatic
     fun defaultHeartbeatWsUrl(): String =
-        httpUrlToWebSocketUrl(BuildConfig.FEEDBACK_BASE_URL.trim().trimEnd('/') + "/api/presence/ws")
+        ""
 
     fun fetchRemoteConfigText(context: Context): CloudControlRemoteConfigText {
         val configUrl = BuildConfig.CLOUD_CONTROL_CONFIG_URL.trim()
@@ -90,10 +96,11 @@ object CloudControlConfig {
 
     @JvmStatic
     fun refreshOnAppStart(context: Context) {
-        currentSettings = defaultSettings()
         if (!startupRefreshStarted.compareAndSet(false, true)) {
             return
         }
+        currentSettings = defaultSettings()
+        startupRefreshCompleted = false
         refreshAsync(context)
     }
 
@@ -138,6 +145,7 @@ object CloudControlConfig {
 
     private fun updateCurrentSettings(settings: CloudControlSettings) {
         currentSettings = settings
+        startupRefreshCompleted = true
         for (listener in listeners) {
             try {
                 listener()

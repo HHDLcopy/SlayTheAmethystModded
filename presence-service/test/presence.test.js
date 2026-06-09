@@ -257,6 +257,24 @@ test('presence websocket accepts status frames', async (t) => {
   assert.equal(sessions.statusCode, 200);
   assert.equal(sessions.json().sessions[0].deviceModel, 'Samsung SM-S9280');
   assert.equal(sessions.json().sessions[0].androidVersion, 'Android 14 (SDK 34)');
+
+  ws.send(JSON.stringify({
+    type: 'presence',
+    client_id: 'client-ws',
+    state: 'launcher',
+    sent_at: Date.now()
+  }));
+
+  const minimalAck = await waitForSocketMessage(ws, (message) => message.type === 'presence_ack');
+  assert.equal(minimalAck.ok, true);
+
+  const sessionsAfterMinimalHeartbeat = await server.inject('/api/presence/sessions?token=panel-secret');
+  assert.equal(sessionsAfterMinimalHeartbeat.statusCode, 200);
+  assert.equal(sessionsAfterMinimalHeartbeat.json().sessions[0].state, 'launcher');
+  assert.equal(sessionsAfterMinimalHeartbeat.json().sessions[0].playerName, 'Silent');
+  assert.equal(sessionsAfterMinimalHeartbeat.json().sessions[0].appVersion, '1.2.3');
+  assert.equal(sessionsAfterMinimalHeartbeat.json().sessions[0].deviceModel, 'Samsung SM-S9280');
+  assert.equal(sessionsAfterMinimalHeartbeat.json().sessions[0].androidVersion, 'Android 14 (SDK 34)');
 });
 
 function waitForSocketOpen(ws) {

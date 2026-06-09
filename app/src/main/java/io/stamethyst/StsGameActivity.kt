@@ -22,7 +22,7 @@ import androidx.appcompat.app.AppCompatActivity
 import io.stamethyst.backend.audio.GameAudioController
 import io.stamethyst.backend.diag.MemoryDiagnosticsLogger
 import io.stamethyst.backend.launch.GameProcessLaunchGuard
-import io.stamethyst.backend.presence.GamePresenceHeartbeat
+import io.stamethyst.backend.presence.GamePresenceStateMarker
 import io.stamethyst.backend.render.DisplayPerformanceController
 import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.config.BackBehavior
@@ -69,7 +69,6 @@ class StsGameActivity : AppCompatActivity() {
     private lateinit var inputHandler: GameInputHandler
     private lateinit var sessionCoordinator: GameSessionCoordinator
     private lateinit var gameAudioController: GameAudioController
-    private lateinit var presenceHeartbeat: GamePresenceHeartbeat
     private val keepScreenOnHandler = Handler(Looper.getMainLooper())
     private val keepScreenOnIdleRunnable = Runnable {
         keepScreenOnActive = false
@@ -115,11 +114,7 @@ class StsGameActivity : AppCompatActivity() {
         setVolumeControlStream(AudioManager.STREAM_MUSIC)
 
         sessionConfig = GameSessionConfig.fromActivityIntent(this, intent)
-        presenceHeartbeat = GamePresenceHeartbeat(
-            context = this,
-            launchMode = sessionConfig.launchMode
-        )
-        presenceHeartbeat.start()
+        GamePresenceStateMarker.markGameActive(this, sessionConfig.launchMode)
         MemoryDiagnosticsLogger.logEvent(
             this,
             "game_activity_created",
@@ -151,9 +146,7 @@ class StsGameActivity : AppCompatActivity() {
         if (::sessionCoordinator.isInitialized) {
             sessionCoordinator.onDestroy()
         }
-        if (::presenceHeartbeat.isInitialized) {
-            presenceHeartbeat.stop()
-        }
+        GamePresenceStateMarker.markLauncherActive(this)
         if (launchGuardAcquired && (!::sessionCoordinator.isInitialized || !sessionCoordinator.jvmLaunchStarted)) {
             releaseLaunchGuard()
         }
@@ -177,6 +170,7 @@ class StsGameActivity : AppCompatActivity() {
         renderSurfaceManager.onForegroundChanged(true)
         sessionCoordinator.onResume()
         activityForeground = true
+        GamePresenceStateMarker.markGameActive(this, sessionConfig.launchMode)
         resetKeepScreenOnIdleTimer()
     }
 

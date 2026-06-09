@@ -48,15 +48,22 @@ class PresenceStore {
       )
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(client_id) DO UPDATE SET
-        device_id = excluded.device_id,
-        id_type = excluded.id_type,
+        device_id = CASE WHEN ? THEN excluded.device_id ELSE presence_sessions.device_id END,
+        id_type = CASE WHEN ? THEN excluded.id_type ELSE presence_sessions.id_type END,
         state = excluded.state,
-        player_name = excluded.player_name,
-        app_version = excluded.app_version,
-        device_model = excluded.device_model,
-        android_version = excluded.android_version,
+        player_name = CASE WHEN ? THEN excluded.player_name ELSE presence_sessions.player_name END,
+        app_version = CASE WHEN ? THEN excluded.app_version ELSE presence_sessions.app_version END,
+        device_model = CASE WHEN ? THEN excluded.device_model ELSE presence_sessions.device_model END,
+        android_version = CASE WHEN ? THEN excluded.android_version ELSE presence_sessions.android_version END,
         last_seen_at_ms = excluded.last_seen_at_ms
       WHERE presence_sessions.last_seen_at_ms <= ?
+        OR presence_sessions.state <> excluded.state
+        OR (? AND presence_sessions.device_id <> excluded.device_id)
+        OR (? AND presence_sessions.id_type <> excluded.id_type)
+        OR (? AND presence_sessions.player_name <> excluded.player_name)
+        OR (? AND presence_sessions.app_version <> excluded.app_version)
+        OR (? AND presence_sessions.device_model <> excluded.device_model)
+        OR (? AND presence_sessions.android_version <> excluded.android_version)
     `, [
       heartbeat.clientId,
       heartbeat.deviceId,
@@ -68,7 +75,19 @@ class PresenceStore {
       heartbeat.androidVersion,
       nowMs,
       nowMs,
-      writeCutoffMs
+      fieldFlag(heartbeat.fields.deviceId),
+      fieldFlag(heartbeat.fields.idType),
+      fieldFlag(heartbeat.fields.playerName),
+      fieldFlag(heartbeat.fields.appVersion),
+      fieldFlag(heartbeat.fields.deviceModel),
+      fieldFlag(heartbeat.fields.androidVersion),
+      writeCutoffMs,
+      fieldFlag(heartbeat.fields.deviceId),
+      fieldFlag(heartbeat.fields.idType),
+      fieldFlag(heartbeat.fields.playerName),
+      fieldFlag(heartbeat.fields.appVersion),
+      fieldFlag(heartbeat.fields.deviceModel),
+      fieldFlag(heartbeat.fields.androidVersion)
     ]);
     const summary = await this.buildSummary(null, nowMs);
 
@@ -254,16 +273,58 @@ function parseHeartbeat(body) {
     throw httpError(400, 'Missing required presence client_id or device_id');
   }
 
+  const deviceId = readOptionalField(body, 'device_id', 'deviceId');
+  const idType = readOptionalField(body, 'id_type', 'idType');
+  const playerName = readOptionalField(body, 'player_name', 'playerName');
+  const appVersion = readOptionalField(body, 'app_version', 'appVersion');
+  const deviceModel = readOptionalField(body, 'device_model', 'deviceModel');
+  const androidVersion = readOptionalField(body, 'android_version', 'androidVersion');
+
   return {
     clientId,
-    deviceId: normalizeClientId(firstNonEmpty(body.device_id, body.deviceId)),
-    idType: normalizeOptionalString(firstNonEmpty(body.id_type, body.idType)),
+    deviceId: normalizeClientId(deviceId.value),
+    idType: normalizeOptionalString(idType.value),
     state: normalizeOptionalString(firstNonEmpty(body.state, body.phase)) || 'game',
-    playerName: normalizeOptionalString(firstNonEmpty(body.player_name, body.playerName)),
-    appVersion: normalizeOptionalString(firstNonEmpty(body.app_version, body.appVersion)),
-    deviceModel: normalizeOptionalString(firstNonEmpty(body.device_model, body.deviceModel)),
-    androidVersion: normalizeOptionalString(firstNonEmpty(body.android_version, body.androidVersion))
+    playerName: normalizeOptionalString(playerName.value),
+    appVersion: normalizeOptionalString(appVersion.value),
+    deviceModel: normalizeOptionalString(deviceModel.value),
+    androidVersion: normalizeOptionalString(androidVersion.value),
+    fields: {
+      deviceId: deviceId.present,
+      idType: idType.present,
+      playerName: playerName.present,
+      appVersion: appVersion.present,
+      deviceModel: deviceModel.present,
+      androidVersion: androidVersion.present
+    }
   };
+}
+
+function readOptionalField(body, snakeKey, camelKey) {
+  if (hasOwn(body, snakeKey)) {
+    return {
+      present: true,
+      value: body[snakeKey]
+    };
+  }
+  if (hasOwn(body, camelKey)) {
+    return {
+      present: true,
+      value: body[camelKey]
+    };
+  }
+  return {
+    present: false,
+    value: ''
+  };
+}
+
+function hasOwn(object, key) {
+  return Boolean(object) && Object.prototype.hasOwnProperty.call(object, key);
+}
+
+function fieldFlag(value) {
+  return value ? 1 : 0;
 }
 
 function resolveRuntimeOptions(config, query, body) {

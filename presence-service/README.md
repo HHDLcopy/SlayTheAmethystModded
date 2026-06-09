@@ -7,10 +7,10 @@ Tencent SCF -> Cloudflare Worker/D1 chain with:
 Android app -> Fastify WebSocket -> SQLite3
 ```
 
-The Android client keeps one WebSocket connection open, sends presence status
-every 30 seconds by default, and reconnects automatically. The Vue3 panel also
-uses WebSocket server push for sessions and stats, so it no longer polls the
-HTTP endpoints.
+The Android client keeps one WebSocket connection open, sends a full presence
+frame when the connection opens or stable metadata changes, then sends minimal
+heartbeat frames every 30 seconds by default. The Vue3 panel also uses WebSocket
+server push for sessions and stats, so it no longer polls the HTTP endpoints.
 
 ## Features
 
@@ -101,7 +101,8 @@ builds read `heartbeat.wsUrl` and report presence over WebSocket.
 
 ## WebSocket Messages
 
-App -> server:
+App -> server full presence frame, sent on WebSocket connect and whenever
+metadata changes:
 
 ```json
 {
@@ -117,6 +118,23 @@ App -> server:
   "sent_at": 1760000000000
 }
 ```
+
+App -> server minimal heartbeat frame, sent while the WebSocket connection is
+already established and metadata is unchanged:
+
+```json
+{
+  "type": "presence",
+  "client_id": "android:...",
+  "state": "game",
+  "sent_at": 1760000000000
+}
+```
+
+Minimal heartbeat frames update `state` and the latest heartbeat timestamp.
+Missing metadata fields keep their previous stored values so the panel continues
+to show player name, app version, model, and Android version from the full
+presence frame.
 
 Server -> app:
 

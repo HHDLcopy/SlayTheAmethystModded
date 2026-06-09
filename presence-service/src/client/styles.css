@@ -26,7 +26,7 @@ body {
 }
 
 .page-container {
-  width: min(1240px, 100%);
+  width: min(1420px, 100%);
   padding: 24px;
 }
 
@@ -50,25 +50,131 @@ body {
   line-height: 1.45;
 }
 
+.overview-row {
+  align-items: stretch;
+}
+
+.overview-row > .v-col,
+.distribution-card,
+.metrics-overview-card {
+  display: flex;
+}
+
+.distribution-card,
+.metrics-overview-card {
+  flex-direction: column;
+  width: 100%;
+}
+
+.distribution-card .v-card-text,
+.metrics-overview-card .v-card-text {
+  flex: 1 1 auto;
+}
+
+.distribution-ring-legend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: rgba(var(--v-theme-on-surface), .66);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.distribution-ring-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.legend-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.legend-dot.device {
+  background: #2563eb;
+}
+
+.legend-dot.app {
+  background: #16a34a;
+}
+
+.legend-dot.android {
+  background: #dc2626;
+}
+
+.distribution-chart {
+  width: 100%;
+  height: 430px;
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
 .metric-card {
-  min-height: 138px;
+  min-height: 174px;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  background: linear-gradient(180deg, rgb(var(--v-theme-surface)) 0%, rgba(var(--v-theme-on-surface), .025) 100%);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, .05);
+}
+
+.metric-bg-icon {
+  position: absolute !important;
+  right: 14px;
+  bottom: 10px;
+  color: rgb(var(--metric-color));
+  opacity: .13;
+  font-size: 116px !important;
+  line-height: 1;
+  transform: rotate(-8deg);
+  pointer-events: none;
+}
+
+.metric-card-primary {
+  --metric-color: var(--v-theme-primary);
+}
+
+.metric-card-success {
+  --metric-color: var(--v-theme-success);
+}
+
+.metric-card-warning {
+  --metric-color: var(--v-theme-warning);
+}
+
+.metric-card-info {
+  --metric-color: var(--v-theme-info);
 }
 
 .metric-heading {
   display: flex;
   align-items: center;
-  gap: 12px;
   color: rgba(var(--v-theme-on-surface), .72);
   font-size: 13px;
   font-weight: 650;
+  min-width: 0;
+  position: relative;
+  z-index: 1;
 }
 
 .metric-value {
-  margin-top: 18px;
-  font-size: 30px;
+  margin-top: 28px;
+  font-size: 38px;
   font-weight: 760;
-  line-height: 1.1;
+  line-height: 1;
   overflow-wrap: anywhere;
+  position: relative;
+  z-index: 1;
 }
 
 .panel-title {
@@ -162,6 +268,19 @@ body {
 
   .presence-chart {
     height: 270px;
+  }
+
+  .distribution-chart {
+    height: 380px;
+  }
+
+  .metric-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: none;
+  }
+
+  .metric-card {
+    min-height: 150px;
   }
 
   .stats-window-toggle {

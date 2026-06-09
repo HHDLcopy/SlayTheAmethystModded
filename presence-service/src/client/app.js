@@ -26,6 +26,28 @@
     { title: '30天', value: 30 * 24 * HOUR_SECONDS }
   ];
   const DEFAULT_STATS_WINDOW_SECONDS = 7 * 24 * HOUR_SECONDS;
+  const DISTRIBUTION_TOP_LIMIT = 5;
+  const DEVICE_MODEL_COLORS = [
+    '#2563eb',
+    '#3b82f6',
+    '#60a5fa',
+    '#93c5fd',
+    '#bfdbfe',
+    '#dbeafe'
+  ];
+  const APP_VERSION_COLORS = [
+    '#16a34a',
+    '#22c55e',
+    '#4ade80',
+    '#bbf7d0'
+  ];
+  const ANDROID_VERSION_COLORS = [
+    '#dc2626',
+    '#f97316',
+    '#f59e0b',
+    '#facc15',
+    '#fde68a'
+  ];
 
   const METRIC_ITEMS = [
     {
@@ -293,11 +315,150 @@
     };
   }
 
+  function buildDistributionChartOption(distribution) {
+    const deviceModels = distribution.deviceModels;
+    const appVersions = distribution.appVersions;
+    const androidVersions = distribution.androidVersions;
+    const total = Number(distribution.total) || 0;
+    const hasAnyData = deviceModels.length > 0 || appVersions.length > 0 || androidVersions.length > 0;
+
+    return {
+      backgroundColor: 'transparent',
+      animationDuration: 220,
+      tooltip: {
+        trigger: 'item',
+        confine: true,
+        formatter(params) {
+          const percent = Number(params.percent);
+          return [
+            '<strong>' + params.seriesName + '</strong>',
+            params.name + ': ' + params.value + ' (' + (Number.isFinite(percent) ? percent : 0) + '%)'
+          ].join('<br>');
+        }
+      },
+      graphic: [
+        {
+          type: 'text',
+          left: 'center',
+          top: '42%',
+          style: {
+            text: String(total),
+            fill: '#111827',
+            fontSize: 34,
+            fontWeight: 800,
+            textAlign: 'center'
+          }
+        },
+        {
+          type: 'text',
+          left: 'center',
+          top: '52%',
+          style: {
+            text: hasAnyData ? 'online' : 'no sessions',
+            fill: '#64748b',
+            fontSize: 12,
+            textAlign: 'center'
+          }
+        }
+      ],
+      series: [
+        buildDistributionRingSeries('机型分布', ['24%', '36%'], deviceModels, DEVICE_MODEL_COLORS),
+        buildDistributionRingSeries('App 版本分布', ['43%', '55%'], appVersions, APP_VERSION_COLORS),
+        buildDistributionRingSeries('Android 版本分布', ['62%', '74%'], androidVersions, ANDROID_VERSION_COLORS)
+      ]
+    };
+  }
+
+  function buildDistributionRingSeries(name, radius, data, colorSet) {
+    const normalizedData = data.length > 0 ? data : [{ name: '暂无数据', value: 1, empty: true }];
+    return {
+      name,
+      type: 'pie',
+      radius,
+      center: ['50%', '48%'],
+      avoidLabelOverlap: true,
+      minAngle: 4,
+      silent: data.length === 0,
+      itemStyle: {
+        borderColor: '#fff',
+        borderWidth: 2
+      },
+      label: {
+        show: false
+      },
+      emphasis: {
+        scale: data.length > 0,
+        scaleSize: 5,
+        label: {
+          show: data.length > 0,
+          formatter: '{b}\n{d}%',
+          color: '#0f172a',
+          fontSize: 13,
+          fontWeight: 650
+        }
+      },
+      labelLine: {
+        show: false
+      },
+      data: normalizedData.map((item, index) => ({
+        ...item,
+        itemStyle: {
+          color: item.empty ? '#e5e7eb' : colorSet[index % colorSet.length]
+        }
+      }))
+    };
+  }
+
+  function buildSessionDistribution(sessions) {
+    const normalizedSessions = Array.isArray(sessions) ? sessions : [];
+    return {
+      total: normalizedSessions.length,
+      deviceModels: countTopValues(normalizedSessions, 'deviceModel'),
+      appVersions: countTopValues(normalizedSessions, 'appVersion'),
+      androidVersions: countTopValues(normalizedSessions, 'androidVersion')
+    };
+  }
+
+  function countTopValues(items, key) {
+    const counts = new Map();
+    for (const item of items) {
+      const value = normalizeDistributionLabel(item && item[key]);
+      counts.set(value, (counts.get(value) || 0) + 1);
+    }
+
+    const sorted = Array.from(counts.entries())
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value || a.name.localeCompare(b.name));
+    if (sorted.length <= DISTRIBUTION_TOP_LIMIT) {
+      return sorted;
+    }
+
+    const topItems = sorted.slice(0, DISTRIBUTION_TOP_LIMIT);
+    const otherValue = sorted
+      .slice(DISTRIBUTION_TOP_LIMIT)
+      .reduce((total, item) => total + item.value, 0);
+    if (otherValue > 0) {
+      topItems.push({
+        name: 'Other',
+        value: otherValue
+      });
+    }
+    return topItems;
+  }
+
+  function normalizeDistributionLabel(value) {
+    const normalized = String(value || '').trim();
+    return normalized || 'unknown';
+  }
+
   createApp({
     setup() {
       const chartEl = ref(null);
+      const distributionChartEl = ref(null);
       let chart = null;
+      let distributionChart = null;
       let resizeObserver = null;
+      let distributionResizeObserver = null;
 
       const state = reactive({
         token: readTokenFromLocation(),
@@ -343,6 +504,7 @@
       const sessions = computed(() => Array.isArray(snapshot.value.sessions)
         ? snapshot.value.sessions
         : []);
+      const sessionDistribution = computed(() => buildSessionDistribution(sessions.value));
       const metricItems = computed(() => METRIC_ITEMS.map((item) => ({
         key: item.key,
         title: item.title,
@@ -524,9 +686,24 @@
         chart.setOption(buildChartOption(stats.value), true);
       }
 
+      function ensureDistributionChart() {
+        if (!distributionChartEl.value || typeof echarts === 'undefined') {
+          return;
+        }
+        if (!distributionChart) {
+          distributionChart = echarts.init(distributionChartEl.value, null, {
+            renderer: 'canvas'
+          });
+        }
+        distributionChart.setOption(buildDistributionChartOption(sessionDistribution.value), true);
+      }
+
       function resizeChart() {
         if (chart) {
           chart.resize();
+        }
+        if (distributionChart) {
+          distributionChart.resize();
         }
       }
 
@@ -538,14 +715,23 @@
         nextTick(ensureChart);
       });
 
+      watch(sessionDistribution, () => {
+        nextTick(ensureDistributionChart);
+      }, { deep: true });
+
       onMounted(() => {
         if (hasToken.value) {
           connect();
         }
         nextTick(ensureChart);
+        nextTick(ensureDistributionChart);
         if (window.ResizeObserver && chartEl.value) {
           resizeObserver = new ResizeObserver(resizeChart);
           resizeObserver.observe(chartEl.value);
+        }
+        if (window.ResizeObserver && distributionChartEl.value) {
+          distributionResizeObserver = new ResizeObserver(resizeChart);
+          distributionResizeObserver.observe(distributionChartEl.value);
         }
         window.addEventListener('resize', resizeChart);
       });
@@ -557,14 +743,23 @@
           resizeObserver.disconnect();
           resizeObserver = null;
         }
+        if (distributionResizeObserver) {
+          distributionResizeObserver.disconnect();
+          distributionResizeObserver = null;
+        }
         if (chart) {
           chart.dispose();
           chart = null;
+        }
+        if (distributionChart) {
+          distributionChart.dispose();
+          distributionChart = null;
         }
       });
 
       return {
         chartEl,
+        distributionChartEl,
         state,
         PRESENCE_SERVICE_BASE_URL,
         hasToken,
@@ -573,6 +768,7 @@
         snapshot,
         stats,
         sessions,
+        sessionDistribution,
         metricItems,
         hasStatsSamples,
         selectedStatsWindowLabel,
@@ -652,18 +848,51 @@
               </v-btn>
             </v-toolbar>
 
-            <v-row class="mt-4" dense>
-              <v-col v-for="item in metricItems" :key="item.key" cols="12" sm="6" lg="3">
-                <v-card class="metric-card" elevation="1">
-                  <v-card-text>
-                    <div class="metric-heading">
-                      <v-avatar :color="item.color" variant="tonal" size="42">
-                        <v-icon :icon="item.icon"></v-icon>
-                      </v-avatar>
-                      <span>{{ item.title }}</span>
+            <v-row class="mt-4 overview-row" dense>
+              <v-col cols="12" lg="7">
+                <v-card class="distribution-card" elevation="1">
+                  <v-card-title class="panel-title">
+                    <div>
+                      <div>在线分布</div>
+                      <div class="panel-subtitle">内圈机型，中圈 App 版本，外圈 Android 版本</div>
                     </div>
-                    <div class="metric-value">{{ item.value }}</div>
-                    <div class="metric-subtitle">{{ item.subtitle }}</div>
+                    <v-spacer></v-spacer>
+                    <div class="distribution-ring-legend" aria-label="distribution ring legend">
+                      <span><i class="legend-dot device"></i>机型</span>
+                      <span><i class="legend-dot app"></i>App</span>
+                      <span><i class="legend-dot android"></i>Android</span>
+                    </div>
+                  </v-card-title>
+                  <v-card-text>
+                    <div ref="distributionChartEl" class="distribution-chart"></div>
+                  </v-card-text>
+                </v-card>
+              </v-col>
+
+              <v-col cols="12" lg="5">
+                <v-card class="metrics-overview-card" elevation="1">
+                  <v-card-title class="panel-title">
+                    <div>
+                      <div>核心指标</div>
+                      <div class="panel-subtitle">当前 WebSocket 快照</div>
+                    </div>
+                  </v-card-title>
+                  <v-card-text class="metric-grid">
+                    <v-card
+                      v-for="item in metricItems"
+                      :key="item.key"
+                      class="metric-card"
+                      :class="'metric-card-' + item.color"
+                      elevation="0"
+                    >
+                      <v-card-text>
+                        <v-icon class="metric-bg-icon" :icon="item.icon"></v-icon>
+                        <div class="metric-heading">
+                          <span>{{ item.title }}</span>
+                        </div>
+                        <div class="metric-value">{{ item.value }}</div>
+                      </v-card-text>
+                    </v-card>
                   </v-card-text>
                 </v-card>
               </v-col>

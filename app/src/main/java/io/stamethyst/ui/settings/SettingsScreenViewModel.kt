@@ -277,8 +277,8 @@ class SettingsScreenViewModel : ViewModel() {
             LauncherPreferences.DEFAULT_GPU_RESOURCE_GUARDIAN_PRESSURE_DOWNSCALE_ENABLED,
         val themeMode: LauncherThemeMode = LauncherPreferences.DEFAULT_THEME_MODE,
         val themeColor: LauncherThemeColor = LauncherPreferences.DEFAULT_THEME_COLOR,
-        val homeChromeTransparency: Float =
-            LauncherPreferences.DEFAULT_HOME_CHROME_TRANSPARENCY,
+        val chromeBackgroundOpacity: Float =
+            LauncherPreferences.DEFAULT_CHROME_BACKGROUND_OPACITY,
         val bootOverlayStyle: BootOverlayStyle =
             LauncherPreferences.DEFAULT_BOOT_OVERLAY_STYLE,
         val bootOverlayAnimation: BootOverlayAnimation =
@@ -498,7 +498,7 @@ class SettingsScreenViewModel : ViewModel() {
         uiState = uiState.copy(
             themeMode = SettingsRepository.loadThemeMode(host),
             themeColor = SettingsRepository.loadThemeColor(host),
-            homeChromeTransparency = SettingsRepository.loadHomeChromeTransparency(host),
+            chromeBackgroundOpacity = SettingsRepository.loadChromeBackgroundOpacity(host),
             bootOverlayStyle = SettingsRepository.loadBootOverlayStyle(host),
             bootOverlayAnimation = SettingsRepository.loadBootOverlayAnimation(host),
             bootOverlayImageConfig = SettingsRepository.loadBootOverlayImageConfig(host)
@@ -515,13 +515,13 @@ class SettingsScreenViewModel : ViewModel() {
         syncThemeAppearance(host)
     }
 
-    fun onHomeChromeTransparencyChanged(host: Activity, transparency: Float) {
-        val normalized = LauncherPreferences.normalizeHomeChromeTransparency(transparency)
-        if (uiState.busy || uiState.homeChromeTransparency == normalized) {
+    fun onChromeBackgroundOpacityChanged(host: Activity, opacity: Float) {
+        val normalized = LauncherPreferences.normalizeChromeBackgroundOpacity(opacity)
+        if (uiState.busy || uiState.chromeBackgroundOpacity == normalized) {
             return
         }
-        uiState = uiState.copy(homeChromeTransparency = normalized)
-        saveHomeChromeTransparencySelection(host, normalized)
+        uiState = uiState.copy(chromeBackgroundOpacity = normalized)
+        saveChromeBackgroundOpacitySelection(host, normalized)
     }
 
     fun onBootOverlayAnimationChanged(host: Activity, animation: BootOverlayAnimation) {
@@ -3424,7 +3424,7 @@ class SettingsScreenViewModel : ViewModel() {
         uiState = uiState.copy(
             themeMode = snapshot.themeMode,
             themeColor = snapshot.themeColor,
-            homeChromeTransparency = snapshot.homeChromeTransparency,
+            chromeBackgroundOpacity = snapshot.chromeBackgroundOpacity,
             bootOverlayStyle = snapshot.bootOverlayStyle,
             bootOverlayAnimation = snapshot.bootOverlayAnimation,
             bootOverlayImageConfig = snapshot.bootOverlayImageConfig,
@@ -4797,8 +4797,8 @@ class SettingsScreenViewModel : ViewModel() {
         LauncherPreferences.saveThemeColor(host, themeColor)
     }
 
-    private fun saveHomeChromeTransparencySelection(host: Activity, transparency: Float) {
-        LauncherPreferences.saveHomeChromeTransparency(host, transparency)
+    private fun saveChromeBackgroundOpacitySelection(host: Activity, opacity: Float) {
+        LauncherPreferences.saveChromeBackgroundOpacity(host, opacity)
     }
 
     private fun saveBootOverlayAnimationSelection(

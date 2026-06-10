@@ -826,8 +826,8 @@
     <string name="settings_theme_color_jibao">故障机器人</string>
     <string name="settings_theme_color_guanjie">观者</string>
     <string name="settings_theme_color_colorless">无色</string>
-    <string name="settings_home_chrome_transparency_title">主页 Header 和 Dock 透明度</string>
-    <string name="settings_home_chrome_transparency_desc">调整主页顶部 Header 和底部 Dock 的玻璃背景透明度。</string>
+    <string name="settings_chrome_background_opacity_title">Header 和 Dock 背景不透明度</string>
+    <string name="settings_chrome_background_opacity_desc">调整启动器所有页面 Header 和 Dock 玻璃背景后面的不透明度。</string>
     <string name="settings_boot_overlay_style_title">启动界面样式</string>
     <string name="settings_boot_overlay_style_desc">选择游戏启动时显示的加载界面。</string>
     <string name="settings_boot_overlay_style_dialog_title">启动界面样式</string>
@@ -836,7 +836,7 @@
     <string name="settings_boot_overlay_style_classic_log">经典日志浮层</string>
     <string name="settings_boot_overlay_style_material_log">紧凑日志页</string>
     <string name="settings_boot_overlay_custom_image_title">自定义加载图</string>
-    <string name="settings_boot_overlay_custom_image_desc">为全屏插画加载界面选择本机图片。单图模式会把同一张图用于两层加载图。</string>
+    <string name="settings_boot_overlay_custom_image_desc">自定义全屏插画加载界面图片。</string>
     <string name="settings_boot_overlay_custom_image_dialog_title">自定义加载图</string>
     <string name="settings_boot_overlay_custom_image_default">使用内置插画</string>
     <string name="settings_boot_overlay_custom_image_single_summary">单图模式</string>

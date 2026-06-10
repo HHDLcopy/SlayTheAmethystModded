@@ -220,8 +220,8 @@ fun LauncherSettingsLauncherScreen(
         onThemeColorChanged = { themeColor ->
             viewModel.onThemeColorChanged(activity, themeColor)
         },
-        onHomeChromeTransparencyChanged = { transparency ->
-            viewModel.onHomeChromeTransparencyChanged(activity, transparency)
+        onChromeBackgroundOpacityChanged = { opacity ->
+            viewModel.onChromeBackgroundOpacityChanged(activity, opacity)
         },
         onBootOverlayStyleChanged = { style ->
             viewModel.onBootOverlayStyleChanged(activity, style)
@@ -706,7 +706,7 @@ private fun LauncherSettingsLauncherScreenContent(
     onOpenBasicTutorial: () -> Unit = {},
     onThemeModeChanged: (LauncherThemeMode) -> Unit = {},
     onThemeColorChanged: (LauncherThemeColor) -> Unit = {},
-    onHomeChromeTransparencyChanged: (Float) -> Unit = {},
+    onChromeBackgroundOpacityChanged: (Float) -> Unit = {},
     onBootOverlayStyleChanged: (BootOverlayStyle) -> Unit = {},
     onBootOverlayAnimationChanged: (BootOverlayAnimation) -> Unit = {},
     onBootOverlayImageModeChanged: (BootOverlayImageMode) -> Unit = {},
@@ -747,7 +747,7 @@ private fun LauncherSettingsLauncherScreenContent(
                     uiState = uiState,
                     onThemeModeChanged = onThemeModeChanged,
                     onThemeColorChanged = onThemeColorChanged,
-                    onHomeChromeTransparencyChanged = onHomeChromeTransparencyChanged,
+                    onChromeBackgroundOpacityChanged = onChromeBackgroundOpacityChanged,
                     onBootOverlayStyleChanged = onBootOverlayStyleChanged,
                     onBootOverlayAnimationChanged = onBootOverlayAnimationChanged,
                     onBootOverlayImageModeChanged = onBootOverlayImageModeChanged,
@@ -1809,7 +1809,7 @@ internal fun SettingsAppearanceSection(
     uiState: SettingsScreenViewModel.UiState,
     onThemeModeChanged: (LauncherThemeMode) -> Unit,
     onThemeColorChanged: (LauncherThemeColor) -> Unit,
-    onHomeChromeTransparencyChanged: (Float) -> Unit,
+    onChromeBackgroundOpacityChanged: (Float) -> Unit,
     onBootOverlayStyleChanged: (BootOverlayStyle) -> Unit,
     onBootOverlayAnimationChanged: (BootOverlayAnimation) -> Unit,
     onBootOverlayImageModeChanged: (BootOverlayImageMode) -> Unit,
@@ -1823,11 +1823,11 @@ internal fun SettingsAppearanceSection(
     var showBootOverlayStyleDialog by rememberSaveable { mutableStateOf(false) }
     var showBootOverlayAnimationDialog by rememberSaveable { mutableStateOf(false) }
     var showBootOverlayCustomImageDialog by rememberSaveable { mutableStateOf(false) }
-    var homeChromeTransparencySliderValue by remember(uiState.homeChromeTransparency) {
-        mutableFloatStateOf(uiState.homeChromeTransparency)
+    var chromeBackgroundOpacitySliderValue by remember(uiState.chromeBackgroundOpacity) {
+        mutableFloatStateOf(uiState.chromeBackgroundOpacity)
     }
-    var lastHomeChromeTransparencyStep by remember(uiState.homeChromeTransparency) {
-        mutableIntStateOf(homeChromeTransparencyToStep(uiState.homeChromeTransparency))
+    var lastChromeBackgroundOpacityStep by remember(uiState.chromeBackgroundOpacity) {
+        mutableIntStateOf(chromeBackgroundOpacityToStep(uiState.chromeBackgroundOpacity))
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1855,36 +1855,36 @@ internal fun SettingsAppearanceSection(
         )
 
         Text(
-            text = stringResource(R.string.settings_home_chrome_transparency_title),
+            text = stringResource(R.string.settings_chrome_background_opacity_title),
             style = MaterialTheme.typography.bodyMedium
         )
         Text(
-            text = formatHomeChromeTransparency(homeChromeTransparencySliderValue),
+            text = formatChromeBackgroundOpacity(chromeBackgroundOpacitySliderValue),
             style = MaterialTheme.typography.bodySmall
         )
         Text(
-            text = stringResource(R.string.settings_home_chrome_transparency_desc),
+            text = stringResource(R.string.settings_chrome_background_opacity_desc),
             style = MaterialTheme.typography.bodySmall
         )
         Slider(
-            value = homeChromeTransparencySliderValue,
+            value = chromeBackgroundOpacitySliderValue,
             onValueChange = { value ->
-                val normalized = LauncherPreferences.normalizeHomeChromeTransparency(value)
-                homeChromeTransparencySliderValue = normalized
-                val step = homeChromeTransparencyToStep(normalized)
-                if (step != lastHomeChromeTransparencyStep) {
-                    lastHomeChromeTransparencyStep = step
+                val normalized = LauncherPreferences.normalizeChromeBackgroundOpacity(value)
+                chromeBackgroundOpacitySliderValue = normalized
+                val step = chromeBackgroundOpacityToStep(normalized)
+                if (step != lastChromeBackgroundOpacityStep) {
+                    lastChromeBackgroundOpacityStep = step
                     performHapticFeedback(view, HapticFeedbackConstants.CLOCK_TICK)
                 }
             },
             onValueChangeFinished = {
-                onHomeChromeTransparencyChanged(homeChromeTransparencySliderValue)
+                onChromeBackgroundOpacityChanged(chromeBackgroundOpacitySliderValue)
             },
-            valueRange = LauncherPreferences.MIN_HOME_CHROME_TRANSPARENCY..
-                LauncherPreferences.MAX_HOME_CHROME_TRANSPARENCY,
+            valueRange = LauncherPreferences.MIN_CHROME_BACKGROUND_OPACITY..
+                LauncherPreferences.MAX_CHROME_BACKGROUND_OPACITY,
             steps = (
-                ((LauncherPreferences.MAX_HOME_CHROME_TRANSPARENCY -
-                    LauncherPreferences.MIN_HOME_CHROME_TRANSPARENCY) / 0.05f)
+                ((LauncherPreferences.MAX_CHROME_BACKGROUND_OPACITY -
+                    LauncherPreferences.MIN_CHROME_BACKGROUND_OPACITY) / 0.05f)
                     .roundToInt() - 1
                 ).coerceAtLeast(0),
             enabled = !uiState.busy,
@@ -4370,13 +4370,13 @@ private fun renderScaleToStep(value: Float): Int {
     return ((value - RenderScaleService.MIN_RENDER_SCALE) / 0.01f).roundToInt()
 }
 
-private fun homeChromeTransparencyToStep(value: Float): Int {
+private fun chromeBackgroundOpacityToStep(value: Float): Int {
     return (
-        (value - LauncherPreferences.MIN_HOME_CHROME_TRANSPARENCY) / 0.05f
+        (value - LauncherPreferences.MIN_CHROME_BACKGROUND_OPACITY) / 0.05f
         ).roundToInt()
 }
 
-private fun formatHomeChromeTransparency(value: Float): String {
+private fun formatChromeBackgroundOpacity(value: Float): String {
     return "${(value * 100f).roundToInt()}%"
 }
 

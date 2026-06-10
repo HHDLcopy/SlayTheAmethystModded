@@ -39,7 +39,7 @@ internal object SettingsRepository {
     data class SettingsSnapshot(
         val themeMode: LauncherThemeMode,
         val themeColor: LauncherThemeColor,
-        val homeChromeTransparency: Float,
+        val chromeBackgroundOpacity: Float,
         val bootOverlayStyle: BootOverlayStyle,
         val bootOverlayAnimation: BootOverlayAnimation,
         val bootOverlayImageConfig: BootOverlayImageConfig,
@@ -147,8 +147,8 @@ internal object SettingsRepository {
         return LauncherPreferences.readThemeColor(context)
     }
 
-    fun loadHomeChromeTransparency(context: Context): Float {
-        return LauncherPreferences.readHomeChromeTransparency(context)
+    fun loadChromeBackgroundOpacity(context: Context): Float {
+        return LauncherPreferences.readChromeBackgroundOpacity(context)
     }
 
     fun loadBootOverlayAnimation(context: Context): BootOverlayAnimation {
@@ -178,7 +178,7 @@ internal object SettingsRepository {
         return SettingsSnapshot(
             themeMode = LauncherPreferences.readThemeMode(context),
             themeColor = LauncherPreferences.readThemeColor(context),
-            homeChromeTransparency = LauncherPreferences.readHomeChromeTransparency(context),
+            chromeBackgroundOpacity = LauncherPreferences.readChromeBackgroundOpacity(context),
             bootOverlayStyle = LauncherPreferences.readBootOverlayStyle(context),
             bootOverlayAnimation = LauncherPreferences.readBootOverlayAnimation(context),
             bootOverlayImageConfig = LauncherPreferences.readBootOverlayImageConfig(context),
@@ -288,9 +288,9 @@ internal object SettingsRepository {
     fun resetLauncherSettingsToDefaults(context: Context) {
         LauncherPreferences.saveThemeMode(context, LauncherPreferences.DEFAULT_THEME_MODE)
         LauncherPreferences.saveThemeColor(context, LauncherPreferences.DEFAULT_THEME_COLOR)
-        LauncherPreferences.saveHomeChromeTransparency(
+        LauncherPreferences.saveChromeBackgroundOpacity(
             context,
-            LauncherPreferences.DEFAULT_HOME_CHROME_TRANSPARENCY
+            LauncherPreferences.DEFAULT_CHROME_BACKGROUND_OPACITY
         )
         LauncherPreferences.saveBootOverlayStyle(
             context,

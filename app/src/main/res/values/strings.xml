@@ -827,8 +827,8 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="settings_theme_color_jibao">Defect</string>
     <string name="settings_theme_color_guanjie">Watcher</string>
     <string name="settings_theme_color_colorless">Colorless</string>
-    <string name="settings_home_chrome_transparency_title">Home header and dock transparency</string>
-    <string name="settings_home_chrome_transparency_desc">Adjusts the glass background of the home header and bottom dock.</string>
+    <string name="settings_chrome_background_opacity_title">Header and Dock background opacity</string>
+    <string name="settings_chrome_background_opacity_desc">Adds an opaque surface behind the glass Header and Dock on every launcher page.</string>
     <string name="settings_boot_overlay_style_title">Loading screen style</string>
     <string name="settings_boot_overlay_style_desc">Choose the loading screen shown while the game starts.</string>
     <string name="settings_boot_overlay_style_dialog_title">Loading screen style</string>

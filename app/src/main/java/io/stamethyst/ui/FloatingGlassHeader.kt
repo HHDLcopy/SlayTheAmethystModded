@@ -29,7 +29,6 @@ fun FloatingGlassHeader(
     contentPadding: PaddingValues = PaddingValues(16.dp),
     shadowElevation: Dp = 0.dp,
     contentSpacing: Dp = 14.dp,
-    materialAlphaScale: Float = 1.0f,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     FrostedGlassChrome(
@@ -40,7 +39,6 @@ fun FloatingGlassHeader(
         shape = shape,
         shadowElevation = shadowElevation,
         contentPadding = contentPadding,
-        materialAlphaScale = materialAlphaScale,
     ) {
         Column(
             modifier = Modifier.fillMaxWidth(),
@@ -60,7 +58,6 @@ fun CollapsibleFloatingGlassHeader(
     contentPadding: PaddingValues = PaddingValues(16.dp),
     shadowElevation: Dp = 0.dp,
     expandedContentTopPadding: Dp = 14.dp,
-    materialAlphaScale: Float = 1.0f,
     pinnedContent: @Composable ColumnScope.() -> Unit,
     expandedContent: (@Composable ColumnScope.() -> Unit)? = null,
 ) {
@@ -72,7 +69,6 @@ fun CollapsibleFloatingGlassHeader(
         contentPadding = contentPadding,
         shadowElevation = shadowElevation,
         contentSpacing = 0.dp,
-        materialAlphaScale = materialAlphaScale,
     ) {
         pinnedContent()
         if (expandedContent != null) {

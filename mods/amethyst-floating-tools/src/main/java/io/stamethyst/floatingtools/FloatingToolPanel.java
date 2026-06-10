@@ -2,7 +2,6 @@ package io.stamethyst.floatingtools;
 
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.graphics.Color;
-import com.badlogic.gdx.graphics.Pixmap;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.math.MathUtils;
@@ -586,56 +585,25 @@ final class FloatingToolPanel {
         if (filename == null) {
             return null;
         }
-        icon = ImageMaster.loadImage(ICON_PATH + filename);
-        if (icon != null) {
-            icon.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
-        }
+        icon = loadToolTexture(filename);
         iconTextures[action.ordinal()] = icon;
         return icon;
     }
 
     private void ensureSidePanelTextures() {
         if (sidePanelTab == null) {
-            sidePanelTab = createSidePanelTabTexture();
+            sidePanelTab = loadToolTexture("side_panel_tab.png");
         }
         if (sidePanelArrow == null) {
-            sidePanelArrow = createSidePanelArrowTexture();
+            sidePanelArrow = loadToolTexture("side_panel_arrow.png");
         }
     }
 
-    private Texture createSidePanelTabTexture() {
-        Pixmap pixmap = new Pixmap(32, 128, Pixmap.Format.RGBA8888);
-        pixmap.setColor(0f, 0f, 0f, 0f);
-        pixmap.fill();
-        for (int y = 0; y < 128; y++) {
-            float n = (y - 63.5f) / 63.5f;
-            float curve = (float) Math.sqrt(Math.max(0f, 1f - n * n));
-            int outer = 5 + Math.round(24f * curve);
-            int inner = Math.max(0, outer - 3);
-            pixmap.setColor(0.02f, 0.02f, 0.02f, 0.95f);
-            pixmap.drawLine(0, y, outer, y);
-            pixmap.setColor(0.29f, 0.29f, 0.27f, 0.95f);
-            pixmap.drawLine(1, y, inner, y);
-            pixmap.setColor(0.47f, 0.47f, 0.43f, 0.85f);
-            pixmap.drawLine(4, y, Math.max(4, inner - 7), y);
+    private Texture loadToolTexture(String filename) {
+        Texture texture = ImageMaster.loadImage(ICON_PATH + filename);
+        if (texture != null) {
+            texture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
         }
-        pixmap.setColor(0.12f, 0.12f, 0.11f, 1f);
-        pixmap.drawLine(0, 4, 0, 123);
-        Texture texture = new Texture(pixmap);
-        texture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
-        pixmap.dispose();
-        return texture;
-    }
-
-    private Texture createSidePanelArrowTexture() {
-        Pixmap pixmap = new Pixmap(32, 32, Pixmap.Format.RGBA8888);
-        pixmap.setColor(0f, 0f, 0f, 0f);
-        pixmap.fill();
-        pixmap.setColor(1f, 1f, 1f, 1f);
-        pixmap.fillTriangle(10, 6, 10, 26, 23, 16);
-        Texture texture = new Texture(pixmap);
-        texture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
-        pixmap.dispose();
         return texture;
     }
 

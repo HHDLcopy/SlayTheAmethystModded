@@ -83,12 +83,12 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_THEME_MODE
     val DEFAULT_THEME_COLOR: LauncherThemeColor
         get() = LauncherConfig.DEFAULT_THEME_COLOR
-    val DEFAULT_HOME_CHROME_TRANSPARENCY: Float
-        get() = LauncherConfig.DEFAULT_HOME_CHROME_TRANSPARENCY
-    val MIN_HOME_CHROME_TRANSPARENCY: Float
-        get() = LauncherConfig.MIN_HOME_CHROME_TRANSPARENCY
-    val MAX_HOME_CHROME_TRANSPARENCY: Float
-        get() = LauncherConfig.MAX_HOME_CHROME_TRANSPARENCY
+    val DEFAULT_CHROME_BACKGROUND_OPACITY: Float
+        get() = LauncherConfig.DEFAULT_CHROME_BACKGROUND_OPACITY
+    val MIN_CHROME_BACKGROUND_OPACITY: Float
+        get() = LauncherConfig.MIN_CHROME_BACKGROUND_OPACITY
+    val MAX_CHROME_BACKGROUND_OPACITY: Float
+        get() = LauncherConfig.MAX_CHROME_BACKGROUND_OPACITY
     val DEFAULT_SHOW_FLOATING_MOUSE_WINDOW: Boolean
         get() = LauncherConfig.DEFAULT_SHOW_FLOATING_MOUSE_WINDOW
     val DEFAULT_TOUCH_MOUSE_INTERACTION_MODE: TouchMouseInteractionMode
@@ -369,16 +369,16 @@ object LauncherPreferences {
         LauncherConfig.saveThemeColor(context, themeColor)
     }
 
-    fun readHomeChromeTransparency(context: Context): Float {
-        return LauncherConfig.readHomeChromeTransparency(context)
+    fun readChromeBackgroundOpacity(context: Context): Float {
+        return LauncherConfig.readChromeBackgroundOpacity(context)
     }
 
-    fun saveHomeChromeTransparency(context: Context, transparency: Float) {
-        LauncherConfig.saveHomeChromeTransparency(context, transparency)
+    fun saveChromeBackgroundOpacity(context: Context, opacity: Float) {
+        LauncherConfig.saveChromeBackgroundOpacity(context, opacity)
     }
 
-    fun normalizeHomeChromeTransparency(transparency: Float): Float {
-        return LauncherConfig.normalizeHomeChromeTransparency(transparency)
+    fun normalizeChromeBackgroundOpacity(opacity: Float): Float {
+        return LauncherConfig.normalizeChromeBackgroundOpacity(opacity)
     }
 
     fun readShowModFileName(context: Context): Boolean {

@@ -1,6 +1,7 @@
 package io.stamethyst.ui
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -9,19 +10,20 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi
 import dev.chrisbanes.haze.materials.HazeMaterials
+
+val LocalChromeBackgroundOpacity = compositionLocalOf { 0f }
 
 @Composable
 @OptIn(ExperimentalHazeMaterialsApi::class)
@@ -32,50 +34,18 @@ fun FrostedGlassChrome(
     contentPadding: PaddingValues = PaddingValues(0.dp),
     shadowElevation: Dp = 0.dp,
     showBorder: Boolean = true,
-    materialAlphaScale: Float = 1.0f,
     content: @Composable BoxScope.() -> Unit,
 ) {
+    val opaqueBackgroundAlpha = LocalChromeBackgroundOpacity.current.coerceIn(0f, 1f)
+    val opaqueBackgroundColor =
+        MaterialTheme.colorScheme.surface.copy(alpha = opaqueBackgroundAlpha)
     val materialStyle = HazeMaterials.ultraThin()
-    val alphaScale = materialAlphaScale.coerceIn(0f, 1f)
-    val style = if (alphaScale == 1f) {
-        materialStyle
-    } else {
-        materialStyle.copy(
-            backgroundColor = if (materialStyle.backgroundColor.isSpecified) {
-                materialStyle.backgroundColor.copy(
-                    alpha = materialStyle.backgroundColor.alpha * alphaScale
-                )
-            } else {
-                materialStyle.backgroundColor
-            },
-            tints = materialStyle.tints.map { tint ->
-                if (tint.color.isSpecified) {
-                    HazeTint(
-                        tint.color.copy(alpha = tint.color.alpha * alphaScale),
-                        tint.blendMode
-                    )
-                } else {
-                    tint
-                }
-            },
-            fallbackTint = materialStyle.fallbackTint.let { tint ->
-                if (tint.isSpecified && tint.color.isSpecified) {
-                    HazeTint(
-                        tint.color.copy(alpha = tint.color.alpha * alphaScale),
-                        tint.blendMode
-                    )
-                } else {
-                    tint
-                }
-            },
-        )
-    }
     Surface(
         modifier = modifier
             .clip(shape)
             .hazeEffect(
                 state = hazeState,
-                style = style,
+                style = materialStyle,
             ) {
                 blurRadius = 12.dp
                 blurredEdgeTreatment = BlurredEdgeTreatment(shape)
@@ -96,6 +66,7 @@ fun FrostedGlassChrome(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
+                .background(opaqueBackgroundColor)
                 .padding(contentPadding),
         ) {
             content()

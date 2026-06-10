@@ -78,7 +78,8 @@ object LauncherConfig {
         "mobileglues_fsr1_quality_preset"
     private const val PREF_KEY_THEME_MODE = "theme_mode"
     private const val PREF_KEY_THEME_COLOR = "theme_color"
-    private const val PREF_KEY_HOME_CHROME_TRANSPARENCY = "home_chrome_transparency"
+    private const val PREF_KEY_CHROME_BACKGROUND_OPACITY = "chrome_background_opacity"
+    private const val LEGACY_PREF_KEY_HOME_CHROME_TRANSPARENCY = "home_chrome_transparency"
     private const val PREF_KEY_BOOT_OVERLAY_STYLE = "boot_overlay_style"
     private const val PREF_KEY_BOOT_OVERLAY_ANIMATION = "boot_overlay_animation"
     private const val PREF_KEY_BOOT_OVERLAY_IMAGE_MODE = "boot_overlay_image_mode"
@@ -249,9 +250,9 @@ object LauncherConfig {
         MobileGluesFsr1QualityPreset.DISABLED
     val DEFAULT_THEME_MODE: LauncherThemeMode = LauncherThemeMode.FOLLOW_SYSTEM
     val DEFAULT_THEME_COLOR: LauncherThemeColor = LauncherThemeColor.COLORLESS
-    const val DEFAULT_HOME_CHROME_TRANSPARENCY = 0.0f
-    const val MIN_HOME_CHROME_TRANSPARENCY = 0.0f
-    const val MAX_HOME_CHROME_TRANSPARENCY = 0.8f
+    const val DEFAULT_CHROME_BACKGROUND_OPACITY = 0.0f
+    const val MIN_CHROME_BACKGROUND_OPACITY = 0.0f
+    const val MAX_CHROME_BACKGROUND_OPACITY = 1.0f
     val DEFAULT_BOOT_OVERLAY_STYLE: BootOverlayStyle = BootOverlayStyle.MODERN
     val DEFAULT_BOOT_OVERLAY_ANIMATION: BootOverlayAnimation =
         BootOverlayAnimation.CARD_SHUFFLE
@@ -847,28 +848,36 @@ object LauncherConfig {
         }
     }
 
-    fun readHomeChromeTransparency(context: Context): Float {
-        val stored = prefs(context).getFloat(
-            PREF_KEY_HOME_CHROME_TRANSPARENCY,
-            DEFAULT_HOME_CHROME_TRANSPARENCY
-        )
-        return normalizeHomeChromeTransparency(stored)
+    fun readChromeBackgroundOpacity(context: Context): Float {
+        val preferences = prefs(context)
+        val stored = if (preferences.contains(PREF_KEY_CHROME_BACKGROUND_OPACITY)) {
+            preferences.getFloat(
+                PREF_KEY_CHROME_BACKGROUND_OPACITY,
+                DEFAULT_CHROME_BACKGROUND_OPACITY
+            )
+        } else {
+            preferences.getFloat(
+                LEGACY_PREF_KEY_HOME_CHROME_TRANSPARENCY,
+                DEFAULT_CHROME_BACKGROUND_OPACITY
+            )
+        }
+        return normalizeChromeBackgroundOpacity(stored)
     }
 
-    fun saveHomeChromeTransparency(context: Context, transparency: Float) {
+    fun saveChromeBackgroundOpacity(context: Context, opacity: Float) {
         prefs(context).edit {
             putFloat(
-                PREF_KEY_HOME_CHROME_TRANSPARENCY,
-                normalizeHomeChromeTransparency(transparency)
+                PREF_KEY_CHROME_BACKGROUND_OPACITY,
+                normalizeChromeBackgroundOpacity(opacity)
             )
         }
     }
 
-    fun normalizeHomeChromeTransparency(transparency: Float): Float {
-        return if (transparency.isFinite()) {
-            transparency.coerceIn(MIN_HOME_CHROME_TRANSPARENCY, MAX_HOME_CHROME_TRANSPARENCY)
+    fun normalizeChromeBackgroundOpacity(opacity: Float): Float {
+        return if (opacity.isFinite()) {
+            opacity.coerceIn(MIN_CHROME_BACKGROUND_OPACITY, MAX_CHROME_BACKGROUND_OPACITY)
         } else {
-            DEFAULT_HOME_CHROME_TRANSPARENCY
+            DEFAULT_CHROME_BACKGROUND_OPACITY
         }
     }
 

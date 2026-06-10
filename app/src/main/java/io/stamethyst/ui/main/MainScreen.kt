@@ -159,7 +159,6 @@ private fun LauncherGamePage(
     onEnabledModsClick: () -> Unit,
     onModSizeClick: () -> Unit,
     onSteamCloudClick: () -> Unit,
-    homeChromeAlphaScale: Float,
     onLaunch: () -> Unit,
 ) {
     val steamCloudIndicator = uiState.steamCloudIndicator
@@ -262,7 +261,6 @@ private fun LauncherGamePage(
             collapsed = gameHeaderCollapsed,
             shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp),
             contentPadding = PaddingValues(0.dp),
-            materialAlphaScale = homeChromeAlphaScale,
             pinnedContent = {
                 GameHeader(
                     feedbackUnreadCount = feedbackUnreadCount,
@@ -1379,7 +1377,6 @@ internal fun LauncherGameScreenContent(
     onOpenFeedbackSubscriptions: () -> Unit = {},
     onUpdateNoticeClick: () -> Unit = {},
     showSteamCloudBottomSheetHost: Boolean = true,
-    homeChromeAlphaScale: Float = 1.0f,
 ) {
     LauncherMainScreenContent(
         modifier = modifier,
@@ -1393,7 +1390,6 @@ internal fun LauncherGameScreenContent(
         onOpenFeedbackSubscriptions = onOpenFeedbackSubscriptions,
         onUpdateNoticeClick = onUpdateNoticeClick,
         showSteamCloudBottomSheetHost = showSteamCloudBottomSheetHost,
-        homeChromeAlphaScale = homeChromeAlphaScale,
     )
 }
 
@@ -1410,7 +1406,6 @@ internal fun LauncherModsScreenContent(
     onBatchSelectionModeChange: (Boolean) -> Unit = {},
     onCheckWorkshopUpdates: () -> Unit = {},
     showSteamCloudBottomSheetHost: Boolean = true,
-    homeChromeAlphaScale: Float = 1.0f,
 ) {
     LauncherMainScreenContent(
         modifier = modifier,
@@ -1425,7 +1420,6 @@ internal fun LauncherModsScreenContent(
         onBatchSelectionModeChange = onBatchSelectionModeChange,
         onCheckWorkshopUpdates = onCheckWorkshopUpdates,
         showSteamCloudBottomSheetHost = showSteamCloudBottomSheetHost,
-        homeChromeAlphaScale = homeChromeAlphaScale,
     )
 }
 
@@ -1447,7 +1441,6 @@ private fun LauncherMainScreenContent(
     onBatchSelectionModeChange: (Boolean) -> Unit = {},
     onCheckWorkshopUpdates: () -> Unit = {},
     showSteamCloudBottomSheetHost: Boolean = true,
-    homeChromeAlphaScale: Float = 1.0f,
 ) {
     val density = LocalDensity.current
     var showCreateFolderDialog by remember { mutableStateOf(false) }
@@ -1652,7 +1645,6 @@ private fun LauncherMainScreenContent(
                             onSteamCloudClick = {
                                 showSteamCloudBottomSheet = true
                             },
-                            homeChromeAlphaScale = homeChromeAlphaScale,
                             onLaunch = {
                                 if (actions.onLaunch() == LaunchRequestAction.OPEN_STEAM_CLOUD_SHEET) {
                                     showSteamCloudBottomSheet = true
@@ -1712,7 +1704,6 @@ private fun LauncherMainScreenContent(
                                 collapsed = modsHeaderCollapsed,
                                 shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp),
                                 contentPadding = PaddingValues(0.dp),
-                                materialAlphaScale = homeChromeAlphaScale,
                                 onHeightChanged = {
                                     if (!modsHeaderCollapsed) {
                                         modsHeaderHeightPx = maxOf(modsHeaderHeightPx, it)

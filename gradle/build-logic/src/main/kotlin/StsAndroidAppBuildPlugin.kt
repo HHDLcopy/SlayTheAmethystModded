@@ -103,6 +103,7 @@ private fun Project.configureStsAndroidAppBuild() {
     )
     val adb = androidComponents().sdkComponents.adb.map { it.asFile.absolutePath }
     registerAdbTasks(adb, packageName)
+    registerHarnessTasks()
 
     tasks.named("preBuild").configure {
         dependsOn(packagedAssetTasks.prepareCommonAssets)
@@ -592,6 +593,7 @@ private fun Project.registerAdbTasks(adb: Provider<String>, packageName: String)
         else -> rawLaunchMode
     }
     val forceJvmCrash = readGradleProperty("forceJvmCrash", "false")
+    val forceRuntimeCrash = readGradleProperty("forceRuntimeCrash", "false")
     val deviceSerial = readGradleProperty("deviceSerial")
     val logsDir = readGradleProperty("logsDir")
     require(launchMode in supportedLaunchModes) {
@@ -615,16 +617,15 @@ private fun Project.registerAdbTasks(adb: Provider<String>, packageName: String)
             append(" -n $(pm resolve-activity --components $packageName)")
             append(" --es io.stamethyst.debug_launch_mode $launchMode")
             append(" --ez io.stamethyst.debug_force_jvm_crash $forceJvmCrash")
+            append(" --ez io.stamethyst.debug_force_runtime_crash $forceRuntimeCrash")
         }
         commandLine(adbCommand("shell", "sh", "-c", remoteCommand))
-        isIgnoreExitValue = true
     }
 
     tasks.register<Exec>("stsStop") {
         group = "debug"
         description = "Force stop SlayTheAmethyst on a connected Android device."
         commandLine(adbCommand("shell", "am", "force-stop", packageName))
-        isIgnoreExitValue = true
     }
 
     tasks.register<StsPullLogsTask>("stsPullLogs") {
@@ -635,6 +636,114 @@ private fun Project.registerAdbTasks(adb: Provider<String>, packageName: String)
         this.deviceSerial.set(deviceSerial)
         this.logsDir.set(logsDir)
     }
+}
+
+private fun Project.registerHarnessTasks() {
+    val harnessScript = rootProject.layout.projectDirectory.file("scripts/sts-harness.ps1")
+    val deviceSerial = readGradleProperty("deviceSerial")
+    val launchMode = readGradleProperty("launchMode", "mts_basemod")
+    val harnessOutDir = readGradleProperty("harnessOutDir")
+    val harnessTimeoutSeconds = readGradleProperty("harnessTimeoutSeconds", "120")
+    val harnessPollIntervalSeconds = readGradleProperty("harnessPollIntervalSeconds", "2")
+    val harnessSkipInstall = readGradleProperty("harnessSkipInstall", "false")
+    val forceJvmCrash = readGradleProperty("forceJvmCrash", "false")
+    val forceRuntimeCrash = readGradleProperty("forceRuntimeCrash", "false")
+    val noStopAfterSmoke = readGradleProperty("noStopAfterSmoke", "false")
+
+    fun registerHarnessExecTask(
+        taskName: String,
+        command: String,
+        taskDescription: String
+    ) {
+        tasks.register<Exec>(taskName) {
+            group = "debug"
+            description = taskDescription
+            workingDir(rootProject.layout.projectDirectory.asFile)
+            val args = mutableListOf(
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                harnessScript.asFile.absolutePath,
+                "-Command",
+                command,
+                "-LaunchMode",
+                launchMode,
+                "-TimeoutSeconds",
+                harnessTimeoutSeconds,
+                "-PollIntervalSeconds",
+                harnessPollIntervalSeconds
+            )
+            if (deviceSerial.isNotEmpty()) {
+                args.add("-DeviceSerial")
+                args.add(deviceSerial)
+            }
+            if (harnessOutDir.isNotEmpty()) {
+                args.add("-OutDir")
+                args.add(harnessOutDir)
+            }
+            if (forceJvmCrash.toBooleanStrictOrNull() == true) {
+                args.add("-ForceJvmCrash")
+            }
+            if (forceRuntimeCrash.toBooleanStrictOrNull() == true) {
+                args.add("-ForceRuntimeCrash")
+            }
+            if (command == "smoke" && harnessSkipInstall.toBooleanStrictOrNull() == true) {
+                args.add("-SkipInstall")
+            }
+            if (noStopAfterSmoke.toBooleanStrictOrNull() == true) {
+                args.add("-NoStopAfterSmoke")
+            }
+            val powerShellExecutable =
+                if (System.getProperty("os.name").contains("Windows", ignoreCase = true)) {
+                    "powershell"
+                } else {
+                    "pwsh"
+                }
+            commandLine(powerShellExecutable, *args.toTypedArray())
+        }
+    }
+
+    registerHarnessExecTask(
+        taskName = "stsHarnessDoctor",
+        command = "doctor",
+        taskDescription = "Validate SlayTheAmethyst harness prerequisites and capture a status snapshot."
+    )
+    registerHarnessExecTask(
+        taskName = "stsHarnessInstall",
+        command = "install",
+        taskDescription = "Build and install a debug APK through the SlayTheAmethyst harness."
+    )
+    registerHarnessExecTask(
+        taskName = "stsHarnessStart",
+        command = "start",
+        taskDescription = "Start SlayTheAmethyst through the SlayTheAmethyst harness."
+    )
+    registerHarnessExecTask(
+        taskName = "stsHarnessStop",
+        command = "stop",
+        taskDescription = "Force-stop SlayTheAmethyst through the SlayTheAmethyst harness."
+    )
+    registerHarnessExecTask(
+        taskName = "stsHarnessLogs",
+        command = "logs",
+        taskDescription = "Export SlayTheAmethyst logs through the SlayTheAmethyst harness."
+    )
+    registerHarnessExecTask(
+        taskName = "stsHarnessStatus",
+        command = "status",
+        taskDescription = "Capture a machine-readable SlayTheAmethyst device status snapshot."
+    )
+    registerHarnessExecTask(
+        taskName = "stsHarnessScreenshot",
+        command = "screenshot",
+        taskDescription = "Capture a device screenshot through the SlayTheAmethyst harness."
+    )
+    registerHarnessExecTask(
+        taskName = "stsHarnessSmoke",
+        command = "smoke",
+        taskDescription = "Install, start, observe, screenshot, export logs, and stop through the SlayTheAmethyst harness."
+    )
 }
 
 private fun Project.androidComponents(): ApplicationAndroidComponentsExtension =

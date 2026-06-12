@@ -131,7 +131,21 @@ APK 输出目录：
 
 仓库已经内置了日常联机调试与 CI 发布所需的关键流程。
 
-设备调试命令：
+推荐使用 harness 入口执行可重复的设备调试流程，结果会写入 `debug-artifacts/harness/.../result.json`：
+
+```powershell
+.\scripts\sts-harness.ps1 -Command doctor
+.\scripts\sts-harness.ps1 -Command smoke -LaunchMode mts_basemod -TimeoutSeconds 120
+```
+
+也可以通过 Gradle 调用同一套 harness：
+
+```powershell
+.\gradlew.bat :app:stsHarnessDoctor
+.\gradlew.bat :app:stsHarnessSmoke
+```
+
+低层设备调试命令：
 
 ```powershell
 .\gradlew.bat :app:stsStart
@@ -144,6 +158,7 @@ APK 输出目录：
 - `-PlaunchMode=mts_basemod` 或 `-PlaunchMode=vanilla`
 - `-PdeviceSerial=<adb-serial>`
 - `-PlogsDir=<path>`
+- `-PharnessOutDir=<path>`
 
 更多文档：
 

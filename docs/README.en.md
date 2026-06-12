@@ -123,7 +123,21 @@ Platform targets:
 
 The repo already includes the pieces needed for day-to-day device work and CI releases.
 
-Debug and device automation:
+Use the harness entrypoint for repeatable device automation. It writes machine-readable results to `debug-artifacts/harness/.../result.json`:
+
+```powershell
+.\scripts\sts-harness.ps1 -Command doctor
+.\scripts\sts-harness.ps1 -Command smoke -LaunchMode mts_basemod -TimeoutSeconds 120
+```
+
+The same harness is also exposed through Gradle:
+
+```powershell
+.\gradlew.bat :app:stsHarnessDoctor
+.\gradlew.bat :app:stsHarnessSmoke
+```
+
+Low-level debug tasks:
 
 ```powershell
 .\gradlew.bat :app:stsStart
@@ -135,6 +149,7 @@ Extra options:
 - `-PlaunchMode=mts_basemod` or `-PlaunchMode=vanilla`
 - `-PdeviceSerial=<adb-serial>`
 - `-PlogsDir=<path>`
+- `-PharnessOutDir=<path>`
 
 Further reading:
 - [Simplified Chinese README](../README.md)

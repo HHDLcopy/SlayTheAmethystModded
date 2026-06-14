@@ -9,10 +9,11 @@ public final class RamSaverDiag {
     private static final String GPU_RESOURCE_DIAG_PROP = "amethyst.gdx.gpu_resource_diag";
     private static final String RAM_SAVER_DIAG_PROP = "ramsaver.diag.enabled";
     private static final String RAM_SAVER_VERBOSE_PROP = "ramsaver.diag.verbose";
+    private static final boolean ENABLED = readBoolean(GPU_RESOURCE_DIAG_PROP, false) || readBoolean(RAM_SAVER_DIAG_PROP, false);
+    private static final boolean VERBOSE = readBoolean(RAM_SAVER_VERBOSE_PROP, false);
     private static final int STACK_DEPTH = readInt("ramsaver.diag.stack_depth", 14, 1, 64);
     private static final long SLOW_EVENT_NANOS = readLong("ramsaver.diag.slow_ms", 4L, 0L, 60000L) * 1000000L;
     private static final Map<String, Integer> repeats = new ConcurrentHashMap<>();
-    private static volatile boolean observedEnabled = false;
     private static volatile boolean glTextureLiveCounterResolved = false;
     private static volatile AtomicInteger glTextureLiveCounter = null;
 
@@ -20,14 +21,7 @@ public final class RamSaverDiag {
     }
 
     public static boolean enabled() {
-        if (observedEnabled) {
-            return true;
-        }
-        boolean enabled = Boolean.getBoolean(GPU_RESOURCE_DIAG_PROP) || Boolean.getBoolean(RAM_SAVER_DIAG_PROP);
-        if (enabled) {
-            observedEnabled = true;
-        }
-        return enabled;
+        return ENABLED;
     }
 
     public static long now() {
@@ -35,7 +29,7 @@ public final class RamSaverDiag {
     }
 
     public static boolean verbose() {
-        return Boolean.getBoolean(RAM_SAVER_VERBOSE_PROP);
+        return VERBOSE;
     }
 
     public static void markFakeTextureWrapperConstructed(String key) {
@@ -245,6 +239,14 @@ public final class RamSaverDiag {
         catch (NumberFormatException ignored) {
             return defaultValue;
         }
+    }
+
+    private static boolean readBoolean(String property, boolean defaultValue) {
+        String raw = System.getProperty(property);
+        if (raw == null) {
+            return defaultValue;
+        }
+        return Boolean.parseBoolean(raw.trim());
     }
 
     private static long readLong(String property, long defaultValue, long minValue, long maxValue) {

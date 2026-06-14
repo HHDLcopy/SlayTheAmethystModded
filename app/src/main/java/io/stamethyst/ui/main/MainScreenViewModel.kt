@@ -129,6 +129,13 @@ class MainScreenViewModel : ViewModel() {
         val details: WorkshopItemDetails? = null,
     )
 
+    data class PendingEnabledModSizeLaunchWarning(
+        val totalBytes: Long,
+        val launchMode: String,
+        val forceJvmCrash: Boolean,
+        val forceRuntimeCrash: Boolean,
+    )
+
     data object PendingMtsComponentUpdate
 
     data class CrashRecoveryState(
@@ -203,6 +210,7 @@ class MainScreenViewModel : ViewModel() {
         val showModFileNameRemovalNotice: Boolean = false,
         val steamCloudIndicator: SteamCloudIndicatorUi = SteamCloudIndicatorUi(),
         val pendingWorkshopJarSelection: PendingWorkshopJarSelection? = null,
+        val pendingEnabledModSizeLaunchWarning: PendingEnabledModSizeLaunchWarning? = null,
         val pendingMtsComponentUpdate: PendingMtsComponentUpdate? = null,
     )
 
@@ -252,6 +260,15 @@ class MainScreenViewModel : ViewModel() {
     private var lastFullRefreshAtElapsedMs: Long? = null
     @Volatile
     private var launchInFlight = false
+    /**
+     * Latched when [maybeLaunchFromDebugExtra] sees `EXTRA_DEBUG_AUTOPLAY=true`, and consumed
+     * in [launchGameActivityInternal] so the autoplay flag flows to [StsGameActivity] without
+     * having to thread an extra parameter through the long chain of dialog/cleanup steps in
+     * between. Reset back to false after every launch attempt so a follow-up manual launch
+     * doesn't accidentally inherit autoplay.
+     */
+    @Volatile
+    private var pendingAutoplay: Boolean = false
     @Volatile
     private var modNameMigrationInFlight = false
     private var modNameMigrationInsufficientNoticeShown = false
@@ -299,7 +316,7 @@ class MainScreenViewModel : ViewModel() {
     )
 
     fun refresh(host: Activity) {
-        clearLaunchInFlightState()
+        clearLaunchInFlightState(clearPendingEnabledModSizeWarning = false)
         val storageIssue = detectStorageIssue(host)
         val dependencyAvailability = resolveDependencyAvailability(host)
         currentModSuggestions = ModSuggestionService.loadCachedSuggestionMap(host)
@@ -1500,6 +1517,31 @@ class MainScreenViewModel : ViewModel() {
         clearLaunchInFlightState()
     }
 
+    fun confirmLaunchWithEnabledModSizeWarning(host: Activity, dontRemindAgain: Boolean) {
+        val pending = uiState.pendingEnabledModSizeLaunchWarning ?: return
+        if (!launchInFlight && !tryBeginLaunchRequest()) {
+            return
+        }
+        if (dontRemindAgain) {
+            LauncherPreferences.setEnabledModSizeWarningDismissed(host, true)
+        }
+        uiState = uiState.copy(pendingEnabledModSizeLaunchWarning = null)
+        prepareAndLaunch(
+            host = host,
+            launchMode = pending.launchMode,
+            forceJvmCrash = pending.forceJvmCrash,
+            forceRuntimeCrash = pending.forceRuntimeCrash,
+            skipEnabledModSizeWarning = true,
+        )
+    }
+
+    fun cancelLaunchWithEnabledModSizeWarning() {
+        if (uiState.pendingEnabledModSizeLaunchWarning != null) {
+            uiState = uiState.copy(pendingEnabledModSizeLaunchWarning = null)
+        }
+        clearLaunchInFlightState()
+    }
+
     fun dismissCrashRecovery() {
         if (uiState.crashRecovery == null) {
             return
@@ -2062,6 +2104,7 @@ class MainScreenViewModel : ViewModel() {
             LauncherActivity.EXTRA_DEBUG_FORCE_RUNTIME_CRASH,
             false
         )
+        val autoplay = intent.getBooleanExtra(LauncherActivity.EXTRA_DEBUG_AUTOPLAY, false)
         if (debugLaunchMode != StsLaunchSpec.LAUNCH_MODE_VANILLA &&
             !StsLaunchSpec.isMtsLaunchMode(debugLaunchMode)
         ) {
@@ -2071,6 +2114,11 @@ class MainScreenViewModel : ViewModel() {
         if (!tryBeginLaunchRequest()) {
             return
         }
+        // Stash the autoplay flag on the ViewModel so it survives the long chain of
+        // dialog/cleanup steps between here and StsGameActivity.launch() without having to
+        // thread an extra parameter through every method in the launch pipeline.
+        // Consumed (and cleared) in launchGameActivityInternal.
+        pendingAutoplay = autoplay
         beginLaunchFlow(
             host,
             debugLaunchMode ?: StsLaunchSpec.LAUNCH_MODE_VANILLA,
@@ -2191,7 +2239,9 @@ class MainScreenViewModel : ViewModel() {
                 clearLaunchInFlightState()
                 return
             }
-            if (!skipEnabledModSizeWarning) {
+            if (!skipEnabledModSizeWarning &&
+                !LauncherPreferences.isEnabledModSizeWarningDismissed(host)
+            ) {
                 val enabledModTotalBytes = calculateEnabledOptionalModTotalBytes(optionalMods)
                 if (enabledModTotalBytes > ENABLED_MOD_SIZE_WARNING_THRESHOLD_BYTES) {
                     showEnabledModSizeLaunchDialog(
@@ -2296,6 +2346,10 @@ class MainScreenViewModel : ViewModel() {
         } else {
             LogcatCaptureProcessClient.stopAndClearCapture(host)
         }
+        // One-shot consume: every launch attempt drains the autoplay latch so a follow-up
+        // manual press of "Play" doesn't accidentally run autoplay again.
+        val autoplay = pendingAutoplay
+        pendingAutoplay = false
         try {
             StsGameActivity.launch(
                 host,
@@ -2303,7 +2357,8 @@ class MainScreenViewModel : ViewModel() {
                 backBehavior,
                 manualDismissBootOverlay,
                 forceJvmCrash,
-                forceRuntimeCrash
+                forceRuntimeCrash,
+                autoplay
             )
             clearNewlyImportedHighlights(host)
         } catch (error: Throwable) {
@@ -2772,49 +2827,14 @@ class MainScreenViewModel : ViewModel() {
         forceRuntimeCrash: Boolean,
         totalBytes: Long,
     ) {
-        var proceed = false
-        val dialog = AlertDialog.Builder(host)
-            .setTitle(R.string.main_launch_enabled_mod_size_warning_title)
-            .setMessage(
-                host.getString(
-                    R.string.main_launch_enabled_mod_size_warning_message,
-                    formatByteSizeForLaunchWarning(totalBytes)
-                )
+        uiState = uiState.copy(
+            pendingEnabledModSizeLaunchWarning = PendingEnabledModSizeLaunchWarning(
+                totalBytes = totalBytes,
+                launchMode = launchMode,
+                forceJvmCrash = forceJvmCrash,
+                forceRuntimeCrash = forceRuntimeCrash,
             )
-            .setNegativeButton(R.string.main_launch_enabled_mod_size_warning_cancel, null)
-            .setPositiveButton(R.string.main_launch_enabled_mod_size_warning_continue, null)
-            .create()
-        dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener {
-                dialog.dismiss()
-            }
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                proceed = true
-                dialog.dismiss()
-                prepareAndLaunch(
-                    host = host,
-                    launchMode = launchMode,
-                    forceJvmCrash = forceJvmCrash,
-                    forceRuntimeCrash = forceRuntimeCrash,
-                    skipEnabledModSizeWarning = true,
-                )
-            }
-        }
-        dialog.setOnDismissListener {
-            if (!proceed) {
-                clearLaunchInFlightState()
-            }
-        }
-        dialog.show()
-    }
-
-    private fun formatByteSizeForLaunchWarning(bytes: Long): String {
-        val mib = bytes.toDouble() / BYTES_PER_MIB.toDouble()
-        return if (mib >= 1024.0) {
-            String.format(Locale.US, "%.1f GB", mib / 1024.0)
-        } else {
-            String.format(Locale.US, "%.0f MB", mib)
-        }
+        )
     }
 
     private fun notifyResidualGameProcessCleanupFailed(host: Activity) {
@@ -3475,10 +3495,22 @@ class MainScreenViewModel : ViewModel() {
         }
     }
 
-    private fun clearLaunchInFlightState() {
+    private fun clearLaunchInFlightState(clearPendingEnabledModSizeWarning: Boolean = true) {
         launchInFlight = false
-        if (uiState.launchInFlight) {
-            uiState = uiState.copy(launchInFlight = false)
+        // Drop the autoplay latch too — if we're aborting a launch, the next user-triggered
+        // launch shouldn't silently inherit autoplay from the cancelled debug intent.
+        pendingAutoplay = false
+        if (uiState.launchInFlight ||
+            (clearPendingEnabledModSizeWarning && uiState.pendingEnabledModSizeLaunchWarning != null)
+        ) {
+            uiState = uiState.copy(
+                launchInFlight = false,
+                pendingEnabledModSizeLaunchWarning = if (clearPendingEnabledModSizeWarning) {
+                    null
+                } else {
+                    uiState.pendingEnabledModSizeLaunchWarning
+                },
+            )
         }
     }
 

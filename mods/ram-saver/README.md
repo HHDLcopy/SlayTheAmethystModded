@@ -61,6 +61,12 @@ Makes `TextureDescriptor.hashCode()` and `TextureDescriptor.compareTo(TextureDes
 19. `optispire.patches.TextureDescriptorFakeTexture`
 Reads the `TextureDescriptor.compareTo(TextureDescriptor)` argument through ModTheSpire's `__args` array instead of a named `other` patch parameter. This addresses startup failures with `PatchingException: Illegal patch parameter: No matching parameter with name "other"` when the target libGDX method parameter name is unavailable or differs from the patch method name. Type: startup crash fix implemented by `TextureDescriptorFakeTexture`.
 
+20. `com.badlogic.gdx.graphics.Texture`
+Reads JPEG dimensions from the file header for fake file-backed textures before falling back to real texture materialization. This addresses render-thread stalls where atlas or region setup calls `getWidth()` / `getHeight()` on a fake JPG, forcing a full `RealTexture` decode/upload only to discover its dimensions, such as `title/title.jpg` during menu construction. Type: performance/memory-management workaround implemented by the fake-texture `Texture.getSize` header-size path.
+
+21. `optispire.RamSaverDiag`, `com.badlogic.gdx.graphics.Texture`, `com.badlogic.gdx.graphics.RealTexture`, `optispire.RamSaver`, `optispire.patches.HandleRenderingFakes`, `optispire.patches.G3dBindRealTextures`, `optispire.patches.SpriteCacheFakeTextures`, `optispire.patches.DecalMaterialFakeTexture`, `optispire.patches.ChangeSpriterLoader`, and `optispire.patches.AggressiveGC`
+Reads Ram Saver diagnostic flags once at startup and skips diagnostic timing, stack logging, and texture/region detail string construction unless diagnostics are enabled. This addresses normal-gameplay allocation churn and young-GC pressure from disabled diagnostics in fake-texture draw, cache-hit, direct-bind, SpriteCache, decal, Spriter, texture load, and asset-aging paths while preserving the same lazy texture loading and memory-reduction behavior. Type: performance/thermal diagnostic-overhead mitigation implemented by the guarded Ram Saver diagnostic call sites.
+
 ## Maintenance rule
 
 If you add another runtime/gameplay fix through this mod, update this README in the same change and describe:

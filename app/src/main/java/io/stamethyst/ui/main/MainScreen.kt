@@ -20,6 +20,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -92,6 +93,7 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -1249,6 +1251,19 @@ internal fun LauncherMainRoute(
         )
     }
 
+    uiState.pendingEnabledModSizeLaunchWarning?.let { warning ->
+        val activity = hostActivity
+        if (activity != null) {
+            EnabledModSizeLaunchWarningDialog(
+                totalBytes = warning.totalBytes,
+                onDismiss = viewModel::cancelLaunchWithEnabledModSizeWarning,
+                onConfirm = { dontRemindAgain ->
+                    viewModel.confirmLaunchWithEnabledModSizeWarning(activity, dontRemindAgain)
+                },
+            )
+        }
+    }
+
     uiState.pendingWorkshopJarSelection?.let { selection ->
         val activity = hostActivity
         if (activity != null && selection.candidates.isNotEmpty()) {
@@ -1872,6 +1887,60 @@ private fun LauncherMainScreenContent(
             }
         )
     }
+}
+
+@Composable
+private fun EnabledModSizeLaunchWarningDialog(
+    totalBytes: Long,
+    onDismiss: () -> Unit,
+    onConfirm: (Boolean) -> Unit,
+) {
+    var dontRemindAgain by remember(totalBytes) { mutableStateOf(false) }
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = stringResource(R.string.main_launch_enabled_mod_size_warning_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = stringResource(
+                        R.string.main_launch_enabled_mod_size_warning_message,
+                        formatLauncherByteSize(totalBytes)
+                    )
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .toggleable(
+                            value = dontRemindAgain,
+                            role = Role.Checkbox,
+                            onValueChange = { dontRemindAgain = it },
+                        ),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Checkbox(
+                        checked = dontRemindAgain,
+                        onCheckedChange = null,
+                    )
+                    Text(
+                        text = stringResource(R.string.main_launch_enabled_mod_size_warning_dont_remind),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onConfirm(dontRemindAgain) }) {
+                Text(text = stringResource(R.string.main_launch_enabled_mod_size_warning_continue))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = stringResource(R.string.main_launch_enabled_mod_size_warning_cancel))
+            }
+        }
+    )
 }
 
 @Composable

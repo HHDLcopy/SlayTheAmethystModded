@@ -34,6 +34,7 @@ class JvmLaunchController(
     private val renderScale: Float,
     private val forceJvmCrash: Boolean,
     private val forceRuntimeCrash: Boolean,
+    private val autoplay: Boolean,
     private val mirrorJvmLogsToLogcat: Boolean,
     private val onProgressUpdate: (Int, String) -> Unit,
     private val onLaunchComplete: (exitCode: Int) -> Unit,
@@ -297,7 +298,8 @@ class JvmLaunchController(
                         rendererDecision,
                         renderScale,
                         forceJvmCrash,
-                        forceRuntimeCrash
+                        forceRuntimeCrash,
+                        autoplay
                     )
                 )
                 MemoryDiagnosticsLogger.logEvent(

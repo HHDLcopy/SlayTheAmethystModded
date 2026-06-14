@@ -40,6 +40,7 @@ class StsGameActivity : AppCompatActivity() {
         const val EXTRA_MANUAL_DISMISS_BOOT_OVERLAY = "io.stamethyst.manual_dismiss_boot_overlay"
         const val EXTRA_FORCE_JVM_CRASH = "io.stamethyst.force_jvm_crash"
         const val EXTRA_FORCE_RUNTIME_CRASH = "io.stamethyst.force_runtime_crash"
+        const val EXTRA_AUTOPLAY = "io.stamethyst.autoplay"
 
         @JvmStatic
         fun launch(
@@ -48,7 +49,8 @@ class StsGameActivity : AppCompatActivity() {
             backBehavior: BackBehavior,
             manualDismissBootOverlay: Boolean,
             forceJvmCrash: Boolean = false,
-            forceRuntimeCrash: Boolean = false
+            forceRuntimeCrash: Boolean = false,
+            autoplay: Boolean = false
         ) {
             val intent = Intent(context, StsGameActivity::class.java)
             intent.putExtra(EXTRA_LAUNCH_MODE, launchMode)
@@ -60,6 +62,7 @@ class StsGameActivity : AppCompatActivity() {
             intent.putExtra(EXTRA_MANUAL_DISMISS_BOOT_OVERLAY, manualDismissBootOverlay)
             intent.putExtra(EXTRA_FORCE_JVM_CRASH, forceJvmCrash)
             intent.putExtra(EXTRA_FORCE_RUNTIME_CRASH, forceRuntimeCrash)
+            intent.putExtra(EXTRA_AUTOPLAY, autoplay)
             context.startActivity(intent)
         }
     }

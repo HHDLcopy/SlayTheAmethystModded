@@ -21,10 +21,11 @@ public class G3dBindRealTextures {
     public static void Wheeee(TextureBinder __instance, TextureDescriptor textureDesc, boolean rebind) {
         original = null;
         if (textureDesc.texture instanceof Texture) {
-            long started = RamSaverDiag.now();
+            boolean diag = RamSaverDiag.enabled();
+            long started = diag ? System.nanoTime() : 0L;
             Texture fakeTexture = (Texture) textureDesc.texture;
             original = textureDesc.texture;
-            if (fakeTexture.isFake) {
+            if (diag && fakeTexture.isFake) {
                 RamSaverDiag.logStackRepeat(
                         "g3d_bind_fake_texture",
                         textureKey(fakeTexture),
@@ -32,20 +33,22 @@ public class G3dBindRealTextures {
                 );
             }
             textureDesc.texture = fakeTexture.getRealTexture(false);
-            RamSaverDiag.logDuration(
-                    "g3d_bind_materialize",
-                    textureKey(fakeTexture),
-                    started,
-                    "rebind=" + rebind + " realTexture=" + textureDetails((Texture) textureDesc.texture),
-                    false
-            );
+            if (diag) {
+                RamSaverDiag.logDuration(
+                        "g3d_bind_materialize",
+                        textureKey(fakeTexture),
+                        started,
+                        "rebind=" + rebind + " realTexture=" + textureDetails((Texture) textureDesc.texture),
+                        false
+                );
+            }
         }
     }
 
     @SpirePostfixPatch
     public static void Whoooo(TextureBinder __instance, TextureDescriptor textureDesc, boolean rebind) {
         if (original != null) {
-            if (original instanceof Texture) {
+            if (RamSaverDiag.enabled() && original instanceof Texture) {
                 RamSaverDiag.logRepeat(
                         "g3d_bind_restore_fake_texture",
                         textureKey((Texture) original),

@@ -619,6 +619,14 @@ object LauncherPreferences {
         LauncherConfig.setWorkshopSubscribeWarningDismissed(context, dismissed)
     }
 
+    fun isEnabledModSizeWarningDismissed(context: Context): Boolean {
+        return LauncherConfig.isEnabledModSizeWarningDismissed(context)
+    }
+
+    fun setEnabledModSizeWarningDismissed(context: Context, dismissed: Boolean) {
+        LauncherConfig.setEnabledModSizeWarningDismissed(context, dismissed)
+    }
+
     fun readLastWorkshopUpdateCheckAtMs(context: Context): Long {
         return LauncherConfig.readLastWorkshopUpdateCheckAtMs(context)
     }

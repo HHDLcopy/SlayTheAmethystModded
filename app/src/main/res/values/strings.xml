@@ -432,6 +432,7 @@
     <string name="main_launch_enabled_mod_size_warning_message">The currently enabled mods total about %1$s. Too many large mods are very likely to put excessive pressure on this device, causing crashes, stutter, and other issues.
 
 Do you still want to continue?</string>
+    <string name="main_launch_enabled_mod_size_warning_dont_remind">Do not remind again</string>
     <string name="main_launch_enabled_mod_size_warning_cancel">Cancel launch</string>
     <string name="main_launch_enabled_mod_size_warning_continue">Continue anyway</string>
     <string name="main_launch_game_already_running">The game process is still running. Return to that session or wait for it to exit before starting again.</string>

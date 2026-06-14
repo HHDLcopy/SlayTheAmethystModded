@@ -594,6 +594,7 @@ private fun Project.registerAdbTasks(adb: Provider<String>, packageName: String)
     }
     val forceJvmCrash = readGradleProperty("forceJvmCrash", "false")
     val forceRuntimeCrash = readGradleProperty("forceRuntimeCrash", "false")
+    val autoplay = readGradleProperty("autoplay", "false")
     val deviceSerial = readGradleProperty("deviceSerial")
     val logsDir = readGradleProperty("logsDir")
     require(launchMode in supportedLaunchModes) {
@@ -609,17 +610,60 @@ private fun Project.registerAdbTasks(adb: Provider<String>, packageName: String)
         addAll(args)
     }
 
+    fun startLauncherCommand(
+        launchMode: String,
+        forceJvmCrash: String,
+        forceRuntimeCrash: String,
+        autoplay: String
+    ): List<String> = adbCommand(
+        "shell",
+        "am",
+        "start",
+        "-n",
+        "$packageName/.LauncherActivity",
+        "--es",
+        "io.stamethyst.debug_launch_mode",
+        launchMode,
+        "--ez",
+        "io.stamethyst.debug_force_jvm_crash",
+        forceJvmCrash,
+        "--ez",
+        "io.stamethyst.debug_force_runtime_crash",
+        forceRuntimeCrash,
+        "--ez",
+        "io.stamethyst.debug_autoplay",
+        autoplay
+    )
+
     tasks.register<Exec>("stsStart") {
         group = "debug"
         description = "Start SlayTheAmethyst on a connected Android device."
-        val remoteCommand = buildString {
-            append("am start")
-            append(" -n $(pm resolve-activity --components $packageName)")
-            append(" --es io.stamethyst.debug_launch_mode $launchMode")
-            append(" --ez io.stamethyst.debug_force_jvm_crash $forceJvmCrash")
-            append(" --ez io.stamethyst.debug_force_runtime_crash $forceRuntimeCrash")
-        }
-        commandLine(adbCommand("shell", "sh", "-c", remoteCommand))
+        commandLine(
+            startLauncherCommand(
+                launchMode = launchMode,
+                forceJvmCrash = forceJvmCrash,
+                forceRuntimeCrash = forceRuntimeCrash,
+                autoplay = autoplay
+            )
+        )
+    }
+
+    tasks.register<Exec>("stsStartAutoplay") {
+        group = "debug"
+        description = "Start SlayTheAmethyst with the bundled autoplay driver enabled. " +
+            "Forces launchMode=mts so amethyst-runtime-compat is loaded; the driver auto-starts " +
+            "a fresh run after force-stopping any previous session, then plays random cards, " +
+            "ends each turn, and advances through the map until the run ends."
+        dependsOn("stsStop")
+        val autoplayLaunchMode = "mts"
+        commandLine(
+            startLauncherCommand(
+                launchMode = autoplayLaunchMode,
+                forceJvmCrash = "false",
+                forceRuntimeCrash = "false",
+                autoplay = "true"
+            )
+        )
     }
 
     tasks.register<Exec>("stsStop") {

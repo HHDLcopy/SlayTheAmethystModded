@@ -81,21 +81,26 @@ public class HandleRenderingFakes {
             }*/
             Texture t = region.getTexture();
             if (t.isFake) {
-                long started = RamSaverDiag.now();
-                RamSaverDiag.logStackRepeat(
-                        "draw_region_fake_texture",
-                        textureKey(t),
-                        "region=" + regionDetails(region) + " texture=" + textureDetails(t)
-                );
+                boolean diag = RamSaverDiag.enabled();
+                long started = diag ? System.nanoTime() : 0L;
+                if (diag) {
+                    RamSaverDiag.logStackRepeat(
+                            "draw_region_fake_texture",
+                            textureKey(t),
+                            "region=" + regionDetails(region) + " texture=" + textureDetails(t)
+                    );
+                }
                 temp = t;
                 region.setTexture(t.getRealTexture());
-                RamSaverDiag.logDuration(
-                        "draw_region_materialize",
-                        textureKey(t),
-                        started,
-                        "region=" + regionDetails(region) + " realTexture=" + textureDetails(region.getTexture()),
-                        false
-                );
+                if (diag) {
+                    RamSaverDiag.logDuration(
+                            "draw_region_materialize",
+                            textureKey(t),
+                            started,
+                            "region=" + regionDetails(region) + " realTexture=" + textureDetails(region.getTexture()),
+                            false
+                    );
+                }
             }
         }
 
@@ -105,11 +110,13 @@ public class HandleRenderingFakes {
                 ((ManagedAtlas.ManagedRegion) region).nullTexture();
             }*/
             if (temp != null) {
-                RamSaverDiag.logRepeat(
-                        "draw_region_restore_fake_texture",
-                        textureKey(temp),
-                        "region=" + regionDetails(region) + " fake=" + textureDetails(temp)
-                );
+                if (RamSaverDiag.enabled()) {
+                    RamSaverDiag.logRepeat(
+                            "draw_region_restore_fake_texture",
+                            textureKey(temp),
+                            "region=" + regionDetails(region) + " fake=" + textureDetails(temp)
+                    );
+                }
                 region.setTexture(temp);
                 temp = null;
             }
@@ -228,16 +235,21 @@ public class HandleRenderingFakes {
             if (texture[0] == null) return;
             Texture original = texture[0];
             if (original.isFake) {
-                long started = RamSaverDiag.now();
-                RamSaverDiag.logStackRepeat("draw_texture_fake", textureKey(original), textureDetails(original));
+                boolean diag = RamSaverDiag.enabled();
+                long started = diag ? System.nanoTime() : 0L;
+                if (diag) {
+                    RamSaverDiag.logStackRepeat("draw_texture_fake", textureKey(original), textureDetails(original));
+                }
                 texture[0] = original.getRealTexture();
-                RamSaverDiag.logDuration(
-                        "draw_texture_materialize",
-                        textureKey(original),
-                        started,
-                        "realTexture=" + textureDetails(texture[0]),
-                        false
-                );
+                if (diag) {
+                    RamSaverDiag.logDuration(
+                            "draw_texture_materialize",
+                            textureKey(original),
+                            started,
+                            "realTexture=" + textureDetails(texture[0]),
+                            false
+                    );
+                }
                 return;
             }
             texture[0] = texture[0].getRealTexture();

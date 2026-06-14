@@ -124,7 +124,8 @@ public class RamSaver {
 
     @SpirePostfixPatch
     public static void update() {
-        long updateStarted = RamSaverDiag.now();
+        boolean diag = RamSaverDiag.enabled();
+        long updateStarted = diag ? System.nanoTime() : 0L;
         int queuedReferences = 0;
         int disposedQueuedReferences = 0;
         ManagedAsset.ManagedAssetReference o;
@@ -132,17 +133,21 @@ public class RamSaver {
             queuedReferences++;
             if (o.holder.asset == o) { //Maybe disposed and replaced while in queue
                 disposedQueuedReferences++;
-                RamSaverDiag.logRepeat("reference_queue_dispose", o.holder.ID, o.holder.describe() + " " + inventoryDetails());
+                if (diag) {
+                    RamSaverDiag.logRepeat("reference_queue_dispose", o.holder.ID, o.holder.describe() + " " + inventoryDetails());
+                }
                 dispose(o.holder);
             }
             else {
-                RamSaverDiag.logRepeat("reference_queue_stale", o.holder.ID, o.holder.describe() + " " + inventoryDetails());
+                if (diag) {
+                    RamSaverDiag.logRepeat("reference_queue_stale", o.holder.ID, o.holder.describe() + " " + inventoryDetails());
+                }
             }
         }
 
         timer -= Gdx.graphics.getRawDeltaTime();
         if (timer <= 0) {
-            long bucketStarted = RamSaverDiag.now();
+            long bucketStarted = diag ? System.nanoTime() : 0L;
             int setIndex = nextSet;
             timer = TICK / loadedSets.size();
 
@@ -179,29 +184,31 @@ public class RamSaver {
             }
 
             nextSet = (nextSet + 1) % loadedSets.size();
-            RamSaverDiag.logDuration(
-                    "update_bucket",
-                    "set-" + setIndex,
-                    bucketStarted,
-                    "setIndex=" + setIndex
-                            + " sizeBefore=" + sizeBefore
-                            + " sizeAfter=" + set.size()
-                            + " missing=" + missingAssets
-                            + " disposedOld=" + disposedOldAssets
-                            + " aged=" + agedAssets
-                            + " keptFresh=" + keptFreshAssets
-                            + " queuedReferences=" + queuedReferences
-                            + " disposedQueuedReferences=" + disposedQueuedReferences
-                            + " nextSet=" + nextSet
-                            + " " + inventoryDetails(),
-                    false
-            );
+            if (diag) {
+                RamSaverDiag.logDuration(
+                        "update_bucket",
+                        "set-" + setIndex,
+                        bucketStarted,
+                        "setIndex=" + setIndex
+                                + " sizeBefore=" + sizeBefore
+                                + " sizeAfter=" + set.size()
+                                + " missing=" + missingAssets
+                                + " disposedOld=" + disposedOldAssets
+                                + " aged=" + agedAssets
+                                + " keptFresh=" + keptFreshAssets
+                                + " queuedReferences=" + queuedReferences
+                                + " disposedQueuedReferences=" + disposedQueuedReferences
+                                + " nextSet=" + nextSet
+                                + " " + inventoryDetails(),
+                        false
+                );
+            }
 
             /*if (nextSet == 0) {
                 SystemStats.logMemoryStats();
             }*/
         }
-        else if (queuedReferences > 0) {
+        else if (diag && queuedReferences > 0) {
             RamSaverDiag.logDuration(
                     "update_reference_queue",
                     "queue",
@@ -256,26 +263,29 @@ public class RamSaver {
 
         @Override
         public Texture get() {
-            long started = RamSaverDiag.now();
+            boolean diag = RamSaverDiag.enabled();
+            long started = diag ? System.nanoTime() : 0L;
             long loadStarted = System.nanoTime();
             try {
                 RealTexture real = new RealTexture(file, format, useMipMaps);
                 real.setFilter(this.minFilter, this.magFilter);
                 real.setWrap(this.uWrap, this.vWrap);
                 markTextureMaterialized(file.path(), real, Math.max(0L, System.nanoTime() - loadStarted));
-                RamSaverDiag.logDuration(
-                        "supplier_get_real_texture",
-                        file.path(),
-                        started,
-                        "format=" + format
-                                + " useMipMaps=" + useMipMaps
-                                + " minFilter=" + minFilter
-                                + " magFilter=" + magFilter
-                                + " uWrap=" + uWrap
-                                + " vWrap=" + vWrap
-                                + " " + textureDetails(real),
-                        true
-                );
+                if (diag) {
+                    RamSaverDiag.logDuration(
+                            "supplier_get_real_texture",
+                            file.path(),
+                            started,
+                            "format=" + format
+                                    + " useMipMaps=" + useMipMaps
+                                    + " minFilter=" + minFilter
+                                    + " magFilter=" + magFilter
+                                    + " uWrap=" + uWrap
+                                    + " vWrap=" + vWrap
+                                    + " " + textureDetails(real),
+                            true
+                    );
+                }
                 return real;
             }
             catch (RuntimeException e) {
@@ -320,11 +330,13 @@ public class RamSaver {
         boolean first = rejectedTextures.add(textureID) || !state.rejected;
         state.rejected = true;
         state.rejectionDetails = details;
-        RamSaverDiag.logRepeat(
-                first ? "texture_rejected_cached" : "texture_rejected_cache_hit",
-                textureID,
-                details + " " + inventoryDetails()
-        );
+        if (RamSaverDiag.enabled()) {
+            RamSaverDiag.logRepeat(
+                    first ? "texture_rejected_cached" : "texture_rejected_cache_hit",
+                    textureID,
+                    details + " " + inventoryDetails()
+            );
+        }
     }
 
     public static int recordFakeTextureCreate(String textureID, boolean rejected) {
@@ -453,14 +465,16 @@ public class RamSaver {
         }
         if (becameHot || repeatedHot) {
             enforceHotPinBudget(now);
-            RamSaverDiag.logRepeat(
-                    becameHot ? "hot_texture_pinned" : "hot_texture_refreshed",
-                    textureID,
-                    "elapsedMs=" + RamSaverDiag.formatElapsedMillis(elapsedNanos)
-                            + " estimatedBytes=" + estimatedBytes
-                            + " size=" + width + "x" + height
-                            + " " + hotPinInventoryDetails(now)
-            );
+            if (RamSaverDiag.enabled()) {
+                RamSaverDiag.logRepeat(
+                        becameHot ? "hot_texture_pinned" : "hot_texture_refreshed",
+                        textureID,
+                        "elapsedMs=" + RamSaverDiag.formatElapsedMillis(elapsedNanos)
+                                + " estimatedBytes=" + estimatedBytes
+                                + " size=" + width + "x" + height
+                                + " " + hotPinInventoryDetails(now)
+                );
+            }
         }
     }
 
@@ -471,24 +485,28 @@ public class RamSaver {
         if (fallback == null) {
             fallback = createMaterializationFallback(supplier, error);
             setMaterializationFallback(textureID, fallback);
-            RamSaverDiag.logStackRepeat(
-                    "supplier_get_fallback_created",
-                    textureID,
-                    "failureCount=" + failureCount
-                            + " format=" + supplier.format
-                            + " useMipMaps=" + supplier.useMipMaps
-                            + " error=" + exceptionDetails(error)
-                            + " fallback=" + textureDetails(fallback)
-            );
+            if (RamSaverDiag.enabled()) {
+                RamSaverDiag.logStackRepeat(
+                        "supplier_get_fallback_created",
+                        textureID,
+                        "failureCount=" + failureCount
+                                + " format=" + supplier.format
+                                + " useMipMaps=" + supplier.useMipMaps
+                                + " error=" + exceptionDetails(error)
+                                + " fallback=" + textureDetails(fallback)
+                );
+            }
         }
         else {
-            RamSaverDiag.logRepeat(
-                    "supplier_get_fallback_reuse",
-                    textureID,
-                    "failureCount=" + failureCount
-                            + " error=" + exceptionDetails(error)
-                            + " fallback=" + textureDetails(fallback)
-            );
+            if (RamSaverDiag.enabled()) {
+                RamSaverDiag.logRepeat(
+                        "supplier_get_fallback_reuse",
+                        textureID,
+                        "failureCount=" + failureCount
+                                + " error=" + exceptionDetails(error)
+                                + " fallback=" + textureDetails(fallback)
+                );
+            }
         }
         logMaterializationFallback(textureID, supplier, error, failureCount, fallback);
         return fallback;
@@ -601,31 +619,37 @@ public class RamSaver {
         boolean replacing = textures.containsKey(textureID);
         synchronized (state) {
             if (state.supplier != null && replacing) {
-                RamSaverDiag.logRepeat(
-                        "register_texture_reuse",
-                        textureID,
-                        "supplier=" + RamSaverDiag.describeObject(state.supplier) + " " + inventoryDetails()
-                );
+                if (RamSaverDiag.enabled()) {
+                    RamSaverDiag.logRepeat(
+                            "register_texture_reuse",
+                            textureID,
+                            "supplier=" + RamSaverDiag.describeObject(state.supplier) + " " + inventoryDetails()
+                    );
+                }
                 return;
             }
             state.supplier = texSupplier;
         }
         textures.put(textureID, texSupplier);
-        RamSaverDiag.logStackRepeat(
-                "register_texture",
-                textureID,
-                "replacing=" + replacing
-                        + " supplier=" + RamSaverDiag.describeObject(texSupplier)
-                        + " file=" + (texSupplier == null ? "null" : RamSaverDiag.safe(texSupplier.file.path()))
-                        + " " + inventoryDetails()
-        );
+        if (RamSaverDiag.enabled()) {
+            RamSaverDiag.logStackRepeat(
+                    "register_texture",
+                    textureID,
+                    "replacing=" + replacing
+                            + " supplier=" + RamSaverDiag.describeObject(texSupplier)
+                            + " file=" + (texSupplier == null ? "null" : RamSaverDiag.safe(texSupplier.file.path()))
+                            + " " + inventoryDetails()
+            );
+        }
     }
 
     private static Texture makeTexture(String path) {
         try {
             Texture t = new Texture(path);
             t.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
-            RamSaverDiag.logStackRepeat("make_texture", path, textureDetails(t));
+            if (RamSaverDiag.enabled()) {
+                RamSaverDiag.logStackRepeat("make_texture", path, textureDetails(t));
+            }
             return t;
         }
         catch (Exception ignored) {
@@ -668,25 +692,34 @@ public class RamSaver {
         ManagedAsset asset = loadedAssets.get(id);
         if (asset != null) {
             asset.refresh();
-            RamSaverDiag.logRepeat("asset_holder_hit", id, asset.describe());
+            if (RamSaverDiag.enabled()) {
+                RamSaverDiag.logRepeat("asset_holder_hit", id, asset.describe());
+            }
         }
         else {
-            RamSaverDiag.logStackRepeat("asset_holder_miss", id, inventoryDetails());
+            if (RamSaverDiag.enabled()) {
+                RamSaverDiag.logStackRepeat("asset_holder_miss", id, inventoryDetails());
+            }
         }
         return asset;
     }
 
     //Load methods can be called either fresh, or with an old invalid version still within maps
     public static Texture loadTexture(String id, boolean canAge) {
-        long started = RamSaverDiag.now();
+        boolean diag = RamSaverDiag.enabled();
+        long started = diag ? System.nanoTime() : 0L;
         if (id == null) {
-            RamSaverDiag.logStackRepeat("load_texture_null_id", "null", inventoryDetails());
+            if (diag) {
+                RamSaverDiag.logStackRepeat("load_texture_null_id", "null", inventoryDetails());
+            }
             return null;
         }
         Supplier<Texture> supplier = textures.get(id);
         if (supplier == null) {
             System.out.println("Attempted to load unknown texture " + id);
-            RamSaverDiag.logStackRepeat("load_texture_unknown", id, inventoryDetails());
+            if (diag) {
+                RamSaverDiag.logStackRepeat("load_texture_unknown", id, inventoryDetails());
+            }
             return null;
         }
         Texture t = supplier.get();
@@ -696,13 +729,15 @@ public class RamSaver {
             holder.setAsset(id, null, ManagedAsset.AssetType.REGION);
             loadedAssets.put(id, holder);
             nullAssets.add(id);
-            RamSaverDiag.logDuration(
-                    "load_texture_null",
-                    id,
-                    started,
-                    "canAge=" + canAge + " supplier=" + RamSaverDiag.describeObject(supplier) + " " + holder.describe() + " " + inventoryDetails(),
-                    true
-            );
+            if (diag) {
+                RamSaverDiag.logDuration(
+                        "load_texture_null",
+                        id,
+                        started,
+                        "canAge=" + canAge + " supplier=" + RamSaverDiag.describeObject(supplier) + " " + holder.describe() + " " + inventoryDetails(),
+                        true
+                );
+            }
             return null;
         }
         ManagedAsset holder = managedAssetPool.obtain();
@@ -721,18 +756,20 @@ public class RamSaver {
                     set.add(id);
                     holder.set = set;
                     appendedToExistingSet = true;
-                    RamSaverDiag.logDuration(
-                            "load_texture",
-                            id,
-                            started,
-                            "canAge=" + canAge
-                                    + " materializationFallback=" + materializationFallback
-                                    + " replaced=false appendedToExistingSet=true createdSet=false setSize=" + set.size()
-                                    + " " + textureDetails(t)
-                                    + " " + holder.describe()
-                                    + " " + inventoryDetails(),
-                            true
-                    );
+                    if (diag) {
+                        RamSaverDiag.logDuration(
+                                "load_texture",
+                                id,
+                                started,
+                                "canAge=" + canAge
+                                        + " materializationFallback=" + materializationFallback
+                                        + " replaced=false appendedToExistingSet=true createdSet=false setSize=" + set.size()
+                                        + " " + textureDetails(t)
+                                        + " " + holder.describe()
+                                        + " " + inventoryDetails(),
+                                true
+                        );
+                    }
                     return t;
                 }
             }
@@ -747,25 +784,28 @@ public class RamSaver {
             holder.set = old.set;
             dispose(old, false);
         }
-        RamSaverDiag.logDuration(
-                "load_texture",
-                id,
-                started,
-                "canAge=" + canAge
-                        + " materializationFallback=" + materializationFallback
-                        + " replaced=" + (old != null)
-                        + " appendedToExistingSet=" + appendedToExistingSet
-                        + " createdSet=" + createdSet
-                        + " " + textureDetails(t)
-                        + " " + holder.describe()
-                        + " " + inventoryDetails(),
-                true
-        );
+        if (diag) {
+            RamSaverDiag.logDuration(
+                    "load_texture",
+                    id,
+                    started,
+                    "canAge=" + canAge
+                            + " materializationFallback=" + materializationFallback
+                            + " replaced=" + (old != null)
+                            + " appendedToExistingSet=" + appendedToExistingSet
+                            + " createdSet=" + createdSet
+                            + " " + textureDetails(t)
+                            + " " + holder.describe()
+                            + " " + inventoryDetails(),
+                    true
+            );
+        }
         return t;
     }
 
     public static TextureAtlas.AtlasRegion loadRegion(String id, TextureAtlas.AtlasRegion region, ManagedAsset parent, boolean canAge) {
-        long started = RamSaverDiag.now();
+        boolean diag = RamSaverDiag.enabled();
+        long started = diag ? System.nanoTime() : 0L;
         ManagedAsset holder = managedAssetPool.obtain();
         holder.setAsset(id, region, ManagedAsset.AssetType.REGION);
         holder.canAge = canAge;
@@ -784,18 +824,20 @@ public class RamSaver {
                     set.add(id);
                     holder.set = set;
                     appendedToExistingSet = true;
-                    RamSaverDiag.logDuration(
-                            "load_region",
-                            id,
-                            started,
-                            "canAge=" + canAge
-                                    + " replaced=false appendedToExistingSet=true createdSet=false setSize=" + set.size()
-                                    + " region=" + describeRegion(region)
-                                    + " parent=" + (parent == null ? "null" : parent.describe())
-                                    + " " + holder.describe()
-                                    + " " + inventoryDetails(),
-                            true
-                    );
+                    if (diag) {
+                        RamSaverDiag.logDuration(
+                                "load_region",
+                                id,
+                                started,
+                                "canAge=" + canAge
+                                        + " replaced=false appendedToExistingSet=true createdSet=false setSize=" + set.size()
+                                        + " region=" + describeRegion(region)
+                                        + " parent=" + (parent == null ? "null" : parent.describe())
+                                        + " " + holder.describe()
+                                        + " " + inventoryDetails(),
+                                true
+                        );
+                    }
                     return region;
                 }
             }
@@ -810,20 +852,22 @@ public class RamSaver {
             holder.set = old.set;
             dispose(old, false);
         }
-        RamSaverDiag.logDuration(
-                "load_region",
-                id,
-                started,
-                "canAge=" + canAge
-                        + " replaced=" + (old != null)
-                        + " appendedToExistingSet=" + appendedToExistingSet
-                        + " createdSet=" + createdSet
-                        + " region=" + describeRegion(region)
-                        + " parent=" + (parent == null ? "null" : parent.describe())
-                        + " " + holder.describe()
-                        + " " + inventoryDetails(),
-                true
-        );
+        if (diag) {
+            RamSaverDiag.logDuration(
+                    "load_region",
+                    id,
+                    started,
+                    "canAge=" + canAge
+                            + " replaced=" + (old != null)
+                            + " appendedToExistingSet=" + appendedToExistingSet
+                            + " createdSet=" + createdSet
+                            + " region=" + describeRegion(region)
+                            + " parent=" + (parent == null ? "null" : parent.describe())
+                            + " " + holder.describe()
+                            + " " + inventoryDetails(),
+                    true
+            );
+        }
         return region;
     }
 
@@ -833,91 +877,122 @@ public class RamSaver {
     public static Texture getExistingTexture(String id) {
         Texture t = getAsset(id);
         boolean usable = t != null && t.getTextureObjectHandle() != 0;
-        RamSaverDiag.logRepeat("get_existing_texture", id, "usable=" + usable + " " + textureDetails(t));
+        if (RamSaverDiag.enabled()) {
+            RamSaverDiag.logRepeat("get_existing_texture", id, "usable=" + usable + " " + textureDetails(t));
+        }
         return usable ? t : null;
     }
     public static Texture getTexture(Texture original, String id) {
         return getTexture(original, id, true);
     }
     public static Texture getTexture(Texture original, String id, boolean canAge) {
-        long started = RamSaverDiag.now();
+        boolean diag = RamSaverDiag.enabled();
+        long started = diag ? System.nanoTime() : 0L;
         Texture t = getAsset(id); //get first, if t matches original will cause a refresh
 
         if (original != null) {
-            RamSaverDiag.logRepeat("get_texture_original", id, "canAge=" + canAge + " original=" + textureDetails(original));
+            if (diag) {
+                RamSaverDiag.logRepeat("get_texture_original", id, "canAge=" + canAge + " original=" + textureDetails(original));
+            }
             return original;
         }
 
         if (nullAssets.contains(id)) {
-            RamSaverDiag.logRepeat("get_texture_null_asset", id, "canAge=" + canAge + " " + inventoryDetails());
+            if (diag) {
+                RamSaverDiag.logRepeat("get_texture_null_asset", id, "canAge=" + canAge + " " + inventoryDetails());
+            }
             return t;
         }
 
         if (t != null && t.getTextureObjectHandle() != 0) {
-            RamSaverDiag.logRepeat("get_texture_cache_hit", id, "canAge=" + canAge + " " + textureDetails(t));
+            if (diag) {
+                RamSaverDiag.logRepeat("get_texture_cache_hit", id, "canAge=" + canAge + " " + textureDetails(t));
+            }
             return t;
         }
 
-        RamSaverDiag.logStackRepeat("get_texture_cache_miss", id, "canAge=" + canAge + " existing=" + textureDetails(t) + " " + inventoryDetails());
+        if (diag) {
+            RamSaverDiag.logStackRepeat("get_texture_cache_miss", id, "canAge=" + canAge + " existing=" + textureDetails(t) + " " + inventoryDetails());
+        }
         Texture loaded = loadTexture(id, canAge);
-        RamSaverDiag.logDuration(
-                "get_texture_load_path",
-                id,
-                started,
-                "canAge=" + canAge + " loaded=" + textureDetails(loaded) + " " + inventoryDetails(),
-                false
-        );
+        if (diag) {
+            RamSaverDiag.logDuration(
+                    "get_texture_load_path",
+                    id,
+                    started,
+                    "canAge=" + canAge + " loaded=" + textureDetails(loaded) + " " + inventoryDetails(),
+                    false
+            );
+        }
         return loaded;
     }
     public static Texture getTextureForBindFallback(String id) {
-        long started = RamSaverDiag.now();
+        boolean diag = RamSaverDiag.enabled();
+        long started = diag ? System.nanoTime() : 0L;
         Texture t = getAsset(id, false);
 
         if (nullAssets.contains(id)) {
-            RamSaverDiag.logRepeat("get_bind_fallback_null_asset", id, inventoryDetails());
+            if (diag) {
+                RamSaverDiag.logRepeat("get_bind_fallback_null_asset", id, inventoryDetails());
+            }
             return t;
         }
 
         if (t != null && t.getTextureObjectHandle() != 0) {
-            RamSaverDiag.logRepeat("get_bind_fallback_cache_hit", id, textureDetails(t));
+            if (diag) {
+                RamSaverDiag.logRepeat("get_bind_fallback_cache_hit", id, textureDetails(t));
+            }
             return t;
         }
 
-        RamSaverDiag.logStackRepeat("get_bind_fallback_cache_miss", id, "existing=" + textureDetails(t) + " " + inventoryDetails());
+        if (diag) {
+            RamSaverDiag.logStackRepeat("get_bind_fallback_cache_miss", id, "existing=" + textureDetails(t) + " " + inventoryDetails());
+        }
         Texture loaded = loadTexture(id, true);
-        RamSaverDiag.logDuration(
-                "get_bind_fallback_load_path",
-                id,
-                started,
-                "loaded=" + textureDetails(loaded) + " " + inventoryDetails(),
-                false
-        );
+        if (diag) {
+            RamSaverDiag.logDuration(
+                    "get_bind_fallback_load_path",
+                    id,
+                    started,
+                    "loaded=" + textureDetails(loaded) + " " + inventoryDetails(),
+                    false
+            );
+        }
         return loaded;
     }
     public static TextureAtlas.AtlasRegion getTextureAsRegion(TextureAtlas.AtlasRegion original, String id) {
         return getTextureAsRegion(original, id, false);
     }
     public static TextureAtlas.AtlasRegion getTextureAsRegion(TextureAtlas.AtlasRegion original, String id, boolean canAge) {
-        long started = RamSaverDiag.now();
+        boolean diag = RamSaverDiag.enabled();
+        long started = diag ? System.nanoTime() : 0L;
         //See if already loaded
         String regionID = id + "RGN";
         TextureAtlas.AtlasRegion region = getAsset(regionID);
 
         if (original != null) {
-            RamSaverDiag.logRepeat("get_region_original", regionID, "source=" + RamSaverDiag.safe(id) + " region=" + describeRegion(original));
+            if (diag) {
+                RamSaverDiag.logRepeat("get_region_original", regionID, "source=" + RamSaverDiag.safe(id) + " region=" + describeRegion(original));
+            }
             return original;
         }
 
         if (region != null) {
-            RamSaverDiag.logRepeat("get_region_cache_hit", regionID, "source=" + RamSaverDiag.safe(id) + " region=" + describeRegion(region));
+            if (diag) {
+                RamSaverDiag.logRepeat("get_region_cache_hit", regionID, "source=" + RamSaverDiag.safe(id) + " region=" + describeRegion(region));
+            }
             return region;
         }
 
         //Get/load texture
-        RamSaverDiag.logStackRepeat("get_region_cache_miss", regionID, "source=" + RamSaverDiag.safe(id) + " canAge=" + canAge + " " + inventoryDetails());
+        if (diag) {
+            RamSaverDiag.logStackRepeat("get_region_cache_miss", regionID, "source=" + RamSaverDiag.safe(id) + " canAge=" + canAge + " " + inventoryDetails());
+        }
         Texture t = getTexture(null, id, canAge);
         if (t == null) {
-            RamSaverDiag.logDuration("get_region_null_texture", regionID, started, "source=" + RamSaverDiag.safe(id) + " canAge=" + canAge, true);
+            if (diag) {
+                RamSaverDiag.logDuration("get_region_null_texture", regionID, started, "source=" + RamSaverDiag.safe(id) + " canAge=" + canAge, true);
+            }
             return null;
         }
 
@@ -926,17 +1001,19 @@ public class RamSaver {
         region = new TextureAtlas.AtlasRegion(t, 0, 0, t.getWidth(), t.getHeight());
 
         TextureAtlas.AtlasRegion loaded = loadRegion(regionID, region, texture, false); //the region itself doesn't need to age
-        RamSaverDiag.logDuration(
-                "get_region_load_path",
-                regionID,
-                started,
-                "source=" + RamSaverDiag.safe(id)
-                        + " canAge=" + canAge
-                        + " texture=" + textureDetails(t)
-                        + " region=" + describeRegion(loaded)
-                        + " " + inventoryDetails(),
-                false
-        );
+        if (diag) {
+            RamSaverDiag.logDuration(
+                    "get_region_load_path",
+                    regionID,
+                    started,
+                    "source=" + RamSaverDiag.safe(id)
+                            + " canAge=" + canAge
+                            + " texture=" + textureDetails(t)
+                            + " region=" + describeRegion(loaded)
+                            + " " + inventoryDetails(),
+                    false
+            );
+        }
         return loaded;
     }
 
@@ -944,10 +1021,14 @@ public class RamSaver {
         ManagedAsset asset = loadedAssets.get(id);
         if (asset != null) {
             asset.age();
-            RamSaverDiag.logRepeat("age_asset", id, asset.describe());
+            if (RamSaverDiag.enabled()) {
+                RamSaverDiag.logRepeat("age_asset", id, asset.describe());
+            }
         }
         else {
-            RamSaverDiag.logRepeat("age_missing_asset", id, inventoryDetails());
+            if (RamSaverDiag.enabled()) {
+                RamSaverDiag.logRepeat("age_missing_asset", id, inventoryDetails());
+            }
         }
     }
     public static void dispose(String id) {
@@ -956,16 +1037,19 @@ public class RamSaver {
             dispose(asset, true);
         }
         else {
-            RamSaverDiag.logRepeat("dispose_missing_asset", id, inventoryDetails());
+            if (RamSaverDiag.enabled()) {
+                RamSaverDiag.logRepeat("dispose_missing_asset", id, inventoryDetails());
+            }
         }
     }
     private static void dispose(ManagedAsset asset) {
         dispose(asset, true);
     }
     private static void dispose(ManagedAsset asset, boolean removeKey) {
-        long started = RamSaverDiag.now();
+        boolean diag = RamSaverDiag.enabled();
+        long started = diag ? System.nanoTime() : 0L;
         String id = asset.ID;
-        String before = asset.describe();
+        String before = diag ? asset.describe() : "";
         asset.dispose();
         if (removeKey) {
             loadedAssets.remove(asset.ID);
@@ -973,13 +1057,15 @@ public class RamSaver {
                 asset.set.remove(asset.ID);
         }
         managedAssetPool.free(asset);
-        RamSaverDiag.logDuration(
-                "dispose_asset",
-                id,
-                started,
-                "removeKey=" + removeKey + " before=" + before + " " + inventoryDetails(),
-                true
-        );
+        if (diag) {
+            RamSaverDiag.logDuration(
+                    "dispose_asset",
+                    id,
+                    started,
+                    "removeKey=" + removeKey + " before=" + before + " " + inventoryDetails(),
+                    true
+            );
+        }
     }
 
     private static String inventoryDetails() {
@@ -1073,14 +1159,16 @@ public class RamSaver {
                 oldest.hotPinned = false;
                 oldest.hotPinnedUntilNanos = 0L;
             }
-            RamSaverDiag.logRepeat(
-                    "hot_texture_unpinned_budget",
-                    evictedId,
-                    "estimatedBytes=" + evictedBytes
-                            + " totalBytes=" + totalBytes
-                            + " hotCount=" + hotCount
-                            + " budgetBytes=" + HOT_PIN_BUDGET_BYTES
-            );
+            if (RamSaverDiag.enabled()) {
+                RamSaverDiag.logRepeat(
+                        "hot_texture_unpinned_budget",
+                        evictedId,
+                        "estimatedBytes=" + evictedBytes
+                                + " totalBytes=" + totalBytes
+                                + " hotCount=" + hotCount
+                                + " budgetBytes=" + HOT_PIN_BUDGET_BYTES
+                );
+            }
         }
     }
 
@@ -1310,14 +1398,18 @@ public class RamSaver {
                 case REGION:
                     break;
             }
-            RamSaverDiag.logStackRepeat("managed_asset_set", ID, describe() + " item=" + RamSaverDiag.describeObject(o));
+            if (RamSaverDiag.enabled()) {
+                RamSaverDiag.logStackRepeat("managed_asset_set", ID, describe() + " item=" + RamSaverDiag.describeObject(o));
+            }
         }
         public void setNull(String ID) {
             this.ID = ID;
             this.type = AssetType.REGION;
             asset = new LockedNullReference(this, referenceQueue);
             canAge = false;
-            RamSaverDiag.logStackRepeat("managed_asset_set_null", ID, describe());
+            if (RamSaverDiag.enabled()) {
+                RamSaverDiag.logStackRepeat("managed_asset_set_null", ID, describe());
+            }
         }
 
         public boolean canAge() {
@@ -1334,7 +1426,9 @@ public class RamSaver {
 
         public void age() {
             fresh = false;
-            RamSaverDiag.logRepeat("managed_asset_age", ID, describe());
+            if (RamSaverDiag.enabled()) {
+                RamSaverDiag.logRepeat("managed_asset_age", ID, describe());
+            }
         }
 
         public void refresh() {
@@ -1349,7 +1443,9 @@ public class RamSaver {
 
         //Dispose of texture, clear reference, make it old
         public void dispose() {
-            RamSaverDiag.logRepeat("managed_asset_dispose_begin", ID, describe());
+            if (RamSaverDiag.enabled()) {
+                RamSaverDiag.logRepeat("managed_asset_dispose_begin", ID, describe());
+            }
             for (ManagedAsset child : dependent) {
                 child.parent = null;
                 child.dispose();
@@ -1358,7 +1454,9 @@ public class RamSaver {
 
             for (int handle : disposeParams) {
                 if (handle != 0) {
-                    RamSaverDiag.logRepeat("delete_texture_handle", ID, "handle=" + handle + " " + describe());
+                    if (RamSaverDiag.enabled()) {
+                        RamSaverDiag.logRepeat("delete_texture_handle", ID, "handle=" + handle + " " + describe());
+                    }
                     Gdx.gl.glDeleteTexture(handle);
                 }
             }

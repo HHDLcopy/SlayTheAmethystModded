@@ -24,6 +24,7 @@ internal data class GameSessionConfig(
     val manualDismissBootOverlay: Boolean,
     val forceJvmCrash: Boolean,
     val forceRuntimeCrash: Boolean,
+    val autoplay: Boolean,
     val specialKeyInputMode: SpecialKeyInputMode,
     val showFloatingMouseWindow: Boolean,
     val showGamePerformanceOverlay: Boolean,
@@ -85,6 +86,7 @@ internal data class GameSessionConfig(
                 ),
                 forceJvmCrash = intent.getBooleanExtra(StsGameActivity.EXTRA_FORCE_JVM_CRASH, false),
                 forceRuntimeCrash = intent.getBooleanExtra(StsGameActivity.EXTRA_FORCE_RUNTIME_CRASH, false),
+                autoplay = intent.getBooleanExtra(StsGameActivity.EXTRA_AUTOPLAY, false),
                 specialKeyInputMode = specialKeyInputMode,
                 showFloatingMouseWindow =
                     specialKeyInputMode == SpecialKeyInputMode.LEGACY_FLOATING_WINDOW,

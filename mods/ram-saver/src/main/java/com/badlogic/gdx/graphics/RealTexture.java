@@ -43,7 +43,9 @@ public class RealTexture extends Texture {
 
     public RealTexture(TextureData data) {
         this(3553, Gdx.gl.glGenTexture(), data);
-        RamSaverDiag.logStackRepeat("real_texture_construct", dataKey(data), dataDetails(data) + " texture=" + diagTexture(this));
+        if (RamSaverDiag.enabled()) {
+            RamSaverDiag.logStackRepeat("real_texture_construct", dataKey(data), dataDetails(data) + " texture=" + diagTexture(this));
+        }
     }
 
     protected RealTexture(int glTarget, int glHandle, TextureData data) {
@@ -52,11 +54,14 @@ public class RealTexture extends Texture {
         if (data.isManaged()) {
             addManagedTexture(Gdx.app, this);
         }
-        RamSaverDiag.logStackRepeat("real_texture_construct_handle", dataKey(data), "glTarget=" + glTarget + " glHandle=" + glHandle + " " + dataDetails(data) + " texture=" + diagTexture(this));
+        if (RamSaverDiag.enabled()) {
+            RamSaverDiag.logStackRepeat("real_texture_construct_handle", dataKey(data), "glTarget=" + glTarget + " glHandle=" + glHandle + " " + dataDetails(data) + " texture=" + diagTexture(this));
+        }
     }
 
     public void load(TextureData data) {
-        long started = RamSaverDiag.now();
+        boolean diag = RamSaverDiag.enabled();
+        long started = diag ? System.nanoTime() : 0L;
         if (this.data != null && data.isManaged() != this.data.isManaged()) {
             throw new GdxRuntimeException("New data must have the same managed status as the old data");
         } else {
@@ -70,13 +75,15 @@ public class RealTexture extends Texture {
             this.setFilter(this.minFilter, this.magFilter);
             this.setWrap(this.uWrap, this.vWrap);
             Gdx.gl.glBindTexture(this.glTarget, 0);
-            RamSaverDiag.logDuration(
-                    "real_texture_upload",
-                    dataKey(data),
-                    started,
-                    dataDetails(data) + " texture=" + diagTexture(this),
-                    true
-            );
+            if (diag) {
+                RamSaverDiag.logDuration(
+                        "real_texture_upload",
+                        dataKey(data),
+                        started,
+                        dataDetails(data) + " texture=" + diagTexture(this),
+                        true
+                );
+            }
         }
     }
 
@@ -86,7 +93,9 @@ public class RealTexture extends Texture {
         } else {
             this.glHandle = Gdx.gl.glGenTexture();
             this.load(this.data);
-            RamSaverDiag.logStackRepeat("real_texture_reload", dataKey(this.data), diagTexture(this));
+            if (RamSaverDiag.enabled()) {
+                RamSaverDiag.logStackRepeat("real_texture_reload", dataKey(this.data), diagTexture(this));
+            }
         }
     }
 
@@ -119,11 +128,15 @@ public class RealTexture extends Texture {
     public void dispose() {
         super.dispose();
         if (file != null) {
-            RamSaverDiag.logStackRepeat("real_texture_dispose", file.path(), diagTexture(this));
+            if (RamSaverDiag.enabled()) {
+                RamSaverDiag.logStackRepeat("real_texture_dispose", file.path(), diagTexture(this));
+            }
             RamSaver.dispose(file.path());
         }
         else {
-            RamSaverDiag.logStackRepeat("real_texture_dispose_no_file", dataKey(this.data), diagTexture(this));
+            if (RamSaverDiag.enabled()) {
+                RamSaverDiag.logStackRepeat("real_texture_dispose_no_file", dataKey(this.data), diagTexture(this));
+            }
         }
     }
 

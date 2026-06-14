@@ -20,7 +20,9 @@ public class ChangeSpriterLoader {
     public static class NeverPack {
         @SpirePostfixPatch
         public static void No(@ByRef boolean[] ___pack) {
-            RamSaverDiag.logStackRepeat("spriter_disable_pack", "LibGdxLoader", "oldPack=" + ___pack[0]);
+            if (RamSaverDiag.enabled()) {
+                RamSaverDiag.logStackRepeat("spriter_disable_pack", "LibGdxLoader", "oldPack=" + ___pack[0]);
+            }
             ___pack[0] = false;
         }
     }
@@ -35,22 +37,25 @@ public class ChangeSpriterLoader {
                 locator = Locator.class
         )
         public static SpireReturn<Sprite> justMakeTheSprite(FileReference ref, FileHandle ___f, Data ___data) {
-            long started = RamSaverDiag.now();
+            boolean diag = RamSaverDiag.enabled();
+            long started = diag ? System.nanoTime() : 0L;
             Texture t = new Texture(___f);
             t.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear);
             int width = (int)___data.getFile(ref.folder, ref.file).size.width;
             int height = (int)___data.getFile(ref.folder, ref.file).size.height;
             TextureRegion texRegion = new TextureRegion(t, width, height);
-            RamSaverDiag.logDuration(
-                    "spriter_make_sprite",
-                    ___f.path(),
-                    started,
-                    "refFolder=" + ref.folder
-                            + " refFile=" + ref.file
-                            + " declaredSize=" + width + 'x' + height
-                            + " textureFake=" + t.isFake,
-                    true
-            );
+            if (diag) {
+                RamSaverDiag.logDuration(
+                        "spriter_make_sprite",
+                        ___f.path(),
+                        started,
+                        "refFolder=" + ref.folder
+                                + " refFile=" + ref.file
+                                + " declaredSize=" + width + 'x' + height
+                                + " textureFake=" + t.isFake,
+                        true
+                );
+            }
             return SpireReturn.Return(new Sprite(texRegion));
         }
 
@@ -70,7 +75,9 @@ public class ChangeSpriterLoader {
     public static class JustDont {
         @SpirePrefixPatch
         public static SpireReturn<Void> no() {
-            RamSaverDiag.logStackRepeat("spriter_skip_finish_loading", "LibGdxLoader", "finishLoading skipped");
+            if (RamSaverDiag.enabled()) {
+                RamSaverDiag.logStackRepeat("spriter_skip_finish_loading", "LibGdxLoader", "finishLoading skipped");
+            }
             return SpireReturn.Return();
         }
     }

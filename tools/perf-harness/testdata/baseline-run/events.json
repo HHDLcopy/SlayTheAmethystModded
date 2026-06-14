@@ -1,0 +1,131 @@
+{
+  "events": [
+    {
+      "event_name": "startup_ready",
+      "evidence_level": "level_2",
+      "evidence_refs": [
+        {
+          "artifact": "latest.log",
+          "checkpoint": null,
+          "line": 2,
+          "parser_rule": "case-insensitive-keyword-markers-v1",
+          "range": null,
+          "source": "latest.log"
+        }
+      ],
+      "message": "00:00:01.250 READY boot bridge ready",
+      "parser_rule": "case-insensitive-keyword-markers-v1",
+      "parser_version": "log-parser-v1",
+      "phase": "launch",
+      "related_class": null,
+      "related_jar": null,
+      "related_method": null,
+      "severity": "info",
+      "source": "latest.log",
+      "timestamp": "00:00:01.250"
+    },
+    {
+      "event_name": "main_menu",
+      "evidence_level": "level_2",
+      "evidence_refs": [
+        {
+          "artifact": "latest.log",
+          "checkpoint": null,
+          "line": 3,
+          "parser_rule": "case-insensitive-keyword-markers-v1",
+          "range": null,
+          "source": "latest.log"
+        }
+      ],
+      "message": "00:00:02.500 Main Menu shown",
+      "parser_rule": "case-insensitive-keyword-markers-v1",
+      "parser_version": "log-parser-v1",
+      "phase": "main_menu",
+      "related_class": null,
+      "related_jar": null,
+      "related_method": null,
+      "severity": "info",
+      "source": "latest.log",
+      "timestamp": "00:00:02.500"
+    },
+    {
+      "checkpoint": "main_menu_idle",
+      "event_name": "scenario_checkpoint",
+      "evidence_level": "level_2",
+      "evidence_refs": [
+        {
+          "artifact": "latest.log",
+          "checkpoint": "main_menu_idle",
+          "line": 4,
+          "parser_rule": "case-insensitive-keyword-markers-v1",
+          "range": null,
+          "source": "latest.log"
+        }
+      ],
+      "message": "00:00:02.700 PERF_CHECKPOINT:main_menu_idle",
+      "parser_rule": "case-insensitive-keyword-markers-v1",
+      "parser_version": "log-parser-v1",
+      "phase": "scenario",
+      "related_class": null,
+      "related_jar": null,
+      "related_method": null,
+      "severity": "info",
+      "source": "latest.log",
+      "timestamp": "00:00:02.700"
+    },
+    {
+      "event_name": "gc",
+      "evidence_level": "level_2",
+      "evidence_refs": [
+        {
+          "artifact": "latest.log",
+          "checkpoint": null,
+          "line": 5,
+          "parser_rule": "case-insensitive-keyword-markers-v1",
+          "range": null,
+          "source": "latest.log"
+        }
+      ],
+      "message": "00:00:03.000 [GC] Pause Young 12ms",
+      "parser_rule": "case-insensitive-keyword-markers-v1",
+      "parser_version": "log-parser-v1",
+      "phase": "jvm",
+      "related_class": null,
+      "related_jar": null,
+      "related_method": null,
+      "severity": "debug",
+      "source": "latest.log",
+      "timestamp": "00:00:03.000"
+    },
+    {
+      "event_name": "startup_ready",
+      "evidence_level": "level_2",
+      "evidence_refs": [
+        {
+          "artifact": "boot_bridge_events.log",
+          "checkpoint": null,
+          "line": 2,
+          "parser_rule": "case-insensitive-keyword-markers-v1",
+          "range": null,
+          "source": "boot_bridge_events.log"
+        }
+      ],
+      "message": "00:00:01.200 boot_ready signal published",
+      "parser_rule": "case-insensitive-keyword-markers-v1",
+      "parser_version": "log-parser-v1",
+      "phase": "launch",
+      "related_class": null,
+      "related_jar": null,
+      "related_method": null,
+      "severity": "info",
+      "source": "boot_bridge_events.log",
+      "timestamp": "00:00:01.200"
+    }
+  ],
+  "parser_rule": "run-dir-whitelisted-log-filenames-v1",
+  "parser_version": "log-parser-v1",
+  "run_id": "baseline-run",
+  "scenario_id": "unknown-scenario",
+  "schema_version": "1",
+  "tool_version": "perf-harness-step4"
+}

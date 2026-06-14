@@ -1,0 +1,598 @@
+{
+  "input_summary": {
+    "artifacts": [
+      {
+        "artifact": "latest.log",
+        "kind": "latest.log",
+        "source": "latest.log"
+      },
+      {
+        "artifact": "boot_bridge_events.log",
+        "kind": "boot_bridge_events.log",
+        "source": "boot_bridge_events.log"
+      },
+      {
+        "artifact": "meminfo.txt",
+        "kind": "meminfo",
+        "source": "dumpsys meminfo"
+      },
+      {
+        "artifact": "gfxinfo.txt",
+        "kind": "gfxinfo",
+        "source": "dumpsys gfxinfo"
+      }
+    ],
+    "log_artifact_count": 4,
+    "parsed_artifact_count": 4,
+    "run_dir_redacted": "<run-dir>",
+    "skipped_artifact_count": 0
+  },
+  "metrics": [
+    {
+      "category": "startup",
+      "comparison_scope": "same_device_only",
+      "description": "READY marker detected in a parsed log.",
+      "diagnostic_sensitive": true,
+      "evidence_refs": [
+        {
+          "artifact": "latest.log",
+          "checkpoint": null,
+          "line": 2,
+          "parser_rule": "case-insensitive-keyword-markers-v1",
+          "range": null,
+          "source": "latest.log"
+        }
+      ],
+      "metric_id": "startup.ready_seen",
+      "missing": false,
+      "missing_reason": null,
+      "parser_rule": "case-insensitive-keyword-markers-v1",
+      "parser_version": "log-parser-v1",
+      "required": true,
+      "scenario_id": "unknown-scenario",
+      "source": "log",
+      "status": "ok",
+      "unit": "boolean",
+      "value": true
+    },
+    {
+      "category": "startup",
+      "comparison_scope": "same_device_only",
+      "description": "Main menu marker detected in a parsed log.",
+      "diagnostic_sensitive": true,
+      "evidence_refs": [
+        {
+          "artifact": "latest.log",
+          "checkpoint": null,
+          "line": 3,
+          "parser_rule": "case-insensitive-keyword-markers-v1",
+          "range": null,
+          "source": "latest.log"
+        }
+      ],
+      "metric_id": "startup.main_menu_seen",
+      "missing": false,
+      "missing_reason": null,
+      "parser_rule": "case-insensitive-keyword-markers-v1",
+      "parser_version": "log-parser-v1",
+      "required": true,
+      "scenario_id": "unknown-scenario",
+      "source": "log",
+      "status": "ok",
+      "unit": "boolean",
+      "value": true
+    },
+    {
+      "category": "startup",
+      "comparison_scope": "same_device_only",
+      "description": "Elapsed time from launch/start reference to READY marker.",
+      "diagnostic_sensitive": true,
+      "evidence_refs": [
+        {
+          "artifact": "latest.log",
+          "checkpoint": null,
+          "line": 1,
+          "parser_rule": "case-insensitive-keyword-markers-v1",
+          "range": null,
+          "source": "latest.log"
+        },
+        {
+          "artifact": "latest.log",
+          "checkpoint": null,
+          "line": 2,
+          "parser_rule": "case-insensitive-keyword-markers-v1",
+          "range": null,
+          "source": "latest.log"
+        }
+      ],
+      "metric_id": "startup.time_to_ready_ms",
+      "missing": false,
+      "missing_reason": null,
+      "parser_rule": "timestamp-delta-between-start-and-marker-v1",
+      "parser_version": "log-parser-v1",
+      "required": true,
+      "scenario_id": "unknown-scenario",
+      "source": "log",
+      "status": "ok",
+      "unit": "ms",
+      "value": 1250.0
+    },
+    {
+      "category": "startup",
+      "comparison_scope": "same_device_only",
+      "description": "Elapsed time from launch/start reference to main menu marker.",
+      "diagnostic_sensitive": true,
+      "evidence_refs": [
+        {
+          "artifact": "latest.log",
+          "checkpoint": null,
+          "line": 1,
+          "parser_rule": "case-insensitive-keyword-markers-v1",
+          "range": null,
+          "source": "latest.log"
+        },
+        {
+          "artifact": "latest.log",
+          "checkpoint": null,
+          "line": 3,
+          "parser_rule": "case-insensitive-keyword-markers-v1",
+          "range": null,
+          "source": "latest.log"
+        }
+      ],
+      "metric_id": "startup.time_to_main_menu_ms",
+      "missing": false,
+      "missing_reason": null,
+      "parser_rule": "timestamp-delta-between-start-and-marker-v1",
+      "parser_version": "log-parser-v1",
+      "required": true,
+      "scenario_id": "unknown-scenario",
+      "source": "log",
+      "status": "ok",
+      "unit": "ms",
+      "value": 2500.0
+    },
+    {
+      "category": "JVM",
+      "comparison_scope": "same_device_only",
+      "description": "GC keyword events found in parsed logs.",
+      "diagnostic_sensitive": true,
+      "evidence_refs": [
+        {
+          "artifact": "latest.log",
+          "checkpoint": null,
+          "line": 5,
+          "parser_rule": "case-insensitive-keyword-markers-v1",
+          "range": null,
+          "source": "latest.log"
+        }
+      ],
+      "metric_id": "jvm.gc_event_count",
+      "missing": false,
+      "missing_reason": null,
+      "parser_rule": "case-insensitive-keyword-markers-v1",
+      "parser_version": "log-parser-v1",
+      "required": false,
+      "scenario_id": "unknown-scenario",
+      "source": "log",
+      "status": "ok",
+      "unit": "count",
+      "value": 1
+    },
+    {
+      "category": "Native / Android",
+      "comparison_scope": "same_device_only",
+      "description": "ANR keyword events found in parsed logs.",
+      "diagnostic_sensitive": true,
+      "evidence_refs": [
+        {
+          "artifact": "latest.log",
+          "checkpoint": null,
+          "line": null,
+          "parser_rule": "run-dir-whitelisted-log-filenames-v1",
+          "range": null,
+          "source": "latest.log"
+        },
+        {
+          "artifact": "boot_bridge_events.log",
+          "checkpoint": null,
+          "line": null,
+          "parser_rule": "run-dir-whitelisted-log-filenames-v1",
+          "range": null,
+          "source": "boot_bridge_events.log"
+        },
+        {
+          "artifact": "meminfo.txt",
+          "checkpoint": null,
+          "line": null,
+          "parser_rule": "run-dir-whitelisted-log-filenames-v1",
+          "range": null,
+          "source": "dumpsys meminfo"
+        },
+        {
+          "artifact": "gfxinfo.txt",
+          "checkpoint": null,
+          "line": null,
+          "parser_rule": "run-dir-whitelisted-log-filenames-v1",
+          "range": null,
+          "source": "dumpsys gfxinfo"
+        }
+      ],
+      "metric_id": "alerts.anr_count",
+      "missing": false,
+      "missing_reason": null,
+      "parser_rule": "case-insensitive-keyword-markers-v1",
+      "parser_version": "log-parser-v1",
+      "required": false,
+      "scenario_id": "unknown-scenario",
+      "source": "log",
+      "status": "ok",
+      "unit": "count",
+      "value": 0
+    },
+    {
+      "category": "Native / Android",
+      "comparison_scope": "same_device_only",
+      "description": "Low-memory keyword events found in parsed logs.",
+      "diagnostic_sensitive": true,
+      "evidence_refs": [
+        {
+          "artifact": "latest.log",
+          "checkpoint": null,
+          "line": null,
+          "parser_rule": "run-dir-whitelisted-log-filenames-v1",
+          "range": null,
+          "source": "latest.log"
+        },
+        {
+          "artifact": "boot_bridge_events.log",
+          "checkpoint": null,
+          "line": null,
+          "parser_rule": "run-dir-whitelisted-log-filenames-v1",
+          "range": null,
+          "source": "boot_bridge_events.log"
+        },
+        {
+          "artifact": "meminfo.txt",
+          "checkpoint": null,
+          "line": null,
+          "parser_rule": "run-dir-whitelisted-log-filenames-v1",
+          "range": null,
+          "source": "dumpsys meminfo"
+        },
+        {
+          "artifact": "gfxinfo.txt",
+          "checkpoint": null,
+          "line": null,
+          "parser_rule": "run-dir-whitelisted-log-filenames-v1",
+          "range": null,
+          "source": "dumpsys gfxinfo"
+        }
+      ],
+      "metric_id": "alerts.low_memory_count",
+      "missing": false,
+      "missing_reason": null,
+      "parser_rule": "case-insensitive-keyword-markers-v1",
+      "parser_version": "log-parser-v1",
+      "required": false,
+      "scenario_id": "unknown-scenario",
+      "source": "log",
+      "status": "ok",
+      "unit": "count",
+      "value": 0
+    },
+    {
+      "category": "game runtime",
+      "comparison_scope": "same_device_only",
+      "description": "Scenario checkpoint events found in parsed logs.",
+      "diagnostic_sensitive": true,
+      "evidence_refs": [
+        {
+          "artifact": "latest.log",
+          "checkpoint": "main_menu_idle",
+          "line": 4,
+          "parser_rule": "case-insensitive-keyword-markers-v1",
+          "range": null,
+          "source": "latest.log"
+        }
+      ],
+      "metric_id": "scenario.checkpoint_count",
+      "missing": false,
+      "missing_reason": null,
+      "parser_rule": "case-insensitive-keyword-markers-v1",
+      "parser_version": "log-parser-v1",
+      "required": false,
+      "scenario_id": "unknown-scenario",
+      "source": "log",
+      "status": "ok",
+      "unit": "count",
+      "value": 1
+    },
+    {
+      "category": "Native / Android",
+      "comparison_scope": "same_device_only",
+      "description": "Median TOTAL PSS parsed from dumpsys meminfo text.",
+      "diagnostic_sensitive": true,
+      "evidence_refs": [
+        {
+          "artifact": "meminfo.txt",
+          "checkpoint": null,
+          "line": 4,
+          "parser_rule": "dumpsys-meminfo-simple-numeric-lines-v1",
+          "range": null,
+          "source": "dumpsys meminfo"
+        }
+      ],
+      "metric_id": "memory.total_pss_mb",
+      "missing": false,
+      "missing_reason": null,
+      "parser_rule": "dumpsys-meminfo-simple-numeric-lines-v1",
+      "parser_version": "log-parser-v1",
+      "required": false,
+      "sample_count": 1,
+      "scenario_id": "unknown-scenario",
+      "source": "dumpsys",
+      "status": "ok",
+      "unit": "MB",
+      "value": 50
+    },
+    {
+      "category": "Native / Android",
+      "comparison_scope": "same_device_only",
+      "description": "Median Java Heap PSS parsed from dumpsys meminfo text.",
+      "diagnostic_sensitive": true,
+      "evidence_refs": [
+        {
+          "artifact": "meminfo.txt",
+          "checkpoint": null,
+          "line": 2,
+          "parser_rule": "dumpsys-meminfo-simple-numeric-lines-v1",
+          "range": null,
+          "source": "dumpsys meminfo"
+        }
+      ],
+      "metric_id": "memory.java_heap_pss_mb",
+      "missing": false,
+      "missing_reason": null,
+      "parser_rule": "dumpsys-meminfo-simple-numeric-lines-v1",
+      "parser_version": "log-parser-v1",
+      "required": false,
+      "sample_count": 1,
+      "scenario_id": "unknown-scenario",
+      "source": "dumpsys",
+      "status": "ok",
+      "unit": "MB",
+      "value": 20
+    },
+    {
+      "category": "Native / Android",
+      "comparison_scope": "same_device_only",
+      "description": "Median Native Heap PSS parsed from dumpsys meminfo text.",
+      "diagnostic_sensitive": true,
+      "evidence_refs": [
+        {
+          "artifact": "meminfo.txt",
+          "checkpoint": null,
+          "line": 3,
+          "parser_rule": "dumpsys-meminfo-simple-numeric-lines-v1",
+          "range": null,
+          "source": "dumpsys meminfo"
+        }
+      ],
+      "metric_id": "memory.native_heap_pss_mb",
+      "missing": false,
+      "missing_reason": null,
+      "parser_rule": "dumpsys-meminfo-simple-numeric-lines-v1",
+      "parser_version": "log-parser-v1",
+      "required": false,
+      "sample_count": 1,
+      "scenario_id": "unknown-scenario",
+      "source": "dumpsys",
+      "status": "ok",
+      "unit": "MB",
+      "value": 10
+    },
+    {
+      "category": "GPU / LibGDX / Texture",
+      "comparison_scope": "same_device_only",
+      "description": "Median total frames parsed from dumpsys gfxinfo text.",
+      "diagnostic_sensitive": true,
+      "evidence_refs": [
+        {
+          "artifact": "gfxinfo.txt",
+          "checkpoint": null,
+          "line": 2,
+          "parser_rule": "dumpsys-gfxinfo-simple-numeric-lines-v1",
+          "range": null,
+          "source": "dumpsys gfxinfo"
+        }
+      ],
+      "metric_id": "gfxinfo.total_frames",
+      "missing": false,
+      "missing_reason": null,
+      "parser_rule": "dumpsys-gfxinfo-simple-numeric-lines-v1",
+      "parser_version": "log-parser-v1",
+      "required": false,
+      "sample_count": 1,
+      "scenario_id": "unknown-scenario",
+      "source": "dumpsys",
+      "status": "ok",
+      "unit": "count",
+      "value": 300
+    },
+    {
+      "category": "GPU / LibGDX / Texture",
+      "comparison_scope": "same_device_only",
+      "description": "Median janky frames parsed from dumpsys gfxinfo text.",
+      "diagnostic_sensitive": true,
+      "evidence_refs": [
+        {
+          "artifact": "gfxinfo.txt",
+          "checkpoint": null,
+          "line": 3,
+          "parser_rule": "dumpsys-gfxinfo-simple-numeric-lines-v1",
+          "range": null,
+          "source": "dumpsys gfxinfo"
+        }
+      ],
+      "metric_id": "gfxinfo.janky_frames",
+      "missing": false,
+      "missing_reason": null,
+      "parser_rule": "dumpsys-gfxinfo-simple-numeric-lines-v1",
+      "parser_version": "log-parser-v1",
+      "required": false,
+      "sample_count": 1,
+      "scenario_id": "unknown-scenario",
+      "source": "dumpsys",
+      "status": "ok",
+      "unit": "count",
+      "value": 6
+    },
+    {
+      "category": "GPU / LibGDX / Texture",
+      "comparison_scope": "same_device_only",
+      "description": "Median janky frame percent parsed from dumpsys gfxinfo text.",
+      "diagnostic_sensitive": true,
+      "evidence_refs": [
+        {
+          "artifact": "gfxinfo.txt",
+          "checkpoint": null,
+          "line": 3,
+          "parser_rule": "dumpsys-gfxinfo-simple-numeric-lines-v1",
+          "range": null,
+          "source": "dumpsys gfxinfo"
+        }
+      ],
+      "metric_id": "gfxinfo.janky_percent",
+      "missing": false,
+      "missing_reason": null,
+      "parser_rule": "dumpsys-gfxinfo-simple-numeric-lines-v1",
+      "parser_version": "log-parser-v1",
+      "required": false,
+      "sample_count": 1,
+      "scenario_id": "unknown-scenario",
+      "source": "dumpsys",
+      "status": "ok",
+      "unit": "percent",
+      "value": 2
+    },
+    {
+      "category": "GPU / LibGDX / Texture",
+      "comparison_scope": "same_device_only",
+      "description": "Median gfxinfo 50th percentile frame time.",
+      "diagnostic_sensitive": true,
+      "evidence_refs": [
+        {
+          "artifact": "gfxinfo.txt",
+          "checkpoint": null,
+          "line": 4,
+          "parser_rule": "dumpsys-gfxinfo-simple-numeric-lines-v1",
+          "range": null,
+          "source": "dumpsys gfxinfo"
+        }
+      ],
+      "metric_id": "gfxinfo.frame_time_p50_ms",
+      "missing": false,
+      "missing_reason": null,
+      "parser_rule": "dumpsys-gfxinfo-simple-numeric-lines-v1",
+      "parser_version": "log-parser-v1",
+      "required": false,
+      "sample_count": 1,
+      "scenario_id": "unknown-scenario",
+      "source": "dumpsys",
+      "status": "ok",
+      "unit": "ms",
+      "value": 8
+    },
+    {
+      "category": "GPU / LibGDX / Texture",
+      "comparison_scope": "same_device_only",
+      "description": "Median gfxinfo 90th percentile frame time.",
+      "diagnostic_sensitive": true,
+      "evidence_refs": [
+        {
+          "artifact": "gfxinfo.txt",
+          "checkpoint": null,
+          "line": 5,
+          "parser_rule": "dumpsys-gfxinfo-simple-numeric-lines-v1",
+          "range": null,
+          "source": "dumpsys gfxinfo"
+        }
+      ],
+      "metric_id": "gfxinfo.frame_time_p90_ms",
+      "missing": false,
+      "missing_reason": null,
+      "parser_rule": "dumpsys-gfxinfo-simple-numeric-lines-v1",
+      "parser_version": "log-parser-v1",
+      "required": false,
+      "sample_count": 1,
+      "scenario_id": "unknown-scenario",
+      "source": "dumpsys",
+      "status": "ok",
+      "unit": "ms",
+      "value": 16
+    },
+    {
+      "category": "GPU / LibGDX / Texture",
+      "comparison_scope": "same_device_only",
+      "description": "Median gfxinfo 95th percentile frame time.",
+      "diagnostic_sensitive": true,
+      "evidence_refs": [
+        {
+          "artifact": "gfxinfo.txt",
+          "checkpoint": null,
+          "line": 6,
+          "parser_rule": "dumpsys-gfxinfo-simple-numeric-lines-v1",
+          "range": null,
+          "source": "dumpsys gfxinfo"
+        }
+      ],
+      "metric_id": "gfxinfo.frame_time_p95_ms",
+      "missing": false,
+      "missing_reason": null,
+      "parser_rule": "dumpsys-gfxinfo-simple-numeric-lines-v1",
+      "parser_version": "log-parser-v1",
+      "required": false,
+      "sample_count": 1,
+      "scenario_id": "unknown-scenario",
+      "source": "dumpsys",
+      "status": "ok",
+      "unit": "ms",
+      "value": 18
+    },
+    {
+      "category": "GPU / LibGDX / Texture",
+      "comparison_scope": "same_device_only",
+      "description": "Median gfxinfo 99th percentile frame time.",
+      "diagnostic_sensitive": true,
+      "evidence_refs": [
+        {
+          "artifact": "gfxinfo.txt",
+          "checkpoint": null,
+          "line": 7,
+          "parser_rule": "dumpsys-gfxinfo-simple-numeric-lines-v1",
+          "range": null,
+          "source": "dumpsys gfxinfo"
+        }
+      ],
+      "metric_id": "gfxinfo.frame_time_p99_ms",
+      "missing": false,
+      "missing_reason": null,
+      "parser_rule": "dumpsys-gfxinfo-simple-numeric-lines-v1",
+      "parser_version": "log-parser-v1",
+      "required": false,
+      "sample_count": 1,
+      "scenario_id": "unknown-scenario",
+      "source": "dumpsys",
+      "status": "ok",
+      "unit": "ms",
+      "value": 25
+    }
+  ],
+  "parser_rule": "run-dir-whitelisted-log-filenames-v1",
+  "parser_version": "log-parser-v1",
+  "run_id": "baseline-run",
+  "scenario_id": "unknown-scenario",
+  "schema_version": "1",
+  "tool_version": "perf-harness-step4"
+}

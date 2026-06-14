@@ -27,12 +27,15 @@ public class DecalMaterialFakeTexture {
             if (texture == null || !texture.isFake) {
                 return;
             }
-            long started = RamSaverDiag.now();
-            RamSaverDiag.logStackRepeat(
-                    "decal_material_fake_texture",
-                    textureKey(texture),
-                    "region=" + regionDetails(___textureRegion) + " texture=" + textureDetails(texture)
-            );
+            boolean diag = RamSaverDiag.enabled();
+            long started = diag ? System.nanoTime() : 0L;
+            if (diag) {
+                RamSaverDiag.logStackRepeat(
+                        "decal_material_fake_texture",
+                        textureKey(texture),
+                        "region=" + regionDetails(___textureRegion) + " texture=" + textureDetails(texture)
+                );
+            }
             originalTexture.set(texture);
             Texture real = RamSaver.getTextureForBindFallback(texture.file == null ? null : texture.file.path());
             if (real == null) {
@@ -40,13 +43,15 @@ public class DecalMaterialFakeTexture {
                 return;
             }
             ___textureRegion.setTexture(real);
-            RamSaverDiag.logDuration(
-                    "decal_material_materialize",
-                    textureKey(texture),
-                    started,
-                    "region=" + regionDetails(___textureRegion) + " realTexture=" + textureDetails(___textureRegion.getTexture()),
-                    false
-            );
+            if (diag) {
+                RamSaverDiag.logDuration(
+                        "decal_material_materialize",
+                        textureKey(texture),
+                        started,
+                        "region=" + regionDetails(___textureRegion) + " realTexture=" + textureDetails(___textureRegion.getTexture()),
+                        false
+                );
+            }
         }
 
         @SpirePostfixPatch
@@ -56,11 +61,13 @@ public class DecalMaterialFakeTexture {
                 return;
             }
             if (___textureRegion != null) {
-                RamSaverDiag.logRepeat(
-                        "decal_material_restore_fake_texture",
-                        textureKey(original),
-                        "region=" + regionDetails(___textureRegion) + " fake=" + textureDetails(original)
-                );
+                if (RamSaverDiag.enabled()) {
+                    RamSaverDiag.logRepeat(
+                            "decal_material_restore_fake_texture",
+                            textureKey(original),
+                            "region=" + regionDetails(___textureRegion) + " fake=" + textureDetails(original)
+                    );
+                }
                 ___textureRegion.setTexture(original);
             }
             originalTexture.remove();

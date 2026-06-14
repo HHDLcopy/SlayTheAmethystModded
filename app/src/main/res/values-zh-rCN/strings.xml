@@ -431,6 +431,7 @@
     <string name="main_launch_enabled_mod_size_warning_message">当前启用模组总大小约为 %1$s，大型模组过多时，很有可能给设备带来过大压力，造成崩溃卡顿等问题。
 
 是否仍要继续？</string>
+    <string name="main_launch_enabled_mod_size_warning_dont_remind">不再提示</string>
     <string name="main_launch_enabled_mod_size_warning_cancel">取消启动</string>
     <string name="main_launch_enabled_mod_size_warning_continue">仍要继续</string>
     <string name="main_launch_game_already_running">检测到游戏进程仍在运行，请先返回当前游戏会话或等待其退出后再重新启动。</string>

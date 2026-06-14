@@ -196,6 +196,8 @@ object LauncherConfig {
         "workshop_auto_import_atlas_downscale_max_edge_px"
     private const val PREF_KEY_WORKSHOP_SUBSCRIBE_WARNING_DISMISSED =
         "workshop_subscribe_warning_dismissed"
+    private const val PREF_KEY_ENABLED_MOD_SIZE_WARNING_DISMISSED =
+        "enabled_mod_size_warning_dismissed"
     private const val PREF_KEY_LAST_WORKSHOP_UPDATE_CHECK_AT_MS = "last_workshop_update_check_at_ms"
     private const val PREF_KEY_STEAM_CLOUD_SAVE_MODE = "steam_cloud_save_mode"
     private const val PREF_KEY_STEAM_CLOUD_SYNC_BLACKLIST_PATHS =
@@ -1852,6 +1854,19 @@ object LauncherConfig {
     fun setWorkshopSubscribeWarningDismissed(context: Context, dismissed: Boolean) {
         prefs(context, crossProcess = true).edit(commit = true) {
             putBoolean(PREF_KEY_WORKSHOP_SUBSCRIBE_WARNING_DISMISSED, dismissed)
+        }
+    }
+
+    fun isEnabledModSizeWarningDismissed(context: Context): Boolean {
+        return prefs(context, crossProcess = true).getBoolean(
+            PREF_KEY_ENABLED_MOD_SIZE_WARNING_DISMISSED,
+            false
+        )
+    }
+
+    fun setEnabledModSizeWarningDismissed(context: Context, dismissed: Boolean) {
+        prefs(context, crossProcess = true).edit(commit = true) {
+            putBoolean(PREF_KEY_ENABLED_MOD_SIZE_WARNING_DISMISSED, dismissed)
         }
     }
 

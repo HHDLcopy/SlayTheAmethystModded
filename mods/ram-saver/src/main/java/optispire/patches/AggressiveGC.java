@@ -43,10 +43,15 @@ public class AggressiveGC {
     public static class Initialization {
         @SpirePostfixPatch
         public static void after() {
-            long started = RamSaverDiag.now();
-            RamSaverDiag.logStackRepeat("aggressive_gc_request", "System.gc", "before");
+            boolean diag = RamSaverDiag.enabled();
+            long started = diag ? System.nanoTime() : 0L;
+            if (diag) {
+                RamSaverDiag.logStackRepeat("aggressive_gc_request", "System.gc", "before");
+            }
             System.gc();
-            RamSaverDiag.logDuration("aggressive_gc", "System.gc", started, "after", true);
+            if (diag) {
+                RamSaverDiag.logDuration("aggressive_gc", "System.gc", started, "after", true);
+            }
         }
     }
 }

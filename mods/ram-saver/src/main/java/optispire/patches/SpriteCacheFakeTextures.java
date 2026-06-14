@@ -78,12 +78,15 @@ public class SpriteCacheFakeTextures {
                     originals = new Texture[textures.length];
                 }
                 originals[i] = texture;
-                long started = RamSaverDiag.now();
-                RamSaverDiag.logStackRepeat(
-                        "sprite_cache_fake_texture",
-                        textureKey(texture),
-                        "cacheID=" + cacheID + " index=" + i + " texture=" + textureDetails(texture)
-                );
+                boolean diag = RamSaverDiag.enabled();
+                long started = diag ? System.nanoTime() : 0L;
+                if (diag) {
+                    RamSaverDiag.logStackRepeat(
+                            "sprite_cache_fake_texture",
+                            textureKey(texture),
+                            "cacheID=" + cacheID + " index=" + i + " texture=" + textureDetails(texture)
+                    );
+                }
                 Texture real = RamSaver.getTextureForBindFallback(texture.file == null ? null : texture.file.path());
                 if (real == null) {
                     originals[i] = null;
@@ -91,13 +94,15 @@ public class SpriteCacheFakeTextures {
                 }
                 textures[i] = real;
                 replaced++;
-                RamSaverDiag.logDuration(
-                        "sprite_cache_materialize",
-                        textureKey(texture),
-                        started,
-                        "cacheID=" + cacheID + " index=" + i + " realTexture=" + textureDetails(textures[i]),
-                        false
-                );
+                if (diag) {
+                    RamSaverDiag.logDuration(
+                            "sprite_cache_materialize",
+                            textureKey(texture),
+                            started,
+                            "cacheID=" + cacheID + " index=" + i + " realTexture=" + textureDetails(textures[i]),
+                            false
+                    );
+                }
             }
         }
         if (replaced > 0) {
@@ -115,11 +120,13 @@ public class SpriteCacheFakeTextures {
         for (int i = 0; i < originals.length && i < textures.length; i++) {
             Texture original = originals[i];
             if (original != null) {
-                RamSaverDiag.logRepeat(
-                        "sprite_cache_restore_fake_texture",
-                        textureKey(original),
-                        "index=" + i + " fake=" + textureDetails(original)
-                );
+                if (RamSaverDiag.enabled()) {
+                    RamSaverDiag.logRepeat(
+                            "sprite_cache_restore_fake_texture",
+                            textureKey(original),
+                            "index=" + i + " fake=" + textureDetails(original)
+                    );
+                }
                 textures[i] = original;
             }
         }

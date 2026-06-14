@@ -13,6 +13,8 @@ import com.badlogic.gdx.utils.GdxRuntimeException;
 import optispire.RamSaver;
 import optispire.RamSaverDiag;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.*;
 import java.util.function.Consumer;
 
@@ -126,7 +128,8 @@ public class Texture extends GLTexture {
 
         int repeatedRenderCreates = RamSaver.recordFakeTextureCreate(textureKey, false);
 
-        if ((!RamSaver.isRepeatedRenderTexture(textureKey) && repeatedRenderCreates < 25) || RamSaverDiag.verbose()) {
+        if (RamSaverDiag.enabled()
+                && ((!RamSaver.isRepeatedRenderTexture(textureKey) && repeatedRenderCreates < 25) || RamSaverDiag.verbose())) {
             RamSaverDiag.logStackRepeat(
                     "fake_texture_created",
                     textureKey,
@@ -151,7 +154,9 @@ public class Texture extends GLTexture {
         if (data.isManaged()) {
             addManagedTexture(Gdx.app, this);
         }
-        RamSaverDiag.logStackRepeat("real_texture_construct_data", dataKey(data), diagTexture(this));
+        if (RamSaverDiag.enabled()) {
+            RamSaverDiag.logStackRepeat("real_texture_construct_data", dataKey(data), diagTexture(this));
+        }
     }
     //Not Useless constructor, used by RealTexture
     protected Texture(int glTarget, int glHandle) {
@@ -170,27 +175,33 @@ public class Texture extends GLTexture {
         if (!isFake)
             return this;
 
-        long started = RamSaverDiag.now();
         String key = file == null ? "null" : file.path();
-        RamSaverDiag.logStackRepeat(
-                "fake_texture_materialize_request",
-                key,
-                "reason=" + reason + " canAge=" + canAge + " fake=" + diagTexture(this)
-        );
+        boolean diag = RamSaverDiag.enabled();
+        long started = diag ? System.nanoTime() : 0L;
+        if (diag) {
+            RamSaverDiag.logStackRepeat(
+                    "fake_texture_materialize_request",
+                    key,
+                    "reason=" + reason + " canAge=" + canAge + " fake=" + diagTexture(this)
+            );
+        }
         Texture real = RamSaver.getTexture(null, key, canAge);
-        RamSaverDiag.logDuration(
-                "fake_texture_materialize",
-                key,
-                started,
-                "reason=" + reason + " canAge=" + canAge + " real=" + diagTexture(real),
-                false
-        );
+        if (diag) {
+            RamSaverDiag.logDuration(
+                    "fake_texture_materialize",
+                    key,
+                    started,
+                    "reason=" + reason + " canAge=" + canAge + " real=" + diagTexture(real),
+                    false
+            );
+        }
         return real;
     }
 
 
     public void load(TextureData data) {
-        long started = RamSaverDiag.now();
+        boolean diag = RamSaverDiag.enabled();
+        long started = diag ? System.nanoTime() : 0L;
         if (!isFake) {
             if (this.data != null && data.isManaged() != this.data.isManaged()) {
                 throw new GdxRuntimeException("New data must have the same managed status as the old data");
@@ -205,18 +216,20 @@ public class Texture extends GLTexture {
                 this.setFilter(this.minFilter, this.magFilter);
                 this.setWrap(this.uWrap, this.vWrap);
                 Gdx.gl.glBindTexture(this.glTarget, 0);
-                RamSaverDiag.logDuration(
-                        "real_texture_load",
-                        dataKey(data),
-                        started,
-                        "managed=" + data.isManaged()
-                                + " prepared=" + data.isPrepared()
-                                + " size=" + data.getWidth() + "x" + data.getHeight()
-                                + " format=" + data.getFormat()
-                                + " useMipMaps=" + data.useMipMaps()
-                                + " texture=" + diagTexture(this),
-                        true
-                );
+                if (diag) {
+                    RamSaverDiag.logDuration(
+                            "real_texture_load",
+                            dataKey(data),
+                            started,
+                            "managed=" + data.isManaged()
+                                    + " prepared=" + data.isPrepared()
+                                    + " size=" + data.getWidth() + "x" + data.getHeight()
+                                    + " format=" + data.getFormat()
+                                    + " useMipMaps=" + data.useMipMaps()
+                                    + " texture=" + diagTexture(this),
+                            true
+                    );
+                }
             }
         }
         else {
@@ -228,11 +241,13 @@ public class Texture extends GLTexture {
                 format = data.getFormat();
                 useMipMaps = data.useMipMaps();
 
-                RamSaverDiag.logStackRepeat(
-                        "fake_texture_load_file_data",
-                        file.path(),
-                        "format=" + format + " useMipMaps=" + useMipMaps + " fake=" + diagTexture(this)
-                );
+                if (diag) {
+                    RamSaverDiag.logStackRepeat(
+                            "fake_texture_load_file_data",
+                            file.path(),
+                            "format=" + format + " useMipMaps=" + useMipMaps + " fake=" + diagTexture(this)
+                    );
+                }
                 if (!RamSaver.textureExists(file.path())) {
                     RamSaver.registerTexture(file.path(), new RamSaver.FileTextureSupplier(file, format, useMipMaps));
                 }
@@ -248,7 +263,9 @@ public class Texture extends GLTexture {
             } else {
                 this.glHandle = Gdx.gl.glGenTexture();
                 this.load(this.data);
-                RamSaverDiag.logStackRepeat("real_texture_reload", dataKey(this.data), diagTexture(this));
+                if (RamSaverDiag.enabled()) {
+                    RamSaverDiag.logStackRepeat("real_texture_reload", dataKey(this.data), diagTexture(this));
+                }
             }
         }
         else {
@@ -484,11 +501,15 @@ public class Texture extends GLTexture {
     public void dispose() {
         super.dispose();
         if (!isFake && file != null) {
-            RamSaverDiag.logStackRepeat("real_texture_dispose", file.path(), diagTexture(this));
+            if (RamSaverDiag.enabled()) {
+                RamSaverDiag.logStackRepeat("real_texture_dispose", file.path(), diagTexture(this));
+            }
             RamSaver.dispose(file.path());
         }
         else if (isFake) {
-            RamSaverDiag.logStackRepeat("fake_texture_dispose", file == null ? "null" : file.path(), diagTexture(this));
+            if (RamSaverDiag.enabled()) {
+                RamSaverDiag.logStackRepeat("fake_texture_dispose", file == null ? "null" : file.path(), diagTexture(this));
+            }
         }
     }
 
@@ -732,6 +753,8 @@ public class Texture extends GLTexture {
                 t.knowSize = true;
             }
         });
+        sizeGetters.put("jpg", Texture::readJpegSize);
+        sizeGetters.put("jpeg", Texture::readJpegSize);
     }
     private static void getSize(Texture t) {
         if (!t.isFake) {
@@ -741,7 +764,9 @@ public class Texture extends GLTexture {
             if (t.file != null) {
                 RamSaver.cacheTextureSize(t.file.path(), t.width, t.height);
             }
-            RamSaverDiag.logRepeat("size_real_texture", dataKey(t.data), "size=" + t.width + "x" + t.height + " texture=" + diagTexture(t));
+            if (RamSaverDiag.enabled()) {
+                RamSaverDiag.logRepeat("size_real_texture", dataKey(t.data), "size=" + t.width + "x" + t.height + " texture=" + diagTexture(t));
+            }
             return;
         }
 
@@ -751,40 +776,48 @@ public class Texture extends GLTexture {
                 t.width = cachedSize[0];
                 t.height = cachedSize[1];
                 t.knowSize = true;
-                RamSaverDiag.logRepeat(
-                        "size_cache_hit",
-                        t.file.path(),
-                        "extension=" + RamSaverDiag.safe(t.file.extension()) + " size=" + t.width + "x" + t.height
-                );
+                if (RamSaverDiag.enabled()) {
+                    RamSaverDiag.logRepeat(
+                            "size_cache_hit",
+                            t.file.path(),
+                            "extension=" + RamSaverDiag.safe(t.file.extension()) + " size=" + t.width + "x" + t.height
+                    );
+                }
                 return;
             }
             Consumer<Texture> sizeGetter = sizeGetters.get(t.file.extension().toLowerCase());
             if (sizeGetter != null) {
-                long started = RamSaverDiag.now();
+                boolean diag = RamSaverDiag.enabled();
+                long started = diag ? System.nanoTime() : 0L;
                 sizeGetter.accept(t);
                 //If failed to process, continue to backup method.
                 if (t.knowSize) {
                     RamSaver.cacheTextureSize(t.file.path(), t.width, t.height);
-                    RamSaverDiag.logDuration(
-                            "size_header_success",
-                            t.file.path(),
-                            started,
-                            "extension=" + RamSaverDiag.safe(t.file.extension()) + " size=" + t.width + "x" + t.height,
-                            false
-                    );
+                    if (diag) {
+                        RamSaverDiag.logDuration(
+                                "size_header_success",
+                                t.file.path(),
+                                started,
+                                "extension=" + RamSaverDiag.safe(t.file.extension()) + " size=" + t.width + "x" + t.height,
+                                false
+                        );
+                    }
                     return;
                 }
-                RamSaverDiag.logDuration(
-                        "size_header_failed",
-                        t.file.path(),
-                        started,
-                        "extension=" + RamSaverDiag.safe(t.file.extension()),
-                        false
-                );
+                if (diag) {
+                    RamSaverDiag.logDuration(
+                            "size_header_failed",
+                            t.file.path(),
+                            started,
+                            "extension=" + RamSaverDiag.safe(t.file.extension()),
+                            false
+                    );
+                }
             }
         }
 
-        long started = RamSaverDiag.now();
+        boolean diag = RamSaverDiag.enabled();
+        long started = diag ? System.nanoTime() : 0L;
         Texture real = t.getRealTexture("size_fallback", true);
         t.width = real.getWidth();
         t.height = real.getHeight();
@@ -793,13 +826,15 @@ public class Texture extends GLTexture {
             RamSaver.cacheTextureSize(t.file.path(), t.width, t.height);
         }
         t.dispose();
-        RamSaverDiag.logDuration(
-                "size_real_texture_fallback",
-                t.file == null ? "null" : t.file.path(),
-                started,
-                "size=" + t.width + "x" + t.height + " real=" + diagTexture(real),
-                true
-        );
+        if (diag) {
+            RamSaverDiag.logDuration(
+                    "size_real_texture_fallback",
+                    t.file == null ? "null" : t.file.path(),
+                    started,
+                    "size=" + t.width + "x" + t.height + " real=" + diagTexture(real),
+                    true
+            );
+        }
     }
 
     private static String diagTexture(Texture texture) {
@@ -885,5 +920,96 @@ public class Texture extends GLTexture {
         t.width = width;
         t.height = height;
         t.knowSize = true;
+    }
+
+    private static void readJpegSize(Texture t) {
+        try (InputStream in = t.file.read()) {
+            if (readUnsignedByte(in) != 0xFF || readUnsignedByte(in) != 0xD8) {
+                return;
+            }
+
+            while (true) {
+                int markerStart = readUnsignedByte(in);
+                while (markerStart != 0xFF) {
+                    if (markerStart < 0) {
+                        return;
+                    }
+                    markerStart = readUnsignedByte(in);
+                }
+
+                int marker = readUnsignedByte(in);
+                while (marker == 0xFF) {
+                    marker = readUnsignedByte(in);
+                }
+                if (marker < 0 || marker == 0xD9 || marker == 0xDA) {
+                    return;
+                }
+                if (isStandaloneJpegMarker(marker)) {
+                    continue;
+                }
+
+                int length = readUnsignedShort(in);
+                if (length < 2) {
+                    return;
+                }
+
+                int payloadLength = length - 2;
+                if (isJpegStartOfFrame(marker)) {
+                    if (payloadLength < 5) {
+                        return;
+                    }
+                    readUnsignedByte(in); // precision
+                    int height = readUnsignedShort(in);
+                    int width = readUnsignedShort(in);
+                    if (width > 0 && height > 0) {
+                        t.width = width;
+                        t.height = height;
+                        t.knowSize = true;
+                    }
+                    return;
+                }
+
+                skipFully(in, payloadLength);
+            }
+        }
+        catch (IOException | RuntimeException ignored) {
+            // Fall back to the existing real-texture size path.
+        }
+    }
+
+    private static boolean isStandaloneJpegMarker(int marker) {
+        return marker == 0x01 || (marker >= 0xD0 && marker <= 0xD8);
+    }
+
+    private static boolean isJpegStartOfFrame(int marker) {
+        return marker >= 0xC0 && marker <= 0xCF && marker != 0xC4 && marker != 0xC8 && marker != 0xCC;
+    }
+
+    private static int readUnsignedByte(InputStream in) throws IOException {
+        return in.read();
+    }
+
+    private static int readUnsignedShort(InputStream in) throws IOException {
+        int high = readUnsignedByte(in);
+        int low = readUnsignedByte(in);
+        if (high < 0 || low < 0) {
+            return -1;
+        }
+        return (high << 8) | low;
+    }
+
+    private static void skipFully(InputStream in, int byteCount) throws IOException {
+        int remaining = byteCount;
+        while (remaining > 0) {
+            long skipped = in.skip(remaining);
+            if (skipped > 0) {
+                remaining -= skipped;
+                continue;
+            }
+            if (in.read() < 0) {
+                return;
+            }
+            remaining--;
+        }
     }
 }

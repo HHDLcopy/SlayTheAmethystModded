@@ -86,7 +86,8 @@ object StsLaunchSpec {
         rendererDecision: RendererDecision,
         renderScaleOverride: Float? = null,
         forceJvmCrash: Boolean = false,
-        forceRuntimeCrash: Boolean = false
+        forceRuntimeCrash: Boolean = false,
+        autoplay: Boolean = false
     ): List<String> {
         val stsRoot = RuntimePaths.stsRoot(context)
         val stsHome = RuntimePaths.stsHome(context)
@@ -539,6 +540,9 @@ object StsLaunchSpec {
         args.add("-Damethyst.bridge.mode=$launchMode")
         args.add("-Damethyst.debug.force_jvm_crash=${if (forceJvmCrash) "true" else "false"}")
         args.add("-Damethyst.debug.force_runtime_crash=${if (BuildConfig.BUILD_TYPE == "debug" && forceRuntimeCrash) "true" else "false"}")
+        // Bundled amethyst-runtime-compat reads this to enable the autoplay driver.
+        // Vanilla launches ignore it (the property is never read).
+        args.add("-Damethyst.debug.autoplay=${if (autoplay && isMtsLaunchMode(launchMode)) "true" else "false"}")
         args.add("-Damethyst.bridge.events=${RuntimePaths.bootBridgeEventsLog(context).absolutePath}")
         if (isMtsLaunchMode(launchMode)) {
             args.add("-Damethyst.mts.mod_file_list=${RuntimePaths.mtsModFileList(context).absolutePath}")

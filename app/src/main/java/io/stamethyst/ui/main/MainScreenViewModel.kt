@@ -138,6 +138,12 @@ class MainScreenViewModel : ViewModel() {
 
     data object PendingMtsComponentUpdate
 
+    data class FailedModNameMigrationUi(
+        val displayName: String,
+        val storagePath: String,
+        val reason: String
+    )
+
     data class CrashRecoveryState(
         val code: Int,
         val isSignal: Boolean,
@@ -222,6 +228,9 @@ class MainScreenViewModel : ViewModel() {
             val onAction: (() -> Unit)? = null
         ) : Effect
         data class ShowDialog(val title: UiText, val message: UiText) : Effect
+        data class ShowModNameMigrationFailureDialog(
+            val failedMods: List<FailedModNameMigrationUi>
+        ) : Effect
         data class OpenExportModPicker(
             val sourcePath: String,
             val suggestedName: String
@@ -273,6 +282,7 @@ class MainScreenViewModel : ViewModel() {
     private var modNameMigrationInFlight = false
     private var modNameMigrationInsufficientNoticeShown = false
     private var modNameMigrationFailureSuppressed = false
+    private var pendingFailedModNameMigrationResult: ModManifestNameMigrationResult? = null
     private var nextWorkshopJarSelectionRequestId = 1L
     @Volatile
     private var mtsComponentUpdateCheckInFlight = false
@@ -640,6 +650,49 @@ class MainScreenViewModel : ViewModel() {
         }
         modNameMigrationInsufficientNoticeShown = false
         maybeStartStoredModNameMigration(host)
+    }
+
+    fun retryFailedModNameMigration(host: Activity) {
+        if (uiState.busy) {
+            return
+        }
+        pendingFailedModNameMigrationResult = null
+        modNameMigrationFailureSuppressed = false
+        modNameMigrationInsufficientNoticeShown = false
+        maybeStartStoredModNameMigration(host)
+    }
+
+    fun abandonFailedModNameMigration(host: Activity) {
+        if (uiState.busy) {
+            return
+        }
+        val result = pendingFailedModNameMigrationResult ?: return
+        runCatching {
+            ModManifestNameMigration.abandonFailedStoredNameMigrations(host, result)
+        }.onSuccess { abandonedCount ->
+            pendingFailedModNameMigrationResult = null
+            modNameMigrationFailureSuppressed = false
+            modNameMigrationInsufficientNoticeShown = false
+            refresh(host)
+            _effects.tryEmit(
+                Effect.ShowSnackbar(
+                    UiText.StringResource(
+                        R.string.main_mod_name_migration_abandoned,
+                        abandonedCount
+                    )
+                )
+            )
+        }.onFailure { error ->
+            _effects.tryEmit(
+                Effect.ShowSnackbar(
+                    message = UiText.StringResource(
+                        R.string.main_mod_rename_failed,
+                        error.message ?: host.getString(R.string.feedback_unknown_error)
+                    ),
+                    duration = LauncherTransientNoticeDuration.LONG
+                )
+            )
+        }
     }
 
     fun onDismissRemovedShowFileNameNotice(host: Activity) {
@@ -3369,18 +3422,23 @@ class MainScreenViewModel : ViewModel() {
                     modNameMigrationInsufficientNoticeShown = false
                     if (result.failedCount > 0) {
                         modNameMigrationFailureSuppressed = true
+                        pendingFailedModNameMigrationResult = result
                         _effects.tryEmit(
-                            Effect.ShowSnackbar(
-                                message = UiText.StringResource(
-                                    R.string.main_mod_name_migration_failed,
-                                    result.failedCount
-                                ),
-                                duration = LauncherTransientNoticeDuration.LONG
+                            Effect.ShowModNameMigrationFailureDialog(
+                                failedMods = result.failedItems.map { failure ->
+                                    FailedModNameMigrationUi(
+                                        displayName = failure.displayName,
+                                        storagePath = failure.storagePath,
+                                        reason = failure.reason
+                                    )
+                                }
                             )
                         )
+                    } else {
+                        pendingFailedModNameMigrationResult = null
                     }
                     refresh(host)
-                    if (result.appliedCount > 0) {
+                    if (result.failedCount == 0 && result.appliedCount > 0) {
                         _effects.tryEmit(
                             Effect.ShowSnackbar(
                                 UiText.StringResource(
@@ -3395,6 +3453,7 @@ class MainScreenViewModel : ViewModel() {
                         showModNameMigrationStorageInsufficientNotice(host, error.spaceCheck)
                     } else {
                         modNameMigrationFailureSuppressed = true
+                        pendingFailedModNameMigrationResult = null
                         _effects.tryEmit(
                             Effect.ShowSnackbar(
                                 message = UiText.StringResource(

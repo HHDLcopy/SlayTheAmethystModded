@@ -1050,6 +1050,12 @@
     <string name="main_mod_name_migration_storage_insufficient_message">当前可用空间不足，暂不迁移重命名数据。\n\n需要的临时空间：%1$s\n当前可用空间：%2$s\n\n启动器会在下次启动或刷新时再次检查；空间足够后会自动开始迁移。</string>
     <string name="main_mod_name_migration_done">已迁移 %1$d 个模组的重命名数据。</string>
     <string name="main_mod_name_migration_failed">%1$d 个模组的重命名数据迁移失败。</string>
+    <string name="main_mod_name_migration_failed_title">重命名迁移失败</string>
+    <string name="main_mod_name_migration_failed_message">%1$d 个模组的重命名数据未能迁移。你可以修复下列文件后重试，也可以放弃这些失败的旧重命名记录。</string>
+    <string name="main_mod_name_migration_failed_reason">原因：%1$s</string>
+    <string name="main_mod_name_migration_failed_retry">重试</string>
+    <string name="main_mod_name_migration_failed_abandon">放弃失败的重命名</string>
+    <string name="main_mod_name_migration_abandoned">已放弃 %1$d 个模组的重命名迁移。</string>
     <string name="main_mod_renamed">已重命名为：%1$s</string>
     <string name="main_mod_rename_failed">重命名失败：%1$s</string>
     <string name="main_mod_alias_restored">已清除旧别名：%1$s</string>

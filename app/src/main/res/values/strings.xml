@@ -1051,6 +1051,12 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="main_mod_name_migration_storage_insufficient_message">Rename data was not migrated because the mod folder does not have enough free space.\n\nRequired temporary space: %1$s\nAvailable space: %2$s\n\nThe launcher will check again on the next startup or refresh, and will migrate when enough space is available.</string>
     <string name="main_mod_name_migration_done">Migrated rename data for %1$d mod(s).</string>
     <string name="main_mod_name_migration_failed">Rename data migration failed for %1$d mod(s).</string>
+    <string name="main_mod_name_migration_failed_title">Rename migration failed</string>
+    <string name="main_mod_name_migration_failed_message">%1$d mod(s) could not be migrated. Retry after fixing the listed files, or abandon the failed old rename entries.</string>
+    <string name="main_mod_name_migration_failed_reason">Reason: %1$s</string>
+    <string name="main_mod_name_migration_failed_retry">Retry</string>
+    <string name="main_mod_name_migration_failed_abandon">Abandon failed renames</string>
+    <string name="main_mod_name_migration_abandoned">Abandoned rename migration for %1$d mod(s).</string>
     <string name="main_mod_renamed">Renamed to: %1$s</string>
     <string name="main_mod_rename_failed">Rename failed: %1$s</string>
     <string name="main_mod_alias_restored">Cleared old alias: %1$s</string>

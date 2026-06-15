@@ -1030,6 +1030,7 @@ fun LauncherCrashRecoveryScreen(
                         onAction = effect.onAction
                     )
                 is MainScreenViewModel.Effect.ShowDialog -> effectDialog = effect
+                is MainScreenViewModel.Effect.ShowModNameMigrationFailureDialog -> Unit
                 is MainScreenViewModel.Effect.OpenExportModPicker -> Unit
                 is MainScreenViewModel.Effect.LaunchIntent -> hostActivity?.startActivity(effect.intent)
             }
@@ -1093,6 +1094,9 @@ internal fun LauncherMainRoute(
         task.status.isActiveDownload()
     }
     var effectDialog by remember { mutableStateOf<MainScreenViewModel.Effect.ShowDialog?>(null) }
+    var modNameMigrationFailureDialog by remember {
+        mutableStateOf<MainScreenViewModel.Effect.ShowModNameMigrationFailureDialog?>(null)
+    }
     var pendingExportModSourcePath by remember { mutableStateOf<String?>(null) }
     val importModsLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
@@ -1171,6 +1175,9 @@ internal fun LauncherMainRoute(
                         onAction = effect.onAction
                     )
                 is MainScreenViewModel.Effect.ShowDialog -> effectDialog = effect
+                is MainScreenViewModel.Effect.ShowModNameMigrationFailureDialog -> {
+                    modNameMigrationFailureDialog = effect
+                }
                 is MainScreenViewModel.Effect.OpenExportModPicker -> {
                     pendingExportModSourcePath = effect.sourcePath
                     exportModLauncher.launch(effect.suggestedName)
@@ -1191,6 +1198,25 @@ internal fun LauncherMainRoute(
             confirmButton = {
                 Button(onClick = { effectDialog = null }) {
                     Text(text = stringResource(R.string.common_action_confirm))
+                }
+            }
+        )
+    }
+
+    modNameMigrationFailureDialog?.let { dialog ->
+        val activity = hostActivity
+        ModNameMigrationFailureDialog(
+            failedMods = dialog.failedMods,
+            onRetry = {
+                modNameMigrationFailureDialog = null
+                if (activity != null) {
+                    viewModel.retryFailedModNameMigration(activity)
+                }
+            },
+            onAbandon = {
+                modNameMigrationFailureDialog = null
+                if (activity != null) {
+                    viewModel.abandonFailedModNameMigration(activity)
                 }
             }
         )
@@ -1284,6 +1310,76 @@ internal fun LauncherMainRoute(
         modifier,
         uiState,
         actions,
+    )
+}
+
+@Composable
+private fun ModNameMigrationFailureDialog(
+    failedMods: List<MainScreenViewModel.FailedModNameMigrationUi>,
+    onRetry: () -> Unit,
+    onAbandon: () -> Unit
+) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = {},
+        title = {
+            Text(text = stringResource(R.string.main_mod_name_migration_failed_title))
+        },
+        text = {
+            Column {
+                Text(
+                    text = stringResource(
+                        R.string.main_mod_name_migration_failed_message,
+                        failedMods.size
+                    )
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                SelectionContainer {
+                    Column(
+                        modifier = Modifier
+                            .heightIn(max = 280.dp)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        failedMods.forEach { mod ->
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                Text(
+                                    text = "- ${mod.displayName}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                if (mod.storagePath.isNotBlank()) {
+                                    Text(
+                                        text = mod.storagePath,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                if (mod.reason.isNotBlank()) {
+                                    Text(
+                                        text = stringResource(
+                                            R.string.main_mod_name_migration_failed_reason,
+                                            mod.reason
+                                        ),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onRetry) {
+                Text(text = stringResource(R.string.main_mod_name_migration_failed_retry))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onAbandon) {
+                Text(text = stringResource(R.string.main_mod_name_migration_failed_abandon))
+            }
+        }
     )
 }
 

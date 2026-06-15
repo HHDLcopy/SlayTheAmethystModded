@@ -11,11 +11,21 @@ import java.util.LinkedHashMap
 internal data class ModManifestNameMigrationResult(
     val appliedCount: Int,
     val rewrittenCount: Int,
-    val failedCount: Int
+    val failedCount: Int,
+    val failedItems: List<ModManifestNameMigrationFailedItem> = emptyList(),
+    val consumesLegacyFileNameState: Boolean = false
 ) {
     val attemptedCount: Int
         get() = appliedCount + failedCount
 }
+
+internal data class ModManifestNameMigrationFailedItem(
+    val displayName: String,
+    val storagePath: String,
+    val targetName: String,
+    val reason: String,
+    val clearsAlias: Boolean
+)
 
 internal data class ModManifestNameMigrationSpaceCheck(
     val pendingCount: Int,
@@ -109,6 +119,22 @@ internal object ModManifestNameMigration {
             requireEnoughSpace(plan)
         }
         return rewritePlannedNames(context, plan, onProgress)
+    }
+
+    fun abandonFailedStoredNameMigrations(
+        context: Context,
+        result: ModManifestNameMigrationResult
+    ): Int {
+        result.failedItems.forEach { failure ->
+            if (failure.clearsAlias) {
+                ModAliasStore.setAlias(context, failure.storagePath, "")
+            }
+        }
+        if (result.consumesLegacyFileNameState) {
+            LauncherPreferences.saveShowModFileName(context, false)
+            ModAliasStore.markShowFileNameRemovalNoticeHandled(context)
+        }
+        return result.failedItems.size
     }
 
     private fun buildStoredNameMigrationPlan(context: Context): MigrationPlan {
@@ -206,6 +232,7 @@ internal object ModManifestNameMigration {
         var appliedCount = 0
         var rewrittenCount = 0
         var failedCount = 0
+        val failedItems = ArrayList<ModManifestNameMigrationFailedItem>()
         var completedWorkBytes = 0L
         val totalWorkBytes = plan.pendingRewrites
             .fold(0L) { total, pending -> total.saturatingAdd(pending.migrationWorkBytes) }
@@ -274,8 +301,15 @@ internal object ModManifestNameMigration {
                 if (pending.clearsAlias) {
                     ModAliasStore.setAlias(context, pending.storagePath, "")
                 }
-            } catch (_: Throwable) {
+            } catch (error: Throwable) {
                 failedCount++
+                failedItems += ModManifestNameMigrationFailedItem(
+                    displayName = pending.displayName,
+                    storagePath = pending.storagePath,
+                    targetName = pending.targetName,
+                    reason = error.message.orEmpty(),
+                    clearsAlias = pending.clearsAlias
+                )
             }
             completedWorkBytes = completedWorkBytes.saturatingAdd(pending.migrationWorkBytes)
             reportProgress(
@@ -289,7 +323,9 @@ internal object ModManifestNameMigration {
         return ModManifestNameMigrationResult(
             appliedCount = appliedCount,
             rewrittenCount = rewrittenCount,
-            failedCount = failedCount
+            failedCount = failedCount,
+            failedItems = failedItems,
+            consumesLegacyFileNameState = plan.consumesLegacyFileNameState
         )
     }
 

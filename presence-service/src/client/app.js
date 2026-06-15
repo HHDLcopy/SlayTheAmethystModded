@@ -113,6 +113,23 @@
     { title: '最近心跳', key: 'lastSeenAt', minWidth: 180 },
     { title: '剩余 TTL', key: 'expiresInSeconds', align: 'end', minWidth: 110 }
   ];
+  const SESSION_SORT_OPTIONS = [
+    { title: '玩家名', value: 'playerName', defaultOrder: 'asc' },
+    { title: '最近心跳', value: 'lastSeenAt', defaultOrder: 'desc' },
+    { title: '首次在线', value: 'firstSeenAt', defaultOrder: 'asc' },
+    { title: '剩余 TTL', value: 'expiresInSeconds', defaultOrder: 'asc' },
+    { title: '状态', value: 'state', defaultOrder: 'asc' },
+    { title: '设备', value: 'clientId', defaultOrder: 'asc' },
+    { title: '机型', value: 'deviceModel', defaultOrder: 'asc' },
+    { title: 'Android', value: 'androidVersion', defaultOrder: 'asc' },
+    { title: '版本', value: 'appVersion', defaultOrder: 'asc' }
+  ];
+  const DEFAULT_SESSION_SORT_KEY = 'playerName';
+  const DEFAULT_SESSION_SORT_ORDER = 'asc';
+  const SESSION_TEXT_COLLATOR = new Intl.Collator('zh-CN', {
+    numeric: true,
+    sensitivity: 'base'
+  });
 
   function normalizeServiceBaseUrl(value, fallbackValue) {
     const rawValue = String(value || fallbackValue || '').trim();
@@ -392,6 +409,7 @@
     return {
       backgroundColor: 'transparent',
       animationDuration: 220,
+      animationDurationUpdate: 0,
       tooltip: {
         trigger: 'item',
         confine: true,
@@ -440,6 +458,7 @@
     const normalizedData = data.length > 0 ? data : [{ name: '暂无数据', value: 1, empty: true }];
     return {
       name,
+      id: name,
       type: 'pie',
       radius,
       center: ['50%', '48%'],
@@ -454,8 +473,7 @@
         show: false
       },
       emphasis: {
-        scale: data.length > 0,
-        scaleSize: 5,
+        scale: false,
         label: {
           show: data.length > 0,
           formatter: '{b}\n{d}%',
@@ -518,6 +536,64 @@
     return normalized || 'unknown';
   }
 
+  function normalizeSessionSortOrder(value) {
+    return value === 'desc' ? 'desc' : 'asc';
+  }
+
+  function getSessionSortOption(key) {
+    const normalizedKey = String(key || '').trim();
+    return SESSION_SORT_OPTIONS.find((item) => item.value === normalizedKey) || SESSION_SORT_OPTIONS[0];
+  }
+
+  function isBlankSortValue(value) {
+    return value === null || value === undefined || String(value).trim().length === 0;
+  }
+
+  function compareBlankSortValues(a, b, order) {
+    const aBlank = isBlankSortValue(a);
+    const bBlank = isBlankSortValue(b);
+    if (aBlank && bBlank) {
+      return 0;
+    }
+    if (!aBlank && !bBlank) {
+      return null;
+    }
+    if (order === 'desc') {
+      return aBlank ? -1 : 1;
+    }
+    return aBlank ? 1 : -1;
+  }
+
+  function compareSessionTextValues(a, b, order) {
+    const blankResult = compareBlankSortValues(a, b, order);
+    if (blankResult !== null) {
+      return blankResult;
+    }
+    return SESSION_TEXT_COLLATOR.compare(String(a), String(b));
+  }
+
+  function compareSessionNumberValues(a, b, order) {
+    const blankResult = compareBlankSortValues(a, b, order);
+    if (blankResult !== null) {
+      return blankResult;
+    }
+    return Number(a) - Number(b);
+  }
+
+  function compareSessionDateValues(a, b, order) {
+    const aTime = Date.parse(String(a || ''));
+    const bTime = Date.parse(String(b || ''));
+    const blankResult = compareBlankSortValues(
+      Number.isFinite(aTime) ? aTime : '',
+      Number.isFinite(bTime) ? bTime : '',
+      order
+    );
+    if (blankResult !== null) {
+      return blankResult;
+    }
+    return aTime - bTime;
+  }
+
   createApp({
     setup() {
       const chartEl = ref(null);
@@ -542,6 +618,12 @@
         snapshot: null,
         stats: null,
         selectedStatsWindowSeconds: DEFAULT_STATS_WINDOW_SECONDS,
+        sessionSortBy: [
+          {
+            key: DEFAULT_SESSION_SORT_KEY,
+            order: DEFAULT_SESSION_SORT_ORDER
+          }
+        ],
         lastError: ''
       });
 
@@ -585,6 +667,42 @@
       const hasStatsSamples = computed(() => (stats.value.buckets || [])
         .some((bucket) => bucket && bucket.hasSnapshot !== false));
       const selectedStatsWindowLabel = computed(() => formatStatsWindowLabel(state.selectedStatsWindowSeconds));
+      const selectedSessionSort = computed(() => {
+        const sort = Array.isArray(state.sessionSortBy) && state.sessionSortBy.length > 0
+          ? state.sessionSortBy[0]
+          : null;
+        const option = getSessionSortOption(sort && sort.key);
+        return {
+          key: option.value,
+          title: option.title,
+          order: normalizeSessionSortOrder(sort && sort.order || option.defaultOrder)
+        };
+      });
+      const selectedSessionSortKey = computed({
+        get() {
+          return selectedSessionSort.value.key;
+        },
+        set(value) {
+          const option = getSessionSortOption(value);
+          setSessionSort(option.value, option.defaultOrder);
+        }
+      });
+      const selectedSessionSortOrder = computed(() => selectedSessionSort.value.order);
+      const sessionSortLabel = computed(() => {
+        return selectedSessionSort.value.title + (selectedSessionSort.value.order === 'desc' ? '降序' : '升序');
+      });
+      const sessionCustomSorters = {
+        clientId: (a, b) => compareSessionTextValues(a, b, selectedSessionSortOrder.value),
+        playerName: (a, b) => compareSessionTextValues(a, b, selectedSessionSortOrder.value),
+        deviceModel: (a, b) => compareSessionTextValues(a, b, selectedSessionSortOrder.value),
+        androidVersion: (a, b) => compareSessionTextValues(a, b, selectedSessionSortOrder.value),
+        idType: (a, b) => compareSessionTextValues(a, b, selectedSessionSortOrder.value),
+        state: (a, b) => compareSessionTextValues(a, b, selectedSessionSortOrder.value),
+        appVersion: (a, b) => compareSessionTextValues(a, b, selectedSessionSortOrder.value),
+        firstSeenAt: (a, b) => compareSessionDateValues(a, b, selectedSessionSortOrder.value),
+        lastSeenAt: (a, b) => compareSessionDateValues(a, b, selectedSessionSortOrder.value),
+        expiresInSeconds: (a, b) => compareSessionNumberValues(a, b, selectedSessionSortOrder.value)
+      };
       const connectionColor = computed(() => {
         if (isConnected.value) {
           return 'success';
@@ -739,6 +857,23 @@
         sendStatsRefresh();
       }
 
+      function setSessionSort(key, order) {
+        const option = getSessionSortOption(key);
+        state.sessionSortBy = [
+          {
+            key: option.value,
+            order: normalizeSessionSortOrder(order || option.defaultOrder)
+          }
+        ];
+      }
+
+      function toggleSessionSortOrder() {
+        setSessionSort(
+          selectedSessionSort.value.key,
+          selectedSessionSort.value.order === 'desc' ? 'asc' : 'desc'
+        );
+      }
+
       function tableItem(item) {
         return item && item.raw ? item.raw : (item || {});
       }
@@ -764,7 +899,7 @@
             renderer: 'canvas'
           });
         }
-        distributionChart.setOption(buildDistributionChartOption(sessionDistribution.value), true);
+        distributionChart.setOption(buildDistributionChartOption(sessionDistribution.value));
       }
 
       function resizeChart() {
@@ -793,6 +928,12 @@
       watch(() => state.selectedStatsWindowSeconds, () => {
         nextTick(ensureChart);
       });
+
+      watch(() => state.sessionSortBy, (sortBy) => {
+        if (!Array.isArray(sortBy) || sortBy.length === 0) {
+          setSessionSort(DEFAULT_SESSION_SORT_KEY, DEFAULT_SESSION_SORT_ORDER);
+        }
+      }, { deep: true });
 
       watch(sessionDistribution, () => {
         nextTick(ensureDistributionChart);
@@ -867,13 +1008,19 @@
         metricItems,
         hasStatsSamples,
         selectedStatsWindowLabel,
+        selectedSessionSortKey,
+        selectedSessionSortOrder,
+        sessionSortLabel,
+        sessionCustomSorters,
         connectionColor,
         connectionIcon,
         STATS_WINDOW_ITEMS,
         SESSION_HEADERS,
+        SESSION_SORT_OPTIONS,
         login,
         refreshAll,
         selectStatsWindow,
+        toggleSessionSortOrder,
         tableItem,
         formatAge,
         formatDateTime,
@@ -1038,16 +1185,39 @@
                   <v-card-title class="panel-title">
                     <div>
                       <div>在线会话</div>
-                      <div class="panel-subtitle">按最近心跳倒序</div>
+                      <div class="panel-subtitle">当前排序：{{ sessionSortLabel }}</div>
+                    </div>
+                    <v-spacer></v-spacer>
+                    <div class="session-sort-controls">
+                      <v-select
+                        v-model="selectedSessionSortKey"
+                        :items="SESSION_SORT_OPTIONS"
+                        class="session-sort-select"
+                        label="排序"
+                        density="compact"
+                        variant="outlined"
+                        hide-details
+                      ></v-select>
+                      <v-btn
+                        color="primary"
+                        variant="tonal"
+                        :prepend-icon="selectedSessionSortOrder === 'desc' ? 'mdi-sort-descending' : 'mdi-sort-ascending'"
+                        @click="toggleSessionSortOrder"
+                      >
+                        {{ selectedSessionSortOrder === 'desc' ? '降序' : '升序' }}
+                      </v-btn>
                     </div>
                   </v-card-title>
                   <v-data-table
                     :headers="SESSION_HEADERS"
                     :items="sessions"
+                    v-model:sort-by="state.sessionSortBy"
+                    :custom-key-sort="sessionCustomSorters"
                     density="comfortable"
                     fixed-header
                     height="520"
                     item-value="clientId"
+                    must-sort
                     no-data-text="No active game sessions."
                     :items-per-page="25"
                   >

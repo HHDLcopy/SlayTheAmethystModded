@@ -2,20 +2,29 @@ package io.stamethyst.compatmod;
 
 import com.evacipated.cardcrawl.modthespire.lib.SpirePatch2;
 import com.evacipated.cardcrawl.modthespire.lib.SpirePostfixPatch;
+import com.evacipated.cardcrawl.modthespire.lib.SpirePrefixPatch;
 import com.megacrit.cardcrawl.helpers.Hitbox;
+import com.megacrit.cardcrawl.helpers.input.InputHelper;
 import com.megacrit.cardcrawl.screens.mainMenu.MenuCancelButton;
 import com.megacrit.cardcrawl.ui.buttons.CancelButton;
 import com.megacrit.cardcrawl.ui.buttons.CardSelectConfirmButton;
 import com.megacrit.cardcrawl.ui.buttons.ConfirmButton;
+import com.megacrit.cardcrawl.ui.buttons.EndTurnButton;
 import com.megacrit.cardcrawl.ui.buttons.GridSelectConfirmButton;
 import com.megacrit.cardcrawl.ui.buttons.PeekButton;
 import com.megacrit.cardcrawl.ui.buttons.ProceedButton;
 import com.megacrit.cardcrawl.ui.buttons.UnlockConfirmButton;
 
 import java.lang.reflect.Field;
+import java.util.Map;
+import java.util.WeakHashMap;
 
 public final class TouchscreenButtonStateCleanupPatches {
     private static final Field PROCEED_BUTTON_HB_FIELD = resolveProceedButtonHitboxField();
+    private static final Field END_TURN_BUTTON_HB_FIELD = resolveEndTurnButtonHitboxField();
+    private static final Field END_TURN_BUTTON_HOLD_PROGRESS_FIELD = resolveEndTurnButtonHoldProgressField();
+    private static final Map<EndTurnButton, Boolean> END_TURN_WAITING_FOR_RELEASE =
+        new WeakHashMap<EndTurnButton, Boolean>();
 
     private TouchscreenButtonStateCleanupPatches() {
     }
@@ -153,6 +162,77 @@ public final class TouchscreenButtonStateCleanupPatches {
     }
 
     @SpirePatch2(
+        clz = EndTurnButton.class,
+        method = "disable",
+        paramtypez = {boolean.class}
+    )
+    public static class EndTurnButtonDisableWithEndTurnPatch {
+        @SpirePostfixPatch
+        public static void after(EndTurnButton __instance, boolean triggerEndTurn) {
+            markEndTurnButtonWaitingForReleaseIfPressed(__instance);
+            resetEndTurnButton(__instance);
+        }
+    }
+
+    @SpirePatch2(
+        clz = EndTurnButton.class,
+        method = "disable",
+        paramtypez = {}
+    )
+    public static class EndTurnButtonDisablePatch {
+        @SpirePostfixPatch
+        public static void after(EndTurnButton __instance) {
+            markEndTurnButtonWaitingForReleaseIfPressed(__instance);
+            resetEndTurnButton(__instance);
+        }
+    }
+
+    @SpirePatch2(
+        clz = EndTurnButton.class,
+        method = "hide"
+    )
+    public static class EndTurnButtonHidePatch {
+        @SpirePostfixPatch
+        public static void after(EndTurnButton __instance) {
+            markEndTurnButtonWaitingForReleaseIfPressed(__instance);
+            resetEndTurnButton(__instance);
+        }
+    }
+
+    @SpirePatch2(
+        clz = EndTurnButton.class,
+        method = "enable"
+    )
+    public static class EndTurnButtonEnablePatch {
+        @SpirePostfixPatch
+        public static void after(EndTurnButton __instance) {
+            resetEndTurnButton(__instance);
+            markEndTurnButtonWaitingForReleaseIfPressed(__instance);
+        }
+    }
+
+    @SpirePatch2(
+        clz = EndTurnButton.class,
+        method = "update"
+    )
+    public static class EndTurnButtonUpdatePatch {
+        @SpirePrefixPatch
+        public static void before(EndTurnButton __instance) {
+            if (!CompatRuntimeState.isTouchscreenStateCleanupEnabled()) {
+                return;
+            }
+            if (!isEndTurnButtonWaitingForRelease(__instance)) {
+                return;
+            }
+            resetEndTurnButton(__instance);
+            if (InputHelper.isMouseDown) {
+                return;
+            }
+            clearEndTurnButtonWaitingForRelease(__instance);
+        }
+    }
+
+    @SpirePatch2(
         clz = PeekButton.class,
         method = "hide"
     )
@@ -204,9 +284,102 @@ public final class TouchscreenButtonStateCleanupPatches {
         }
     }
 
+    private static void resetEndTurnButton(EndTurnButton button) {
+        if (!CompatRuntimeState.isTouchscreenStateCleanupEnabled() || button == null) {
+            return;
+        }
+        resetEndTurnButtonHitbox(getEndTurnButtonHitbox(button));
+        resetEndTurnButtonHoldProgress(button);
+    }
+
+    private static void markEndTurnButtonWaitingForReleaseIfPressed(EndTurnButton button) {
+        if (!CompatRuntimeState.isTouchscreenStateCleanupEnabled() || button == null) {
+            return;
+        }
+        Hitbox hitbox = getEndTurnButtonHitbox(button);
+        if (InputHelper.isMouseDown || hasClickState(hitbox)) {
+            synchronized (END_TURN_WAITING_FOR_RELEASE) {
+                END_TURN_WAITING_FOR_RELEASE.put(button, Boolean.TRUE);
+            }
+        }
+    }
+
+    private static boolean isEndTurnButtonWaitingForRelease(EndTurnButton button) {
+        if (button == null) {
+            return false;
+        }
+        synchronized (END_TURN_WAITING_FOR_RELEASE) {
+            return Boolean.TRUE.equals(END_TURN_WAITING_FOR_RELEASE.get(button));
+        }
+    }
+
+    private static void clearEndTurnButtonWaitingForRelease(EndTurnButton button) {
+        if (button == null) {
+            return;
+        }
+        synchronized (END_TURN_WAITING_FOR_RELEASE) {
+            END_TURN_WAITING_FOR_RELEASE.remove(button);
+        }
+    }
+
+    private static boolean hasClickState(Hitbox hitbox) {
+        return hitbox != null && (hitbox.clicked || hitbox.clickStarted);
+    }
+
+    private static void resetEndTurnButtonHitbox(Hitbox hitbox) {
+        resetHitbox(hitbox);
+        if (hitbox == null) {
+            return;
+        }
+        hitbox.hovered = false;
+        hitbox.justHovered = false;
+    }
+
+    private static Hitbox getEndTurnButtonHitbox(EndTurnButton button) {
+        if (button == null || END_TURN_BUTTON_HB_FIELD == null) {
+            return null;
+        }
+        try {
+            return (Hitbox) END_TURN_BUTTON_HB_FIELD.get(button);
+        } catch (IllegalAccessException e) {
+            return null;
+        }
+    }
+
+    private static void resetEndTurnButtonHoldProgress(EndTurnButton button) {
+        if (END_TURN_BUTTON_HOLD_PROGRESS_FIELD == null) {
+            return;
+        }
+        try {
+            END_TURN_BUTTON_HOLD_PROGRESS_FIELD.setFloat(button, 0.0f);
+        } catch (IllegalAccessException e) {
+            // Ignore unavailable runtime fields; hitbox cleanup still prevents stale releases.
+        }
+    }
+
     private static Field resolveProceedButtonHitboxField() {
         try {
             Field field = ProceedButton.class.getDeclaredField("hb");
+            field.setAccessible(true);
+            return field;
+        } catch (ReflectiveOperationException e) {
+            return null;
+        }
+    }
+
+    private static Field resolveEndTurnButtonHitboxField() {
+        try {
+            Field field = EndTurnButton.class.getDeclaredField("hb");
+            field.setAccessible(true);
+            return field;
+        } catch (ReflectiveOperationException e) {
+            return null;
+        }
+    }
+
+    private static Field resolveEndTurnButtonHoldProgressField() {
+        try {
+            Field field = EndTurnButton.class.getDeclaredField("holdProgress");
             field.setAccessible(true);
             return field;
         } catch (ReflectiveOperationException e) {

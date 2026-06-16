@@ -48,6 +48,7 @@ class GameSessionConfigTest {
             manualDismissBootOverlay = false,
             forceJvmCrash = false,
             forceRuntimeCrash = false,
+            autoplay = false,
             specialKeyInputMode = SpecialKeyInputMode.DISABLED,
             showFloatingMouseWindow = false,
             showGamePerformanceOverlay = false,

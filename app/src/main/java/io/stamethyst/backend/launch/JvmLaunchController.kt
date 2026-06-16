@@ -237,6 +237,12 @@ class JvmLaunchController(
                 }
 
                 throwIfCancelled()
+                AutoplayConfigFile.syncForLaunch(
+                    context = activity,
+                    enabled = autoplay && StsLaunchSpec.isMtsLaunchMode(launchMode)
+                )
+
+                throwIfCancelled()
                 onSurfaceSizeSync()
                 Log.i(
                     LOGCAT_TAG,

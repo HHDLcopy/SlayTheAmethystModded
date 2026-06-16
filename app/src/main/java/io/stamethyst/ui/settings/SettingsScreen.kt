@@ -151,6 +151,7 @@ import io.stamethyst.ui.resources.FileImage
 import io.stamethyst.ui.openBasicTutorial
 import io.stamethyst.ui.modimport.ModImportRequestBus
 import io.stamethyst.ui.preferences.LauncherPreferences
+import io.stamethyst.ui.rememberCloudControlSettings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -5142,8 +5143,9 @@ private fun SettingsInlineLinkRow(
 private fun SettingsQqGroupLinkRow() {
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
-    val groupNumber = stringResource(R.string.settings_author_qq_group_number)
-    val groupUrl = stringResource(R.string.settings_author_qq_group_url)
+    val cloudControlSettings by rememberCloudControlSettings()
+    val groupNumber = cloudControlSettings.qqGroupNumber
+    val groupUrl = cloudControlSettings.qqGroupUrl
     Row(
         horizontalArrangement = Arrangement.spacedBy(0.dp),
         verticalAlignment = Alignment.CenterVertically,

@@ -12,6 +12,7 @@ services:
       PRESENCE_DB_PATH: /app/data/presence.sqlite
       PRESENCE_HEARTBEAT_INTERVAL_SECONDS: 30
       PRESENCE_OFFLINE_TIMEOUT_SECONDS: 90
+      QQ_GROUP_NUMBER: 1029305387
       PRESENCE_PANEL_TOKEN: change-me
       LOG_LEVEL: info
     volumes:

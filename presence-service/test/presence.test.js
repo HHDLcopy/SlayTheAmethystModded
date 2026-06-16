@@ -12,6 +12,17 @@ const { loadConfig } = require('../src/server/config');
 const { openDatabase } = require('../src/server/db');
 const { PresenceStore } = require('../src/server/presence');
 
+test('presence config reads qq group number for cloud-control', () => {
+  assert.equal(
+    loadConfig({ LOG_LEVEL: 'silent', QQ_GROUP_NUMBER: '2233445566' }).qqGroupNumber,
+    '2233445566'
+  );
+  assert.equal(
+    loadConfig({ LOG_LEVEL: 'silent', QQ_GROUP_NUMBER: 'not-a-group' }).qqGroupNumber,
+    '1029305387'
+  );
+});
+
 test('presence service records heartbeat and returns summary/sessions/stats', async (t) => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-presence-'));
   const server = await buildServer({
@@ -132,6 +143,9 @@ test('cloud-control exposes websocket heartbeat settings', async (t) => {
     heartbeat: {
       intervalSeconds: 30,
       wsUrl: 'wss://presence.example.com/api/presence/ws'
+    },
+    qqGroup: {
+      number: '1029305387'
     }
   });
 });

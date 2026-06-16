@@ -866,8 +866,9 @@ fun LauncherContent(
                 )
                 settingsUiState.updatePromptState?.let { promptState ->
                     val quarkDownloadUrl = stringResource(R.string.update_dialog_quark_download_url)
-                    val qqGroupNumber = stringResource(R.string.settings_author_qq_group_number)
-                    val qqGroupUrl = stringResource(R.string.settings_author_qq_group_url)
+                    val cloudControlSettings by rememberCloudControlSettings()
+                    val qqGroupNumber = cloudControlSettings.qqGroupNumber
+                    val qqGroupUrl = cloudControlSettings.qqGroupUrl
                     var showDownloadChoiceDialog by remember(promptState) {
                         mutableStateOf(false)
                     }

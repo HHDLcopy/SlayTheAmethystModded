@@ -5,6 +5,7 @@ const path = require('path');
 const DEFAULT_PORT = 8787;
 const DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 30;
 const DEFAULT_OFFLINE_TIMEOUT_SECONDS = 90;
+const DEFAULT_QQ_GROUP_NUMBER = '1029305387';
 
 function loadConfig(env = process.env) {
   const heartbeatIntervalSeconds = parsePositiveInteger(
@@ -22,6 +23,7 @@ function loadConfig(env = process.env) {
       env.PRESENCE_OFFLINE_TIMEOUT_SECONDS,
       Math.max(DEFAULT_OFFLINE_TIMEOUT_SECONDS, heartbeatIntervalSeconds * 3)
     ),
+    qqGroupNumber: normalizeQqGroupNumber(env.QQ_GROUP_NUMBER, DEFAULT_QQ_GROUP_NUMBER),
     presencePanelToken: firstNonEmpty(env.PRESENCE_PANEL_TOKEN, env.FEEDBACK_SHARED_SECRET),
     logLevel: firstNonEmpty(env.LOG_LEVEL, 'info'),
     maxSessionsReturned: parsePositiveInteger(env.PRESENCE_MAX_SESSIONS_RETURNED, 1000),
@@ -51,6 +53,11 @@ function firstNonEmpty(...values) {
   return '';
 }
 
+function normalizeQqGroupNumber(rawValue, fallbackValue) {
+  const normalized = firstNonEmpty(rawValue);
+  return /^[1-9][0-9]{4,19}$/.test(normalized) ? normalized : fallbackValue;
+}
+
 function normalizeOptionalBaseUrl(value) {
   const normalized = String(value || '').trim();
   if (!normalized) {
@@ -62,7 +69,9 @@ function normalizeOptionalBaseUrl(value) {
 module.exports = {
   DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
   DEFAULT_OFFLINE_TIMEOUT_SECONDS,
+  DEFAULT_QQ_GROUP_NUMBER,
   loadConfig,
   parsePositiveInteger,
-  firstNonEmpty
+  firstNonEmpty,
+  normalizeQqGroupNumber
 };

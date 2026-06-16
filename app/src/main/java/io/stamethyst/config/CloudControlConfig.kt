@@ -19,12 +19,18 @@ import java.util.concurrent.atomic.AtomicBoolean
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
+private const val DEFAULT_QQ_GROUP_NUMBER_VALUE = "1029305387"
+
 data class CloudControlSettings(
     val heartbeatIntervalSeconds: Int,
-    val heartbeatWsUrl: String
+    val heartbeatWsUrl: String,
+    val qqGroupNumber: String = DEFAULT_QQ_GROUP_NUMBER_VALUE
 ) {
     val heartbeatIntervalMs: Long
         get() = heartbeatIntervalSeconds * 1000L
+
+    val qqGroupUrl: String
+        get() = CloudControlConfig.qqGroupUrlFor(qqGroupNumber)
 }
 
 data class CloudControlRemoteConfigText(
@@ -36,6 +42,7 @@ data class CloudControlRemoteConfigText(
 object CloudControlConfig {
     const val DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 30
     const val DEFAULT_HEARTBEAT_WS_URL = "wss://heartbeat.nas.apricityx.top:23163/api/presence/ws"
+    const val DEFAULT_QQ_GROUP_NUMBER = DEFAULT_QQ_GROUP_NUMBER_VALUE
     const val MIN_HEARTBEAT_INTERVAL_SECONDS = 30
     const val MAX_HEARTBEAT_INTERVAL_SECONDS = 3_600
 
@@ -43,6 +50,7 @@ object CloudControlConfig {
     private const val CONNECT_TIMEOUT_MS = 5_000
     private const val READ_TIMEOUT_MS = 8_000
     private val USER_AGENT = "SlayTheAmethyst/${BuildConfig.VERSION_NAME}"
+    private val QQ_GROUP_NUMBER_REGEX = Regex("[1-9][0-9]{4,19}")
 
     private val startupRefreshStarted = AtomicBoolean(false)
     private val refreshing = AtomicBoolean(false)
@@ -64,6 +72,12 @@ object CloudControlConfig {
     fun heartbeatWsUrl(): String = current().heartbeatWsUrl
 
     @JvmStatic
+    fun qqGroupNumber(): String = current().qqGroupNumber
+
+    @JvmStatic
+    fun qqGroupUrl(): String = current().qqGroupUrl
+
+    @JvmStatic
     fun isStartupRefreshCompleted(): Boolean = startupRefreshCompleted
 
     @JvmStatic
@@ -80,12 +94,19 @@ object CloudControlConfig {
     fun defaultSettings(): CloudControlSettings =
         CloudControlSettings(
             heartbeatIntervalSeconds = DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
-            heartbeatWsUrl = defaultHeartbeatWsUrl()
+            heartbeatWsUrl = defaultHeartbeatWsUrl(),
+            qqGroupNumber = DEFAULT_QQ_GROUP_NUMBER
         )
 
     @JvmStatic
     fun defaultHeartbeatWsUrl(): String =
         DEFAULT_HEARTBEAT_WS_URL
+
+    @JvmStatic
+    fun qqGroupUrlFor(groupNumber: String): String =
+        "mqqapi://card/show_pslcard?src_type=internal&version=1&uin=" +
+            groupNumber +
+            "&card_type=group&source=qrcode"
 
     fun fetchRemoteConfigText(context: Context): CloudControlRemoteConfigText {
         val configUrl = BuildConfig.CLOUD_CONTROL_CONFIG_URL.trim()
@@ -126,7 +147,8 @@ object CloudControlConfig {
                     TAG,
                     "Cloud control config loaded; heartbeatIntervalSeconds=" +
                         "${fetched.heartbeatIntervalSeconds}, heartbeatWsUrl=" +
-                        fetched.heartbeatWsUrl
+                        "${fetched.heartbeatWsUrl}, qqGroupNumber=" +
+                        fetched.qqGroupNumber
                 )
             } catch (error: Throwable) {
                 updateCurrentSettings(defaultSettings())
@@ -161,6 +183,9 @@ object CloudControlConfig {
     ): CloudControlSettings? {
         val root = parseJsonObject(responseText) ?: return null
         val heartbeatObject = root.optJSONObject("heartbeat")
+        val qqGroupObject = root.optJSONObject("qqGroup")
+            ?: root.optJSONObject("officialQqGroup")
+        val qqObject = root.optJSONObject("qq")
 
         val intervalSeconds = normalizeHeartbeatIntervalSeconds(
             firstPositiveInt(
@@ -190,10 +215,36 @@ object CloudControlConfig {
             ) ?: defaults.heartbeatWsUrl,
             defaults.heartbeatWsUrl
         )
+        val qqGroupNumber = normalizeQqGroupNumber(
+            firstNonBlankString(
+                root,
+                "qqGroupNumber",
+                "officialQqGroupNumber",
+                "qq_group_number",
+                "official_qq_group_number"
+            )
+                ?: firstNonBlankString(
+                    qqGroupObject,
+                    "number",
+                    "groupNumber",
+                    "qqGroupNumber",
+                    "uin"
+                )
+                ?: firstNonBlankString(
+                    qqObject,
+                    "groupNumber",
+                    "qqGroupNumber",
+                    "number",
+                    "uin"
+                )
+                ?: defaults.qqGroupNumber,
+            defaults.qqGroupNumber
+        )
 
         return CloudControlSettings(
             heartbeatIntervalSeconds = intervalSeconds,
-            heartbeatWsUrl = wsUrl
+            heartbeatWsUrl = wsUrl,
+            qqGroupNumber = qqGroupNumber
         )
     }
 
@@ -271,6 +322,18 @@ object CloudControlConfig {
             MIN_HEARTBEAT_INTERVAL_SECONDS,
             MAX_HEARTBEAT_INTERVAL_SECONDS
         )
+
+    private fun normalizeQqGroupNumber(
+        value: String,
+        fallback: String = DEFAULT_QQ_GROUP_NUMBER
+    ): String {
+        val normalized = value.trim()
+        return if (QQ_GROUP_NUMBER_REGEX.matches(normalized)) {
+            normalized
+        } else {
+            fallback
+        }
+    }
 
     private fun normalizeHttpUrl(value: String): String? {
         val normalized = value.trim()
@@ -384,6 +447,22 @@ object CloudControlConfig {
             }
             if (nestedValue != null) {
                 return nestedValue
+            }
+        }
+        return null
+    }
+
+    private fun firstNonBlankString(
+        json: JSONObject?,
+        vararg names: String
+    ): String? {
+        if (json == null) {
+            return null
+        }
+        for (name in names) {
+            val value = optionalNonBlankString(json, name)
+            if (value != null) {
+                return value
             }
         }
         return null

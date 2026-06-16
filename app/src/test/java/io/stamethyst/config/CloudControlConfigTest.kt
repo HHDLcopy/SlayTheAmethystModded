@@ -74,6 +74,54 @@ class CloudControlConfigTest {
     }
 
     @Test
+    fun parseSettings_readsNestedQqGroupConfig() {
+        val defaults = CloudControlSettings(
+            heartbeatIntervalSeconds = 600,
+            heartbeatWsUrl = "wss://default.example.com/api/presence/ws",
+            qqGroupNumber = "1029305387"
+        )
+
+        val parsed = CloudControlConfig.parseSettings(
+            """
+            {
+              "qqGroup": {
+                "number": "2233445566"
+              }
+            }
+            """.trimIndent(),
+            defaults = defaults
+        )
+
+        assertNotNull(parsed)
+        assertEquals("2233445566", parsed?.qqGroupNumber)
+        assertEquals(
+            "mqqapi://card/show_pslcard?src_type=internal&version=1&uin=2233445566&card_type=group&source=qrcode",
+            parsed?.qqGroupUrl
+        )
+    }
+
+    @Test
+    fun parseSettings_fallsBackInvalidQqGroupNumber() {
+        val defaults = CloudControlSettings(
+            heartbeatIntervalSeconds = 600,
+            heartbeatWsUrl = "wss://default.example.com/api/presence/ws",
+            qqGroupNumber = "1029305387"
+        )
+
+        val parsed = CloudControlConfig.parseSettings(
+            """
+            {
+              "qqGroupNumber": "not-a-group"
+            }
+            """.trimIndent(),
+            defaults = defaults
+        )
+
+        assertNotNull(parsed)
+        assertEquals(defaults.qqGroupNumber, parsed?.qqGroupNumber)
+    }
+
+    @Test
     fun defaultSettings_matchCurrentCloudControlPayload() {
         val defaults = CloudControlConfig.defaultSettings()
 
@@ -82,5 +130,6 @@ class CloudControlConfigTest {
             "wss://heartbeat.nas.apricityx.top:23163/api/presence/ws",
             defaults.heartbeatWsUrl
         )
+        assertEquals("1029305387", defaults.qqGroupNumber)
     }
 }

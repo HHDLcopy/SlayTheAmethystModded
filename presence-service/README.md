@@ -49,6 +49,7 @@ PUBLIC_BASE_URL=https://presence.example.com
 PRESENCE_DB_PATH=./data/presence.sqlite
 PRESENCE_HEARTBEAT_INTERVAL_SECONDS=30
 PRESENCE_OFFLINE_TIMEOUT_SECONDS=90
+QQ_GROUP_NUMBER=1029305387
 PRESENCE_PANEL_TOKEN=change-me
 LOG_LEVEL=info
 ```
@@ -85,19 +86,24 @@ For production, set `PUBLIC_BASE_URL` to the public HTTPS origin and replace
 
 ## Cloud-Control Payload
 
-`GET /cloud-control.json` returns the compact WebSocket heartbeat settings:
+`GET /cloud-control.json` returns the compact WebSocket heartbeat settings and
+the official QQ group used by launcher entry points:
 
 ```json
 {
   "heartbeat": {
     "intervalSeconds": 30,
     "wsUrl": "wss://presence.example.com/api/presence/ws"
+  },
+  "qqGroup": {
+    "number": "1029305387"
   }
 }
 ```
 
 The HTTP heartbeat endpoint remains available only for compatibility; new app
-builds read `heartbeat.wsUrl` and report presence over WebSocket.
+builds read `heartbeat.wsUrl`, report presence over WebSocket, and use
+`qqGroup.number` when opening or displaying the official QQ group.
 
 ## WebSocket Messages
 

@@ -5,7 +5,7 @@ const path = require('path');
 const Fastify = require('fastify');
 const websocket = require('@fastify/websocket');
 
-const { loadConfig, firstNonEmpty } = require('./config');
+const { DEFAULT_QQ_GROUP_NUMBER, loadConfig, firstNonEmpty } = require('./config');
 const { openDatabase } = require('./db');
 const { HOUR_MS, PresenceStore, httpError, resolveStatsWindowSeconds } = require('./presence');
 
@@ -392,6 +392,9 @@ function buildCloudControlResponse(config, request) {
     heartbeat: {
       intervalSeconds: config.presenceHeartbeatIntervalSeconds,
       wsUrl: heartbeatWsUrl
+    },
+    qqGroup: {
+      number: firstNonEmpty(config.qqGroupNumber, DEFAULT_QQ_GROUP_NUMBER)
     }
   };
 }

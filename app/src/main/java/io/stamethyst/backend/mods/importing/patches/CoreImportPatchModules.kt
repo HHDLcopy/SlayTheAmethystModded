@@ -11,6 +11,7 @@ import io.stamethyst.backend.mods.JacketNoAnoKoModCompatPatcher
 import io.stamethyst.backend.mods.ModAtlasFilterCompatPatcher
 import io.stamethyst.backend.mods.ModAtlasOfflineDownscalePatcher
 import io.stamethyst.backend.mods.ModManifestRootCompatPatcher
+import io.stamethyst.backend.mods.OriImportCompatPatcher
 import io.stamethyst.backend.mods.VupShionModCompatPatcher
 import io.stamethyst.backend.mods.importing.ImportPatchCategory
 import io.stamethyst.backend.mods.importing.ImportPatchFailurePolicy
@@ -474,6 +475,64 @@ internal object JacketNoAnoKoImportPatchModule : ImportPatchModule {
                 "patchedShaderEntries" to result.patchedShaderEntries,
                 "removedDesktopVersionDirectives" to result.removedDesktopVersionDirectives,
                 "insertedFragmentPrecisionBlocks" to result.insertedFragmentPrecisionBlocks
+            )
+        )
+    }
+}
+
+internal object OriImportPatchModule : ImportPatchModule {
+    private const val TARGET_MOD_ID = "another ori mod"
+    override val id = "mod.ori.fast_blur"
+    override val version = 1
+    override val displayNameResId = R.string.mod_import_patch_ori_title
+    override val summaryResId = R.string.mod_import_patch_ori_summary
+    override val category = ImportPatchCategory.Shader
+    override val defaultEnabled = true
+    override val userConfigurable = false
+    override val order = 640
+    override val failurePolicy = ImportPatchFailurePolicy.SkipPatchContinueImport
+
+    override fun plan(context: Context, item: ModImportItemPlan): ImportPatchPlan? {
+        if (item.normalizedModId != TARGET_MOD_ID) return null
+        return basePlan(applicable = true)
+    }
+
+    override fun apply(
+        context: Context,
+        workingJar: File,
+        item: ModImportItemPlan,
+        plan: ImportPatchPlan,
+        decisions: ModImportDecisions
+    ): ImportPatchResult {
+        val result = OriImportCompatPatcher.patchInPlace(workingJar)
+        return ImportPatchResult(
+            moduleId = id,
+            moduleVersion = version,
+            displayNameResId = displayNameResId,
+            summaryResId = summaryResId,
+            displayName = context.importString(displayNameResId),
+            applied = result.hasAnyPatch,
+            summary = if (result.hasAnyPatch) {
+                context.importString(R.string.mod_import_patch_ori_applied)
+            } else {
+                context.importString(R.string.mod_import_patch_ori_noop)
+            },
+            details = listOf(
+                context.importString(R.string.mod_import_patch_ori_detail_shader_files, result.patchedShaderEntries),
+                context.importString(R.string.mod_import_patch_ori_detail_gaussian, result.patchedGaussianBlurShaderEntries),
+                context.importString(R.string.mod_import_patch_ori_detail_box, result.patchedBoxBlurShaderEntries),
+                context.importString(
+                    R.string.mod_import_patch_ori_detail_samples,
+                    result.estimatedTextureSamplesBefore,
+                    result.estimatedTextureSamplesAfter
+                )
+            ),
+            metrics = mapOf(
+                "patchedShaderEntries" to result.patchedShaderEntries,
+                "patchedGaussianBlurShaderEntries" to result.patchedGaussianBlurShaderEntries,
+                "patchedBoxBlurShaderEntries" to result.patchedBoxBlurShaderEntries,
+                "estimatedTextureSamplesBefore" to result.estimatedTextureSamplesBefore,
+                "estimatedTextureSamplesAfter" to result.estimatedTextureSamplesAfter
             )
         )
     }

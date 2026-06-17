@@ -41,6 +41,15 @@ internal object ImportedModPatchRegistry {
         "patchedJacketNoAnoKoDesktopVersionDirectives"
     private const val JSON_KEY_PATCHED_JACKETNOANOKO_FRAGMENT_PRECISION_BLOCKS =
         "patchedJacketNoAnoKoFragmentPrecisionBlocks"
+    private const val JSON_KEY_PATCHED_ORI_SHADER_ENTRIES = "patchedOriShaderEntries"
+    private const val JSON_KEY_PATCHED_ORI_GAUSSIAN_BLUR_SHADER_ENTRIES =
+        "patchedOriGaussianBlurShaderEntries"
+    private const val JSON_KEY_PATCHED_ORI_BOX_BLUR_SHADER_ENTRIES =
+        "patchedOriBoxBlurShaderEntries"
+    private const val JSON_KEY_PATCHED_ORI_TEXTURE_SAMPLES_BEFORE =
+        "patchedOriTextureSamplesBefore"
+    private const val JSON_KEY_PATCHED_ORI_TEXTURE_SAMPLES_AFTER =
+        "patchedOriTextureSamplesAfter"
 
     fun readAll(context: Context): Map<String, ImportedModPatchInfo> {
         val root = readRoot(storageFile(context)) ?: return emptyMap()
@@ -186,7 +195,16 @@ internal object ImportedModPatchRegistry {
             patchedJacketNoAnoKoDesktopVersionDirectives =
                 optInt(JSON_KEY_PATCHED_JACKETNOANOKO_DESKTOP_VERSION_DIRECTIVES),
             patchedJacketNoAnoKoFragmentPrecisionBlocks =
-                optInt(JSON_KEY_PATCHED_JACKETNOANOKO_FRAGMENT_PRECISION_BLOCKS)
+                optInt(JSON_KEY_PATCHED_JACKETNOANOKO_FRAGMENT_PRECISION_BLOCKS),
+            patchedOriShaderEntries = optInt(JSON_KEY_PATCHED_ORI_SHADER_ENTRIES),
+            patchedOriGaussianBlurShaderEntries =
+                optInt(JSON_KEY_PATCHED_ORI_GAUSSIAN_BLUR_SHADER_ENTRIES),
+            patchedOriBoxBlurShaderEntries =
+                optInt(JSON_KEY_PATCHED_ORI_BOX_BLUR_SHADER_ENTRIES),
+            patchedOriTextureSamplesBefore =
+                optInt(JSON_KEY_PATCHED_ORI_TEXTURE_SAMPLES_BEFORE),
+            patchedOriTextureSamplesAfter =
+                optInt(JSON_KEY_PATCHED_ORI_TEXTURE_SAMPLES_AFTER)
         )
     }
 
@@ -237,6 +255,17 @@ internal object ImportedModPatchRegistry {
                 JSON_KEY_PATCHED_JACKETNOANOKO_FRAGMENT_PRECISION_BLOCKS,
                 patchedJacketNoAnoKoFragmentPrecisionBlocks
             )
+            put(JSON_KEY_PATCHED_ORI_SHADER_ENTRIES, patchedOriShaderEntries)
+            put(
+                JSON_KEY_PATCHED_ORI_GAUSSIAN_BLUR_SHADER_ENTRIES,
+                patchedOriGaussianBlurShaderEntries
+            )
+            put(
+                JSON_KEY_PATCHED_ORI_BOX_BLUR_SHADER_ENTRIES,
+                patchedOriBoxBlurShaderEntries
+            )
+            put(JSON_KEY_PATCHED_ORI_TEXTURE_SAMPLES_BEFORE, patchedOriTextureSamplesBefore)
+            put(JSON_KEY_PATCHED_ORI_TEXTURE_SAMPLES_AFTER, patchedOriTextureSamplesAfter)
         }
     }
 

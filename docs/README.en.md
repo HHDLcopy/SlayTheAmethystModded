@@ -128,6 +128,7 @@ Use the harness entrypoint for repeatable device automation. It writes machine-r
 ```powershell
 .\scripts\sts-harness.ps1 -Command doctor
 .\scripts\sts-harness.ps1 -Command smoke -LaunchMode mts_basemod -TimeoutSeconds 120
+.\scripts\sts-harness.ps1 -Command smoke -Autoplay
 ```
 
 The same harness is also exposed through Gradle:
@@ -135,6 +136,7 @@ The same harness is also exposed through Gradle:
 ```powershell
 .\gradlew.bat :app:stsHarnessDoctor
 .\gradlew.bat :app:stsHarnessSmoke
+.\gradlew.bat :app:stsHarnessAutoplaySmoke
 ```
 
 Low-level debug tasks:
@@ -150,6 +152,9 @@ Extra options:
 - `-PdeviceSerial=<adb-serial>`
 - `-PlogsDir=<path>`
 - `-PharnessOutDir=<path>`
+- `-Pautoplay=true`
+
+`smoke` also saves a harness-side logcat capture. If the game crashes before JVM logs are written, `result.json` reports `LOGCAT_CRASH` and points `artifacts.harnessLogcat` at the full error log. Autoplay smoke defaults to a 300-second wait so first-run `desktop-1.0.jar` patching can finish; main-process patch failures are returned as `FAIL` in `result.json`.
 
 Further reading:
 - [Simplified Chinese README](../README.md)

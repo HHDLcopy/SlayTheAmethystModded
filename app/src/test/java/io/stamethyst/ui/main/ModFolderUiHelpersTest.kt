@@ -1,6 +1,9 @@
 package io.stamethyst.ui.main
 
+import androidx.compose.ui.state.ToggleableState
 import io.stamethyst.model.ModItemUi
+import io.stamethyst.model.WorkshopModState
+import io.stamethyst.model.WorkshopModUi
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -230,10 +233,48 @@ class ModFolderUiHelpersTest {
         assertTrue(models.single().isUnassigned)
     }
 
+    @Test
+    fun buildFolderUiModels_ignoresUnimportedWorkshopCardsForFolderSelectionState() {
+        val installedMod = createMod(
+            storagePath = "C:\\mods\\Installed.jar",
+            enabled = true
+        )
+        val unimportedWorkshopMod = createMod(
+            storagePath = "workshop:646570:1234",
+            modId = "workshop:1234",
+            manifestModId = "workshop:1234",
+            installed = false,
+            enabled = false,
+            workshop = WorkshopModUi(
+                appId = 646570U,
+                publishedFileId = 1234UL,
+                state = WorkshopModState.ImportedUnpatched
+            )
+        )
+
+        val models = buildFolderUiModels(
+            displayFolderTargetIds = listOf("folder-a"),
+            foldersById = mapOf("folder-a" to MainScreenViewModel.ModFolder("folder-a", "Alpha")),
+            modsByFolderId = mapOf("folder-a" to listOf(installedMod, unimportedWorkshopMod)),
+            folderCollapsed = emptyMap(),
+            unassignedCollapsed = false,
+            unassignedFolderName = "未分类"
+        )
+
+        val model = models.single()
+        assertEquals(2, model.mods.size)
+        assertEquals(1, model.selectedCount)
+        assertEquals(1, model.selectableCount)
+        assertEquals(ToggleableState.On, model.toggleState)
+    }
+
     private fun createMod(
         storagePath: String,
         modId: String = "testmod",
-        manifestModId: String = "testmod"
+        manifestModId: String = "testmod",
+        installed: Boolean = true,
+        enabled: Boolean = true,
+        workshop: WorkshopModUi? = null
     ): ModItemUi {
         return ModItemUi(
             modId = modId,
@@ -244,10 +285,11 @@ class ModFolderUiHelpersTest {
             description = "",
             dependencies = emptyList(),
             required = false,
-            installed = true,
-            enabled = true,
+            installed = installed,
+            enabled = enabled,
             explicitPriority = null,
-            effectivePriority = null
+            effectivePriority = null,
+            workshop = workshop
         )
     }
 }

@@ -28,6 +28,7 @@ import java.util.ArrayList;
  * so we don't have to navigate through {@code MenuPanelScreen → PLAY → PLAY_NORMAL}.</p>
  */
 final class AutoplayMainMenuActions {
+    private static final String PREFERRED_ORI_CLASS = "ORI";
     private static String lastStateSnapshot;
     private static boolean staleSavesDeleted;
 
@@ -186,7 +187,7 @@ final class AutoplayMainMenuActions {
             return;
         }
 
-        CharacterOption chosen = pickFirstUnlocked(screen.options);
+        CharacterOption chosen = pickPreferredUnlocked(screen.options);
         if (chosen == null) {
             AutoplayLog.warn("character select: no unlocked option available", null);
             return;
@@ -231,14 +232,26 @@ final class AutoplayMainMenuActions {
         AutoplayLog.info("character select: queued option click=" + describe(option));
     }
 
-    private static CharacterOption pickFirstUnlocked(ArrayList<CharacterOption> options) {
+    private static CharacterOption pickPreferredUnlocked(ArrayList<CharacterOption> options) {
+        CharacterOption firstUnlocked = null;
         for (CharacterOption option : options) {
             if (option == null || option.locked) {
                 continue;
             }
-            return option;
+            if (firstUnlocked == null) {
+                firstUnlocked = option;
+            }
+            if (matchesPlayerClass(option, PREFERRED_ORI_CLASS)) {
+                return option;
+            }
         }
-        return null;
+        return firstUnlocked;
+    }
+
+    private static boolean matchesPlayerClass(CharacterOption option, String playerClassName) {
+        return option.c != null
+            && option.c.chosenClass != null
+            && playerClassName.equals(option.c.chosenClass.name());
     }
 
     private static String describe(CharacterOption option) {

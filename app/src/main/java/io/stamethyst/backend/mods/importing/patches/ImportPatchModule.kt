@@ -72,7 +72,8 @@ internal object ImportPatchRegistry {
             FrierenImportPatchModule,
             DownfallImportPatchModule,
             VupShionImportPatchModule,
-            JacketNoAnoKoImportPatchModule
+            JacketNoAnoKoImportPatchModule,
+            OriImportPatchModule
         ).filter { it.isAvailable(context) }
             .sortedBy { it.order }
     }

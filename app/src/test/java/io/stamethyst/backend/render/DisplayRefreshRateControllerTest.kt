@@ -1,12 +1,11 @@
 package io.stamethyst.backend.render
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Test
 
 class DisplayRefreshRateControllerTest {
     @Test
-    fun resolveWindowRefreshPreference_returnsNullWhenTargetIsNotHighRefresh() {
+    fun resolveWindowRefreshPreference_requests60HzWhenTargetIs60Fps() {
         val preference = DisplayRefreshRateController.resolveWindowRefreshPreference(
             targetFpsLimit = 60,
             currentDisplayModeId = 1,
@@ -16,7 +15,53 @@ class DisplayRefreshRateControllerTest {
             )
         )
 
-        assertNull(preference)
+        assertEquals(
+            WindowRefreshPreference(
+                preferredRefreshRateHz = 60f,
+                preferredDisplayModeId = null
+            ),
+            preference
+        )
+    }
+
+    @Test
+    fun resolveWindowRefreshPreference_mapsSub60TargetsTo60Hz() {
+        val preference = DisplayRefreshRateController.resolveWindowRefreshPreference(
+            targetFpsLimit = 30,
+            currentDisplayModeId = 1,
+            supportedModes = listOf(
+                mode(modeId = 1, width = 2400, height = 1080, refreshRateHz = 120f),
+                mode(modeId = 2, width = 2400, height = 1080, refreshRateHz = 60f)
+            )
+        )
+
+        assertEquals(
+            WindowRefreshPreference(
+                preferredRefreshRateHz = 60f,
+                preferredDisplayModeId = 2
+            ),
+            preference
+        )
+    }
+
+    @Test
+    fun resolveWindowRefreshPreference_canSwitchDownTo60HzSameSizeMode() {
+        val preference = DisplayRefreshRateController.resolveWindowRefreshPreference(
+            targetFpsLimit = 60,
+            currentDisplayModeId = 2,
+            supportedModes = listOf(
+                mode(modeId = 1, width = 2400, height = 1080, refreshRateHz = 60f),
+                mode(modeId = 2, width = 2400, height = 1080, refreshRateHz = 120f)
+            )
+        )
+
+        assertEquals(
+            WindowRefreshPreference(
+                preferredRefreshRateHz = 60f,
+                preferredDisplayModeId = 1
+            ),
+            preference
+        )
     }
 
     @Test
@@ -35,6 +80,26 @@ class DisplayRefreshRateControllerTest {
             WindowRefreshPreference(
                 preferredRefreshRateHz = 120f,
                 preferredDisplayModeId = 2
+            ),
+            preference
+        )
+    }
+
+    @Test
+    fun resolveWindowRefreshPreference_canSwitchDownToHighRefreshTargetMode() {
+        val preference = DisplayRefreshRateController.resolveWindowRefreshPreference(
+            targetFpsLimit = 120,
+            currentDisplayModeId = 2,
+            supportedModes = listOf(
+                mode(modeId = 1, width = 2400, height = 1080, refreshRateHz = 120f),
+                mode(modeId = 2, width = 2400, height = 1080, refreshRateHz = 240f)
+            )
+        )
+
+        assertEquals(
+            WindowRefreshPreference(
+                preferredRefreshRateHz = 120f,
+                preferredDisplayModeId = 1
             ),
             preference
         )

@@ -267,7 +267,17 @@
     <string name="touch_mouse_builtin_keyboard_enter">回車</string>
     <string name="touch_mouse_builtin_keyboard_system">鍵盤</string>
     <string name="touch_mouse_builtin_keyboard_hide">收起</string>
-    <string name="touch_mouse_custom_key_picker_title">選擇按鍵</string>
+    <string name="touch_mouse_custom_key_picker_title">新增懸浮按鍵</string>
+    <string name="touch_mouse_custom_key_picker_none">請選擇一個按鍵</string>
+    <string name="touch_mouse_custom_key_picker_selected_format">已選擇：%1$s</string>
+    <string name="touch_mouse_custom_key_category_function">功能鍵</string>
+    <string name="touch_mouse_custom_key_category_letters">字母</string>
+    <string name="touch_mouse_custom_key_category_number_row">數字列</string>
+    <string name="touch_mouse_custom_key_category_punctuation">符號</string>
+    <string name="touch_mouse_custom_key_category_editing">編輯鍵</string>
+    <string name="touch_mouse_custom_key_category_arrows">方向鍵</string>
+    <string name="touch_mouse_custom_key_category_modifiers">修飾鍵</string>
+    <string name="touch_mouse_custom_key_category_numpad">數字鍵盤</string>
     <string name="touch_mouse_custom_key_tutorial_title">自訂按鍵懸浮窗</string>
     <string name="touch_mouse_custom_key_tutorial_message">點選懸浮按鍵會送出對應按鍵。長按 1 秒後進入拖動；拖到下方垃圾桶圖示上可刪除該按鍵。</string>
     <string name="touch_mouse_floating_menu_lock">鎖定</string>
@@ -534,6 +544,7 @@
     <string name="main_mod_patch_section_downfall_title">Downfall 佈局相容修補</string>
     <string name="main_mod_patch_section_vupshion_title">紫音模組啟動相容修補</string>
     <string name="main_mod_patch_section_jacketnoanoko_title">夾克子模組 shader 相容修補</string>
+    <string name="main_mod_patch_section_ori_title">Ori 渲染 shader 優化</string>
     <string name="main_mod_priority_adjust">調整載入優先順序</string>
     <string name="main_mod_open_market_page">開啟市場頁</string>
     <string name="main_mod_priority_dialog_title_format">%1$s 載入優先順序</string>
@@ -585,6 +596,7 @@
     <string name="mod_import_dialog_downfall_patched_title">Downfall 已自動修補</string>
     <string name="mod_import_dialog_vupshion_patched_title">紫音模組</string>
     <string name="mod_import_dialog_jacketnoanoko_patched_title">夾克子模組已自動修補</string>
+    <string name="mod_import_dialog_ori_patched_title">Ori 已自動優化</string>
     <string name="mod_import_dialog_vupshion_special_message">紫音是一個製作非常精良的模組。\n\n開發者單獨提供了對啟動器的授權，讓該模組可以在啟動器上執行。\n\n請有能力的玩家在創意工坊對該模組進行訂閱或在愛發電支援作者，非常感謝！！</string>
     <string name="mod_import_dialog_vupshion_open_workshop">開啟創意工坊</string>
     <string name="mod_import_dialog_vupshion_open_afdian">開啟愛發電</string>
@@ -679,6 +691,12 @@
     <string name="mod_import_jacketnoanoko_message_item_detail">  已修補 shader 檔案: %1$d，移除桌面 #version 指令: %2$d，補入 fragment 精度塊: %3$d</string>
     <string name="mod_import_jacketnoanoko_message_rule">
 修補規則：改寫夾克子 shader 資源目錄下的 shader 檔案，移除桌面 GLSL 的 #version 120 頭，併為缺少預設精度宣告的 fragment shader 注入 GLES 相容精度塊。</string>
+    <string name="mod_import_ori_message_none">本次匯入沒有發現需要修補的 Ori 渲染 shader 優化項。</string>
+    <string name="mod_import_ori_message_intro">以下模組在匯入時已自動優化 Ori 渲染 shader：
+</string>
+    <string name="mod_import_ori_message_item_detail">  已修補 shader 檔案：%1$d，高斯模糊 shader：%2$d，寬模糊 shader：%3$d，估算模糊紋理取樣：%4$d -&gt; %5$d</string>
+    <string name="mod_import_ori_message_rule">
+修補規則：保留 Ori 的全解析度發光/泛光渲染路徑，但將模糊 shader 核替換為低取樣近似實現，用更少紋理讀取實現同類視覺效果。</string>
     <string name="mod_import_confirm_dialog_action_import">匯入</string>
     <string name="mod_import_preview_file_label">檔案: %1$s</string>
     <string name="mod_import_preview_name_label">名稱: %1$s</string>
@@ -803,6 +821,14 @@
     <string name="mod_import_patch_jacketnoanoko_detail_shader_files">已修補 shader 檔案：%1$d</string>
     <string name="mod_import_patch_jacketnoanoko_detail_version_directives">已移除 #version 指令：%1$d</string>
     <string name="mod_import_patch_jacketnoanoko_detail_precision_blocks">已插入 precision 塊：%1$d</string>
+    <string name="mod_import_patch_ori_title">Ori 渲染 shader 優化</string>
+    <string name="mod_import_patch_ori_summary">將 Ori 模糊 shader 替換為低取樣的全解析度等效實現。</string>
+    <string name="mod_import_patch_ori_applied">已優化 Ori 渲染模糊 shader。</string>
+    <string name="mod_import_patch_ori_noop">Ori 渲染 shader 無需修補。</string>
+    <string name="mod_import_patch_ori_detail_shader_files">已修補 shader 檔案：%1$d</string>
+    <string name="mod_import_patch_ori_detail_gaussian">高斯模糊 shader：%1$d</string>
+    <string name="mod_import_patch_ori_detail_box">寬模糊 shader：%1$d</string>
+    <string name="mod_import_patch_ori_detail_samples">估算模糊紋理取樣：%1$d -&gt; %2$d</string>
     <string name="external_import_loading_title">正在識別匯入檔案…</string>
     <string name="external_import_loading_message">正在讀取並檢查 %1$s，請稍候…</string>
     <string name="external_import_loading_message_generic">正在讀取並檢查匯入檔案，請稍候…</string>
@@ -1613,11 +1639,17 @@
     <string name="feedback_issue_browser_intro">這裡會按最近更新時間從新到舊顯示當前倉庫裡的所有反饋議題，也可以按狀態篩選。找到你想繼續跟進的議題後，直接點“關注”即可。</string>
     <string name="feedback_refresh_list">重新整理列表</string>
     <string name="feedback_followable_issues_title">可關注的議題</string>
+    <string name="feedback_issue_search_label">搜尋議題</string>
+    <string name="feedback_issue_search_placeholder">標題、編號、發起者或描述</string>
+    <string name="feedback_issue_search_clear">清空議題搜尋</string>
     <string name="feedback_filter_state">篩選狀態</string>
+    <string name="feedback_issue_browser_loading">正在載入議題卡片…</string>
     <string name="feedback_issue_browser_preparing">正在準備議題列表…</string>
     <string name="feedback_issue_browser_empty">當前沒有可展示的議題。</string>
     <string name="feedback_issue_browser_empty_filtered_more">當前篩選條件下還沒有匹配的議題，可以繼續載入更多或切換篩選。</string>
     <string name="feedback_issue_browser_empty_filtered_done">當前篩選條件下沒有匹配的議題。</string>
+    <string name="feedback_issue_search_empty_more">當前搜尋頁還沒有匹配結果，可以繼續載入更多或調整搜尋詞。</string>
+    <string name="feedback_issue_search_empty_done">當前搜尋沒有匹配的議題。</string>
     <string name="feedback_load_more_issues">載入更多議題</string>
     <string name="feedback_issue_browser_loaded_all">已經載入完當前可見的議題列表。</string>
     <string name="feedback_updates_badge">有更新</string>
@@ -1656,6 +1688,7 @@
     <string name="feedback_meta_in_progress">進行中</string>
     <string name="feedback_meta_comments_format">%1$d 條評論</string>
     <string name="feedback_conversation_refresh">重新整理</string>
+    <string name="feedback_issue_report_card_title">錯誤報告</string>
     <string name="feedback_conversation_status_format">狀態：%1$s</string>
     <string name="feedback_conversation_state_closed">已關閉</string>
     <string name="feedback_conversation_state_in_progress">進行中</string>
@@ -1670,6 +1703,11 @@
     <string name="feedback_conversation_send">傳送</string>
     <string name="feedback_conversation_attach_logs">附上新的日誌</string>
     <string name="feedback_attachment_view_format">檢視附件：%1$s</string>
+    <string name="feedback_attachment_download_format">下載附件：%1$s</string>
+    <string name="feedback_attachment_unnamed">附件</string>
+    <string name="markdown_image_loading">正在載入圖片…</string>
+    <string name="markdown_image_failed">圖片載入失敗</string>
+    <string name="markdown_image_open">開啟圖片</string>
     <string name="feedback_view_on_github">在 GitHub 中檢視</string>
     <string name="feedback_author_me">我</string>
     <string name="feedback_screenshot_limit">最多附加 %1$d 張截圖。</string>

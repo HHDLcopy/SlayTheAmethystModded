@@ -16,6 +16,10 @@ public final class FragmentShaderCompat {
             "(?m)^\\s*float\\s+fract\\s*\\(\\s*float\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\)\\s*\\{\\s*" +
                 "return\\s+\\1\\s*-\\s*floor\\s*\\(\\s*\\1\\s*\\)\\s*;\\s*\\}\\s*(?:\\r?\\n)?"
         );
+    private static final Pattern JAVA_FLOAT_LITERAL_SUFFIX_PATTERN =
+        Pattern.compile(
+            "(?<![A-Za-z0-9_])((?:\\d+\\.\\d*|\\.\\d+|\\d+)(?:[eE][+-]?\\d+)?)[fF](?![A-Za-z0-9_])"
+        );
     private static final Pattern FLOAT_PRECISION_PATTERN =
         Pattern.compile("(?m)^\\s*precision\\s+(?:lowp|mediump|highp)\\s+float\\s*;");
     private static final Pattern INT_PRECISION_PATTERN =
@@ -33,7 +37,8 @@ public final class FragmentShaderCompat {
         }
 
         String stripped = stripLeadingDesktopVersionDirective(source, "vertex");
-        return ensureGles100VersionDirective(stripped, "vertex");
+        String versioned = ensureGles100VersionDirective(stripped, "vertex");
+        return removeJavaFloatLiteralSuffixes(versioned);
     }
 
     public static String normalizeFragmentShader(String source) {
@@ -47,9 +52,10 @@ public final class FragmentShaderCompat {
         String stripped = stripLeadingDesktopVersionDirective(source, "fragment");
         String versioned = ensureGles100VersionDirective(stripped, "fragment");
         String withoutRedefinedBuiltIns = removeBuiltInFunctionRedefinitions(versioned);
-        String legacyCompatible = isModernGlesVersionDirective(withoutRedefinedBuiltIns)
-            ? withoutRedefinedBuiltIns
-            : ensureLegacyFragmentCompatibility(withoutRedefinedBuiltIns);
+        String withoutJavaFloatSuffixes = removeJavaFloatLiteralSuffixes(withoutRedefinedBuiltIns);
+        String legacyCompatible = isModernGlesVersionDirective(withoutJavaFloatSuffixes)
+            ? withoutJavaFloatSuffixes
+            : ensureLegacyFragmentCompatibility(withoutJavaFloatSuffixes);
         return ensureDefaultPrecisionInternal(legacyCompatible);
     }
 
@@ -123,6 +129,26 @@ public final class FragmentShaderCompat {
 
     private static String removeBuiltInFunctionRedefinitions(String source) {
         return SCALAR_FRACT_REDEFINITION_PATTERN.matcher(source).replaceAll("");
+    }
+
+    private static String removeJavaFloatLiteralSuffixes(String source) {
+        java.util.regex.Matcher matcher = JAVA_FLOAT_LITERAL_SUFFIX_PATTERN.matcher(source);
+        StringBuffer out = null;
+        while (matcher.find()) {
+            if (out == null) {
+                out = new StringBuffer(source.length());
+            }
+            String literal = matcher.group(1);
+            if (literal.indexOf('.') < 0 && literal.indexOf('e') < 0 && literal.indexOf('E') < 0) {
+                literal = literal + ".0";
+            }
+            matcher.appendReplacement(out, java.util.regex.Matcher.quoteReplacement(literal));
+        }
+        if (out == null) {
+            return source;
+        }
+        matcher.appendTail(out);
+        return out.toString();
     }
 
     private static String ensureGles100VersionDirective(String source, String shaderType) {

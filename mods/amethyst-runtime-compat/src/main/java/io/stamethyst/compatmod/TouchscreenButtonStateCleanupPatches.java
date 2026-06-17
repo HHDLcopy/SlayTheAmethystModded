@@ -168,7 +168,7 @@ public final class TouchscreenButtonStateCleanupPatches {
     )
     public static class EndTurnButtonDisableWithEndTurnPatch {
         @SpirePostfixPatch
-        public static void after(EndTurnButton __instance, boolean triggerEndTurn) {
+        public static void after(EndTurnButton __instance) {
             markEndTurnButtonWaitingForReleaseIfPressed(__instance);
             resetEndTurnButton(__instance);
         }

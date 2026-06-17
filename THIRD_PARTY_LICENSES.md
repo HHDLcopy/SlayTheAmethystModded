@@ -60,6 +60,12 @@
 - Local usage: Renders the Workshop market animated download status icons from `app/src/main/res/raw/workshop_useanimations_*.json`.
 - License: Apache License 2.0.
 
+## Stream Chat Android SDK
+- Dependency: `io.getstream:stream-chat-android-compose`
+- Source: https://github.com/GetStream/stream-chat-android
+- Local usage: Compose chat UI building blocks for the in-app feedback conversation view.
+- License: Stream License.
+
 ## useAnimations Animated Icons
 - Source: https://useanimations.com/
 - Package source: https://github.com/useAnimations/react-useanimations

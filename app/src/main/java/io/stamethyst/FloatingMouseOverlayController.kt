@@ -1,6 +1,7 @@
 package io.stamethyst
 
 import android.content.Context
+import android.content.DialogInterface
 import android.graphics.Rect
 import android.util.Log
 import android.os.SystemClock
@@ -14,6 +15,8 @@ import android.widget.FrameLayout
 import android.widget.GridLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.Button
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -56,6 +59,11 @@ internal class FloatingMouseOverlayController(
         val pickerLabel: String,
         val buttonLabel: String,
         val keyCode: Int,
+    )
+
+    private data class CustomSoftKeyCategory(
+        val label: String,
+        val keys: List<CustomSoftKeySpec>,
     )
 
     private data class CustomSoftKeyButtonState(
@@ -102,6 +110,13 @@ internal class FloatingMouseOverlayController(
         private const val CUSTOM_KEY_DELETE_TARGET_SIZE_DP = 72
         private const val CUSTOM_KEY_DELETE_TARGET_BOTTOM_MARGIN_DP = 72
         private const val CUSTOM_KEY_DELETE_TARGET_ANIM_DURATION_MS = 140L
+        private const val CUSTOM_KEY_PICKER_LIST_HEIGHT_DP = 300
+        private const val CUSTOM_KEY_PICKER_CATEGORY_WIDTH_DP = 112
+        private const val CUSTOM_KEY_PICKER_KEY_WIDTH_DP = 94
+        private const val CUSTOM_KEY_PICKER_OPTION_HEIGHT_DP = 42
+        private const val CUSTOM_KEY_PICKER_OPTION_SPACING_DP = 8
+        private const val CUSTOM_KEY_PICKER_OPTION_TEXT_SIZE_SP = 12f
+        private const val CUSTOM_KEY_PICKER_KEY_COLUMNS = 2
         private const val SPECIAL_KEYS_BAR_PADDING_HORIZONTAL_DP = 8
         private const val SPECIAL_KEYS_BAR_PADDING_VERTICAL_DP = 6
         private const val SPECIAL_KEYS_BUTTON_HEIGHT_DP = 38
@@ -126,9 +141,15 @@ internal class FloatingMouseOverlayController(
         private const val SOFT_KEY_MIN_PRESS_MS = 70L
         private const val SOFT_TEXT_DUPLICATE_CROSS_SOURCE_WINDOW_MS = 150L
         private const val SOFT_TEXT_DUPLICATE_SAME_SOURCE_WINDOW_MS = 16L
+        private const val AWT_VK_PAUSE = 19
         private const val AWT_VK_ENTER = 10
         private const val AWT_VK_BACK_SPACE = 8
         private const val AWT_VK_TAB = 9
+        private const val AWT_VK_SPACE = 32
+        private const val AWT_VK_PAGE_UP = 33
+        private const val AWT_VK_PAGE_DOWN = 34
+        private const val AWT_VK_END = 35
+        private const val AWT_VK_HOME = 36
         private const val AWT_VK_SHIFT = 16
         private const val AWT_VK_CONTROL = 17
         private const val AWT_VK_ALT = 18
@@ -138,9 +159,33 @@ internal class FloatingMouseOverlayController(
         private const val AWT_VK_UP = 38
         private const val AWT_VK_RIGHT = 39
         private const val AWT_VK_DOWN = 40
+        private const val AWT_VK_COMMA = 44
+        private const val AWT_VK_MINUS = 45
+        private const val AWT_VK_PERIOD = 46
+        private const val AWT_VK_SLASH = 47
+        private const val AWT_VK_0 = 48
+        private const val AWT_VK_A = 65
+        private const val AWT_VK_SEMICOLON = 59
+        private const val AWT_VK_EQUALS = 61
+        private const val AWT_VK_OPEN_BRACKET = 91
+        private const val AWT_VK_BACK_SLASH = 92
+        private const val AWT_VK_CLOSE_BRACKET = 93
+        private const val AWT_VK_NUMPAD0 = 96
+        private const val AWT_VK_MULTIPLY = 106
+        private const val AWT_VK_ADD = 107
+        private const val AWT_VK_SUBTRACT = 109
+        private const val AWT_VK_DECIMAL = 110
+        private const val AWT_VK_DIVIDE = 111
         private const val AWT_VK_F1 = 112
+        private const val AWT_VK_NUM_LOCK = 144
+        private const val AWT_VK_SCROLL_LOCK = 145
+        private const val AWT_VK_PRINTSCREEN = 154
+        private const val AWT_VK_INSERT = 155
+        private const val AWT_VK_META = 157
         private const val AWT_VK_DELETE = 127
         private const val AWT_VK_BACK_QUOTE = 192
+        private const val AWT_VK_QUOTE = 222
+        private const val AWT_VK_CONTEXT_MENU = 525
     }
 
     private var hostView: FrameLayout? = null
@@ -173,7 +218,7 @@ internal class FloatingMouseOverlayController(
     private val customSoftKeyPrefs by lazy {
         activity.getSharedPreferences(CUSTOM_KEY_PREFS_NAME, Context.MODE_PRIVATE)
     }
-    private val customSoftKeySpecs = buildCustomSoftKeySpecs()
+    private val customSoftKeyCategories = buildCustomSoftKeyCategories()
     private var customSoftKeyDeleteTarget: FrameLayout? = null
     private var customSoftKeyPickerDialog: AlertDialog? = null
     private var customSoftKeyButtonsVisible = true
@@ -462,21 +507,178 @@ internal class FloatingMouseOverlayController(
         if (activity.isFinishing || activity.isDestroyed) {
             return
         }
-        val specs = customSoftKeySpecs
-        if (specs.isEmpty()) {
+        val categories = customSoftKeyCategories.filter { it.keys.isNotEmpty() }
+        if (categories.isEmpty()) {
             return
         }
-        val labels = specs.map { it.pickerLabel }.toTypedArray()
         customSoftKeyPickerDialog?.dismiss()
+
+        var selectedSpec: CustomSoftKeySpec? = null
+        var selectedKeyView: TextView? = null
+        var positiveButton: Button? = null
+        val categoryViews = mutableListOf<TextView>()
+        val selectedLabel = TextView(activity).apply {
+            text = activity.getString(R.string.touch_mouse_custom_key_picker_none)
+            gravity = Gravity.CENTER_VERTICAL
+            includeFontPadding = false
+            setTextColor(0xFFDDDDDD.toInt())
+            textSize = CUSTOM_KEY_PICKER_OPTION_TEXT_SIZE_SP
+            setPadding(0, 0, 0, dpToPx(2))
+        }
+        val keyGrid = GridLayout(activity).apply {
+            columnCount = CUSTOM_KEY_PICKER_KEY_COLUMNS
+            useDefaultMargins = false
+            alignmentMode = GridLayout.ALIGN_BOUNDS
+        }
+
+        fun updateSelectedKey(spec: CustomSoftKeySpec?, view: TextView?) {
+            selectedKeyView?.let { updateCustomSoftKeyPickerOptionAppearance(it, false) }
+            selectedSpec = spec
+            selectedKeyView = view
+            selectedKeyView?.let { updateCustomSoftKeyPickerOptionAppearance(it, true) }
+            selectedLabel.text = if (spec == null) {
+                activity.getString(R.string.touch_mouse_custom_key_picker_none)
+            } else {
+                activity.getString(R.string.touch_mouse_custom_key_picker_selected_format, spec.pickerLabel)
+            }
+            positiveButton?.isEnabled = spec != null
+        }
+
+        fun populateKeys(categoryIndex: Int) {
+            categoryViews.forEachIndexed { index, view ->
+                updateCustomSoftKeyPickerOptionAppearance(view, index == categoryIndex)
+            }
+            updateSelectedKey(null, null)
+            keyGrid.removeAllViews()
+            val spacing = dpToPx(CUSTOM_KEY_PICKER_OPTION_SPACING_DP)
+            categories[categoryIndex].keys.forEach { spec ->
+                val keyView = createCustomSoftKeyPickerOption(
+                    label = spec.pickerLabel,
+                    minWidthDp = CUSTOM_KEY_PICKER_KEY_WIDTH_DP
+                ).apply {
+                    setOnClickListener {
+                        LauncherHaptics.perform(this, HapticFeedbackConstants.KEYBOARD_TAP)
+                        updateSelectedKey(spec, this)
+                    }
+                }
+                keyGrid.addView(
+                    keyView,
+                    GridLayout.LayoutParams().apply {
+                        width = dpToPx(CUSTOM_KEY_PICKER_KEY_WIDTH_DP)
+                        height = dpToPx(CUSTOM_KEY_PICKER_OPTION_HEIGHT_DP)
+                        setMargins(0, 0, spacing, spacing)
+                    }
+                )
+            }
+        }
+
+        val categoryColumn = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        val spacing = dpToPx(CUSTOM_KEY_PICKER_OPTION_SPACING_DP)
+        categories.forEachIndexed { index, category ->
+            val categoryView = createCustomSoftKeyPickerOption(
+                label = category.label,
+                minWidthDp = CUSTOM_KEY_PICKER_CATEGORY_WIDTH_DP
+            ).apply {
+                setOnClickListener {
+                    LauncherHaptics.perform(this, HapticFeedbackConstants.KEYBOARD_TAP)
+                    populateKeys(index)
+                }
+            }
+            categoryViews += categoryView
+            categoryColumn.addView(
+                categoryView,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    dpToPx(CUSTOM_KEY_PICKER_OPTION_HEIGHT_DP)
+                ).apply {
+                    bottomMargin = spacing
+                }
+            )
+        }
+
+        val pickerView = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dpToPx(2), dpToPx(2), dpToPx(2), 0)
+            addView(
+                selectedLabel,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    bottomMargin = spacing
+                }
+            )
+            addView(
+                LinearLayout(activity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    addView(
+                        ScrollView(activity).apply {
+                            isFillViewport = false
+                            addView(
+                                categoryColumn,
+                                FrameLayout.LayoutParams(
+                                    FrameLayout.LayoutParams.MATCH_PARENT,
+                                    FrameLayout.LayoutParams.WRAP_CONTENT
+                                )
+                            )
+                        },
+                        LinearLayout.LayoutParams(
+                            dpToPx(CUSTOM_KEY_PICKER_CATEGORY_WIDTH_DP),
+                            dpToPx(CUSTOM_KEY_PICKER_LIST_HEIGHT_DP)
+                        )
+                    )
+                    addView(
+                        ScrollView(activity).apply {
+                            isFillViewport = false
+                            addView(
+                                keyGrid,
+                                FrameLayout.LayoutParams(
+                                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                                    FrameLayout.LayoutParams.WRAP_CONTENT
+                                )
+                            )
+                        },
+                        LinearLayout.LayoutParams(
+                            dpToPx(
+                                CUSTOM_KEY_PICKER_KEY_COLUMNS *
+                                    (CUSTOM_KEY_PICKER_KEY_WIDTH_DP + CUSTOM_KEY_PICKER_OPTION_SPACING_DP)
+                            ),
+                            dpToPx(CUSTOM_KEY_PICKER_LIST_HEIGHT_DP)
+                        ).apply {
+                            leftMargin = spacing
+                        }
+                    )
+                },
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            )
+        }
+        populateKeys(0)
+
         val dialog = AlertDialog.Builder(activity)
             .setTitle(R.string.touch_mouse_custom_key_picker_title)
-            .setItems(labels) { dialogInterface, which ->
-                dialogInterface.dismiss()
-                specs.getOrNull(which)?.let(::addCustomSoftKeyButton)
-            }
+            .setView(pickerView)
+            .setPositiveButton(android.R.string.ok, null)
             .setNegativeButton(android.R.string.cancel, null)
             .create()
         customSoftKeyPickerDialog = dialog
+        dialog.setCanceledOnTouchOutside(false)
+        dialog.setCancelable(false)
+        dialog.setOnShowListener {
+            positiveButton = dialog.getButton(DialogInterface.BUTTON_POSITIVE).apply {
+                isEnabled = selectedSpec != null
+                setOnClickListener {
+                    selectedSpec?.let { spec ->
+                        addCustomSoftKeyButton(spec)
+                        dialog.dismiss()
+                    }
+                }
+            }
+        }
         dialog.setOnDismissListener {
             if (customSoftKeyPickerDialog === dialog) {
                 customSoftKeyPickerDialog = null
@@ -1114,25 +1316,138 @@ internal class FloatingMouseOverlayController(
         CallbackBridge.sendScroll(0.0, verticalOffset)
     }
 
-    private fun buildCustomSoftKeySpecs(): List<CustomSoftKeySpec> {
-        return buildList {
-            add(CustomSoftKeySpec("Esc", "Esc", KeyEvent.KEYCODE_ESCAPE))
-            add(CustomSoftKeySpec("~ / `", "~", KeyEvent.KEYCODE_GRAVE))
-            for (index in 1..12) {
-                val keyCode = KeyEvent.KEYCODE_F1 + (index - 1)
-                add(CustomSoftKeySpec("F$index", "F$index", keyCode))
-            }
-            add(CustomSoftKeySpec("Tab", "Tab", KeyEvent.KEYCODE_TAB))
-            add(CustomSoftKeySpec("Caps Lock", "Caps", KeyEvent.KEYCODE_CAPS_LOCK))
-            add(CustomSoftKeySpec("Enter", "Enter", KeyEvent.KEYCODE_ENTER))
-            add(CustomSoftKeySpec("Space", "Space", KeyEvent.KEYCODE_SPACE))
-            add(CustomSoftKeySpec("Backspace", "Bksp", KeyEvent.KEYCODE_DEL))
-            add(CustomSoftKeySpec("Delete", "Del", KeyEvent.KEYCODE_FORWARD_DEL))
-            add(CustomSoftKeySpec("Left", "Left", KeyEvent.KEYCODE_DPAD_LEFT))
-            add(CustomSoftKeySpec("Up", "Up", KeyEvent.KEYCODE_DPAD_UP))
-            add(CustomSoftKeySpec("Right", "Right", KeyEvent.KEYCODE_DPAD_RIGHT))
-            add(CustomSoftKeySpec("Down", "Down", KeyEvent.KEYCODE_DPAD_DOWN))
+    private fun createCustomSoftKeyPickerOption(label: String, minWidthDp: Int): TextView {
+        return TextView(activity).apply {
+            text = label
+            gravity = Gravity.CENTER
+            includeFontPadding = false
+            setTextColor(0xFFFFFFFF.toInt())
+            textSize = CUSTOM_KEY_PICKER_OPTION_TEXT_SIZE_SP
+            minWidth = dpToPx(minWidthDp)
+            maxLines = 1
+            isAllCaps = false
+            isFocusable = false
+            isFocusableInTouchMode = false
+            contentDescription = label
+            setPadding(dpToPx(8), 0, dpToPx(8), 0)
+            updateCustomSoftKeyPickerOptionAppearance(this, false)
         }
+    }
+
+    private fun updateCustomSoftKeyPickerOptionAppearance(view: TextView, selected: Boolean) {
+        view.isSelected = selected
+        view.alpha = if (selected) 1.0f else 0.96f
+        view.setTextColor(if (selected) 0xFFFFFFFF.toInt() else 0xFFE4E4E4.toInt())
+        view.background = android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+            cornerRadius = dpToPx(10).toFloat()
+            setColor(if (selected) 0xFF355B2E.toInt() else 0xFF2B2B2B.toInt())
+            setStroke(dpToPx(1), if (selected) 0xFF98D96A.toInt() else 0xFF454545.toInt())
+        }
+    }
+
+    private fun buildCustomSoftKeyCategories(): List<CustomSoftKeyCategory> {
+        return listOf(
+            CustomSoftKeyCategory(
+                activity.getString(R.string.touch_mouse_custom_key_category_function),
+                buildList {
+                    add(CustomSoftKeySpec("Esc", "Esc", KeyEvent.KEYCODE_ESCAPE))
+                    for (index in 1..12) {
+                        val keyCode = KeyEvent.KEYCODE_F1 + (index - 1)
+                        add(CustomSoftKeySpec("F$index", "F$index", keyCode))
+                    }
+                    add(CustomSoftKeySpec("Print Screen", "PrtSc", KeyEvent.KEYCODE_SYSRQ))
+                    add(CustomSoftKeySpec("Scroll Lock", "ScrLk", KeyEvent.KEYCODE_SCROLL_LOCK))
+                    add(CustomSoftKeySpec("Pause / Break", "Pause", KeyEvent.KEYCODE_BREAK))
+                }
+            ),
+            CustomSoftKeyCategory(
+                activity.getString(R.string.touch_mouse_custom_key_category_letters),
+                ('A'..'Z').map { letter ->
+                    val keyCode = KeyEvent.KEYCODE_A + (letter - 'A')
+                    CustomSoftKeySpec(letter.toString(), letter.toString(), keyCode)
+                }
+            ),
+            CustomSoftKeyCategory(
+                activity.getString(R.string.touch_mouse_custom_key_category_number_row),
+                ('1'..'9').map { digit ->
+                    val keyCode = KeyEvent.KEYCODE_1 + (digit - '1')
+                    CustomSoftKeySpec(digit.toString(), digit.toString(), keyCode)
+                } + CustomSoftKeySpec("0", "0", KeyEvent.KEYCODE_0)
+            ),
+            CustomSoftKeyCategory(
+                activity.getString(R.string.touch_mouse_custom_key_category_punctuation),
+                listOf(
+                    CustomSoftKeySpec("` / ~", "`", KeyEvent.KEYCODE_GRAVE),
+                    CustomSoftKeySpec("- / _", "-", KeyEvent.KEYCODE_MINUS),
+                    CustomSoftKeySpec("= / +", "=", KeyEvent.KEYCODE_EQUALS),
+                    CustomSoftKeySpec("[ / {", "[", KeyEvent.KEYCODE_LEFT_BRACKET),
+                    CustomSoftKeySpec("] / }", "]", KeyEvent.KEYCODE_RIGHT_BRACKET),
+                    CustomSoftKeySpec("\\ / |", "\\", KeyEvent.KEYCODE_BACKSLASH),
+                    CustomSoftKeySpec("; / :", ";", KeyEvent.KEYCODE_SEMICOLON),
+                    CustomSoftKeySpec("' / \"", "'", KeyEvent.KEYCODE_APOSTROPHE),
+                    CustomSoftKeySpec(", / <", ",", KeyEvent.KEYCODE_COMMA),
+                    CustomSoftKeySpec(". / >", ".", KeyEvent.KEYCODE_PERIOD),
+                    CustomSoftKeySpec("/ / ?", "/", KeyEvent.KEYCODE_SLASH)
+                )
+            ),
+            CustomSoftKeyCategory(
+                activity.getString(R.string.touch_mouse_custom_key_category_editing),
+                listOf(
+                    CustomSoftKeySpec("Tab", "Tab", KeyEvent.KEYCODE_TAB),
+                    CustomSoftKeySpec("Caps Lock", "Caps", KeyEvent.KEYCODE_CAPS_LOCK),
+                    CustomSoftKeySpec("Enter", "Enter", KeyEvent.KEYCODE_ENTER),
+                    CustomSoftKeySpec("Space", "Space", KeyEvent.KEYCODE_SPACE),
+                    CustomSoftKeySpec("Backspace", "Bksp", KeyEvent.KEYCODE_DEL),
+                    CustomSoftKeySpec("Insert", "Ins", KeyEvent.KEYCODE_INSERT),
+                    CustomSoftKeySpec("Delete", "Del", KeyEvent.KEYCODE_FORWARD_DEL),
+                    CustomSoftKeySpec("Home", "Home", KeyEvent.KEYCODE_MOVE_HOME),
+                    CustomSoftKeySpec("End", "End", KeyEvent.KEYCODE_MOVE_END),
+                    CustomSoftKeySpec("Page Up", "PgUp", KeyEvent.KEYCODE_PAGE_UP),
+                    CustomSoftKeySpec("Page Down", "PgDn", KeyEvent.KEYCODE_PAGE_DOWN)
+                )
+            ),
+            CustomSoftKeyCategory(
+                activity.getString(R.string.touch_mouse_custom_key_category_arrows),
+                listOf(
+                    CustomSoftKeySpec("Left", "Left", KeyEvent.KEYCODE_DPAD_LEFT),
+                    CustomSoftKeySpec("Up", "Up", KeyEvent.KEYCODE_DPAD_UP),
+                    CustomSoftKeySpec("Right", "Right", KeyEvent.KEYCODE_DPAD_RIGHT),
+                    CustomSoftKeySpec("Down", "Down", KeyEvent.KEYCODE_DPAD_DOWN)
+                )
+            ),
+            CustomSoftKeyCategory(
+                activity.getString(R.string.touch_mouse_custom_key_category_modifiers),
+                listOf(
+                    CustomSoftKeySpec("Left Shift", "LShift", KeyEvent.KEYCODE_SHIFT_LEFT),
+                    CustomSoftKeySpec("Right Shift", "RShift", KeyEvent.KEYCODE_SHIFT_RIGHT),
+                    CustomSoftKeySpec("Left Ctrl", "LCtrl", KeyEvent.KEYCODE_CTRL_LEFT),
+                    CustomSoftKeySpec("Right Ctrl", "RCtrl", KeyEvent.KEYCODE_CTRL_RIGHT),
+                    CustomSoftKeySpec("Left Alt", "LAlt", KeyEvent.KEYCODE_ALT_LEFT),
+                    CustomSoftKeySpec("Right Alt", "RAlt", KeyEvent.KEYCODE_ALT_RIGHT),
+                    CustomSoftKeySpec("Left Meta", "LMeta", KeyEvent.KEYCODE_META_LEFT),
+                    CustomSoftKeySpec("Right Meta", "RMeta", KeyEvent.KEYCODE_META_RIGHT),
+                    CustomSoftKeySpec("Menu", "Menu", KeyEvent.KEYCODE_MENU)
+                )
+            ),
+            CustomSoftKeyCategory(
+                activity.getString(R.string.touch_mouse_custom_key_category_numpad),
+                buildList {
+                    add(CustomSoftKeySpec("Num Lock", "Num", KeyEvent.KEYCODE_NUM_LOCK))
+                    add(CustomSoftKeySpec("Numpad /", "Num/", KeyEvent.KEYCODE_NUMPAD_DIVIDE))
+                    add(CustomSoftKeySpec("Numpad *", "Num*", KeyEvent.KEYCODE_NUMPAD_MULTIPLY))
+                    add(CustomSoftKeySpec("Numpad -", "Num-", KeyEvent.KEYCODE_NUMPAD_SUBTRACT))
+                    add(CustomSoftKeySpec("Numpad +", "Num+", KeyEvent.KEYCODE_NUMPAD_ADD))
+                    add(CustomSoftKeySpec("Num Enter", "NEnter", KeyEvent.KEYCODE_NUMPAD_ENTER))
+                    add(CustomSoftKeySpec("Numpad =", "Num=", KeyEvent.KEYCODE_NUMPAD_EQUALS))
+                    for (digit in listOf(7, 8, 9, 4, 5, 6, 1, 2, 3, 0)) {
+                        val keyCode = KeyEvent.KEYCODE_NUMPAD_0 + digit
+                        add(CustomSoftKeySpec("Numpad $digit", "Num$digit", keyCode))
+                    }
+                    add(CustomSoftKeySpec("Numpad .", "Num.", KeyEvent.KEYCODE_NUMPAD_DOT))
+                }
+            )
+        )
     }
 
     private fun addCustomSoftKeyButton(spec: CustomSoftKeySpec) {
@@ -1858,18 +2173,51 @@ internal class FloatingMouseOverlayController(
         return when (androidKeyCode) {
             KeyEvent.KEYCODE_DEL -> AWT_VK_BACK_SPACE
             KeyEvent.KEYCODE_FORWARD_DEL -> AWT_VK_DELETE
+            KeyEvent.KEYCODE_INSERT -> AWT_VK_INSERT
             KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> AWT_VK_ENTER
             KeyEvent.KEYCODE_TAB -> AWT_VK_TAB
+            KeyEvent.KEYCODE_SPACE -> AWT_VK_SPACE
             KeyEvent.KEYCODE_ESCAPE -> AWT_VK_ESCAPE
             KeyEvent.KEYCODE_DPAD_LEFT -> AWT_VK_LEFT
             KeyEvent.KEYCODE_DPAD_UP -> AWT_VK_UP
             KeyEvent.KEYCODE_DPAD_RIGHT -> AWT_VK_RIGHT
             KeyEvent.KEYCODE_DPAD_DOWN -> AWT_VK_DOWN
+            KeyEvent.KEYCODE_PAGE_UP -> AWT_VK_PAGE_UP
+            KeyEvent.KEYCODE_PAGE_DOWN -> AWT_VK_PAGE_DOWN
+            KeyEvent.KEYCODE_MOVE_HOME -> AWT_VK_HOME
+            KeyEvent.KEYCODE_MOVE_END -> AWT_VK_END
             KeyEvent.KEYCODE_SHIFT_LEFT, KeyEvent.KEYCODE_SHIFT_RIGHT -> AWT_VK_SHIFT
             KeyEvent.KEYCODE_CTRL_LEFT, KeyEvent.KEYCODE_CTRL_RIGHT -> AWT_VK_CONTROL
             KeyEvent.KEYCODE_ALT_LEFT, KeyEvent.KEYCODE_ALT_RIGHT -> AWT_VK_ALT
+            KeyEvent.KEYCODE_META_LEFT, KeyEvent.KEYCODE_META_RIGHT -> AWT_VK_META
+            KeyEvent.KEYCODE_MENU -> AWT_VK_CONTEXT_MENU
             KeyEvent.KEYCODE_CAPS_LOCK -> AWT_VK_CAPS_LOCK
+            KeyEvent.KEYCODE_SCROLL_LOCK -> AWT_VK_SCROLL_LOCK
+            KeyEvent.KEYCODE_NUM_LOCK -> AWT_VK_NUM_LOCK
+            KeyEvent.KEYCODE_SYSRQ -> AWT_VK_PRINTSCREEN
+            KeyEvent.KEYCODE_BREAK -> AWT_VK_PAUSE
             KeyEvent.KEYCODE_GRAVE -> AWT_VK_BACK_QUOTE
+            KeyEvent.KEYCODE_APOSTROPHE -> AWT_VK_QUOTE
+            KeyEvent.KEYCODE_COMMA -> AWT_VK_COMMA
+            KeyEvent.KEYCODE_MINUS -> AWT_VK_MINUS
+            KeyEvent.KEYCODE_PERIOD -> AWT_VK_PERIOD
+            KeyEvent.KEYCODE_SLASH -> AWT_VK_SLASH
+            KeyEvent.KEYCODE_SEMICOLON -> AWT_VK_SEMICOLON
+            KeyEvent.KEYCODE_EQUALS, KeyEvent.KEYCODE_NUMPAD_EQUALS -> AWT_VK_EQUALS
+            KeyEvent.KEYCODE_LEFT_BRACKET -> AWT_VK_OPEN_BRACKET
+            KeyEvent.KEYCODE_BACKSLASH -> AWT_VK_BACK_SLASH
+            KeyEvent.KEYCODE_RIGHT_BRACKET -> AWT_VK_CLOSE_BRACKET
+            KeyEvent.KEYCODE_NUMPAD_DOT -> AWT_VK_DECIMAL
+            KeyEvent.KEYCODE_NUMPAD_DIVIDE -> AWT_VK_DIVIDE
+            KeyEvent.KEYCODE_NUMPAD_MULTIPLY -> AWT_VK_MULTIPLY
+            KeyEvent.KEYCODE_NUMPAD_SUBTRACT -> AWT_VK_SUBTRACT
+            KeyEvent.KEYCODE_NUMPAD_ADD -> AWT_VK_ADD
+            in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9 ->
+                AWT_VK_0 + (androidKeyCode - KeyEvent.KEYCODE_0)
+            in KeyEvent.KEYCODE_A..KeyEvent.KEYCODE_Z ->
+                AWT_VK_A + (androidKeyCode - KeyEvent.KEYCODE_A)
+            in KeyEvent.KEYCODE_NUMPAD_0..KeyEvent.KEYCODE_NUMPAD_9 ->
+                AWT_VK_NUMPAD0 + (androidKeyCode - KeyEvent.KEYCODE_NUMPAD_0)
             in KeyEvent.KEYCODE_F1..KeyEvent.KEYCODE_F12 ->
                 AWT_VK_F1 + (androidKeyCode - KeyEvent.KEYCODE_F1)
             else -> null

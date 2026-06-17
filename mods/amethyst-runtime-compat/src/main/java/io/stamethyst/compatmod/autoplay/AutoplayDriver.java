@@ -3,8 +3,9 @@ package io.stamethyst.compatmod.autoplay;
 /**
  * Top-level autoplay tick dispatcher. Patched in via {@link AutoplayPatches}, this class is the
  * single entry point that the per-frame patch calls. All routing decisions (main menu vs dungeon
- * vs combat) live here and in the matching {@code AutoplayMainMenuActions} /
- * {@code AutoplayDungeonActions} helpers.
+ * vs combat vs run-end screens) live here and in the matching
+ * {@code AutoplayMainMenuActions} / {@code AutoplayDungeonActions} /
+ * {@code AutoplayEndScreenActions} helpers.
  *
  * <p>The driver:
  * <ul>
@@ -33,6 +34,7 @@ public final class AutoplayDriver {
         }
         try {
             AutoplayMainMenuActions.tick();
+            AutoplayEndScreenActions.tick();
             AutoplayDungeonActions.tick();
         } catch (Throwable t) {
             AutoplayLog.warn("driver tick threw, will retry next interval", t);

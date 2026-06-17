@@ -28,6 +28,7 @@ class ImportPatchModuleDefaultsTest {
             DownfallImportPatchModule,
             VupShionImportPatchModule,
             JacketNoAnoKoImportPatchModule,
+            OriImportPatchModule,
         )
 
         assertEquals(

@@ -899,7 +899,7 @@ internal fun ModFolderSection(
                                             )
                                             TriStateCheckbox(
                                                 state = folderUiModel.toggleState,
-                                                enabled = folderUiModel.mods.isNotEmpty() && organizationControlsEnabled,
+                                                enabled = folderUiModel.selectableCount > 0 && organizationControlsEnabled,
                                                 onClick = {
                                                     if (organizationControlsEnabled) {
                                                         if (folderUiModel.isUnassigned) {
@@ -918,7 +918,7 @@ internal fun ModFolderSection(
                                                     R.string.main_folder_name_count_format,
                                                     folderUiModel.folderName,
                                                     folderUiModel.selectedCount,
-                                                    folderUiModel.mods.size
+                                                    folderUiModel.selectableCount
                                                 ),
                                                 modifier = Modifier.weight(1f),
                                                 maxLines = 1,
@@ -1108,7 +1108,7 @@ internal fun ModFolderSection(
                                     },
                                     onMoveFolderPickerRequest = { pendingMoveMod = it },
                                     onBatchSelectionStart = { selectedMod ->
-                                        if (latestOrganizationControlsEnabled.value && selectedMod.installed) {
+                                        if (latestOrganizationControlsEnabled.value && selectedMod.canUseFolderSelection()) {
                                             interactionState.expandedCards.clear()
                                             batchSelectionMode = true
                                             selectedBatchStoragePaths =
@@ -1127,7 +1127,7 @@ internal fun ModFolderSection(
                                     isDraggedInOverlay = activeModDragSession?.mod?.storagePath == mod.storagePath,
                                     showModFileName = showModFileName,
                                     setExpanded = setCardExpanded,
-                                    selectionEnabled = organizationControlsEnabled && mod.installed,
+                                    selectionEnabled = organizationControlsEnabled && mod.canUseFolderSelection(),
                                     fileActionsEnabled = modFileActionsEnabled && mod.installed,
                                     dragEnabled = folderModItem != null && mod.installed,
                                     dragEnabledState = latestOrganizationDragEnabled,
@@ -1136,7 +1136,7 @@ internal fun ModFolderSection(
                                     batchSelectionProgress = batchSelectionProgress,
                                     batchSelectionMode = batchSelectionMode,
                                     batchSelected = selectedBatchStoragePaths.contains(mod.storagePath),
-                                    batchSelectionEnabled = organizationControlsEnabled && mod.installed,
+                                    batchSelectionEnabled = organizationControlsEnabled && mod.canUseFolderSelection(),
                                     onBatchSelectionChange = onBatchSelectionChange,
                                     onSuggestionRead = onSuggestionRead,
                                     callbacks = modCardCallbacks

@@ -182,6 +182,27 @@ public class FragmentShaderCompatTest {
     }
 
     @Test
+    public void normalizeFragmentShader_removesJavaFloatLiteralSuffixes() {
+        String original = "void main() {\n" +
+            "    int mask = 0x1F;\n" +
+            "    vec4 tint = vec4(0.1F, 0.2f, 1F, 1e-3f);\n" +
+            "    gl_FragColor = tint;\n" +
+            "}\n";
+        String previous = System.getProperty(ENABLED_PROP);
+        try {
+            System.setProperty(ENABLED_PROP, "true");
+            String patched = FragmentShaderCompat.normalizeFragmentShader(original);
+            assertTrue(patched.contains("int mask = 0x1F;"));
+            assertTrue(patched.contains("vec4 tint = vec4(0.1, 0.2, 1.0, 1e-3);"));
+            assertFalse(patched.contains("0.1F"));
+            assertFalse(patched.contains("0.2f"));
+            assertFalse(patched.contains("1e-3f"));
+        } finally {
+            restoreProperty(previous);
+        }
+    }
+
+    @Test
     public void normalizeFragmentShader_respectsDisabledProperty() {
         String original = "#version 120\nvoid main() {\n    gl_FragColor = vec4(1.0);\n}\n";
         String previous = System.getProperty(ENABLED_PROP);

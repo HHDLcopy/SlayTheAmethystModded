@@ -35,6 +35,13 @@ class FeedbackIssueBrowserViewModel : ViewModel() {
                 CLOSED_ONLY -> issue.isClosed
             }
         }
+
+        val browseState: String
+            get() = when (this) {
+                ALL -> "all"
+                OPEN_ONLY -> "open"
+                CLOSED_ONLY -> "closed"
+            }
     }
 
     data class UiState(
@@ -45,7 +52,9 @@ class FeedbackIssueBrowserViewModel : ViewModel() {
         val nextPage: Int = 1,
         val hasMore: Boolean = true,
         val initialLoaded: Boolean = false,
-        val issueStateFilter: IssueStateFilter = IssueStateFilter.OPEN_ONLY
+        val issueStateFilter: IssueStateFilter = IssueStateFilter.OPEN_ONLY,
+        val searchQuery: String = "",
+        val refreshingIssues: Boolean = false
     ) {
         val visibleIssues: List<FeedbackIssueBrowseItem>
             get() = issues.asSequence()
@@ -58,6 +67,7 @@ class FeedbackIssueBrowserViewModel : ViewModel() {
     }
 
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
+    private var pendingCriteriaRefresh = false
 
     var uiState by mutableStateOf(UiState())
         private set
@@ -83,11 +93,20 @@ class FeedbackIssueBrowserViewModel : ViewModel() {
         loadPage(host, reset = false)
     }
 
-    fun onIssueStateFilterSelected(filter: IssueStateFilter) {
+    fun onIssueStateFilterSelected(host: Activity, filter: IssueStateFilter) {
         if (uiState.issueStateFilter == filter) {
             return
         }
         uiState = uiState.copy(issueStateFilter = filter)
+        refreshForCriteriaChange(host)
+    }
+
+    fun onSearchQueryChanged(host: Activity, query: String) {
+        if (uiState.searchQuery == query) {
+            return
+        }
+        uiState = uiState.copy(searchQuery = query)
+        refreshForCriteriaChange(host)
     }
 
     fun onSubscribe(host: Activity, issueNumber: Long) {
@@ -144,14 +163,26 @@ class FeedbackIssueBrowserViewModel : ViewModel() {
 
     private fun loadPage(host: Activity, reset: Boolean) {
         if (reset) {
-            setBusy(true, host.getString(R.string.feedback_busy_loading_issues))
+            pendingCriteriaRefresh = false
+            uiState = uiState.copy(
+                busy = true,
+                busyMessage = host.getString(R.string.feedback_busy_loading_issues),
+                refreshingIssues = true
+            )
         } else {
             uiState = uiState.copy(loadingMore = true)
         }
         val requestPage = if (reset) 1 else uiState.nextPage
+        val requestSearchQuery = uiState.searchQuery
+        val requestBrowseState = uiState.issueStateFilter.browseState
         executor.execute {
             runCatching {
-                FeedbackIssueSyncService.listIssues(host, requestPage)
+                FeedbackIssueSyncService.listIssues(
+                    context = host,
+                    page = requestPage,
+                    searchQuery = requestSearchQuery,
+                    state = requestBrowseState
+                )
             }.onSuccess { page ->
                 host.runOnUiThread {
                     val mergedIssues = if (reset) {
@@ -163,11 +194,13 @@ class FeedbackIssueBrowserViewModel : ViewModel() {
                         busy = false,
                         busyMessage = null,
                         loadingMore = false,
+                        refreshingIssues = false,
                         issues = mergedIssues,
                         nextPage = page.nextPage,
                         hasMore = page.hasMore,
                         initialLoaded = true
                     )
+                    refreshPendingCriteriaIfNeeded(host)
                 }
             }.onFailure { error ->
                 Log.e(TAG, "Failed to load issue browser page", error)
@@ -176,6 +209,7 @@ class FeedbackIssueBrowserViewModel : ViewModel() {
                         busy = false,
                         busyMessage = null,
                         loadingMore = false,
+                        refreshingIssues = false,
                         initialLoaded = true
                     )
                     LauncherTransientNoticeBus.show(
@@ -186,9 +220,26 @@ class FeedbackIssueBrowserViewModel : ViewModel() {
                         ),
                         Toast.LENGTH_LONG
                     )
+                    refreshPendingCriteriaIfNeeded(host)
                 }
             }
         }
+    }
+
+    private fun refreshForCriteriaChange(host: Activity) {
+        if (uiState.busy || uiState.loadingMore) {
+            pendingCriteriaRefresh = true
+            return
+        }
+        loadPage(host, reset = true)
+    }
+
+    private fun refreshPendingCriteriaIfNeeded(host: Activity) {
+        if (!pendingCriteriaRefresh) {
+            return
+        }
+        pendingCriteriaRefresh = false
+        loadPage(host, reset = true)
     }
 
     private fun mergeIssues(
@@ -208,12 +259,14 @@ class FeedbackIssueBrowserViewModel : ViewModel() {
         uiState = if (busy) {
             uiState.copy(
                 busy = true,
-                busyMessage = message
+                busyMessage = message,
+                refreshingIssues = false
             )
         } else {
             uiState.copy(
                 busy = false,
-                busyMessage = null
+                busyMessage = null,
+                refreshingIssues = false
             )
         }
     }

@@ -267,7 +267,17 @@
     <string name="touch_mouse_builtin_keyboard_enter">Enter</string>
     <string name="touch_mouse_builtin_keyboard_system">Keyboard</string>
     <string name="touch_mouse_builtin_keyboard_hide">Hide</string>
-    <string name="touch_mouse_custom_key_picker_title">Choose key</string>
+    <string name="touch_mouse_custom_key_picker_title">Add floating key</string>
+    <string name="touch_mouse_custom_key_picker_none">Choose a key</string>
+    <string name="touch_mouse_custom_key_picker_selected_format">Selected: %1$s</string>
+    <string name="touch_mouse_custom_key_category_function">Function</string>
+    <string name="touch_mouse_custom_key_category_letters">Letters</string>
+    <string name="touch_mouse_custom_key_category_number_row">Numbers</string>
+    <string name="touch_mouse_custom_key_category_punctuation">Symbols</string>
+    <string name="touch_mouse_custom_key_category_editing">Editing</string>
+    <string name="touch_mouse_custom_key_category_arrows">Arrows</string>
+    <string name="touch_mouse_custom_key_category_modifiers">Modifiers</string>
+    <string name="touch_mouse_custom_key_category_numpad">Numpad</string>
     <string name="touch_mouse_custom_key_tutorial_title">Custom key button</string>
     <string name="touch_mouse_custom_key_tutorial_message">Tap the floating key to send it. Hold it for 1 second to start moving it; drag it onto the trash icon near the bottom to delete it.</string>
     <string name="touch_mouse_floating_menu_lock">Lock</string>
@@ -534,6 +544,7 @@ Do you still want to continue?</string>
     <string name="main_mod_patch_section_downfall_title">Downfall layout compatibility</string>
     <string name="main_mod_patch_section_vupshion_title">VUPShionMod startup compatibility</string>
     <string name="main_mod_patch_section_jacketnoanoko_title">JacketNoAnoKo shader compatibility</string>
+    <string name="main_mod_patch_section_ori_title">Ori render shader optimization</string>
     <string name="main_mod_priority_adjust">Adjust load priority</string>
     <string name="main_mod_open_market_page">Open market page</string>
     <string name="main_mod_priority_dialog_title_format">%1$s load priority</string>
@@ -585,6 +596,7 @@ Do you still want to continue?</string>
     <string name="mod_import_dialog_downfall_patched_title">Downfall auto-patched</string>
     <string name="mod_import_dialog_vupshion_patched_title">VUPShionMod</string>
     <string name="mod_import_dialog_jacketnoanoko_patched_title">JacketNoAnoKo auto-patched</string>
+    <string name="mod_import_dialog_ori_patched_title">Ori auto-patched</string>
     <string name="mod_import_dialog_vupshion_special_message">VUPShionMod is extremely well made!\n\nThe developer also provided separate authorization for launcher support so this mod can run on the launcher.\n\nIf you are able, please subscribe to the mod on Steam Workshop or support the author on Afdian. Thank you very much!!</string>
     <string name="mod_import_dialog_vupshion_open_workshop">Open Workshop</string>
     <string name="mod_import_dialog_vupshion_open_afdian">Open Afdian</string>
@@ -679,6 +691,12 @@ Patch rule: strip the SteamApps.isSubscribedApp(646570) gate from VUPShionMod/ui
     <string name="mod_import_jacketnoanoko_message_item_detail">  Patched shader files: %1$d, removed desktop #version directives: %2$d, inserted fragment precision blocks: %3$d</string>
     <string name="mod_import_jacketnoanoko_message_rule">
 Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so desktop GLSL #version 120 headers are stripped, and fragment shaders missing default precision receive a GLES-compatible precision block.</string>
+    <string name="mod_import_ori_message_none">No Ori render shader optimizations needed patching in this import.</string>
+    <string name="mod_import_ori_message_intro">The following mods had Ori render shaders optimized during import:
+</string>
+    <string name="mod_import_ori_message_item_detail">  Patched shader files: %1$d, gaussian blur shaders: %2$d, wide blur shaders: %3$d, estimated blur texture samples: %4$d -&gt; %5$d</string>
+    <string name="mod_import_ori_message_rule">
+Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur shader kernels with lower-sample approximations so the same visual effect costs fewer texture reads.</string>
     <string name="mod_import_confirm_dialog_action_import">Import</string>
     <string name="mod_import_preview_file_label">File: %1$s</string>
     <string name="mod_import_preview_name_label">Name: %1$s</string>
@@ -803,6 +821,14 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="mod_import_patch_jacketnoanoko_detail_shader_files">Patched shader files: %1$d</string>
     <string name="mod_import_patch_jacketnoanoko_detail_version_directives">Removed #version directives: %1$d</string>
     <string name="mod_import_patch_jacketnoanoko_detail_precision_blocks">Inserted precision blocks: %1$d</string>
+    <string name="mod_import_patch_ori_title">Ori render shader optimization</string>
+    <string name="mod_import_patch_ori_summary">Replace Ori blur shaders with lower-sample full-resolution equivalents.</string>
+    <string name="mod_import_patch_ori_applied">Optimized Ori render blur shaders.</string>
+    <string name="mod_import_patch_ori_noop">Ori render shaders did not need patching.</string>
+    <string name="mod_import_patch_ori_detail_shader_files">Patched shader files: %1$d</string>
+    <string name="mod_import_patch_ori_detail_gaussian">Gaussian blur shaders: %1$d</string>
+    <string name="mod_import_patch_ori_detail_box">Wide blur shaders: %1$d</string>
+    <string name="mod_import_patch_ori_detail_samples">Estimated blur texture samples: %1$d -&gt; %2$d</string>
     <string name="external_import_loading_title">Analyzing import file...</string>
     <string name="external_import_loading_message">Reading and checking %1$s. Please wait...</string>
     <string name="external_import_loading_message_generic">Reading and checking the import file. Please wait...</string>
@@ -1749,11 +1775,17 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="feedback_issue_browser_intro">This list shows repository issues from newest update to oldest. You can also filter by status. When you find one you want to keep tracking, tap Follow.</string>
     <string name="feedback_refresh_list">Refresh list</string>
     <string name="feedback_followable_issues_title">Issues you can follow</string>
+    <string name="feedback_issue_search_label">Search issues</string>
+    <string name="feedback_issue_search_placeholder">Title, number, author, or description</string>
+    <string name="feedback_issue_search_clear">Clear issue search</string>
     <string name="feedback_filter_state">Filter by state</string>
+    <string name="feedback_issue_browser_loading">Loading issue cards...</string>
     <string name="feedback_issue_browser_preparing">Preparing the issue list...</string>
     <string name="feedback_issue_browser_empty">There are no issues to show right now.</string>
     <string name="feedback_issue_browser_empty_filtered_more">No issues match the current filter yet. Load more or switch the filter.</string>
     <string name="feedback_issue_browser_empty_filtered_done">No issues match the current filter.</string>
+    <string name="feedback_issue_search_empty_more">No issues match this search on the current page. Load more issues or change the search.</string>
+    <string name="feedback_issue_search_empty_done">No issues match the current search.</string>
     <string name="feedback_load_more_issues">Load more issues</string>
     <string name="feedback_issue_browser_loaded_all">All currently visible issues have been loaded.</string>
     <string name="feedback_updates_badge">Updated</string>
@@ -1792,6 +1824,7 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="feedback_meta_in_progress">In progress</string>
     <string name="feedback_meta_comments_format">%1$d comments</string>
     <string name="feedback_conversation_refresh">Refresh</string>
+    <string name="feedback_issue_report_card_title">Error report</string>
     <string name="feedback_conversation_status_format">Status: %1$s</string>
     <string name="feedback_conversation_state_closed">Closed</string>
     <string name="feedback_conversation_state_in_progress">In progress</string>
@@ -1806,6 +1839,11 @@ Patch rule: rewrite shader files in JacketNoAnoKo shader resource folders so des
     <string name="feedback_conversation_send">Send</string>
     <string name="feedback_conversation_attach_logs">Attach new logs</string>
     <string name="feedback_attachment_view_format">View attachment: %1$s</string>
+    <string name="feedback_attachment_download_format">Download attachment: %1$s</string>
+    <string name="feedback_attachment_unnamed">Attachment</string>
+    <string name="markdown_image_loading">Loading image...</string>
+    <string name="markdown_image_failed">Image failed to load</string>
+    <string name="markdown_image_open">Open image</string>
     <string name="feedback_view_on_github">View on GitHub</string>
     <string name="feedback_author_me">Me</string>
     <string name="feedback_screenshot_limit">You can attach up to %1$d screenshots.</string>

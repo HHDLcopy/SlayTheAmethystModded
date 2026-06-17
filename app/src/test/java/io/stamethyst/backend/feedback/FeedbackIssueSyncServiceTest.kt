@@ -7,6 +7,64 @@ import org.junit.Test
 
 class FeedbackIssueSyncServiceTest {
     @Test
+    fun parseFeedbackProxyFooter_readsPlayerNameAndDeviceFromLauncherFooter() {
+        val rawBody = """
+            我也遇见过这个问题，但是只遇见过一次无法复现，所以没有提交议题
+
+            ---
+            由 SlayTheAmethyst 启动器代发
+            - 玩家名：攀塔者
+            - 启动器版本：1.4.1
+            - 设备：OnePlus PKG110
+            - 发送时间：2026-05-24T07:51:00.363Z
+
+            <!-- sts-feedback-proxy:{"origin":"user","messageText":"我也遇见过这个问题，但是只遇见过一次无法复现，所以没有提交议题","playerName":"另一个名字","deviceLabel":"Pixel 8"} -->
+        """.trimIndent()
+
+        val footer = parseFeedbackProxyFooter(rawBody)
+
+        assertEquals("攀塔者", footer?.playerName)
+        assertEquals("OnePlus PKG110", footer?.deviceLabel)
+    }
+
+    @Test
+    fun stripFeedbackProxyMetadataForDisplay_removesLauncherFooterAndProxyMarker() {
+        val rawBody = """
+            我也遇见过这个问题，但是只遇见过一次无法复现，所以没有提交议题
+
+            ---
+            由 SlayTheAmethyst 启动器代发
+            - 玩家名：攀塔者
+            - 启动器版本：1.4.1
+            - 设备：OnePlus PKG110
+            - 发送时间：2026-05-24T07:51:00.363Z
+
+            <!-- sts-feedback-proxy:{"origin":"user","messageText":"我也遇见过这个问题，但是只遇见过一次无法复现，所以没有提交议题","playerName":"攀塔者","deviceLabel":"OnePlus PKG110"} -->
+        """.trimIndent()
+
+        val cleaned = stripFeedbackProxyMetadataForDisplay(rawBody)
+
+        assertEquals("我也遇见过这个问题，但是只遇见过一次无法复现，所以没有提交议题", cleaned)
+    }
+
+    @Test
+    fun buildFeedbackProxyAuthorIdentity_usesPlayerNameAndDeviceLabel() {
+        val first = buildFeedbackProxyAuthorIdentity("攀塔者", "OnePlus PKG110")
+        val same = buildFeedbackProxyAuthorIdentity(" 攀塔者 ", "oneplus   pkg110")
+        val differentDevice = buildFeedbackProxyAuthorIdentity("攀塔者", "Pixel 8")
+
+        assertEquals(first, same)
+        assertTrue(first != differentDevice)
+    }
+
+    @Test
+    fun isFeedbackProxyReporterLogin_acceptsGithubBotLogin() {
+        assertTrue(isFeedbackProxyReporterLogin("defect-reporter"))
+        assertTrue(isFeedbackProxyReporterLogin("defect-reporter[bot]"))
+        assertFalse(isFeedbackProxyReporterLogin("Apricityx"))
+    }
+
+    @Test
     fun mergeSyncedSubscriptions_marksIssueUnreadWhenSummaryUpdatedAfterLastViewedTime() {
         val current = listOf(
             subscription(

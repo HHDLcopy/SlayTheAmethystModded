@@ -27,6 +27,7 @@ import io.stamethyst.backend.mods.ModAtlasFilterCompatPatcher
 import io.stamethyst.backend.mods.ModAtlasOfflineDownscalePatcher
 import io.stamethyst.backend.mods.MtsLaunchManifestValidator
 import io.stamethyst.backend.mods.ModManifestNameRewriter
+import io.stamethyst.backend.mods.OriImportCompatPatcher
 import io.stamethyst.backend.mods.OptionalModStorageCoordinator
 import io.stamethyst.backend.mods.VupShionModCompatPatcher
 import io.stamethyst.backend.resources.RuntimeResourceProvider
@@ -79,6 +80,11 @@ internal data class ModImportResult(
     val patchedJacketNoAnoKoShaderEntries: Int = 0,
     val patchedJacketNoAnoKoDesktopVersionDirectives: Int = 0,
     val patchedJacketNoAnoKoFragmentPrecisionBlocks: Int = 0,
+    val patchedOriShaderEntries: Int = 0,
+    val patchedOriGaussianBlurShaderEntries: Int = 0,
+    val patchedOriBoxBlurShaderEntries: Int = 0,
+    val patchedOriTextureSamplesBefore: Int = 0,
+    val patchedOriTextureSamplesAfter: Int = 0,
     val suggestedFolderId: String? = null,
     val folderPlacementHandledByDuplicateReuse: Boolean = false
 ) {
@@ -96,6 +102,8 @@ internal data class ModImportResult(
         get() = patchedVupShionWebButtonConstructor
     val wasJacketNoAnoKoPatched: Boolean
         get() = patchedJacketNoAnoKoShaderEntries > 0
+    val wasOriRenderShaderPatched: Boolean
+        get() = patchedOriShaderEntries > 0
     val hasCompatibilityPatches: Boolean
         get() = wasAtlasPatched ||
             wasAtlasDownscaled ||
@@ -103,7 +111,8 @@ internal data class ModImportResult(
             wasFrierenAntiPiratePatched ||
             wasDownfallPatched ||
             wasVupShionPatched ||
-            wasJacketNoAnoKoPatched
+            wasJacketNoAnoKoPatched ||
+            wasOriRenderShaderPatched
 }
 
 internal data class ModBatchImportResult(
@@ -228,6 +237,7 @@ internal object SettingsFileService {
     private const val FRIEREN_MOD_ID = "frierenmod"
     private const val VUPSHION_MOD_ID = "vupshionmod"
     private const val JACKETNOANOKO_MOD_ID = "jacketnoanokomod"
+    private const val ORI_MOD_ID = "another ori mod"
     private val MOD_IMPORT_ARCHIVE_EXTENSIONS = arrayOf(
         ".zip",
         ".rar",
@@ -581,6 +591,19 @@ internal object SettingsFileService {
                 patchedJacketNoAnoKoFragmentPrecisionBlocks =
                     patchResult.insertedFragmentPrecisionBlocks
             }
+            var patchedOriShaderEntries = 0
+            var patchedOriGaussianBlurShaderEntries = 0
+            var patchedOriBoxBlurShaderEntries = 0
+            var patchedOriTextureSamplesBefore = 0
+            var patchedOriTextureSamplesAfter = 0
+            if (modId == ORI_MOD_ID) {
+                val patchResult = OriImportCompatPatcher.patchInPlace(tempFile)
+                patchedOriShaderEntries = patchResult.patchedShaderEntries
+                patchedOriGaussianBlurShaderEntries = patchResult.patchedGaussianBlurShaderEntries
+                patchedOriBoxBlurShaderEntries = patchResult.patchedBoxBlurShaderEntries
+                patchedOriTextureSamplesBefore = patchResult.estimatedTextureSamplesBefore
+                patchedOriTextureSamplesAfter = patchResult.estimatedTextureSamplesAfter
+            }
             if (replaceExistingDuplicates) {
                 ModManager.removeExistingOptionalModsForImport(
                     context = host,
@@ -626,6 +649,11 @@ internal object SettingsFileService {
                     patchedJacketNoAnoKoDesktopVersionDirectives,
                 patchedJacketNoAnoKoFragmentPrecisionBlocks =
                     patchedJacketNoAnoKoFragmentPrecisionBlocks,
+                patchedOriShaderEntries = patchedOriShaderEntries,
+                patchedOriGaussianBlurShaderEntries = patchedOriGaussianBlurShaderEntries,
+                patchedOriBoxBlurShaderEntries = patchedOriBoxBlurShaderEntries,
+                patchedOriTextureSamplesBefore = patchedOriTextureSamplesBefore,
+                patchedOriTextureSamplesAfter = patchedOriTextureSamplesAfter,
                 suggestedFolderId = duplicateReusePlan.assignedFolderId
             )
             runCatching {
@@ -744,7 +772,25 @@ internal object SettingsFileService {
                                     result.patchedJacketNoAnoKoDesktopVersionDirectives,
                             patchedJacketNoAnoKoFragmentPrecisionBlocks =
                                 existing.patchedJacketNoAnoKoFragmentPrecisionBlocks +
-                                    result.patchedJacketNoAnoKoFragmentPrecisionBlocks
+                                    result.patchedJacketNoAnoKoFragmentPrecisionBlocks,
+                            patchedOriShaderEntries =
+                                existing.patchedOriShaderEntries + result.patchedOriShaderEntries,
+                            patchedOriGaussianBlurShaderEntries =
+                                existing.patchedOriGaussianBlurShaderEntries +
+                                    result.patchedOriGaussianBlurShaderEntries,
+                            patchedOriBoxBlurShaderEntries =
+                                existing.patchedOriBoxBlurShaderEntries +
+                                    result.patchedOriBoxBlurShaderEntries,
+                            patchedOriTextureSamplesBefore =
+                                maxOf(
+                                    existing.patchedOriTextureSamplesBefore,
+                                    result.patchedOriTextureSamplesBefore
+                                ),
+                            patchedOriTextureSamplesAfter =
+                                maxOf(
+                                    existing.patchedOriTextureSamplesAfter,
+                                    result.patchedOriTextureSamplesAfter
+                                )
                         )
                     }
                 }
@@ -1514,6 +1560,75 @@ internal object SettingsFileService {
         }.trimEnd()
     }
 
+    fun buildOriPatchImportSummaryMessage(
+        context: Context,
+        patchedResults: Collection<ModImportResult>
+    ): String {
+        val mergedByModId = LinkedHashMap<String, ModImportResult>()
+        for (result in patchedResults) {
+            if (!result.wasOriRenderShaderPatched) {
+                continue
+            }
+            val existing = mergedByModId[result.modId]
+            if (existing == null) {
+                mergedByModId[result.modId] = result
+            } else {
+                mergedByModId[result.modId] = existing.copy(
+                    modName = if (existing.modName.isNotBlank()) existing.modName else result.modName,
+                    patchedOriShaderEntries =
+                        existing.patchedOriShaderEntries + result.patchedOriShaderEntries,
+                    patchedOriGaussianBlurShaderEntries =
+                        existing.patchedOriGaussianBlurShaderEntries +
+                            result.patchedOriGaussianBlurShaderEntries,
+                    patchedOriBoxBlurShaderEntries =
+                        existing.patchedOriBoxBlurShaderEntries +
+                            result.patchedOriBoxBlurShaderEntries,
+                    patchedOriTextureSamplesBefore =
+                        maxOf(
+                            existing.patchedOriTextureSamplesBefore,
+                            result.patchedOriTextureSamplesBefore
+                        ),
+                    patchedOriTextureSamplesAfter =
+                        maxOf(
+                            existing.patchedOriTextureSamplesAfter,
+                            result.patchedOriTextureSamplesAfter
+                        )
+                )
+            }
+        }
+
+        if (mergedByModId.isEmpty()) {
+            return context.getString(R.string.mod_import_ori_message_none)
+        }
+
+        return buildString {
+            append(context.getString(R.string.mod_import_ori_message_intro))
+            for (result in mergedByModId.values) {
+                append("- ")
+                append(
+                    context.getString(
+                        R.string.mod_import_summary_item_title,
+                        result.modName.ifBlank { result.modId },
+                        result.modId
+                    )
+                )
+                append('\n')
+                append(
+                    context.getString(
+                        R.string.mod_import_ori_message_item_detail,
+                        result.patchedOriShaderEntries,
+                        result.patchedOriGaussianBlurShaderEntries,
+                        result.patchedOriBoxBlurShaderEntries,
+                        result.patchedOriTextureSamplesBefore,
+                        result.patchedOriTextureSamplesAfter
+                    )
+                )
+                append('\n')
+            }
+            append(context.getString(R.string.mod_import_ori_message_rule))
+        }.trimEnd()
+    }
+
     fun buildModImportPatchDetailMessage(
         context: Context,
         patchInfo: ImportedModPatchInfo
@@ -1616,6 +1731,20 @@ internal object SettingsFileService {
                     patchInfo.patchedJacketNoAnoKoFragmentPrecisionBlocks
                 ),
                 rule = context.getString(R.string.mod_import_jacketnoanoko_message_rule)
+            )
+        }
+        if (patchInfo.wasOriRenderShaderPatched) {
+            addSection(
+                titleResId = R.string.main_mod_patch_section_ori_title,
+                detail = context.getString(
+                    R.string.mod_import_ori_message_item_detail,
+                    patchInfo.patchedOriShaderEntries,
+                    patchInfo.patchedOriGaussianBlurShaderEntries,
+                    patchInfo.patchedOriBoxBlurShaderEntries,
+                    patchInfo.patchedOriTextureSamplesBefore,
+                    patchInfo.patchedOriTextureSamplesAfter
+                ),
+                rule = context.getString(R.string.mod_import_ori_message_rule)
             )
         }
         return sections.joinToString(separator = "\n\n")
@@ -1867,7 +1996,12 @@ internal object SettingsFileService {
             patchedJacketNoAnoKoDesktopVersionDirectives =
                 patchedJacketNoAnoKoDesktopVersionDirectives,
             patchedJacketNoAnoKoFragmentPrecisionBlocks =
-                patchedJacketNoAnoKoFragmentPrecisionBlocks
+                patchedJacketNoAnoKoFragmentPrecisionBlocks,
+            patchedOriShaderEntries = patchedOriShaderEntries,
+            patchedOriGaussianBlurShaderEntries = patchedOriGaussianBlurShaderEntries,
+            patchedOriBoxBlurShaderEntries = patchedOriBoxBlurShaderEntries,
+            patchedOriTextureSamplesBefore = patchedOriTextureSamplesBefore,
+            patchedOriTextureSamplesAfter = patchedOriTextureSamplesAfter
         )
     }
 

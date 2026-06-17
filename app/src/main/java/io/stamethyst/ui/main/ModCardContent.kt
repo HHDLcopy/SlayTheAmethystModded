@@ -63,6 +63,7 @@ internal fun ModCardBodyContent(
     updateBadgeEnabled: Boolean = true,
     onUpdateBadgeClick: () -> Unit = {},
     onOpenWorkshopDetails: (ModItemUi) -> Unit = {},
+    workshopBadgeEnabled: Boolean = true,
     headerLeading: @Composable RowScope.() -> Unit = {},
     headerTrailing: @Composable RowScope.() -> Unit
 ) {
@@ -104,6 +105,7 @@ internal fun ModCardBodyContent(
                 onImportPatchClick = onImportPatchClick,
                 updateBadgeEnabled = updateBadgeEnabled,
                 onUpdateBadgeClick = onUpdateBadgeClick,
+                workshopBadgeEnabled = workshopBadgeEnabled,
                 onWorkshopBadgeClick = { onOpenWorkshopDetails(mod) }
             )
         }
@@ -299,6 +301,7 @@ private fun ModCardBadges(
     onImportPatchClick: () -> Unit,
     updateBadgeEnabled: Boolean,
     onUpdateBadgeClick: () -> Unit,
+    workshopBadgeEnabled: Boolean,
     onWorkshopBadgeClick: () -> Unit,
 ) {
     val showSuggestion = !modSuggestionText.isNullOrBlank()
@@ -351,7 +354,7 @@ private fun ModCardBadges(
         }
         workshopBadgeState?.let { state ->
             if (state == WorkshopModState.ImportedPatched) {
-                WorkshopBadge(onClick = onWorkshopBadgeClick)
+                WorkshopBadge(enabled = workshopBadgeEnabled, onClick = onWorkshopBadgeClick)
             } else {
                 WorkshopStateBadge(state)
             }
@@ -412,10 +415,14 @@ private fun FavoriteBadge() {
 }
 
 @Composable
-private fun WorkshopBadge(onClick: () -> Unit) {
+private fun WorkshopBadge(
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
     ModCardIconBadge(
         iconResId = R.drawable.ic_dock_market,
         contentDescription = stringResource(R.string.main_mod_workshop_badge_content_description),
+        enabled = enabled,
         onClick = onClick
     )
 }
@@ -508,8 +515,8 @@ private fun ModCardBadgeSurface(
     onClick: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
-    val surfaceModifier = if (onClick != null) {
-        Modifier.clickable(enabled = enabled, onClick = onClick)
+    val surfaceModifier = if (onClick != null && enabled) {
+        Modifier.clickable(onClick = onClick)
     } else {
         Modifier
     }

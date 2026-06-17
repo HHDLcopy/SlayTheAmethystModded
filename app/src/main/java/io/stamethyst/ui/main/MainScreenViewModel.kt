@@ -12,6 +12,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.ResultReceiver
 import android.os.SystemClock
+import android.util.Log
 import android.util.TypedValue
 import android.view.ViewGroup
 import android.widget.ScrollView
@@ -38,6 +39,8 @@ import io.stamethyst.backend.launch.GameLaunchReturnTracker
 import io.stamethyst.backend.launch.LauncherReturnAction
 import io.stamethyst.backend.launch.LauncherReturnActionResolver
 import io.stamethyst.backend.launch.LauncherReturnSnapshot
+import io.stamethyst.backend.launch.MainProcessGameBodyPatchCoordinator
+import io.stamethyst.backend.launch.StartupProgressCallback
 import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.mods.ModManager
@@ -85,6 +88,7 @@ import io.stamethyst.ui.settings.JvmLogShareService
 import io.stamethyst.ui.workshop.WorkshopDownloadCenterStore
 import io.stamethyst.ui.workshop.WorkshopDownloadTaskUi
 import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
 import java.util.Locale
 import java.util.concurrent.ExecutorService
@@ -326,7 +330,9 @@ class MainScreenViewModel : ViewModel() {
     )
 
     fun refresh(host: Activity) {
-        clearLaunchInFlightState(clearPendingEnabledModSizeWarning = false)
+        if (!launchInFlight) {
+            clearLaunchInFlightState(clearPendingEnabledModSizeWarning = false)
+        }
         val storageIssue = detectStorageIssue(host)
         val dependencyAvailability = resolveDependencyAvailability(host)
         currentModSuggestions = ModSuggestionService.loadCachedSuggestionMap(host)
@@ -2374,6 +2380,17 @@ class MainScreenViewModel : ViewModel() {
         forceJvmCrash: Boolean,
         forceRuntimeCrash: Boolean,
     ) {
+        if (StsLaunchSpec.isMtsLaunchMode(launchMode)) {
+            prepareGameBodyPatchAndLaunch(
+                host = host,
+                launchMode = launchMode,
+                backBehavior = backBehavior,
+                manualDismissBootOverlay = manualDismissBootOverlay,
+                forceJvmCrash = forceJvmCrash,
+                forceRuntimeCrash = forceRuntimeCrash,
+            )
+            return
+        }
         launchGameActivityInternal(
             host = host,
             launchMode = launchMode,
@@ -2382,6 +2399,95 @@ class MainScreenViewModel : ViewModel() {
             forceJvmCrash = forceJvmCrash,
             forceRuntimeCrash = forceRuntimeCrash,
         )
+    }
+
+    private fun prepareGameBodyPatchAndLaunch(
+        host: Activity,
+        launchMode: String,
+        backBehavior: BackBehavior,
+        manualDismissBootOverlay: Boolean,
+        forceJvmCrash: Boolean,
+        forceRuntimeCrash: Boolean,
+    ) {
+        launchExecutor.execute {
+            try {
+                MainProcessGameBodyPatchCoordinator.prepareBeforeLaunch(
+                    context = host.applicationContext,
+                    launchMode = launchMode,
+                    progressCallback = StartupProgressCallback { percent, message ->
+                        host.runOnUiThread {
+                            if (host.isFinishing || host.isDestroyed || !launchInFlight) {
+                                return@runOnUiThread
+                            }
+                            setBusy(
+                                busy = true,
+                                message = UiText.DynamicString(message),
+                                operation = UiBusyOperation.GAME_BODY_PATCH,
+                                progressPercent = percent
+                            )
+                        }
+                    }
+                )
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    if (host.isFinishing || host.isDestroyed) {
+                        clearLaunchInFlightState()
+                        return@runOnUiThread
+                    }
+                    launchGameActivityInternal(
+                        host = host,
+                        launchMode = launchMode,
+                        backBehavior = backBehavior,
+                        manualDismissBootOverlay = manualDismissBootOverlay,
+                        forceJvmCrash = forceJvmCrash,
+                        forceRuntimeCrash = forceRuntimeCrash
+                    )
+                }
+            } catch (error: Throwable) {
+                Log.e(LOGCAT_TAG, "Game body patch failed before launch", error)
+                writePreGameLaunchFailureEvent(
+                    host = host,
+                    message = "Game body patch failed before launch: " +
+                        (error.message ?: error.javaClass.simpleName)
+                )
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    if (host.isFinishing || host.isDestroyed) {
+                        clearLaunchInFlightState()
+                        return@runOnUiThread
+                    }
+                    _effects.tryEmit(
+                        Effect.ShowSnackbar(
+                            message = UiText.StringResource(
+                                R.string.main_launch_game_failed,
+                                error.message ?: error.javaClass.simpleName
+                            ),
+                            duration = LauncherTransientNoticeDuration.LONG
+                        )
+                    )
+                    clearLaunchInFlightState()
+                }
+            }
+        }
+    }
+
+    private fun writePreGameLaunchFailureEvent(host: Activity, message: String) {
+        try {
+            val eventsFile = RuntimePaths.bootBridgeEventsLog(host)
+            val parent = eventsFile.parentFile
+            if (parent != null && !parent.exists()) {
+                parent.mkdirs()
+            }
+            val safeMessage = message
+                .replace('\t', ' ')
+                .replace('\r', ' ')
+                .replace('\n', ' ')
+            FileOutputStream(eventsFile, true).use { output ->
+                output.write("FAIL\t-1\t$safeMessage\n".toByteArray(Charsets.UTF_8))
+                output.flush()
+            }
+        } catch (_: Throwable) {
+        }
     }
 
     private fun launchGameActivityInternal(
@@ -3618,6 +3724,7 @@ class MainScreenViewModel : ViewModel() {
     }
 
     companion object {
+        private const val LOGCAT_TAG = "STS-MainScreenVM"
         private const val PASSIVE_REFRESH_DEBOUNCE_MS = 750L
         private const val STEAM_CLOUD_STATUS_REFRESH_INTERVAL_MS = 60_000L
         private const val BYTES_PER_MIB = 1024L * 1024L

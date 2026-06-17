@@ -687,21 +687,32 @@ private fun Project.registerHarnessTasks() {
     val deviceSerial = readGradleProperty("deviceSerial")
     val launchMode = readGradleProperty("launchMode", "mts_basemod")
     val harnessOutDir = readGradleProperty("harnessOutDir")
-    val harnessTimeoutSeconds = readGradleProperty("harnessTimeoutSeconds", "120")
+    val harnessTimeoutSecondsProperty = providers.gradleProperty("harnessTimeoutSeconds")
+    val harnessTimeoutSeconds = harnessTimeoutSecondsProperty.orElse("120").get()
+    val autoplayHarnessTimeoutSeconds = harnessTimeoutSecondsProperty.orElse("300").get()
     val harnessPollIntervalSeconds = readGradleProperty("harnessPollIntervalSeconds", "2")
     val harnessSkipInstall = readGradleProperty("harnessSkipInstall", "false")
     val forceJvmCrash = readGradleProperty("forceJvmCrash", "false")
     val forceRuntimeCrash = readGradleProperty("forceRuntimeCrash", "false")
+    val autoplay = readGradleProperty("autoplay", "false")
     val noStopAfterSmoke = readGradleProperty("noStopAfterSmoke", "false")
 
     fun registerHarnessExecTask(
         taskName: String,
         command: String,
-        taskDescription: String
+        taskDescription: String,
+        forceAutoplay: Boolean = false
     ) {
         tasks.register<Exec>(taskName) {
             group = "debug"
             description = taskDescription
+            val taskAutoplay = forceAutoplay || autoplay.toBooleanStrictOrNull() == true
+            val taskLaunchMode = if (forceAutoplay) "mts" else launchMode
+            val taskTimeoutSeconds = if (taskAutoplay) {
+                autoplayHarnessTimeoutSeconds
+            } else {
+                harnessTimeoutSeconds
+            }
             workingDir(rootProject.layout.projectDirectory.asFile)
             val args = mutableListOf(
                 "-NoProfile",
@@ -712,9 +723,9 @@ private fun Project.registerHarnessTasks() {
                 "-Command",
                 command,
                 "-LaunchMode",
-                launchMode,
+                taskLaunchMode,
                 "-TimeoutSeconds",
-                harnessTimeoutSeconds,
+                taskTimeoutSeconds,
                 "-PollIntervalSeconds",
                 harnessPollIntervalSeconds
             )
@@ -731,6 +742,9 @@ private fun Project.registerHarnessTasks() {
             }
             if (forceRuntimeCrash.toBooleanStrictOrNull() == true) {
                 args.add("-ForceRuntimeCrash")
+            }
+            if (taskAutoplay) {
+                args.add("-Autoplay")
             }
             if (command == "smoke" && harnessSkipInstall.toBooleanStrictOrNull() == true) {
                 args.add("-SkipInstall")
@@ -787,6 +801,12 @@ private fun Project.registerHarnessTasks() {
         taskName = "stsHarnessSmoke",
         command = "smoke",
         taskDescription = "Install, start, observe, screenshot, export logs, and stop through the SlayTheAmethyst harness."
+    )
+    registerHarnessExecTask(
+        taskName = "stsHarnessAutoplaySmoke",
+        command = "smoke",
+        taskDescription = "Run a SlayTheAmethyst smoke check with the bundled autoplay driver enabled.",
+        forceAutoplay = true
     )
 }
 

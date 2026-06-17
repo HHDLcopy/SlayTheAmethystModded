@@ -185,7 +185,7 @@ function buildIssueMessageCommentBody(messageRequest, uploadedAttachments, logBu
   if (uploadedAttachments.length > 0) {
     sections.push([
       '### 截图',
-      ...uploadedAttachments.map((attachment) => `- [${attachment.name}](${attachment.url})`)
+      ...uploadedAttachments.map((attachment) => `![${attachment.name}](${attachment.url})`)
     ].join('\n'));
   }
 

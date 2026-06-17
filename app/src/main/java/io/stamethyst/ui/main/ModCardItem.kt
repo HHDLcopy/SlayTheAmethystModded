@@ -333,15 +333,16 @@ internal fun ModCard(
             },
             modSuggestionText = suggestionText,
             suggestionUnread = !suggestionRead,
-            suggestionBadgeEnabled = true,
+            suggestionBadgeEnabled = !batchSelectionMode,
             onSuggestionClick = {
                 onSuggestionRead()
                 showSuggestionDialog = true
             },
-            importPatchBadgeEnabled = true,
+            importPatchBadgeEnabled = !batchSelectionMode,
             onImportPatchClick = { showImportPatchDialog = true },
             updateBadgeEnabled = !batchSelectionMode,
             onOpenWorkshopDetails = { callbacks.onOpenWorkshopDetails(it) },
+            workshopBadgeEnabled = !batchSelectionMode,
             onUpdateBadgeClick = {
                 updateChangeNotesState = WorkshopUpdateChangeNotesState.Idle
                 updateChangeNotesReloadToken++
@@ -805,6 +806,7 @@ internal fun DraggingModCardOverlay(
                 importPatchBadgeEnabled = false,
                 onImportPatchClick = {},
                 updateBadgeEnabled = false,
+                workshopBadgeEnabled = false,
                 onUpdateBadgeClick = {},
                 headerTrailing = {
                     Checkbox(

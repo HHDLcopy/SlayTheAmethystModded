@@ -142,11 +142,12 @@ internal fun buildFolderUiModels(
         } else {
             folderCollapsed[folderTokenId] == true
         }
-        val selectedCount = modsInFolder.count { it.enabled }
+        val selectableCount = modsInFolder.count { it.canUseFolderSelection() }
+        val selectedCount = modsInFolder.count { it.canUseFolderSelection() && it.enabled }
         val toggleState = when {
-            modsInFolder.isEmpty() -> ToggleableState.Off
+            selectableCount == 0 -> ToggleableState.Off
             selectedCount == 0 -> ToggleableState.Off
-            selectedCount == modsInFolder.size -> ToggleableState.On
+            selectedCount == selectableCount -> ToggleableState.On
             else -> ToggleableState.Indeterminate
         }
         FolderUiModel(
@@ -157,7 +158,10 @@ internal fun buildFolderUiModels(
             isCollapsed = isCollapsed,
             isUnassigned = isUnassigned,
             selectedCount = selectedCount,
+            selectableCount = selectableCount,
             toggleState = toggleState
         )
     }
 }
+
+internal fun ModItemUi.canUseFolderSelection(): Boolean = installed

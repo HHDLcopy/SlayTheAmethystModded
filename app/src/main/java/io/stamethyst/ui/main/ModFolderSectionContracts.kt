@@ -56,5 +56,6 @@ internal data class FolderUiModel(
     val isCollapsed: Boolean,
     val isUnassigned: Boolean,
     val selectedCount: Int,
+    val selectableCount: Int,
     val toggleState: ToggleableState
 )

@@ -250,7 +250,7 @@ function appendRelaySection(issueBody, requestId, bundleRecord, screenshotAttach
     lines.push('');
     lines.push('## 截图');
     for (const attachment of screenshotAttachments) {
-      lines.push(`- [${attachment.name}](${attachment.url})`);
+      lines.push(`![${attachment.name}](${attachment.url})`);
     }
   }
 

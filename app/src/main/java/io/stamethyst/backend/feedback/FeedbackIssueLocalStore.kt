@@ -82,6 +82,9 @@ object FeedbackIssueLocalStore {
                         FeedbackThreadAuthorType.entries.firstOrNull { it.name == value }
                     } ?: FeedbackThreadAuthorType.OTHER,
                 authorLabel = item.optString("authorLabel").trim().ifEmpty { "Unknown" },
+                authorAvatarUrl = item.optString("authorAvatarUrl").trim().ifEmpty { null },
+                authorIdentityKey = item.optString("authorIdentityKey").trim().ifEmpty { null },
+                authorDeviceLabel = item.optString("authorDeviceLabel").trim().ifEmpty { null },
                 body = item.optString("body"),
                 createdAtMs = item.optLong("createdAtMs"),
                 htmlUrl = item.optString("htmlUrl").trim().ifEmpty { null },
@@ -121,6 +124,9 @@ object FeedbackIssueLocalStore {
                                 put("type", event.type.name)
                                 put("authorType", event.authorType.name)
                                 put("authorLabel", event.authorLabel)
+                                put("authorAvatarUrl", event.authorAvatarUrl.orEmpty())
+                                put("authorIdentityKey", event.authorIdentityKey.orEmpty())
+                                put("authorDeviceLabel", event.authorDeviceLabel.orEmpty())
                                 put("body", event.body)
                                 put("createdAtMs", event.createdAtMs)
                                 put("htmlUrl", event.htmlUrl.orEmpty())

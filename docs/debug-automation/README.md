@@ -17,8 +17,8 @@ Harness commands must write `result.json` under the selected output directory. T
 - `applicationId`: Gradle `application.id`, normally `io.stamethyst`.
 - `deviceSerial`: resolved adb serial.
 - `launchMode`: requested launch mode.
-- `artifacts`: output paths such as `resultJson`, `logsZip`, `screenshot`, and `debugApk`.
-- `statusSnapshot`: for `doctor`, `status`, and `smoke`; includes `observedState`, optional `runtimeSignalState`, process pids, runtime storage root, boot bridge event summary, latest log tail summary, and package version.
+- `artifacts`: output paths such as `resultJson`, `logsZip`, `screenshot`, `debugApk`, and `harnessLogcat`.
+- `statusSnapshot`: for `doctor`, `status`, `logs`, and `smoke`; includes `observedState`, optional `runtimeSignalState`, process pids, runtime storage root, desktop jar patch artifact state, boot bridge event summary, latest log tail summary, harness logcat crash summary, and package version.
 - `operations`: every native command invoked, with exit code, timestamps, duration, command line, and output tail.
 
 Observed runtime states are intentionally limited to signals the project actually emits:
@@ -26,7 +26,10 @@ Observed runtime states are intentionally limited to signals the project actuall
 - `READY`: `boot_bridge_events.log` contains a terminal `READY` event and the `:game` process is still visible.
 - `FAIL`: `boot_bridge_events.log` contains a terminal `FAIL` event.
 - `CRASH_MARKER`: `latest.log` contains a known runtime crash marker.
+- `LOGCAT_CRASH`: harness-captured logcat contains an Android fatal exception, native fatal signal, or mirrored game crash marker for the app before project runtime files reported a terminal state.
+- `PROCESS_EXITED`: the `:game` process was observed and then disappeared before a terminal boot bridge or crash marker was captured.
 - `RUNNING_WITHOUT_TERMINAL_EVENT`: the `:game` process is alive but no terminal boot event has been observed.
+- `PATCHING_DESKTOP_JAR`: the launcher process is alive and `desktop-1.0.jar.patching.tmp` or `.patching.backup` is present, so the app is still repairing the game jar before starting `:game`.
 - `LAUNCHER_RUNNING`: the launcher process is alive but no game process or terminal event is visible.
 - `NOT_RUNNING`: no tracked launcher/game process is visible and no terminal event was found.
 - `ERROR`: harness execution failed before a valid state could be produced.
@@ -52,6 +55,7 @@ Windows:
 .\scripts\sts-harness.ps1 -Command logs
 .\scripts\sts-harness.ps1 -Command stop
 .\scripts\sts-harness.ps1 -Command smoke -LaunchMode mts_basemod -TimeoutSeconds 120
+.\scripts\sts-harness.ps1 -Command smoke -Autoplay
 ```
 
 PowerShell 7 on macOS/Linux:
@@ -66,11 +70,14 @@ Common options:
 - `-DeviceSerial <adb-serial>`: required when more than one device is online.
 - `-OutDir <path>`: output directory for `result.json` and artifacts. Defaults to `debug-artifacts/harness/<command>-<timestamp>`.
 - `-LaunchMode mts_basemod|mts|vanilla`: defaults to `mts_basemod`.
-- `-TimeoutSeconds <seconds>`: smoke/status wait timeout, default `120`.
+- `-TimeoutSeconds <seconds>`: smoke/status wait timeout, default `120`; direct `-Autoplay` smoke defaults to `300` unless this option is explicitly set.
+- `-Autoplay`: enable the bundled autoplay driver. Requires `mts` or `mts_basemod` launch mode.
 - `-ForceJvmCrash`: expects a boot bridge `FAIL` during `smoke`.
 - `-ForceRuntimeCrash`: expects a runtime crash marker during `smoke`.
 - `-SkipInstall`: skip APK build/install during `smoke`.
 - `-NoStopAfterSmoke`: leave the app running after `smoke`.
+
+`smoke` starts a harness-owned `adb logcat` capture before launching the app. On crashes that happen before `latest.log` or `boot_bridge_events.log` can be written, `result.json` reports `LOGCAT_CRASH`, stores a short crash excerpt under `statusSnapshot.harnessLogcat.crash`, and writes the full capture to `artifacts.harnessLogcat`. Main-process desktop jar patch failures are also written as a boot bridge `FAIL` event so autoplay smoke can return a concrete failure instead of timing out in the launcher.
 
 ## Gradle Harness Tasks
 
@@ -87,6 +94,7 @@ Windows:
 .\gradlew.bat :app:stsHarnessLogs
 .\gradlew.bat :app:stsHarnessStop
 .\gradlew.bat :app:stsHarnessSmoke
+.\gradlew.bat :app:stsHarnessAutoplaySmoke
 ```
 
 macOS/Linux:
@@ -104,6 +112,7 @@ Gradle properties:
 - `-PharnessTimeoutSeconds=<seconds>`
 - `-PharnessPollIntervalSeconds=<seconds>`
 - `-PharnessSkipInstall=true`
+- `-Pautoplay=true`
 - `-PforceJvmCrash=true`
 - `-PforceRuntimeCrash=true`
 - `-PnoStopAfterSmoke=true`
@@ -112,7 +121,10 @@ Example:
 
 ```powershell
 .\gradlew.bat :app:stsHarnessSmoke -PdeviceSerial=emulator-5554 -PlaunchMode=vanilla -PharnessOutDir=debug-artifacts\harness\vanilla-smoke
+.\gradlew.bat :app:stsHarnessAutoplaySmoke -PdeviceSerial=emulator-5554 -PharnessOutDir=debug-artifacts\harness\autoplay-smoke
 ```
+
+`:app:stsHarnessAutoplaySmoke` and `:app:stsHarnessSmoke -Pautoplay=true` default to a 300-second harness timeout so first-run desktop jar patching can finish; pass `-PharnessTimeoutSeconds=<seconds>` to override it.
 
 ## Low-Level Gradle Tasks
 
@@ -142,7 +154,7 @@ Options:
 - `-PforceJvmCrash=true`.
 - `-PforceRuntimeCrash=true`.
 
-`stsStart` sends `io.stamethyst.debug_launch_mode` to `LauncherActivity`. The launcher then follows the normal route through `MainScreenViewModel`, `StsGameActivity`, launch preparation, and `JvmLaunchController`.
+`stsStart` sends `io.stamethyst.debug_launch_mode` to `LauncherActivity`. The launcher then follows the normal route through `MainScreenViewModel`, main-process desktop jar patching when MTS needs it, `StsGameActivity`, launch preparation, and `JvmLaunchController`.
 
 ## `stsPullLogs` Output
 

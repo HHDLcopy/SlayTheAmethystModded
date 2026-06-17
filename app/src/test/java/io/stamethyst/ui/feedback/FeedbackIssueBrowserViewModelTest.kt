@@ -54,19 +54,66 @@ class FeedbackIssueBrowserViewModelTest {
         assertEquals(listOf(18L), closedOnly.visibleIssues.map { it.issueNumber })
     }
 
+    @Test
+    fun uiStateVisibleIssues_doesNotLocallyFilterSearchResults() {
+        val uiState = FeedbackIssueBrowserViewModel.UiState(
+            issues = listOf(
+                issue(
+                    issueNumber = 12,
+                    updatedAtMs = 200L,
+                    isClosed = false,
+                    title = "Launcher crash on startup"
+                ),
+                issue(
+                    issueNumber = 18,
+                    updatedAtMs = 500L,
+                    isClosed = false,
+                    bodyPreview = "Rendering artifacts after entering combat"
+                ),
+                issue(
+                    issueNumber = 21,
+                    updatedAtMs = 300L,
+                    isClosed = false,
+                    authorLabel = "amethyst-user"
+                )
+            ),
+            searchQuery = "artifact"
+        )
+
+        assertEquals(listOf(18L, 21L, 12L), uiState.visibleIssues.map { it.issueNumber })
+    }
+
+    @Test
+    fun uiStateVisibleIssues_appliesStateFilterWhenSearchQueryIsPresent() {
+        val uiState = FeedbackIssueBrowserViewModel.UiState(
+            issues = listOf(
+                issue(issueNumber = 12, updatedAtMs = 200L, isClosed = false, title = "Card crash"),
+                issue(issueNumber = 18, updatedAtMs = 500L, isClosed = true, title = "Card crash"),
+                issue(issueNumber = 21, updatedAtMs = 300L, isClosed = false, title = "Display issue")
+            ),
+            issueStateFilter = FeedbackIssueBrowserViewModel.IssueStateFilter.CLOSED_ONLY,
+            searchQuery = "card"
+        )
+
+        assertEquals(listOf(18L), uiState.visibleIssues.map { it.issueNumber })
+    }
+
     private fun issue(
         issueNumber: Long,
         updatedAtMs: Long,
-        isClosed: Boolean
+        isClosed: Boolean,
+        title: String = "Issue #$issueNumber",
+        bodyPreview: String = "",
+        authorLabel: String = "tester"
     ): FeedbackIssueBrowseItem {
         return FeedbackIssueBrowseItem(
             issueNumber = issueNumber,
             issueUrl = "https://example.com/issues/$issueNumber",
-            title = "Issue #$issueNumber",
-            bodyPreview = "",
+            title = title,
+            bodyPreview = bodyPreview,
             state = if (isClosed) "closed" else "open",
             commentCount = 0,
-            authorLabel = "tester",
+            authorLabel = authorLabel,
             updatedAtMs = updatedAtMs
         )
     }

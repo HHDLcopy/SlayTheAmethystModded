@@ -18,7 +18,12 @@ internal data class ImportedModPatchInfo(
     val patchedVupShionWebButtonConstructor: Boolean = false,
     val patchedJacketNoAnoKoShaderEntries: Int = 0,
     val patchedJacketNoAnoKoDesktopVersionDirectives: Int = 0,
-    val patchedJacketNoAnoKoFragmentPrecisionBlocks: Int = 0
+    val patchedJacketNoAnoKoFragmentPrecisionBlocks: Int = 0,
+    val patchedOriShaderEntries: Int = 0,
+    val patchedOriGaussianBlurShaderEntries: Int = 0,
+    val patchedOriBoxBlurShaderEntries: Int = 0,
+    val patchedOriTextureSamplesBefore: Int = 0,
+    val patchedOriTextureSamplesAfter: Int = 0
 ) {
     val wasAtlasPatched: Boolean
         get() = patchedFilterLines > 0
@@ -34,6 +39,8 @@ internal data class ImportedModPatchInfo(
         get() = patchedVupShionWebButtonConstructor
     val wasJacketNoAnoKoPatched: Boolean
         get() = patchedJacketNoAnoKoShaderEntries > 0
+    val wasOriRenderShaderPatched: Boolean
+        get() = patchedOriShaderEntries > 0
     val hasCompatibilityPatches: Boolean
         get() = wasAtlasPatched ||
             wasAtlasDownscaled ||
@@ -41,5 +48,6 @@ internal data class ImportedModPatchInfo(
             wasFrierenAntiPiratePatched ||
             wasDownfallPatched ||
             wasVupShionPatched ||
-            wasJacketNoAnoKoPatched
+            wasJacketNoAnoKoPatched ||
+            wasOriRenderShaderPatched
 }

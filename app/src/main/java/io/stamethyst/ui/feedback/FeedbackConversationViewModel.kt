@@ -20,6 +20,7 @@ import io.stamethyst.backend.feedback.FeedbackScreenshotAttachment
 import io.stamethyst.backend.feedback.FeedbackThreadAuthorType
 import io.stamethyst.backend.feedback.FeedbackThreadEvent
 import io.stamethyst.backend.feedback.FeedbackThreadEventType
+import io.stamethyst.backend.feedback.buildFeedbackProxyAuthorIdentity
 import io.stamethyst.ui.LauncherTransientNoticeBus
 import io.stamethyst.ui.settings.SettingsFileService
 import java.io.File
@@ -68,6 +69,7 @@ class FeedbackConversationViewModel(
         val state: String = "open",
         val issueBody: String = "",
         val events: List<FeedbackThreadEvent> = emptyList(),
+        val isFollowed: Boolean = false,
         val messageText: String = "",
         val screenshots: List<ScreenshotItem> = emptyList(),
         val attachLogs: Boolean = false
@@ -80,6 +82,11 @@ class FeedbackConversationViewModel(
         val id: String,
         val file: File,
         val displayName: String
+    )
+
+    private data class IssueRefreshResult(
+        val cache: FeedbackIssueThreadCache,
+        val isFollowed: Boolean
     )
 
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
@@ -102,15 +109,14 @@ class FeedbackConversationViewModel(
         FeedbackIssueLocalStore.loadIssueCache(host, issueNumber)?.let { cache ->
             applyCache(cache)
         }
+        uiState = uiState.copy(isFollowed = isIssueFollowed(host))
         executor.execute {
-            FeedbackIssueSyncService.markIssueViewed(host, issueNumber)
-            FeedbackInboxCoordinator.refreshFromStorage(host)
             runCatching {
-                FeedbackIssueSyncService.refreshIssue(host, issueNumber, markViewed = true)
-            }.onSuccess { cache ->
+                refreshIssueForCurrentFollowState(host, markViewed = true)
+            }.onSuccess { result ->
                 FeedbackInboxCoordinator.refreshFromStorage(host)
                 host.runOnUiThread {
-                    applyCache(cache)
+                    applyCache(result.cache, isFollowed = result.isFollowed)
                 }
             }
         }
@@ -123,12 +129,12 @@ class FeedbackConversationViewModel(
         setBusy(true, host.getString(R.string.feedback_busy_refreshing_issue))
         executor.execute {
             runCatching {
-                FeedbackIssueSyncService.refreshIssue(host, issueNumber, markViewed = true)
-            }.onSuccess { cache ->
+                refreshIssueForCurrentFollowState(host, markViewed = true)
+            }.onSuccess { result ->
                 FeedbackInboxCoordinator.refreshFromStorage(host)
                 host.runOnUiThread {
                     setBusy(false, null)
-                    applyCache(cache)
+                    applyCache(result.cache, isFollowed = result.isFollowed)
                 }
             }.onFailure { error ->
                 host.runOnUiThread {
@@ -137,6 +143,52 @@ class FeedbackConversationViewModel(
                         host,
                         host.getString(
                             R.string.feedback_refresh_failed,
+                            error.message ?: host.getString(R.string.feedback_unknown_error)
+                        ),
+                        Toast.LENGTH_LONG
+                    )
+                }
+            }
+        }
+    }
+
+    fun onFollowIssue(host: Activity) {
+        if (uiState.busy || uiState.isFollowed) {
+            return
+        }
+        setBusy(true, host.getString(R.string.feedback_busy_following_issue))
+        executor.execute {
+            runCatching {
+                FeedbackIssueSyncService.subscribeToIssue(host, issueNumber)
+            }.onSuccess { result ->
+                val refreshedCache = runCatching {
+                    FeedbackIssueSyncService.refreshIssue(host, issueNumber, markViewed = true)
+                }.getOrNull()
+                FeedbackInboxCoordinator.refreshFromStorage(host)
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    refreshedCache?.let { cache ->
+                        applyCache(cache, isFollowed = true)
+                    }
+                    uiState = uiState.copy(isFollowed = true)
+                    val message = if (result.displacedSubscriptions.isNotEmpty()) {
+                        host.getString(
+                            R.string.feedback_follow_success_with_replacement,
+                            issueNumber,
+                            result.displacedSubscriptions.first().issueNumber
+                        )
+                    } else {
+                        host.getString(R.string.feedback_follow_success, issueNumber)
+                    }
+                    LauncherTransientNoticeBus.show(host, message, Toast.LENGTH_SHORT)
+                }
+            }.onFailure { error ->
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    LauncherTransientNoticeBus.show(
+                        host,
+                        host.getString(
+                            R.string.feedback_follow_failed,
                             error.message ?: host.getString(R.string.feedback_unknown_error)
                         ),
                         Toast.LENGTH_LONG
@@ -216,7 +268,7 @@ class FeedbackConversationViewModel(
     }
 
     fun onSendMessage(host: Activity) {
-        if (uiState.busy) {
+        if (uiState.busy || !uiState.isFollowed) {
             return
         }
         val message = uiState.messageText.trim()
@@ -312,7 +364,7 @@ class FeedbackConversationViewModel(
         busyMessage: String,
         successMessage: String
     ) {
-        if (uiState.busy) {
+        if (uiState.busy || !uiState.isFollowed) {
             return
         }
         setBusy(true, busyMessage)
@@ -345,6 +397,31 @@ class FeedbackConversationViewModel(
                 }
             }
         }
+    }
+
+    private fun refreshIssueForCurrentFollowState(
+        host: Activity,
+        markViewed: Boolean
+    ): IssueRefreshResult {
+        val isFollowed = isIssueFollowed(host)
+        if (isFollowed && markViewed) {
+            FeedbackIssueSyncService.markIssueViewed(host, issueNumber)
+            FeedbackInboxCoordinator.refreshFromStorage(host)
+        }
+        val cache = if (isFollowed) {
+            FeedbackIssueSyncService.refreshIssue(host, issueNumber, markViewed = markViewed)
+        } else {
+            FeedbackIssueSyncService.fetchIssuePreview(host, issueNumber)
+        }
+        return IssueRefreshResult(
+            cache = cache,
+            isFollowed = isIssueFollowed(host)
+        )
+    }
+
+    private fun isIssueFollowed(host: Activity): Boolean {
+        return FeedbackIssueLocalStore.loadSubscriptions(host)
+            .any { it.issueNumber == issueNumber }
     }
 
     private fun appendOptimisticComment(
@@ -382,6 +459,11 @@ class FeedbackConversationViewModel(
                     type = FeedbackThreadEventType.COMMENT,
                     authorType = FeedbackThreadAuthorType.ME,
                     authorLabel = comment.playerName.ifBlank { host.getString(R.string.feedback_author_me) },
+                    authorIdentityKey = buildFeedbackProxyAuthorIdentity(
+                        playerName = comment.playerName,
+                        deviceLabel = comment.deviceLabel
+                    ),
+                    authorDeviceLabel = comment.deviceLabel,
                     body = comment.body,
                     createdAtMs = comment.createdAtMs,
                     htmlUrl = comment.commentUrl,
@@ -434,13 +516,17 @@ class FeedbackConversationViewModel(
         return updated
     }
 
-    private fun applyCache(cache: FeedbackIssueThreadCache) {
+    private fun applyCache(
+        cache: FeedbackIssueThreadCache,
+        isFollowed: Boolean = uiState.isFollowed
+    ) {
         uiState = uiState.copy(
             title = cache.title,
             issueUrl = cache.issueUrl,
             state = cache.state,
             issueBody = cache.body,
-            events = cache.events
+            events = cache.events,
+            isFollowed = isFollowed
         )
     }
 

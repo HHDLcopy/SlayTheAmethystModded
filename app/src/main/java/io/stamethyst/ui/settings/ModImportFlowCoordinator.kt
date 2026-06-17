@@ -144,6 +144,7 @@ internal object ModImportFlowCoordinator {
                         showDownfallPatchSummaryDialog(host, patchedResults)
                         showVupShionPatchSummaryDialog(host, patchedResults)
                         showJacketNoAnoKoPatchSummaryDialog(host, patchedResults)
+                        showOriPatchSummaryDialog(host, patchedResults)
                     }
                     when {
                         importedCount > 0 && failedCount == 0 -> {
@@ -475,6 +476,25 @@ internal object ModImportFlowCoordinator {
             .setTitle(R.string.mod_import_dialog_jacketnoanoko_patched_title)
             .setMessage(
                 SettingsFileService.buildJacketNoAnoKoPatchImportSummaryMessage(
+                    context = host,
+                    patchedResults = patchedResults
+                )
+            )
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
+    private fun showOriPatchSummaryDialog(
+        host: Activity,
+        patchedResults: List<ModImportResult>
+    ) {
+        if (patchedResults.none { it.wasOriRenderShaderPatched }) {
+            return
+        }
+        AlertDialog.Builder(host)
+            .setTitle(R.string.mod_import_dialog_ori_patched_title)
+            .setMessage(
+                SettingsFileService.buildOriPatchImportSummaryMessage(
                     context = host,
                     patchedResults = patchedResults
                 )

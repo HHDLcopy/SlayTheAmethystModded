@@ -8,11 +8,13 @@ import io.stamethyst.backend.network.NetworkAccelerationPolicy
 import io.stamethyst.backend.update.GithubMirrorFallback
 import io.stamethyst.backend.update.UpdateMirrorManager
 import io.stamethyst.backend.update.UpdateSource
+import io.stamethyst.ui.preferences.LauncherPreferences
 import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.time.Instant
 import java.util.Locale
 import okhttp3.OkHttpClient
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
@@ -24,9 +26,9 @@ object FeedbackIssueSyncService {
     private const val READ_TIMEOUT_MS = 18_000
     private const val USER_AGENT = "SlayTheAmethyst-FeedbackSync"
     private const val DEFAULT_ISSUE_PAGE_SIZE = 20
+    private const val GITHUB_SEARCH_MAX_RESULTS = 1_000
     internal const val MAX_TRACKED_SUBSCRIPTIONS = 10
-    private val proxyCommentRegex =
-        Regex("""<!--\s*sts-feedback-proxy:(\{.*?\})\s*-->""", setOf(RegexOption.DOT_MATCHES_ALL))
+    private val issueBodyDeviceLabelRegex = Regex("""(?m)^\s*[-*+]\s*设备\s*[：:]\s*(.*?)\s*$""")
 
     fun subscribeToIssue(context: Context, issueNumberText: String): FeedbackSubscriptionChangeResult {
         val issueNumber = issueNumberText.trim().toLongOrNull()
@@ -126,7 +128,9 @@ object FeedbackIssueSyncService {
     fun listIssues(
         context: Context,
         page: Int,
-        pageSize: Int = DEFAULT_ISSUE_PAGE_SIZE
+        pageSize: Int = DEFAULT_ISSUE_PAGE_SIZE,
+        searchQuery: String = "",
+        state: String = "all"
     ): FeedbackIssueBrowsePage {
         if (page <= 0) {
             throw IOException("议题页码不正确。")
@@ -146,7 +150,9 @@ object FeedbackIssueSyncService {
                     clients.pick(source.usesGithubAcceleration),
                     source,
                     page,
-                    pageSize
+                    pageSize,
+                    searchQuery,
+                    state
                 )
             }.value
         } catch (error: Throwable) {
@@ -271,6 +277,7 @@ object FeedbackIssueSyncService {
                 bypassAcceleratedLinks = bypassAcceleratedLinks,
             ) { source ->
                 fetchIssueSummaryFromSource(
+                    context,
                     clients.pick(source.usesGithubAcceleration),
                     source,
                     issueNumber,
@@ -296,6 +303,7 @@ object FeedbackIssueSyncService {
                 bypassAcceleratedLinks = bypassAcceleratedLinks,
             ) { source ->
                 fetchIssueDetailsFromSource(
+                    context,
                     clients.pick(source.usesGithubAcceleration),
                     source,
                     issueNumber,
@@ -311,43 +319,30 @@ object FeedbackIssueSyncService {
         client: OkHttpClient,
         source: UpdateSource,
         page: Int,
-        pageSize: Int
+        pageSize: Int,
+        searchQuery: String,
+        state: String
+    ): FeedbackIssueBrowsePage {
+        val normalizedSearchQuery = searchQuery.trim()
+        return if (normalizedSearchQuery.isBlank()) {
+            fetchListedIssuePageFromSource(client, source, page, pageSize, state)
+        } else {
+            fetchSearchedIssuePageFromSource(client, source, page, pageSize, normalizedSearchQuery, state)
+        }
+    }
+
+    private fun fetchListedIssuePageFromSource(
+        client: OkHttpClient,
+        source: UpdateSource,
+        page: Int,
+        pageSize: Int,
+        state: String
     ): FeedbackIssueBrowsePage {
         val issues = requestJsonArray(
             client,
-            source.buildUrl(
-                "$GITHUB_API_BASE/repos/${BuildConfig.FEEDBACK_GITHUB_OWNER}/${BuildConfig.FEEDBACK_GITHUB_REPO}/issues" +
-                    "?state=all&sort=updated&direction=desc&per_page=$pageSize&page=$page"
-            )
+            source.buildUrl(buildIssueListUrl(page, pageSize, state))
         )
-        val items = ArrayList<FeedbackIssueBrowseItem>(issues.length())
-        for (index in 0 until issues.length()) {
-            val item = issues.optJSONObject(index) ?: continue
-            if (item.has("pull_request")) {
-                continue
-            }
-            val issueNumber = item.optLong("number")
-            if (issueNumber <= 0L) {
-                continue
-            }
-            items += FeedbackIssueBrowseItem(
-                issueNumber = issueNumber,
-                issueUrl = item.optString("html_url").trim().ifEmpty { buildIssueUrl(issueNumber) },
-                title = item.optString("title").trim(),
-                bodyPreview = buildBodyPreview(item.optString("body")),
-                state = item.optString("state").trim().ifEmpty { "open" },
-                commentCount = item.optInt("comments"),
-                authorLabel = item.optJSONObject("user")
-                    ?.optString("login")
-                    ?.trim()
-                    .orEmpty()
-                    .ifBlank { "Unknown" },
-                updatedAtMs = maxOf(
-                    parseInstantToMillis(item.optString("updated_at")),
-                    parseInstantToMillis(item.optString("created_at"))
-                )
-            )
-        }
+        val items = parseIssueBrowseItems(issues)
         return FeedbackIssueBrowsePage(
             issues = items,
             nextPage = page + 1,
@@ -355,7 +350,108 @@ object FeedbackIssueSyncService {
         )
     }
 
+    private fun fetchSearchedIssuePageFromSource(
+        client: OkHttpClient,
+        source: UpdateSource,
+        page: Int,
+        pageSize: Int,
+        searchQuery: String,
+        state: String
+    ): FeedbackIssueBrowsePage {
+        val response = requestJsonObject(
+            client,
+            source.buildUrl(buildIssueSearchUrl(page, pageSize, searchQuery, state))
+        )
+        val issues = response.optJSONArray("items") ?: JSONArray()
+        val items = parseIssueBrowseItems(issues)
+        val totalCount = response.optInt("total_count", 0).coerceAtMost(GITHUB_SEARCH_MAX_RESULTS)
+        return FeedbackIssueBrowsePage(
+            issues = items,
+            nextPage = page + 1,
+            hasMore = page * pageSize < totalCount && issues.length() >= pageSize
+        )
+    }
+
+    private fun parseIssueBrowseItems(issues: JSONArray): List<FeedbackIssueBrowseItem> {
+        val items = ArrayList<FeedbackIssueBrowseItem>(issues.length())
+        for (index in 0 until issues.length()) {
+            val item = issues.optJSONObject(index) ?: continue
+            parseIssueBrowseItem(item)?.let(items::add)
+        }
+        return items
+    }
+
+    private fun parseIssueBrowseItem(item: JSONObject): FeedbackIssueBrowseItem? {
+        if (item.has("pull_request")) {
+            return null
+        }
+        val issueNumber = item.optLong("number")
+        if (issueNumber <= 0L) {
+            return null
+        }
+        return FeedbackIssueBrowseItem(
+            issueNumber = issueNumber,
+            issueUrl = item.optString("html_url").trim().ifEmpty { buildIssueUrl(issueNumber) },
+            title = item.optString("title").trim(),
+            bodyPreview = buildBodyPreview(item.optString("body")),
+            state = item.optString("state").trim().ifEmpty { "open" },
+            commentCount = item.optInt("comments"),
+            authorLabel = item.optJSONObject("user")
+                ?.optString("login")
+                ?.trim()
+                .orEmpty()
+                .ifBlank { "Unknown" },
+            updatedAtMs = maxOf(
+                parseInstantToMillis(item.optString("updated_at")),
+                parseInstantToMillis(item.optString("created_at"))
+            )
+        )
+    }
+
+    private fun buildIssueListUrl(page: Int, pageSize: Int, state: String): String {
+        return "$GITHUB_API_BASE/repos/${BuildConfig.FEEDBACK_GITHUB_OWNER}/${BuildConfig.FEEDBACK_GITHUB_REPO}/issues"
+            .toHttpUrl()
+            .newBuilder()
+            .addQueryParameter("state", normalizeBrowseState(state))
+            .addQueryParameter("sort", "updated")
+            .addQueryParameter("direction", "desc")
+            .addQueryParameter("per_page", pageSize.toString())
+            .addQueryParameter("page", page.toString())
+            .build()
+            .toString()
+    }
+
+    private fun buildIssueSearchUrl(page: Int, pageSize: Int, searchQuery: String, state: String): String {
+        val queryParts = ArrayList<String>()
+        queryParts += "repo:${BuildConfig.FEEDBACK_GITHUB_OWNER}/${BuildConfig.FEEDBACK_GITHUB_REPO}"
+        queryParts += "is:issue"
+        when (normalizeBrowseState(state)) {
+            "open" -> queryParts += "state:open"
+            "closed" -> queryParts += "state:closed"
+        }
+        queryParts += searchQuery
+        return "$GITHUB_API_BASE/search/issues"
+            .toHttpUrl()
+            .newBuilder()
+            .addQueryParameter("q", queryParts.joinToString(" "))
+            .addQueryParameter("sort", "updated")
+            .addQueryParameter("order", "desc")
+            .addQueryParameter("per_page", pageSize.toString())
+            .addQueryParameter("page", page.toString())
+            .build()
+            .toString()
+    }
+
+    private fun normalizeBrowseState(state: String): String {
+        return when (state.trim().lowercase(Locale.ROOT)) {
+            "open" -> "open"
+            "closed" -> "closed"
+            else -> "all"
+        }
+    }
+
     private fun fetchIssueSummaryFromSource(
+        context: Context,
         client: OkHttpClient,
         source: UpdateSource,
         issueNumber: Long,
@@ -370,20 +466,22 @@ object FeedbackIssueSyncService {
         if (issue.has("pull_request")) {
             throw IOException("链接指向的是 Pull Request，不是 Issue。")
         }
-        return buildIssueSummaryCache(issue, existingCache)
+        return buildIssueSummaryCache(context, issue, existingCache)
     }
 
     private fun fetchIssueDetailsFromSource(
+        context: Context,
         client: OkHttpClient,
         source: UpdateSource,
         issueNumber: Long,
         existingCache: FeedbackIssueThreadCache?
     ): FeedbackIssueThreadCache {
-        val summaryCache = existingCache ?: fetchIssueSummaryFromSource(
+        val summaryCache = fetchIssueSummaryFromSource(
+            context = context,
             client = client,
             source = source,
             issueNumber = issueNumber,
-            existingCache = null
+            existingCache = existingCache
         )
         val comments = requestJsonArray(
             client,
@@ -397,68 +495,68 @@ object FeedbackIssueSyncService {
                 "$GITHUB_API_BASE/repos/${BuildConfig.FEEDBACK_GITHUB_OWNER}/${BuildConfig.FEEDBACK_GITHUB_REPO}/issues/$issueNumber/events?per_page=100"
             )
         )
-        return buildThreadCache(summaryCache, comments, events)
+        return buildThreadCache(context, summaryCache, comments, events)
     }
 
     private fun buildIssueSummaryCache(
+        context: Context,
         issue: JSONObject,
         existingCache: FeedbackIssueThreadCache?
     ): FeedbackIssueThreadCache {
         val issueNumber = issue.optLong("number")
+        val rawIssueBody = issue.optString("body")
+        val issueEvent = buildGithubThreadEvent(
+            context = context,
+            id = "issue-$issueNumber",
+            item = issue,
+            fallbackHtmlUrl = issue.optString("html_url").trim().ifEmpty { buildIssueUrl(issueNumber) },
+            fallbackCreatedAtMs = parseInstantToMillis(issue.optString("created_at"))
+        )
+        val events = (
+            listOfNotNull(issueEvent) +
+                existingCache?.events.orEmpty().filterNot { it.id == "issue-$issueNumber" }
+            ).sortedWith(
+            compareBy<FeedbackThreadEvent> { it.createdAtMs }
+                .thenBy { it.id }
+        )
         return FeedbackIssueThreadCache(
             issueNumber = issueNumber,
             issueUrl = issue.optString("html_url").trim().ifEmpty { buildIssueUrl(issueNumber) },
             title = issue.optString("title").trim(),
             state = issue.optString("state").trim().ifEmpty { "open" },
-            body = issue.optString("body"),
+            body = issueEvent?.body ?: stripFeedbackProxyMetadataForDisplay(rawIssueBody),
             updatedAtMs = maxOf(
                 parseInstantToMillis(issue.optString("updated_at")),
                 parseInstantToMillis(issue.optString("created_at"))
             ),
-            events = existingCache?.events.orEmpty().sortedWith(
-                compareBy<FeedbackThreadEvent> { it.createdAtMs }
-                    .thenBy { it.id }
-            )
+            events = events
         )
     }
 
     private fun buildThreadCache(
+        context: Context,
         issue: FeedbackIssueThreadCache,
         comments: JSONArray,
         events: JSONArray
     ): FeedbackIssueThreadCache {
+        val issueEventId = "issue-${issue.issueNumber}"
         val parsedEvents = ArrayList<FeedbackThreadEvent>()
+        issue.events
+            .firstOrNull { it.id == issueEventId }
+            ?.let(parsedEvents::add)
         for (index in 0 until comments.length()) {
             val item = comments.optJSONObject(index) ?: continue
             val id = item.optLong("id")
             if (id <= 0L) {
                 continue
             }
-            val rawBody = item.optString("body")
-            val proxyPayload = parseProxyPayload(rawBody)
-            val cleanedBody = if (!proxyPayload?.messageText.isNullOrBlank()) {
-                proxyPayload.messageText
-            } else {
-                stripProxyPayload(rawBody).trim()
-            }
-            val user = item.optJSONObject("user")
-            parsedEvents += FeedbackThreadEvent(
+            buildGithubThreadEvent(
+                context = context,
                 id = "comment-$id",
-                type = FeedbackThreadEventType.COMMENT,
-                authorType = when {
-                    proxyPayload != null -> FeedbackThreadAuthorType.ME
-                    user == null -> FeedbackThreadAuthorType.OTHER
-                    else -> FeedbackThreadAuthorType.DEVELOPER
-                },
-                authorLabel = when {
-                    proxyPayload != null -> proxyPayload.playerName.ifBlank { "我" }
-                    else -> user?.optString("login").orEmpty().ifBlank { "Developer" }
-                },
-                body = cleanedBody,
-                createdAtMs = parseInstantToMillis(item.optString("created_at")),
-                htmlUrl = item.optString("html_url").trim().ifEmpty { null },
-                attachments = proxyPayload?.attachments ?: emptyList()
-            )
+                item = item,
+                fallbackHtmlUrl = item.optString("html_url").trim().ifEmpty { null },
+                fallbackCreatedAtMs = parseInstantToMillis(item.optString("created_at"))
+            )?.let(parsedEvents::add)
         }
         for (index in 0 until events.length()) {
             val item = events.optJSONObject(index) ?: continue
@@ -476,6 +574,7 @@ object FeedbackIssueSyncService {
                 type = FeedbackThreadEventType.STATE_CHANGE,
                 authorType = FeedbackThreadAuthorType.SYSTEM,
                 authorLabel = actor?.optString("login").orEmpty().ifBlank { "System" },
+                authorAvatarUrl = actor?.optString("avatar_url")?.trim()?.ifEmpty { null },
                 body = if (eventName == "closed") {
                     "已关闭这个议题"
                 } else {
@@ -507,6 +606,87 @@ object FeedbackIssueSyncService {
                     .thenBy { it.id }
             )
         )
+    }
+
+    private fun buildGithubThreadEvent(
+        context: Context,
+        id: String,
+        item: JSONObject,
+        fallbackHtmlUrl: String?,
+        fallbackCreatedAtMs: Long
+    ): FeedbackThreadEvent? {
+        val rawBody = item.optString("body")
+        val user = item.optJSONObject("user")
+        val githubLogin = user?.optString("login")?.trim().orEmpty()
+        val githubAvatarUrl = user?.optString("avatar_url")?.trim().orEmpty()
+        val isProxyReporter = isFeedbackProxyReporterLogin(githubLogin)
+        val proxyPayload = if (isProxyReporter) {
+            parseProxyPayload(rawBody)
+        } else {
+            null
+        }
+        val proxyFooter = if (isProxyReporter) {
+            parseFeedbackProxyFooter(rawBody)
+        } else {
+            null
+        }
+        val proxyPlayerName = proxyFooter?.playerName
+            ?: proxyPayload?.playerName
+            ?: ""
+        val proxyDeviceLabel = proxyFooter?.deviceLabel
+            ?: proxyPayload?.deviceLabel
+            ?: parseIssueBodyDeviceLabel(rawBody).takeIf { isProxyReporter }
+            ?: ""
+        val proxyAuthorIdentity = if (proxyPlayerName.isNotBlank() && proxyDeviceLabel.isNotBlank()) {
+            buildFeedbackProxyAuthorIdentity(
+                playerName = proxyPlayerName,
+                deviceLabel = proxyDeviceLabel
+            )
+        } else {
+            null
+        }
+        val localProxyAuthorIdentity = buildFeedbackProxyAuthorIdentity(
+            playerName = LauncherPreferences.readPlayerName(context),
+            deviceLabel = buildFeedbackDeviceLabel()
+        )
+        val cleanedBody = if (!proxyPayload?.messageText.isNullOrBlank()) {
+            proxyPayload.messageText
+        } else {
+            stripFeedbackProxyMetadataForDisplay(rawBody)
+        }
+        val attachments = proxyPayload?.attachments ?: emptyList()
+        if (cleanedBody.isBlank() && attachments.isEmpty()) {
+            return null
+        }
+        return FeedbackThreadEvent(
+            id = id,
+            type = FeedbackThreadEventType.COMMENT,
+            authorType = when {
+                proxyAuthorIdentity == localProxyAuthorIdentity -> FeedbackThreadAuthorType.ME
+                isProxyReporter -> FeedbackThreadAuthorType.OTHER
+                user == null -> FeedbackThreadAuthorType.OTHER
+                else -> FeedbackThreadAuthorType.DEVELOPER
+            },
+            authorLabel = when {
+                isProxyReporter -> proxyPlayerName.ifBlank { "玩家" }
+                else -> githubLogin.ifBlank { "Developer" }
+            },
+            authorAvatarUrl = githubAvatarUrl.takeIf { !isProxyReporter && it.isNotBlank() },
+            authorIdentityKey = proxyAuthorIdentity ?: "proxy-$id".takeIf { isProxyReporter },
+            authorDeviceLabel = proxyDeviceLabel.takeIf(String::isNotBlank),
+            body = cleanedBody,
+            createdAtMs = fallbackCreatedAtMs,
+            htmlUrl = item.optString("html_url").trim().ifEmpty { fallbackHtmlUrl },
+            attachments = attachments
+        )
+    }
+
+    private fun parseIssueBodyDeviceLabel(rawBody: String): String {
+        return issueBodyDeviceLabelRegex.find(rawBody)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.trim()
+            .orEmpty()
     }
 
     private fun createGithubClients(context: Context): GithubRequestClients {
@@ -603,16 +783,8 @@ object FeedbackIssueSyncService {
         return runCatching { Instant.parse(normalized).toEpochMilli() }.getOrDefault(0L)
     }
 
-    private fun stripProxyPayload(rawBody: String): String {
-        return rawBody.replace(proxyCommentRegex, "").trim()
-    }
-
     private fun parseProxyPayload(rawBody: String): ProxyPayload? {
-        val match = proxyCommentRegex.find(rawBody) ?: return null
-        val jsonText = match.groupValues.getOrNull(1)?.trim().orEmpty()
-        if (jsonText.isEmpty()) {
-            return null
-        }
+        val jsonText = extractFeedbackProxyPayloadJson(rawBody) ?: return null
         return runCatching {
             val root = JSONObject(jsonText)
             val attachmentsArray = root.optJSONArray("attachments") ?: JSONArray()
@@ -633,6 +805,7 @@ object FeedbackIssueSyncService {
                 origin = root.optString("origin").trim(),
                 messageText = root.optString("messageText"),
                 playerName = root.optString("playerName").trim(),
+                deviceLabel = root.optString("deviceLabel").trim(),
                 attachments = attachments
             )
         }.getOrNull()?.takeIf { it.origin.equals("user", ignoreCase = true) }
@@ -642,6 +815,7 @@ object FeedbackIssueSyncService {
         val origin: String,
         val messageText: String,
         val playerName: String,
+        val deviceLabel: String,
         val attachments: List<FeedbackThreadAttachment>
     )
 }

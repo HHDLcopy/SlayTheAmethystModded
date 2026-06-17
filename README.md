@@ -136,6 +136,7 @@ APK 输出目录：
 ```powershell
 .\scripts\sts-harness.ps1 -Command doctor
 .\scripts\sts-harness.ps1 -Command smoke -LaunchMode mts_basemod -TimeoutSeconds 120
+.\scripts\sts-harness.ps1 -Command smoke -Autoplay
 ```
 
 也可以通过 Gradle 调用同一套 harness：
@@ -143,6 +144,7 @@ APK 输出目录：
 ```powershell
 .\gradlew.bat :app:stsHarnessDoctor
 .\gradlew.bat :app:stsHarnessSmoke
+.\gradlew.bat :app:stsHarnessAutoplaySmoke
 ```
 
 低层设备调试命令：
@@ -159,6 +161,9 @@ APK 输出目录：
 - `-PdeviceSerial=<adb-serial>`
 - `-PlogsDir=<path>`
 - `-PharnessOutDir=<path>`
+- `-Pautoplay=true`
+
+`smoke` 会额外保存 harness 侧 logcat；如果游戏在写出 JVM 日志前崩溃，`result.json` 会报告 `LOGCAT_CRASH` 并在 `artifacts.harnessLogcat` 指向完整错误日志。Autoplay smoke 默认等待 300 秒，以便首次修补 `desktop-1.0.jar`；主进程修补失败会作为 `FAIL` 结果写入 `result.json`。
 
 更多文档：
 

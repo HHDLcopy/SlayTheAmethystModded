@@ -117,7 +117,7 @@ public final class CompatRuntimeState {
             }
             startupConfigurationLogged = true;
             System.out.println(
-                "[amethyst-runtime-compat] init version=1.0.29 guardedDynamicCache=true "
+                "[amethyst-runtime-compat] init version=1.0.30 guardedDynamicCache=true "
                     + "duelistBaseValueShortcuts=true "
                     + "fontScale="
                     + (hasConfiguredFontScale()

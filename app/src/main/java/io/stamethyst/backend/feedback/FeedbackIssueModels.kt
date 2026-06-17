@@ -27,7 +27,10 @@ data class FeedbackThreadEvent(
     val createdAtMs: Long,
     val htmlUrl: String?,
     val attachments: List<FeedbackThreadAttachment> = emptyList(),
-    val state: String? = null
+    val state: String? = null,
+    val authorAvatarUrl: String? = null,
+    val authorIdentityKey: String? = null,
+    val authorDeviceLabel: String? = null
 )
 
 data class FeedbackIssueThreadCache(
@@ -112,7 +115,8 @@ data class FeedbackPostedComment(
     val createdAtMs: Long,
     val body: String,
     val attachments: List<FeedbackThreadAttachment>,
-    val playerName: String
+    val playerName: String,
+    val deviceLabel: String
 )
 
 data class FeedbackIssueStateUpdateResult(

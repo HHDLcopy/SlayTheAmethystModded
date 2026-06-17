@@ -4,6 +4,7 @@ import android.content.Context
 import io.stamethyst.R
 import io.stamethyst.backend.launch.StartupProgressCallback
 import io.stamethyst.backend.launch.progressText
+import io.stamethyst.backend.process.AppProcess
 import io.stamethyst.config.RuntimePaths
 import java.io.File
 import java.io.IOException
@@ -11,7 +12,7 @@ import java.util.ArrayList
 import java.util.zip.ZipFile
 
 object ModJarSupport {
-    private const val EXPECTED_AMETHYST_RUNTIME_COMPAT_VERSION = "1.0.29"
+    private const val EXPECTED_AMETHYST_RUNTIME_COMPAT_VERSION = "1.0.30"
     private const val EXPECTED_AMETHYST_FLOATING_TOOLS_VERSION = "1.0.0"
     private const val EXPECTED_RAM_SAVER_VERSION = "0.3.1-amethyst.3"
 
@@ -177,11 +178,11 @@ object ModJarSupport {
         val patchJar = RuntimePaths.gdxPatchJar(context)
         val baseModJar = RuntimePaths.importedBaseModJar(context)
         ModCompatibilityDiagnostics.appendCompatLog(context, "prepare classpath start")
-        StsDesktopJarPatcher.ensurePatchedStsJar(
+        ensurePatchedStsJarReadyForClasspath(
             context = context,
             stsJar = stsJar,
             patchJar = patchJar,
-            progressCallback = buildRangeProgressCallback(progressCallback, 0, 17)
+            progressCallback = progressCallback
         )
         reportProgress(
             progressCallback,
@@ -212,6 +213,35 @@ object ModJarSupport {
             progressCallback,
             100,
             context.progressText(R.string.startup_progress_mts_classpath_cache_ready)
+        )
+    }
+
+    @Throws(IOException::class)
+    private fun ensurePatchedStsJarReadyForClasspath(
+        context: Context,
+        stsJar: File,
+        patchJar: File,
+        progressCallback: StartupProgressCallback?
+    ) {
+        val patchProgress = buildRangeProgressCallback(progressCallback, 0, 17)
+        if (StsDesktopJarPatcher.isPatchedWithCurrentPatch(stsJar, patchJar)) {
+            reportProgress(
+                progressCallback,
+                17,
+                context.progressText(R.string.startup_progress_patched_desktop_jar_ready)
+            )
+            return
+        }
+        if (!AppProcess.isDefaultProcess(context)) {
+            throw IOException(
+                "desktop-1.0.jar requires main-process patching before MTS classpath preparation"
+            )
+        }
+        StsDesktopJarPatcher.ensurePatchedStsJar(
+            context = context,
+            stsJar = stsJar,
+            patchJar = patchJar,
+            progressCallback = patchProgress
         )
     }
 

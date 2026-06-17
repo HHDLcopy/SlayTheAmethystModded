@@ -1,7 +1,6 @@
 package io.stamethyst.backend.feedback
 
 import android.app.Activity
-import android.os.Build
 import io.stamethyst.BuildConfig
 import io.stamethyst.backend.diag.DiagnosticsArchiveBuilder
 import io.stamethyst.ui.preferences.LauncherPreferences
@@ -51,13 +50,7 @@ object FeedbackConversationService {
         }
 
         val playerName = LauncherPreferences.readPlayerName(host)
-        val deviceLabel = buildString {
-            append(Build.MANUFACTURER.orEmpty().trim())
-            if (!Build.MODEL.isNullOrBlank()) {
-                append(' ')
-                append(Build.MODEL.trim())
-            }
-        }.trim().ifEmpty { "Android Device" }
+        val deviceLabel = buildFeedbackDeviceLabel()
 
         connection.outputStream.use { rawOutput ->
             DataOutputStream(BufferedOutputStream(rawOutput)).use { output ->
@@ -109,7 +102,8 @@ object FeedbackConversationService {
             ),
             body = messageText.trim(),
             attachments = parseAttachments(response.optJSONArray("attachments")),
-            playerName = playerName.ifBlank { "我" }
+            playerName = playerName.ifBlank { "我" },
+            deviceLabel = deviceLabel
         )
     }
 

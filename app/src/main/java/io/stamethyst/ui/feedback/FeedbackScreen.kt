@@ -5,18 +5,29 @@ import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -33,6 +44,9 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -50,6 +64,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -65,6 +80,8 @@ import io.stamethyst.navigation.Route
 import io.stamethyst.navigation.currentNavigator
 import io.stamethyst.ui.Icons
 import io.stamethyst.ui.icon.ArrowBack
+import io.stamethyst.ui.icon.Close
+import io.stamethyst.ui.icon.Search
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -194,7 +211,12 @@ fun LauncherFeedbackIssueBrowserScreen(
         onGoBack = navigator::goBack,
         onRefreshIssues = { browserViewModel.onRefresh(activity) },
         onLoadMoreIssues = { browserViewModel.onLoadMore(activity) },
-        onIssueStateFilterSelected = browserViewModel::onIssueStateFilterSelected,
+        onIssueStateFilterSelected = { filter ->
+            browserViewModel.onIssueStateFilterSelected(activity, filter)
+        },
+        onSearchQueryChanged = { query ->
+            browserViewModel.onSearchQueryChanged(activity, query)
+        },
         onViewIssue = { issueNumber -> navigator.push(Route.FeedbackIssuePreview(issueNumber)) },
         onFollowIssue = { issueNumber -> browserViewModel.onSubscribe(activity, issueNumber) }
     )
@@ -474,6 +496,7 @@ private fun LauncherFeedbackIssueBrowserScreenContent(
     onRefreshIssues: () -> Unit = {},
     onLoadMoreIssues: () -> Unit = {},
     onIssueStateFilterSelected: (FeedbackIssueBrowserViewModel.IssueStateFilter) -> Unit = {},
+    onSearchQueryChanged: (String) -> Unit = {},
     onViewIssue: (Long) -> Unit = {},
     onFollowIssue: (Long) -> Unit = {}
 ) {
@@ -501,6 +524,7 @@ private fun LauncherFeedbackIssueBrowserScreenContent(
             onRefreshIssues = onRefreshIssues,
             onLoadMoreIssues = onLoadMoreIssues,
             onIssueStateFilterSelected = onIssueStateFilterSelected,
+            onSearchQueryChanged = onSearchQueryChanged,
             onViewIssue = onViewIssue,
             onFollowIssue = onFollowIssue
         )
@@ -926,6 +950,7 @@ private fun FeedbackIssueBrowserContent(
     onRefreshIssues: () -> Unit = {},
     onLoadMoreIssues: () -> Unit = {},
     onIssueStateFilterSelected: (FeedbackIssueBrowserViewModel.IssueStateFilter) -> Unit = {},
+    onSearchQueryChanged: (String) -> Unit = {},
     onViewIssue: (Long) -> Unit = {},
     onFollowIssue: (Long) -> Unit = {}
 ) {
@@ -935,19 +960,6 @@ private fun FeedbackIssueBrowserContent(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        item {
-            if (uiState.busy) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                uiState.busyMessage?.let { message ->
-                    Text(
-                        text = message,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
-                }
-            }
-        }
-
         item {
             FeedbackSectionCard(title = stringResource(R.string.feedback_issue_browser_intro_title)) {
                 Text(
@@ -964,58 +976,39 @@ private fun FeedbackIssueBrowserContent(
         }
 
         item {
-            FeedbackSectionCard(title = stringResource(R.string.feedback_followable_issues_title)) {
-                Text(
-                    text = stringResource(R.string.feedback_filter_state),
-                    style = MaterialTheme.typography.labelMedium
-                )
-                FeedbackIssueBrowserViewModel.IssueStateFilter.values().forEach { filter ->
-                    FeedbackRadioRow(
-                        selected = uiState.issueStateFilter == filter,
-                        enabled = !uiState.busy && !uiState.loadingMore,
-                        text = stringResource(filter.labelResId),
-                        onClick = { onIssueStateFilterSelected(filter) }
-                    )
-                }
-                if (!uiState.initialLoaded && !uiState.busy) {
-                    Text(
-                        text = stringResource(R.string.feedback_issue_browser_preparing),
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                } else if (uiState.issues.isEmpty()) {
-                    Text(
-                        text = stringResource(R.string.feedback_issue_browser_empty),
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                } else if (visibleIssues.isEmpty()) {
-                    Text(
-                        text = if (uiState.hasMore) {
-                            stringResource(R.string.feedback_issue_browser_empty_filtered_more)
-                        } else {
-                            stringResource(R.string.feedback_issue_browser_empty_filtered_done)
-                        },
-                        style = MaterialTheme.typography.bodySmall
+            FeedbackIssueBrowserControls(
+                uiState = uiState,
+                onIssueStateFilterSelected = onIssueStateFilterSelected,
+                onSearchQueryChanged = onSearchQueryChanged
+            )
+        }
+
+        item {
+            AnimatedContent(
+                targetState = uiState.refreshingIssues,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .animateContentSize(),
+                label = "feedback_issue_browser_loading_transition"
+            ) { loading ->
+                if (loading) {
+                    FeedbackIssueBrowserLoadingList(
+                        message = uiState.busyMessage
+                            ?: stringResource(R.string.feedback_issue_browser_loading)
                     )
                 } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
-                        visibleIssues.forEachIndexed { index, issue ->
-                            if (index > 0) {
-                                HorizontalDivider()
-                            }
-                            FeedbackIssueBrowserRow(
-                                issue = issue,
-                                followed = followedIssueNumbers.contains(issue.issueNumber),
-                                busy = uiState.busy,
-                                onViewIssue = { onViewIssue(issue.issueNumber) },
-                                onFollowIssue = { onFollowIssue(issue.issueNumber) }
-                            )
-                        }
-                    }
+                    FeedbackIssueBrowserResults(
+                        uiState = uiState,
+                        visibleIssues = visibleIssues,
+                        followedIssueNumbers = followedIssueNumbers,
+                        onViewIssue = onViewIssue,
+                        onFollowIssue = onFollowIssue
+                    )
                 }
             }
         }
 
-        if (uiState.issues.isNotEmpty()) {
+        if (uiState.issues.isNotEmpty() && !uiState.refreshingIssues) {
             item {
                 if (uiState.loadingMore) {
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
@@ -1032,6 +1025,122 @@ private fun FeedbackIssueBrowserContent(
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FeedbackIssueBrowserControls(
+    uiState: FeedbackIssueBrowserViewModel.UiState,
+    onIssueStateFilterSelected: (FeedbackIssueBrowserViewModel.IssueStateFilter) -> Unit,
+    onSearchQueryChanged: (String) -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            text = stringResource(R.string.feedback_followable_issues_title),
+            style = MaterialTheme.typography.titleMedium
+        )
+        OutlinedTextField(
+            value = uiState.searchQuery,
+            onValueChange = onSearchQueryChanged,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !uiState.busy && !uiState.loadingMore,
+            singleLine = true,
+            label = { Text(stringResource(R.string.feedback_issue_search_label)) },
+            placeholder = { Text(stringResource(R.string.feedback_issue_search_placeholder)) },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Search,
+                    contentDescription = null
+                )
+            },
+            trailingIcon = {
+                if (uiState.searchQuery.isNotBlank()) {
+                    IconButton(onClick = { onSearchQueryChanged("") }) {
+                        Icon(
+                            imageVector = Icons.Close,
+                            contentDescription = stringResource(R.string.feedback_issue_search_clear)
+                        )
+                    }
+                }
+            },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search)
+        )
+        Text(
+            text = stringResource(R.string.feedback_filter_state),
+            style = MaterialTheme.typography.labelMedium
+        )
+        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+            FeedbackIssueBrowserViewModel.IssueStateFilter.values().forEachIndexed { index, filter ->
+                SegmentedButton(
+                    selected = uiState.issueStateFilter == filter,
+                    onClick = { onIssueStateFilterSelected(filter) },
+                    enabled = !uiState.busy && !uiState.loadingMore,
+                    shape = SegmentedButtonDefaults.itemShape(
+                        index = index,
+                        count = FeedbackIssueBrowserViewModel.IssueStateFilter.values().size
+                    ),
+                    label = {
+                        Text(
+                            text = stringResource(filter.labelResId),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FeedbackIssueBrowserResults(
+    uiState: FeedbackIssueBrowserViewModel.UiState,
+    visibleIssues: List<FeedbackIssueBrowseItem>,
+    followedIssueNumbers: Set<Long>,
+    onViewIssue: (Long) -> Unit,
+    onFollowIssue: (Long) -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        when {
+            !uiState.initialLoaded -> FeedbackIssueBrowserMessage(
+                text = stringResource(R.string.feedback_issue_browser_preparing)
+            )
+
+            uiState.issues.isEmpty() -> FeedbackIssueBrowserMessage(
+                text = stringResource(R.string.feedback_issue_browser_empty)
+            )
+
+            visibleIssues.isEmpty() -> FeedbackIssueBrowserMessage(
+                text = if (uiState.searchQuery.isNotBlank()) {
+                    if (uiState.hasMore) {
+                        stringResource(R.string.feedback_issue_search_empty_more)
+                    } else {
+                        stringResource(R.string.feedback_issue_search_empty_done)
+                    }
+                } else if (uiState.hasMore) {
+                    stringResource(R.string.feedback_issue_browser_empty_filtered_more)
+                } else {
+                    stringResource(R.string.feedback_issue_browser_empty_filtered_done)
+                }
+            )
+
+            else -> visibleIssues.forEach { issue ->
+                FeedbackIssueBrowserCard(
+                    issue = issue,
+                    followed = followedIssueNumbers.contains(issue.issueNumber),
+                    busy = uiState.busy,
+                    onViewIssue = { onViewIssue(issue.issueNumber) },
+                    onFollowIssue = { onFollowIssue(issue.issueNumber) }
+                )
             }
         }
     }
@@ -1091,66 +1200,225 @@ private fun FeedbackSubscriptionRow(
 }
 
 @Composable
-private fun FeedbackIssueBrowserRow(
+private fun FeedbackIssueBrowserCard(
     issue: FeedbackIssueBrowseItem,
     followed: Boolean,
     busy: Boolean,
     onViewIssue: () -> Unit,
     onFollowIssue: () -> Unit
 ) {
-    Row(
+    Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(enabled = !busy, onClick = onViewIssue),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text(
-                text = issue.title.ifBlank {
-                    stringResource(R.string.feedback_issue_fallback_title, issue.issueNumber)
-                },
-                style = MaterialTheme.typography.titleSmall,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = buildFeedbackIssueMetaText(
+                        issueNumber = issue.issueNumber,
+                        isClosed = issue.isClosed,
+                        updatedAtMs = issue.updatedAtMs,
+                        commentCount = issue.commentCount
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = issue.title.ifBlank {
+                        stringResource(R.string.feedback_issue_fallback_title, issue.issueNumber)
+                    },
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = stringResource(R.string.feedback_author_format, issue.authorLabel),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
             if (issue.bodyPreview.isNotBlank()) {
                 Text(
                     text = issue.bodyPreview,
                     style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
             }
-        }
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            OutlinedButton(
-                onClick = onViewIssue,
-                enabled = !busy
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)
             ) {
-                Text(stringResource(R.string.feedback_view_issue))
-            }
-            if (followed) {
                 OutlinedButton(
-                    onClick = {},
-                    enabled = false
-                ) {
-                    Text(stringResource(R.string.feedback_followed))
-                }
-            } else {
-                Button(
-                    onClick = onFollowIssue,
+                    onClick = onViewIssue,
                     enabled = !busy
                 ) {
-                    Text(stringResource(R.string.feedback_follow))
+                    Text(stringResource(R.string.feedback_view_issue))
+                }
+                if (followed) {
+                    OutlinedButton(
+                        onClick = {},
+                        enabled = false
+                    ) {
+                        Text(stringResource(R.string.feedback_followed))
+                    }
+                } else {
+                    Button(
+                        onClick = onFollowIssue,
+                        enabled = !busy
+                    ) {
+                        Text(stringResource(R.string.feedback_follow))
+                    }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun FeedbackIssueBrowserLoadingList(
+    message: String
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        repeat(3) {
+            FeedbackIssueBrowserLoadingCard()
+        }
+    }
+}
+
+@Composable
+private fun FeedbackIssueBrowserLoadingCard() {
+    val transition = rememberInfiniteTransition(label = "feedback_issue_browser_loading")
+    val pulse by transition.animateFloat(
+        initialValue = 0.45f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 760),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "feedback_issue_browser_loading_alpha"
+    )
+    val placeholderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f + pulse * 0.08f)
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                FeedbackLoadingBlock(
+                    modifier = Modifier
+                        .width(54.dp)
+                        .height(22.dp),
+                    color = placeholderColor
+                )
+                FeedbackLoadingBlock(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(14.dp),
+                    color = placeholderColor
+                )
+            }
+            FeedbackLoadingBlock(
+                modifier = Modifier
+                    .fillMaxWidth(0.84f)
+                    .height(20.dp),
+                color = placeholderColor
+            )
+            FeedbackLoadingBlock(
+                modifier = Modifier
+                    .fillMaxWidth(0.48f)
+                    .height(14.dp),
+                color = placeholderColor
+            )
+            FeedbackLoadingBlock(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(34.dp),
+                color = placeholderColor
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                FeedbackLoadingBlock(
+                    modifier = Modifier
+                        .width(148.dp)
+                        .height(38.dp),
+                    color = placeholderColor
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FeedbackLoadingBlock(
+    modifier: Modifier,
+    color: Color
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(color)
+    )
+}
+
+@Composable
+private fun FeedbackIssueBrowserMessage(
+    text: String
+) {
+    Text(
+        text = text,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
 }
 
 @Composable

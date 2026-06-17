@@ -20,6 +20,7 @@ import io.stamethyst.backend.mods.importing.patches.ImportPatchModule
 import io.stamethyst.backend.mods.importing.patches.ImportPatchRegistry
 import io.stamethyst.backend.mods.importing.patches.JacketNoAnoKoImportPatchModule
 import io.stamethyst.backend.mods.importing.patches.ManifestRootPatchModule
+import io.stamethyst.backend.mods.importing.patches.OriImportPatchModule
 import io.stamethyst.backend.mods.importing.patches.VupShionImportPatchModule
 import io.stamethyst.backend.workshop.WorkshopMetadataStore
 import io.stamethyst.ui.main.MainFolderAssignmentHandoffStore
@@ -586,6 +587,11 @@ internal object ModImportExecutor {
         var patchedJacketShaderEntries = 0
         var patchedJacketVersionDirectives = 0
         var patchedJacketPrecisionBlocks = 0
+        var patchedOriShaderEntries = 0
+        var patchedOriGaussianBlurShaderEntries = 0
+        var patchedOriBoxBlurShaderEntries = 0
+        var patchedOriTextureSamplesBefore = 0
+        var patchedOriTextureSamplesAfter = 0
 
         patchResults.filter { it.applied }.forEach { result ->
             when (result.moduleId) {
@@ -616,6 +622,23 @@ internal object ModImportExecutor {
                     patchedJacketVersionDirectives += result.metrics["removedDesktopVersionDirectives"] ?: 0
                     patchedJacketPrecisionBlocks += result.metrics["insertedFragmentPrecisionBlocks"] ?: 0
                 }
+                OriImportPatchModule.id -> {
+                    patchedOriShaderEntries += result.metrics["patchedShaderEntries"] ?: 0
+                    patchedOriGaussianBlurShaderEntries +=
+                        result.metrics["patchedGaussianBlurShaderEntries"] ?: 0
+                    patchedOriBoxBlurShaderEntries +=
+                        result.metrics["patchedBoxBlurShaderEntries"] ?: 0
+                    patchedOriTextureSamplesBefore =
+                        maxOf(
+                            patchedOriTextureSamplesBefore,
+                            result.metrics["estimatedTextureSamplesBefore"] ?: 0
+                        )
+                    patchedOriTextureSamplesAfter =
+                        maxOf(
+                            patchedOriTextureSamplesAfter,
+                            result.metrics["estimatedTextureSamplesAfter"] ?: 0
+                        )
+                }
             }
         }
         return ImportedModPatchInfo(
@@ -636,7 +659,12 @@ internal object ModImportExecutor {
             patchedVupShionWebButtonConstructor = patchedVupShion,
             patchedJacketNoAnoKoShaderEntries = patchedJacketShaderEntries,
             patchedJacketNoAnoKoDesktopVersionDirectives = patchedJacketVersionDirectives,
-            patchedJacketNoAnoKoFragmentPrecisionBlocks = patchedJacketPrecisionBlocks
+            patchedJacketNoAnoKoFragmentPrecisionBlocks = patchedJacketPrecisionBlocks,
+            patchedOriShaderEntries = patchedOriShaderEntries,
+            patchedOriGaussianBlurShaderEntries = patchedOriGaussianBlurShaderEntries,
+            patchedOriBoxBlurShaderEntries = patchedOriBoxBlurShaderEntries,
+            patchedOriTextureSamplesBefore = patchedOriTextureSamplesBefore,
+            patchedOriTextureSamplesAfter = patchedOriTextureSamplesAfter
         )
     }
 

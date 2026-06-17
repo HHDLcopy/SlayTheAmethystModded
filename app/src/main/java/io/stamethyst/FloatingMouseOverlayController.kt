@@ -1,18 +1,21 @@
 package io.stamethyst
 
 import android.content.Context
-import android.content.DialogInterface
+import android.graphics.Typeface
 import android.graphics.Rect
 import android.util.Log
 import android.os.SystemClock
+import android.text.TextUtils
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
+import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.GridLayout
+import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.Button
@@ -23,6 +26,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import io.stamethyst.config.TouchMouseInteractionMode
 import io.stamethyst.backend.bridge.AndroidGlfwKeycode
+import io.stamethyst.ui.GameAndroidUiPalette
 import io.stamethyst.ui.LauncherTransientNoticeBus
 import io.stamethyst.ui.haptics.LauncherHaptics
 import net.kdt.pojavlaunch.AWTInputBridge
@@ -110,13 +114,19 @@ internal class FloatingMouseOverlayController(
         private const val CUSTOM_KEY_DELETE_TARGET_SIZE_DP = 72
         private const val CUSTOM_KEY_DELETE_TARGET_BOTTOM_MARGIN_DP = 72
         private const val CUSTOM_KEY_DELETE_TARGET_ANIM_DURATION_MS = 140L
+        private const val CUSTOM_KEY_PICKER_DIALOG_MARGIN_DP = 18
+        private const val CUSTOM_KEY_PICKER_DIALOG_MAX_WIDTH_DP = 560
+        private const val CUSTOM_KEY_PICKER_DIALOG_COMPACT_WIDTH_DP = 420
+        private const val CUSTOM_KEY_PICKER_DIALOG_PADDING_DP = 16
         private const val CUSTOM_KEY_PICKER_LIST_HEIGHT_DP = 300
         private const val CUSTOM_KEY_PICKER_CATEGORY_WIDTH_DP = 112
         private const val CUSTOM_KEY_PICKER_KEY_WIDTH_DP = 94
+        private const val CUSTOM_KEY_PICKER_KEY_MIN_WIDTH_DP = 76
         private const val CUSTOM_KEY_PICKER_OPTION_HEIGHT_DP = 42
         private const val CUSTOM_KEY_PICKER_OPTION_SPACING_DP = 8
         private const val CUSTOM_KEY_PICKER_OPTION_TEXT_SIZE_SP = 12f
-        private const val CUSTOM_KEY_PICKER_KEY_COLUMNS = 2
+        private const val CUSTOM_KEY_PICKER_SELECTED_TEXT_SIZE_SP = 13f
+        private const val CUSTOM_KEY_PICKER_TITLE_TEXT_SIZE_SP = 20f
         private const val SPECIAL_KEYS_BAR_PADDING_HORIZONTAL_DP = 8
         private const val SPECIAL_KEYS_BAR_PADDING_VERTICAL_DP = 6
         private const val SPECIAL_KEYS_BUTTON_HEIGHT_DP = 38
@@ -210,6 +220,7 @@ internal class FloatingMouseOverlayController(
     private var floatingMouseDownTop = 0
     private var touchMouseLockEnabled = false
     private var floatingMouseMenuExpanded = false
+    private val uiPalette: GameAndroidUiPalette by lazy { GameAndroidUiPalette.from(activity) }
     private val pendingSoftKeyReleaseRunnables = mutableMapOf<Int, Runnable>()
 
     private val toggleSpecialKeyButtons = mutableMapOf<Int, View>()
@@ -338,7 +349,8 @@ internal class FloatingMouseOverlayController(
             background = android.graphics.drawable.GradientDrawable().apply {
                 shape = android.graphics.drawable.GradientDrawable.RECTANGLE
                 cornerRadius = dpToPx(12).toFloat()
-                setColor(0xCC121212.toInt())
+                setColor(uiPalette.surfaceScrim)
+                setStroke(dpToPx(1), uiPalette.outline)
             }
         }
         host.addView(
@@ -358,7 +370,7 @@ internal class FloatingMouseOverlayController(
         val buttonSize = dpToPx(56)
         val iconSize = dpToPx(30)
         val button = FrameLayout(activity).apply {
-            setBackgroundResource(R.drawable.bg_touch_mouse_floating)
+            background = floatingMouseButtonBackground(locked = false)
             visibility = View.GONE
             alpha = FLOATING_MOUSE_IDLE_ALPHA
             isClickable = true
@@ -367,7 +379,7 @@ internal class FloatingMouseOverlayController(
         }
         val icon = ImageView(activity).apply {
             setImageResource(R.drawable.ic_touch_mouse_mode_left)
-            setColorFilter(0xFFFFFFFF.toInt())
+            setColorFilter(uiPalette.onSurface)
             scaleType = ImageView.ScaleType.FIT_CENTER
         }
         button.addView(
@@ -513,23 +525,98 @@ internal class FloatingMouseOverlayController(
         }
         customSoftKeyPickerDialog?.dismiss()
 
+        val displayMetrics = activity.resources.displayMetrics
+        val dialogMargin = dpToPx(CUSTOM_KEY_PICKER_DIALOG_MARGIN_DP)
+        val screenMaxDialogWidth = (displayMetrics.widthPixels - dpToPx(8)).coerceAtLeast(1)
+        val minDialogWidth = dpToPx(240)
+            .coerceAtMost(screenMaxDialogWidth)
+            .coerceAtLeast(1)
+        val dialogWidth = (displayMetrics.widthPixels - dialogMargin * 2)
+            .coerceAtMost(dpToPx(CUSTOM_KEY_PICKER_DIALOG_MAX_WIDTH_DP))
+            .coerceAtLeast(minDialogWidth)
+            .coerceAtMost(screenMaxDialogWidth)
+        val panelPadding = dpToPx(CUSTOM_KEY_PICKER_DIALOG_PADDING_DP)
+        val spacing = dpToPx(CUSTOM_KEY_PICKER_OPTION_SPACING_DP)
+        val bodyWidth = (dialogWidth - panelPadding * 2).coerceAtLeast(1)
+        val compactLayout = dialogWidth < dpToPx(CUSTOM_KEY_PICKER_DIALOG_COMPACT_WIDTH_DP)
+        val maxDialogHeight = (displayMetrics.heightPixels * 0.86f).roundToInt()
+        val reservedHeight = panelPadding * 2 + dpToPx(if (compactLayout) 156 else 116)
+        val listHeight = (maxDialogHeight - reservedHeight)
+            .coerceAtLeast(dpToPx(148))
+            .coerceAtMost(dpToPx(CUSTOM_KEY_PICKER_LIST_HEIGHT_DP))
+        val categoryWidth = if (compactLayout) {
+            bodyWidth
+        } else {
+            dpToPx(CUSTOM_KEY_PICKER_CATEGORY_WIDTH_DP)
+                .coerceAtMost((bodyWidth * 0.34f).roundToInt())
+        }
+        val keyAreaWidth = if (compactLayout) {
+            bodyWidth
+        } else {
+            (bodyWidth - categoryWidth - spacing).coerceAtLeast(dpToPx(180))
+        }
+        val preferredKeyWidth = dpToPx(CUSTOM_KEY_PICKER_KEY_WIDTH_DP)
+        val keyColumnCount = ((keyAreaWidth + spacing) / (preferredKeyWidth + spacing))
+            .coerceIn(2, if (compactLayout) 3 else 4)
+        val keyWidth = ((keyAreaWidth - spacing * (keyColumnCount - 1)) / keyColumnCount)
+            .coerceAtLeast(1)
+
         var selectedSpec: CustomSoftKeySpec? = null
         var selectedKeyView: TextView? = null
-        var positiveButton: Button? = null
         val categoryViews = mutableListOf<TextView>()
+        val titleView = TextView(activity).apply {
+            text = activity.getString(R.string.touch_mouse_custom_key_picker_title)
+            gravity = Gravity.CENTER_VERTICAL
+            includeFontPadding = false
+            setTextColor(uiPalette.onSurface)
+            textSize = CUSTOM_KEY_PICKER_TITLE_TEXT_SIZE_SP
+            typeface = Typeface.DEFAULT_BOLD
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+        }
         val selectedLabel = TextView(activity).apply {
             text = activity.getString(R.string.touch_mouse_custom_key_picker_none)
             gravity = Gravity.CENTER_VERTICAL
             includeFontPadding = false
-            setTextColor(0xFFDDDDDD.toInt())
-            textSize = CUSTOM_KEY_PICKER_OPTION_TEXT_SIZE_SP
-            setPadding(0, 0, 0, dpToPx(2))
+            setTextColor(uiPalette.onSurfaceMuted)
+            textSize = CUSTOM_KEY_PICKER_SELECTED_TEXT_SIZE_SP
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+            setPadding(dpToPx(12), dpToPx(7), dpToPx(12), dpToPx(7))
+            background = customSoftKeyPickerSelectedBackground()
         }
         val keyGrid = GridLayout(activity).apply {
-            columnCount = CUSTOM_KEY_PICKER_KEY_COLUMNS
+            columnCount = keyColumnCount
             useDefaultMargins = false
             alignmentMode = GridLayout.ALIGN_BOUNDS
         }
+        val cancelButton = Button(activity).apply {
+            text = activity.getString(android.R.string.cancel)
+            isAllCaps = false
+            textSize = CUSTOM_KEY_PICKER_SELECTED_TEXT_SIZE_SP
+            setTextColor(uiPalette.onSurfaceMuted)
+            setPadding(dpToPx(14), 0, dpToPx(14), 0)
+            backgroundTintList = null
+            background = customSoftKeyPickerActionBackground(accent = false, enabled = true)
+        }
+        val confirmButton = Button(activity).apply {
+            text = activity.getString(android.R.string.ok)
+            isAllCaps = false
+            textSize = CUSTOM_KEY_PICKER_SELECTED_TEXT_SIZE_SP
+            setPadding(dpToPx(16), 0, dpToPx(16), 0)
+            backgroundTintList = null
+        }
+
+        fun updateConfirmButtonEnabled(enabled: Boolean) {
+            confirmButton.apply {
+                isEnabled = enabled
+                alpha = if (enabled) 1.0f else 0.58f
+                setTextColor(if (enabled) uiPalette.onPrimary else uiPalette.onSurfaceMuted)
+                backgroundTintList = null
+                background = customSoftKeyPickerActionBackground(accent = true, enabled = enabled)
+            }
+        }
+        updateConfirmButtonEnabled(false)
 
         fun updateSelectedKey(spec: CustomSoftKeySpec?, view: TextView?) {
             selectedKeyView?.let { updateCustomSoftKeyPickerOptionAppearance(it, false) }
@@ -541,7 +628,7 @@ internal class FloatingMouseOverlayController(
             } else {
                 activity.getString(R.string.touch_mouse_custom_key_picker_selected_format, spec.pickerLabel)
             }
-            positiveButton?.isEnabled = spec != null
+            updateConfirmButtonEnabled(spec != null)
         }
 
         fun populateKeys(categoryIndex: Int) {
@@ -550,36 +637,35 @@ internal class FloatingMouseOverlayController(
             }
             updateSelectedKey(null, null)
             keyGrid.removeAllViews()
-            val spacing = dpToPx(CUSTOM_KEY_PICKER_OPTION_SPACING_DP)
-            categories[categoryIndex].keys.forEach { spec ->
+            categories[categoryIndex].keys.forEachIndexed { optionIndex, spec ->
                 val keyView = createCustomSoftKeyPickerOption(
                     label = spec.pickerLabel,
-                    minWidthDp = CUSTOM_KEY_PICKER_KEY_WIDTH_DP
+                    minWidthDp = CUSTOM_KEY_PICKER_KEY_MIN_WIDTH_DP
                 ).apply {
                     setOnClickListener {
                         LauncherHaptics.perform(this, HapticFeedbackConstants.KEYBOARD_TAP)
                         updateSelectedKey(spec, this)
                     }
                 }
+                val column = optionIndex % keyColumnCount
                 keyGrid.addView(
                     keyView,
                     GridLayout.LayoutParams().apply {
-                        width = dpToPx(CUSTOM_KEY_PICKER_KEY_WIDTH_DP)
+                        width = keyWidth
                         height = dpToPx(CUSTOM_KEY_PICKER_OPTION_HEIGHT_DP)
-                        setMargins(0, 0, spacing, spacing)
+                        setMargins(0, 0, if (column == keyColumnCount - 1) 0 else spacing, spacing)
                     }
                 )
             }
         }
 
-        val categoryColumn = LinearLayout(activity).apply {
-            orientation = LinearLayout.VERTICAL
+        val categoryContainer = LinearLayout(activity).apply {
+            orientation = if (compactLayout) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
         }
-        val spacing = dpToPx(CUSTOM_KEY_PICKER_OPTION_SPACING_DP)
         categories.forEachIndexed { index, category ->
             val categoryView = createCustomSoftKeyPickerOption(
                 label = category.label,
-                minWidthDp = CUSTOM_KEY_PICKER_CATEGORY_WIDTH_DP
+                minWidthDp = if (compactLayout) 92 else CUSTOM_KEY_PICKER_CATEGORY_WIDTH_DP
             ).apply {
                 setOnClickListener {
                     LauncherHaptics.perform(this, HapticFeedbackConstants.KEYBOARD_TAP)
@@ -587,65 +673,164 @@ internal class FloatingMouseOverlayController(
                 }
             }
             categoryViews += categoryView
-            categoryColumn.addView(
+            categoryContainer.addView(
                 categoryView,
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    dpToPx(CUSTOM_KEY_PICKER_OPTION_HEIGHT_DP)
-                ).apply {
-                    bottomMargin = spacing
+                if (compactLayout) {
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        dpToPx(CUSTOM_KEY_PICKER_OPTION_HEIGHT_DP)
+                    ).apply {
+                        rightMargin = spacing
+                    }
+                } else {
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        dpToPx(CUSTOM_KEY_PICKER_OPTION_HEIGHT_DP)
+                    ).apply {
+                        bottomMargin = spacing
+                    }
                 }
             )
         }
 
+        val keyScrollView = ScrollView(activity).apply {
+            isFillViewport = false
+            isVerticalScrollBarEnabled = true
+            addView(
+                keyGrid,
+                FrameLayout.LayoutParams(
+                    keyAreaWidth,
+                    FrameLayout.LayoutParams.WRAP_CONTENT
+                )
+            )
+        }
         val pickerView = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dpToPx(2), dpToPx(2), dpToPx(2), 0)
+            background = customSoftKeyPickerPanelBackground()
+            layoutParams = ViewGroup.LayoutParams(dialogWidth, ViewGroup.LayoutParams.WRAP_CONTENT)
+            setPadding(panelPadding, panelPadding, panelPadding, panelPadding)
             addView(
-                selectedLabel,
+                LinearLayout(activity).apply {
+                    orientation = if (compactLayout) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    addView(
+                        titleView,
+                        LinearLayout.LayoutParams(
+                            if (compactLayout) {
+                                LinearLayout.LayoutParams.MATCH_PARENT
+                            } else {
+                                0
+                            },
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                            if (compactLayout) 0f else 1f
+                        )
+                    )
+                    addView(
+                        selectedLabel,
+                        LinearLayout.LayoutParams(
+                            if (compactLayout) {
+                                LinearLayout.LayoutParams.MATCH_PARENT
+                            } else {
+                                (bodyWidth * 0.46f).roundToInt()
+                            },
+                            LinearLayout.LayoutParams.WRAP_CONTENT
+                        ).apply {
+                            if (compactLayout) {
+                                topMargin = dpToPx(10)
+                            } else {
+                                leftMargin = spacing
+                            }
+                        }
+                    )
+                },
                 LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply {
-                    bottomMargin = spacing
+                    bottomMargin = dpToPx(14)
                 }
             )
+            if (compactLayout) {
+                addView(
+                    HorizontalScrollView(activity).apply {
+                        isHorizontalScrollBarEnabled = false
+                        addView(
+                            categoryContainer,
+                            FrameLayout.LayoutParams(
+                                FrameLayout.LayoutParams.WRAP_CONTENT,
+                                FrameLayout.LayoutParams.MATCH_PARENT
+                            )
+                        )
+                    },
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        dpToPx(CUSTOM_KEY_PICKER_OPTION_HEIGHT_DP)
+                    ).apply {
+                        bottomMargin = spacing
+                    }
+                )
+                addView(
+                    keyScrollView,
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        listHeight
+                    )
+                )
+            } else {
+                addView(
+                    LinearLayout(activity).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.TOP
+                        addView(
+                            ScrollView(activity).apply {
+                                isFillViewport = false
+                                isVerticalScrollBarEnabled = true
+                                addView(
+                                    categoryContainer,
+                                    FrameLayout.LayoutParams(
+                                        FrameLayout.LayoutParams.MATCH_PARENT,
+                                        FrameLayout.LayoutParams.WRAP_CONTENT
+                                    )
+                                )
+                            },
+                            LinearLayout.LayoutParams(
+                                categoryWidth,
+                                listHeight
+                            )
+                        )
+                        addView(
+                            keyScrollView,
+                            LinearLayout.LayoutParams(
+                                keyAreaWidth,
+                                listHeight
+                            ).apply {
+                                leftMargin = spacing
+                            }
+                        )
+                    },
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    )
+                )
+            }
             addView(
                 LinearLayout(activity).apply {
                     orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.END or Gravity.CENTER_VERTICAL
+                    setPadding(0, dpToPx(14), 0, 0)
                     addView(
-                        ScrollView(activity).apply {
-                            isFillViewport = false
-                            addView(
-                                categoryColumn,
-                                FrameLayout.LayoutParams(
-                                    FrameLayout.LayoutParams.MATCH_PARENT,
-                                    FrameLayout.LayoutParams.WRAP_CONTENT
-                                )
-                            )
-                        },
+                        cancelButton,
                         LinearLayout.LayoutParams(
-                            dpToPx(CUSTOM_KEY_PICKER_CATEGORY_WIDTH_DP),
-                            dpToPx(CUSTOM_KEY_PICKER_LIST_HEIGHT_DP)
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                            dpToPx(40)
                         )
                     )
                     addView(
-                        ScrollView(activity).apply {
-                            isFillViewport = false
-                            addView(
-                                keyGrid,
-                                FrameLayout.LayoutParams(
-                                    FrameLayout.LayoutParams.WRAP_CONTENT,
-                                    FrameLayout.LayoutParams.WRAP_CONTENT
-                                )
-                            )
-                        },
+                        confirmButton,
                         LinearLayout.LayoutParams(
-                            dpToPx(
-                                CUSTOM_KEY_PICKER_KEY_COLUMNS *
-                                    (CUSTOM_KEY_PICKER_KEY_WIDTH_DP + CUSTOM_KEY_PICKER_OPTION_SPACING_DP)
-                            ),
-                            dpToPx(CUSTOM_KEY_PICKER_LIST_HEIGHT_DP)
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                            dpToPx(40)
                         ).apply {
                             leftMargin = spacing
                         }
@@ -659,24 +844,18 @@ internal class FloatingMouseOverlayController(
         }
         populateKeys(0)
 
-        val dialog = AlertDialog.Builder(activity)
-            .setTitle(R.string.touch_mouse_custom_key_picker_title)
-            .setView(pickerView)
-            .setPositiveButton(android.R.string.ok, null)
-            .setNegativeButton(android.R.string.cancel, null)
-            .create()
+        val dialog = AlertDialog.Builder(activity).create()
+        dialog.setView(pickerView, 0, 0, 0, 0)
         customSoftKeyPickerDialog = dialog
         dialog.setCanceledOnTouchOutside(false)
         dialog.setCancelable(false)
-        dialog.setOnShowListener {
-            positiveButton = dialog.getButton(DialogInterface.BUTTON_POSITIVE).apply {
-                isEnabled = selectedSpec != null
-                setOnClickListener {
-                    selectedSpec?.let { spec ->
-                        addCustomSoftKeyButton(spec)
-                        dialog.dismiss()
-                    }
-                }
+        cancelButton.setOnClickListener {
+            dialog.dismiss()
+        }
+        confirmButton.setOnClickListener {
+            selectedSpec?.let { spec ->
+                addCustomSoftKeyButton(spec)
+                dialog.dismiss()
             }
         }
         dialog.setOnDismissListener {
@@ -685,6 +864,10 @@ internal class FloatingMouseOverlayController(
             }
         }
         dialog.show()
+        dialog.window?.apply {
+            setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+            setLayout(dialogWidth, ViewGroup.LayoutParams.WRAP_CONTENT)
+        }
     }
 
     fun isSoftKeyboardSessionActive(): Boolean {
@@ -890,17 +1073,26 @@ internal class FloatingMouseOverlayController(
         }
         floatingMouseMainIcon?.setImageResource(modeIconRes)
         floatingMouseMainIcon?.setColorFilter(
-            if (touchMouseLockEnabled) 0xFF98D96A.toInt() else 0xFFFFFFFF.toInt()
-        )
-        floatingMouseButton?.setBackgroundResource(
             if (touchMouseLockEnabled) {
-                R.drawable.bg_touch_mouse_floating_locked
+                uiPalette.primaryStrong
             } else {
-                R.drawable.bg_touch_mouse_floating
+                uiPalette.onSurface
             }
         )
+        floatingMouseButton?.background = floatingMouseButtonBackground(touchMouseLockEnabled)
         updateFloatingMouseModeButtonUi()
         updateFloatingMouseLockButtonUi()
+    }
+
+    private fun floatingMouseButtonBackground(locked: Boolean): android.graphics.drawable.GradientDrawable {
+        return android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.OVAL
+            setColor(if (locked) uiPalette.primaryContainerHigh else uiPalette.surfaceScrim)
+            setStroke(
+                dpToPx(if (locked) 2 else 1),
+                if (locked) uiPalette.primaryStrong else uiPalette.outlineStrong
+            )
+        }
     }
 
     private fun resolveTouchButton(): Int {
@@ -1025,7 +1217,7 @@ internal class FloatingMouseOverlayController(
             text = spec.label
             gravity = Gravity.CENTER
             includeFontPadding = false
-            setTextColor(0xFFFFFFFF.toInt())
+            setTextColor(uiPalette.onSurface)
             textSize = SPECIAL_KEYS_BUTTON_TEXT_SIZE_SP
             minWidth = dpToPx(SPECIAL_KEYS_BUTTON_MIN_WIDTH_DP)
             setPadding(
@@ -1058,7 +1250,7 @@ internal class FloatingMouseOverlayController(
             text = label
             gravity = Gravity.CENTER
             includeFontPadding = false
-            setTextColor(0xFFFFFFFF.toInt())
+            setTextColor(uiPalette.onSurface)
             textSize = SPECIAL_KEYS_BUTTON_TEXT_SIZE_SP
             minWidth = dpToPx(SPECIAL_KEYS_BUTTON_MIN_WIDTH_DP)
             setPadding(
@@ -1089,7 +1281,7 @@ internal class FloatingMouseOverlayController(
         return TextView(activity).apply {
             gravity = Gravity.CENTER
             includeFontPadding = false
-            setTextColor(0xFFFFFFFF.toInt())
+            setTextColor(uiPalette.onSurface)
             textSize = SPECIAL_KEYS_BUTTON_TEXT_SIZE_SP
             minWidth = dpToPx(SPECIAL_KEYS_BUTTON_MIN_WIDTH_DP)
             setPadding(
@@ -1121,7 +1313,7 @@ internal class FloatingMouseOverlayController(
             addView(
                 ImageView(activity).apply {
                     setImageResource(R.drawable.ic_keyboard)
-                    setColorFilter(0xFFFFFFFF.toInt())
+                    setColorFilter(uiPalette.onSurface)
                     scaleType = ImageView.ScaleType.FIT_CENTER
                     contentDescription = null
                 },
@@ -1167,8 +1359,8 @@ internal class FloatingMouseOverlayController(
         button.background = android.graphics.drawable.GradientDrawable().apply {
             shape = android.graphics.drawable.GradientDrawable.RECTANGLE
             cornerRadius = dpToPx(10).toFloat()
-            setColor(if (active) 0xFF355B2E.toInt() else 0xFF2B2B2B.toInt())
-            setStroke(dpToPx(1), if (active) 0xFF98D96A.toInt() else 0xFF454545.toInt())
+            setColor(if (active) uiPalette.primaryContainer else uiPalette.surfaceHigh)
+            setStroke(dpToPx(1), if (active) uiPalette.primaryStrong else uiPalette.outline)
         }
     }
 
@@ -1321,10 +1513,11 @@ internal class FloatingMouseOverlayController(
             text = label
             gravity = Gravity.CENTER
             includeFontPadding = false
-            setTextColor(0xFFFFFFFF.toInt())
+            setTextColor(uiPalette.onSurface)
             textSize = CUSTOM_KEY_PICKER_OPTION_TEXT_SIZE_SP
             minWidth = dpToPx(minWidthDp)
             maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
             isAllCaps = false
             isFocusable = false
             isFocusableInTouchMode = false
@@ -1337,12 +1530,55 @@ internal class FloatingMouseOverlayController(
     private fun updateCustomSoftKeyPickerOptionAppearance(view: TextView, selected: Boolean) {
         view.isSelected = selected
         view.alpha = if (selected) 1.0f else 0.96f
-        view.setTextColor(if (selected) 0xFFFFFFFF.toInt() else 0xFFE4E4E4.toInt())
+        view.setTextColor(if (selected) uiPalette.onSurface else uiPalette.onSurfaceMuted)
         view.background = android.graphics.drawable.GradientDrawable().apply {
             shape = android.graphics.drawable.GradientDrawable.RECTANGLE
-            cornerRadius = dpToPx(10).toFloat()
-            setColor(if (selected) 0xFF355B2E.toInt() else 0xFF2B2B2B.toInt())
-            setStroke(dpToPx(1), if (selected) 0xFF98D96A.toInt() else 0xFF454545.toInt())
+            cornerRadius = dpToPx(8).toFloat()
+            setColor(if (selected) uiPalette.primaryContainer else uiPalette.surfaceHigh)
+            setStroke(dpToPx(1), if (selected) uiPalette.primaryStrong else uiPalette.outline)
+        }
+    }
+
+    private fun customSoftKeyPickerPanelBackground(): android.graphics.drawable.GradientDrawable {
+        return android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+            cornerRadius = dpToPx(18).toFloat()
+            setColor(uiPalette.surface)
+            setStroke(dpToPx(1), uiPalette.outlineStrong)
+        }
+    }
+
+    private fun customSoftKeyPickerSelectedBackground(): android.graphics.drawable.GradientDrawable {
+        return android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+            cornerRadius = dpToPx(8).toFloat()
+            setColor(uiPalette.surfaceHigh)
+            setStroke(dpToPx(1), uiPalette.outline)
+        }
+    }
+
+    private fun customSoftKeyPickerActionBackground(
+        accent: Boolean,
+        enabled: Boolean
+    ): android.graphics.drawable.GradientDrawable {
+        return android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+            cornerRadius = dpToPx(8).toFloat()
+            setColor(
+                when {
+                    accent && enabled -> uiPalette.primaryStrong
+                    accent -> uiPalette.surfaceHighest
+                    else -> uiPalette.surfaceHigh
+                }
+            )
+            setStroke(
+                dpToPx(1),
+                when {
+                    accent && enabled -> uiPalette.primaryStrong
+                    accent -> uiPalette.outline
+                    else -> uiPalette.outline
+                }
+            )
         }
     }
 
@@ -1457,7 +1693,7 @@ internal class FloatingMouseOverlayController(
             text = spec.buttonLabel
             gravity = Gravity.CENTER
             includeFontPadding = false
-            setTextColor(0xFFFFFFFF.toInt())
+            setTextColor(uiPalette.onSurface)
             textSize = CUSTOM_KEY_BUTTON_TEXT_SIZE_SP
             maxLines = 1
             isAllCaps = false
@@ -1671,7 +1907,7 @@ internal class FloatingMouseOverlayController(
             addView(
                 ImageView(activity).apply {
                     setImageResource(android.R.drawable.ic_menu_delete)
-                    setColorFilter(0xFFFFFFFF.toInt())
+                    setColorFilter(uiPalette.onSurface)
                     scaleType = ImageView.ScaleType.CENTER_INSIDE
                 },
                 FrameLayout.LayoutParams(iconSize, iconSize, Gravity.CENTER)
@@ -1743,16 +1979,16 @@ internal class FloatingMouseOverlayController(
         return android.graphics.drawable.GradientDrawable().apply {
             shape = android.graphics.drawable.GradientDrawable.RECTANGLE
             cornerRadius = dpToPx(14).toFloat()
-            setColor(if (active) 0xE63F5F36.toInt() else 0xCC2B2B2B.toInt())
-            setStroke(dpToPx(1), if (active) 0xFF9BE071.toInt() else 0xFF5A5A5A.toInt())
+            setColor(if (active) uiPalette.primaryContainerHigh else uiPalette.surfaceScrim)
+            setStroke(dpToPx(1), if (active) uiPalette.primaryStrong else uiPalette.outlineStrong)
         }
     }
 
     private fun customSoftKeyDeleteTargetBackground(active: Boolean): android.graphics.drawable.GradientDrawable {
         return android.graphics.drawable.GradientDrawable().apply {
             shape = android.graphics.drawable.GradientDrawable.OVAL
-            setColor(if (active) 0xE6A92828.toInt() else 0xD6282828.toInt())
-            setStroke(dpToPx(2), if (active) 0xFFFF8A80.toInt() else 0xFF707070.toInt())
+            setColor(if (active) uiPalette.dangerContainer else uiPalette.surfaceScrim)
+            setStroke(dpToPx(2), if (active) uiPalette.dangerOutline else uiPalette.outlineStrong)
         }
     }
 
@@ -2402,15 +2638,15 @@ internal class FloatingMouseOverlayController(
             background = android.graphics.drawable.GradientDrawable().apply {
                 shape = android.graphics.drawable.GradientDrawable.RECTANGLE
                 cornerRadius = dpToPx(12).toFloat()
-                setColor(0xFF1E1E1E.toInt())
-                setStroke(dpToPx(1), 0xFF4D4D4D.toInt())
+                setColor(uiPalette.surfaceHigh)
+                setStroke(dpToPx(1), uiPalette.outline)
             }
 
             addView(
                 TextView(context).apply {
                     text = "▲"
                     gravity = Gravity.CENTER
-                    setTextColor(0xFFCACACA.toInt())
+                    setTextColor(uiPalette.onSurfaceMuted)
                     textSize = VIRTUAL_WHEEL_ARROW_TEXT_SIZE_SP
                 },
                 LayoutParams(
@@ -2427,7 +2663,7 @@ internal class FloatingMouseOverlayController(
                     background = android.graphics.drawable.GradientDrawable().apply {
                         shape = android.graphics.drawable.GradientDrawable.RECTANGLE
                         cornerRadius = dpToPx(2).toFloat()
-                        setColor(0xFF7D7D7D.toInt())
+                        setColor(uiPalette.outlineStrong)
                     }
                 },
                 LayoutParams(
@@ -2441,7 +2677,7 @@ internal class FloatingMouseOverlayController(
                 TextView(context).apply {
                     text = "▼"
                     gravity = Gravity.CENTER
-                    setTextColor(0xFFCACACA.toInt())
+                    setTextColor(uiPalette.onSurfaceMuted)
                     textSize = VIRTUAL_WHEEL_ARROW_TEXT_SIZE_SP
                 },
                 LayoutParams(
@@ -2458,7 +2694,7 @@ internal class FloatingMouseOverlayController(
                     background = android.graphics.drawable.GradientDrawable().apply {
                         shape = android.graphics.drawable.GradientDrawable.RECTANGLE
                         cornerRadius = dpToPx(8).toFloat()
-                        setColor(0xFFEEEEEE.toInt())
+                        setColor(uiPalette.onSurfaceMuted)
                     }
                     alpha = 0.96f
                     elevation = dpToPx(2).toFloat()
@@ -2605,7 +2841,7 @@ internal class FloatingMouseOverlayController(
             thumbView.background = android.graphics.drawable.GradientDrawable().apply {
                 shape = android.graphics.drawable.GradientDrawable.RECTANGLE
                 cornerRadius = dpToPx(8).toFloat()
-                setColor(if (active) 0xFF98D96A.toInt() else 0xFFEEEEEE.toInt())
+                setColor(if (active) uiPalette.primaryStrong else uiPalette.onSurfaceMuted)
             }
         }
 

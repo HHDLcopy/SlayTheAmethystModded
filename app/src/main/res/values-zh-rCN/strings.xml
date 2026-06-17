@@ -1695,7 +1695,7 @@
     <string name="feedback_conversation_state_in_progress">进行中</string>
     <string name="feedback_conversation_close_title">关闭议题</string>
     <string name="feedback_conversation_reopen_title">重新打开议题</string>
-    <string name="feedback_conversation_close_confirm">确认通过启动器关闭这个 Issue 吗？</string>
+    <string name="feedback_conversation_close_confirm">确认将这个 Issue 标记为已完成吗？</string>
     <string name="feedback_conversation_reopen_confirm">确认通过启动器重新打开这个 Issue 吗？</string>
     <string name="feedback_conversation_message_label">继续补充说明</string>
     <string name="feedback_conversation_message_placeholder">输入你想补充给开发者的内容。</string>

@@ -6,6 +6,7 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageView
@@ -15,6 +16,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.widget.TextViewCompat
+import io.stamethyst.ui.GameAndroidUiPalette
 import io.stamethyst.ui.haptics.LauncherHaptics
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -97,6 +99,7 @@ internal class InGameSoftKeyboardOverlayController(
     private var capsLockEnabled = false
     private var layoutMode = LayoutMode.LETTERS
     private val activeToggleKeyCodes = mutableSetOf<Int>()
+    private val uiPalette: GameAndroidUiPalette by lazy { GameAndroidUiPalette.from(activity) }
 
     fun attachToHost(host: FrameLayout) {
         detach()
@@ -108,7 +111,7 @@ internal class InGameSoftKeyboardOverlayController(
             elevation = dpToPx(18).toFloat()
             isClickable = true
             isFocusable = false
-            setBackgroundColor(0xCC1A1A1A.toInt())
+            background = keyboardPanelBackground()
             setPadding(
                 dpToPx(PANEL_PADDING_HORIZONTAL_DP),
                 dpToPx(PANEL_PADDING_TOP_DP),
@@ -399,9 +402,9 @@ internal class InGameSoftKeyboardOverlayController(
                 contentDescription = resolveLabel(spec)
                 scaleType = ImageView.ScaleType.CENTER
                 setImageResource(R.drawable.ic_keyboard)
-                setColorFilter(0xFFFFFFFF.toInt())
+                setColorFilter(uiPalette.onSurface)
+                installKeyboardPressFeedback(this, accent = true, active = false, compact = compact)
                 setOnClickListener {
-                    LauncherHaptics.perform(this, HapticFeedbackConstants.KEYBOARD_TAP)
                     handleKeyPress(spec)
                 }
             }
@@ -411,7 +414,7 @@ internal class InGameSoftKeyboardOverlayController(
             includeFontPadding = false
             isAllCaps = false
             isSingleLine = true
-            setTextColor(0xFFFFFFFF.toInt())
+            setTextColor(uiPalette.onSurface)
             textSize = if (compact) COMPACT_KEY_TEXT_SIZE_SP else KEY_TEXT_SIZE_SP
             TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
                 this,
@@ -431,8 +434,13 @@ internal class InGameSoftKeyboardOverlayController(
                 active = isActive,
                 compact = compact
             )
+            installKeyboardPressFeedback(
+                this,
+                accent = spec is KeySpec.ActionKey || spec is KeySpec.PhysicalKey,
+                active = isActive,
+                compact = compact
+            )
             setOnClickListener {
-                LauncherHaptics.perform(this, HapticFeedbackConstants.KEYBOARD_TAP)
                 handleKeyPress(spec)
             }
         }
@@ -580,20 +588,74 @@ internal class InGameSoftKeyboardOverlayController(
             spec.shifted == spec.base.uppercase(Locale.ROOT)
     }
 
-    private fun createKeyBackground(
+    private fun keyboardPanelBackground(): android.graphics.drawable.GradientDrawable {
+        val radius = dpToPx(14).toFloat()
+        return android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+            cornerRadii = floatArrayOf(radius, radius, radius, radius, 0f, 0f, 0f, 0f)
+            setColor(GameAndroidUiPalette.withAlpha(uiPalette.surface, 0xE0))
+            setStroke(dpToPx(1), uiPalette.outline)
+        }
+    }
+
+    private fun installKeyboardPressFeedback(
+        view: View,
         accent: Boolean,
         active: Boolean,
         compact: Boolean
+    ) {
+        view.setOnTouchListener { pressedView, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    LauncherHaptics.perform(pressedView, HapticFeedbackConstants.KEYBOARD_TAP)
+                    pressedView.animate().cancel()
+                    pressedView.background = createKeyBackground(
+                        accent = accent,
+                        active = active,
+                        compact = compact,
+                        pressed = true
+                    )
+                    pressedView.scaleX = KEY_PRESS_SCALE
+                    pressedView.scaleY = KEY_PRESS_SCALE
+                    pressedView.alpha = 1f
+                }
+
+                MotionEvent.ACTION_UP,
+                MotionEvent.ACTION_CANCEL -> {
+                    pressedView.background = createKeyBackground(
+                        accent = accent,
+                        active = active,
+                        compact = compact
+                    )
+                    pressedView.animate().cancel()
+                    pressedView.animate()
+                        .scaleX(1f)
+                        .scaleY(1f)
+                        .setDuration(KEY_PRESS_ANIM_DURATION_MS)
+                        .start()
+                }
+            }
+            false
+        }
+    }
+
+    private fun createKeyBackground(
+        accent: Boolean,
+        active: Boolean,
+        compact: Boolean,
+        pressed: Boolean = false
     ): android.graphics.drawable.GradientDrawable {
         val color = when {
-            active -> 0xCC355B2E.toInt()
-            accent -> 0xB83A3A3A.toInt()
-            else -> 0xA82A2A2A.toInt()
+            pressed && active -> uiPalette.primaryContainerHigh
+            pressed -> uiPalette.primaryContainer
+            active -> uiPalette.primaryContainer
+            accent -> GameAndroidUiPalette.withAlpha(uiPalette.surfaceHighest, 0xC8)
+            else -> GameAndroidUiPalette.withAlpha(uiPalette.surfaceHigh, 0xB0)
         }
         val strokeColor = when {
-            active -> 0xFF98D96A.toInt()
-            accent -> 0xFF636363.toInt()
-            else -> 0xFF4A4A4A.toInt()
+            pressed || active -> uiPalette.primaryStrong
+            accent -> uiPalette.outlineStrong
+            else -> uiPalette.outline
         }
         return android.graphics.drawable.GradientDrawable().apply {
             shape = android.graphics.drawable.GradientDrawable.RECTANGLE
@@ -646,6 +708,8 @@ internal class InGameSoftKeyboardOverlayController(
         private const val FUNCTION_KEY_CORNER_RADIUS_DP = 6
         private const val SHOW_TRANSLATION_Y_DP = 10
         private const val SHOW_HIDE_ANIM_DURATION_MS = 160L
+        private const val KEY_PRESS_SCALE = 0.96f
+        private const val KEY_PRESS_ANIM_DURATION_MS = 90L
         private const val KEY_TEXT_SIZE_SP = 14f
         private const val COMPACT_KEY_TEXT_SIZE_SP = 12f
         private const val MIN_KEY_TEXT_SIZE_SP = 8f

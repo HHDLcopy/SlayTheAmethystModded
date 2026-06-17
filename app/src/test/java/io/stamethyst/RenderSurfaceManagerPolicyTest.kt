@@ -1,5 +1,6 @@
 package io.stamethyst
 
+import io.stamethyst.backend.render.VirtualResolutionMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -114,6 +115,128 @@ class RenderSurfaceManagerPolicyTest {
                 requestedHeight = 1080,
                 frameWidth = 2400,
                 frameHeight = 1080
+            )
+        )
+    }
+
+    @Test
+    fun resolveScreenBottomCropInsets_placesCropOppositeDisplayCutoutSide() {
+        assertEquals(
+            RenderViewportInsets(right = 96),
+            RenderSurfaceManager.resolveScreenBottomCropInsets(
+                cropScreenBottom = true,
+                gestureInsets = RenderViewportInsets(),
+                cameraInsets = RenderViewportInsets(left = 96),
+                fallbackInset = 24
+            )
+        )
+        assertEquals(
+            RenderViewportInsets(left = 96),
+            RenderSurfaceManager.resolveScreenBottomCropInsets(
+                cropScreenBottom = true,
+                gestureInsets = RenderViewportInsets(),
+                cameraInsets = RenderViewportInsets(right = 96),
+                fallbackInset = 24
+            )
+        )
+    }
+
+    @Test
+    fun resolveScreenBottomCropInsets_usesGestureSideWhenAvailable() {
+        assertEquals(
+            RenderViewportInsets(left = 80),
+            RenderSurfaceManager.resolveScreenBottomCropInsets(
+                cropScreenBottom = true,
+                gestureInsets = RenderViewportInsets(left = 80),
+                cameraInsets = RenderViewportInsets(top = 40),
+                fallbackInset = 24
+            )
+        )
+        assertEquals(
+            RenderViewportInsets(right = 24),
+            RenderSurfaceManager.resolveScreenBottomCropInsets(
+                cropScreenBottom = true,
+                gestureInsets = RenderViewportInsets(),
+                cameraInsets = RenderViewportInsets(),
+                fallbackInset = 24
+            )
+        )
+    }
+
+    @Test
+    fun resolveScreenBottomCropInsets_keepsRightCutoutCropOnLeftEvenWithRightGestureInset() {
+        assertEquals(
+            RenderViewportInsets(left = 80),
+            RenderSurfaceManager.resolveScreenBottomCropInsets(
+                cropScreenBottom = true,
+                gestureInsets = RenderViewportInsets(right = 48),
+                cameraInsets = RenderViewportInsets(right = 80),
+                fallbackInset = 24
+            )
+        )
+    }
+
+    @Test
+    fun resolveScreenBottomCropInsets_usesWindowGapBeforeInsets() {
+        assertEquals(
+            RenderViewportInsets(left = 96),
+            RenderSurfaceManager.resolveScreenBottomCropInsets(
+                cropScreenBottom = true,
+                gestureInsets = RenderViewportInsets(right = 48),
+                cameraInsets = RenderViewportInsets(),
+                fallbackInset = 24,
+                windowCropHint = RenderViewportCropHint(
+                    side = HorizontalCropSide.LEFT,
+                    inset = 96
+                )
+            )
+        )
+    }
+
+    @Test
+    fun resolveWindowConstrainedCropHint_cropsOppositeExistingSystemGap() {
+        assertEquals(
+            RenderViewportCropHint(side = HorizontalCropSide.LEFT, inset = 96),
+            RenderSurfaceManager.resolveWindowConstrainedCropHint(
+                rootLeft = 0,
+                rootWidth = 2304,
+                displayWidth = 2400
+            )
+        )
+        assertEquals(
+            RenderViewportCropHint(side = HorizontalCropSide.RIGHT, inset = 96),
+            RenderSurfaceManager.resolveWindowConstrainedCropHint(
+                rootLeft = 96,
+                rootWidth = 2304,
+                displayWidth = 2400
+            )
+        )
+        assertEquals(
+            null,
+            RenderSurfaceManager.resolveWindowConstrainedCropHint(
+                rootLeft = 0,
+                rootWidth = 2400,
+                displayWidth = 2400
+            )
+        )
+    }
+
+    @Test
+    fun resolveViewportLayout_keepsLeftAndRightCropsSeparate() {
+        assertEquals(
+            RenderViewportLayout(
+                width = 2180,
+                height = 1080,
+                leftMargin = 100,
+                topMargin = 0,
+                rightMargin = 120,
+                bottomMargin = 0
+            ),
+            RenderSurfaceManager.resolveViewportLayout(
+                rootWidth = 2400,
+                rootHeight = 1080,
+                cropInsets = RenderViewportInsets(left = 100, right = 120),
+                virtualResolutionMode = VirtualResolutionMode.FULLSCREEN_FILL
             )
         )
     }

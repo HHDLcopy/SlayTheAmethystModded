@@ -77,6 +77,7 @@ public class LwjglApplication implements Application {
 	private static final String ZERO_MISSING_FUNCTION_PTR_PROP = "amethyst.lwjgl.diag.zero_missing_function_ptr";
 	private static final String FORCE_DEFAULT_FBO_PROP = "amethyst.lwjgl.force_default_framebuffer";
 	private static final String DEFAULT_FBO_REBIND_CACHE_PROP = "amethyst.lwjgl.default_framebuffer_rebind_cache";
+	private static final String DEFAULT_FBO_FAST_REBIND_PROP = "amethyst.lwjgl.default_fbo_fast_rebind";
 	private static final String RENDER_SCALE_PROP = "amethyst.gdx.render_scale";
 	private static final String VIRTUAL_WIDTH_PROP = "amethyst.gdx.virtual_width";
 	private static final String VIRTUAL_HEIGHT_PROP = "amethyst.gdx.virtual_height";
@@ -90,6 +91,9 @@ public class LwjglApplication implements Application {
 	private static final String GLOBAL_TEXTURE_COMPAT_VERBOSE_PROP = "amethyst.gdx.global_texture_compat_verbose";
 	private static final String GPU_RESOURCE_DIAG_ENABLED_PROP = "amethyst.gdx.gpu_resource_diag";
 	private static final String GPU_RESOURCE_SUMMARY_ENABLED_PROP = "amethyst.gdx.gpu_resource_summary";
+	private static final String ANDROID_FRAME_PACER_PROP = "amethyst.lwjgl.android_frame_pacer";
+	private static final String HOT_LOOP_NOOP_TRIM_PROP = "amethyst.lwjgl.hot_loop_noop_trim";
+	private static final String POST_RENDER_CLEAR_PROP = "amethyst.lwjgl.diag.post_render_clear";
 	private static final String FRAME_PROFILER_ENABLED_PROP = "amethyst.gdx.frame_profiler";
 	private static final String FRAME_PROFILER_SLOW_MS_PROP = "amethyst.gdx.frame_profiler.slow_ms";
 	private static final String FRAME_PROFILER_SUMMARY_FRAMES_PROP = "amethyst.gdx.frame_profiler.summary_frames";
@@ -101,11 +105,43 @@ public class LwjglApplication implements Application {
 		readIntSystemProperty(FRAME_PROFILER_SUMMARY_FRAMES_PROP, 300, 1, 100000);
 	private static final boolean FRAME_PROFILER_STACK_ENABLED =
 		readBooleanSystemProperty(FRAME_PROFILER_STACK_PROP, false);
+	private static final boolean ANDROID_FRAME_PACER_ENABLED =
+		readBooleanSystemProperty(ANDROID_FRAME_PACER_PROP, false);
+	private static final boolean HOT_LOOP_NOOP_TRIM_ENABLED =
+		readBooleanSystemProperty(HOT_LOOP_NOOP_TRIM_PROP, false);
+	private static final boolean DEFAULT_FBO_FAST_REBIND_ENABLED =
+		readBooleanSystemProperty(DEFAULT_FBO_FAST_REBIND_PROP, false);
+	private static final boolean DEFAULT_FBO_REBIND_CACHE_ENABLED_AT_START =
+		readBooleanSystemProperty(DEFAULT_FBO_REBIND_CACHE_PROP, true);
+	private static final boolean RUNTIME_TEXTURE_COMPAT_ENABLED_AT_START =
+		readBooleanSystemProperty(RUNTIME_TEXTURE_COMPAT_PROP, false);
+	private static final boolean RUNTIME_TEXTURE_COMPAT_PERIODIC_SCAN_ENABLED_AT_START =
+		readBooleanSystemProperty(RUNTIME_TEXTURE_COMPAT_PERIODIC_SCAN_PROP, false);
+	private static final boolean GLOBAL_ATLAS_FILTER_COMPAT_ENABLED_AT_START =
+		readBooleanSystemProperty(GLOBAL_ATLAS_FILTER_COMPAT_PROP, true);
+	private static final boolean GLOBAL_TEXTURE_COMPAT_VERBOSE_ENABLED_AT_START =
+		readBooleanSystemProperty(GLOBAL_TEXTURE_COMPAT_VERBOSE_PROP, false);
+	private static final boolean GPU_RESOURCE_DIAG_ENABLED_AT_START =
+		readBooleanSystemProperty(GPU_RESOURCE_DIAG_ENABLED_PROP, false);
+	private static final boolean GPU_RESOURCE_SUMMARY_ENABLED_AT_START =
+		readBooleanSystemProperty(GPU_RESOURCE_SUMMARY_ENABLED_PROP, false);
+	private static final boolean POST_RENDER_CLEAR_ENABLED_AT_START =
+		readBooleanSystemProperty(POST_RENDER_CLEAR_PROP, false);
 	private static final String GPU_LEAK_INJECTOR_MODE_PROP = "amethyst.gdx.debug_leak_injector";
+	private static final String GPU_RESOURCE_GUARDIAN_MODE_PROP = "amethyst.gdx.gpu_resource_guardian";
+	private static final Boolean FORCE_DEFAULT_FBO_OVERRIDE_AT_START =
+		readOptionalBooleanSystemProperty(FORCE_DEFAULT_FBO_PROP);
+	private static final boolean GPU_LEAK_INJECTOR_ENABLED_AT_START =
+		isGpuLeakInjectorModeEnabled(System.getProperty(GPU_LEAK_INJECTOR_MODE_PROP));
+	private static final boolean GPU_RESOURCE_GUARDIAN_ENABLED_AT_START =
+		isGpuResourceGuardianModeEnabled(System.getProperty(GPU_RESOURCE_GUARDIAN_MODE_PROP));
 	private static final String EXPECTED_EXIT_MARKER_PROP = "amethyst.expected_exit_marker";
 	private static final String NO_CONTEXT_DIAGNOSTICS_PROP = "amethyst.lwjgl.diag.no_context_stack";
 	private static final String STS_CARD_CRAWL_GAME_CLASS = "com.megacrit.cardcrawl.core.CardCrawlGame";
 	private static final int VSYNC_SOFTWARE_SYNC_MARGIN_FPS = 1;
+	private static final long NANOS_PER_SECOND = 1000000000L;
+	private static final long ANDROID_FRAME_PACER_SLEEP_MARGIN_NANOS = 500000L;
+	private static final long ANDROID_FRAME_PACER_YIELD_THRESHOLD_NANOS = 1500000L;
 	private static final int GLOBAL_TEXTURE_COMPAT_GROWTH_CHECK_INTERVAL_FRAMES = 30;
 	private static final String[][] EXT_FRAMEBUFFER_FUNCTION_ALIASES = {
 		{"glBindFramebufferEXT", "glBindFramebuffer"},
@@ -144,6 +180,10 @@ public class LwjglApplication implements Application {
 	private static volatile boolean spriteBatchFrameDiagnosticsUnavailableLogged;
 	private static volatile int trackedDrawFramebufferHandle = Integer.MIN_VALUE;
 	private static volatile int trackedReadFramebufferHandle = Integer.MIN_VALUE;
+	private static volatile int trackedViewportX = Integer.MIN_VALUE;
+	private static volatile int trackedViewportY = Integer.MIN_VALUE;
+	private static volatile int trackedViewportWidth = Integer.MIN_VALUE;
+	private static volatile int trackedViewportHeight = Integer.MIN_VALUE;
 	private boolean contextRecoveryLogged;
 	private boolean contextGenerationUnavailableLogged;
 	private boolean missingFunctionPointerPatchLogged;
@@ -159,8 +199,12 @@ public class LwjglApplication implements Application {
 	private boolean inactiveRenderSuppressedLogged;
 	private boolean firstRenderFrameLogged;
 	private boolean defaultFramebufferRebindLogged;
+	private boolean androidFramePacerLogged;
+	private boolean defaultFboFastRebindLogged;
 	private int nativeContextGeneration = Integer.MIN_VALUE;
 	private boolean pendingNativeContextRebind;
+	private int androidFramePacerLastFrameRate;
+	private long androidFramePacerNextFrameNanos;
 	private Boolean lastActiveState;
 	private Boolean coreFramebufferBindUsable;
 	private Boolean extFramebufferBindUsable;
@@ -471,13 +515,31 @@ public class LwjglApplication implements Application {
 		}
 	}
 
+	static void noteViewportSet (int x, int y, int width, int height) {
+		trackedViewportX = x;
+		trackedViewportY = y;
+		trackedViewportWidth = width;
+		trackedViewportHeight = height;
+	}
+
 	private static boolean isDrawFramebufferKnownDefault () {
 		return trackedDrawFramebufferHandle == 0;
+	}
+
+	private static boolean isViewportKnown (int x, int y, int width, int height) {
+		return trackedViewportX == x
+			&& trackedViewportY == y
+			&& trackedViewportWidth == width
+			&& trackedViewportHeight == height;
 	}
 
 	private static void invalidateTrackedFramebufferBinding () {
 		trackedDrawFramebufferHandle = Integer.MIN_VALUE;
 		trackedReadFramebufferHandle = Integer.MIN_VALUE;
+		trackedViewportX = Integer.MIN_VALUE;
+		trackedViewportY = Integer.MIN_VALUE;
+		trackedViewportWidth = Integer.MIN_VALUE;
+		trackedViewportHeight = Integer.MIN_VALUE;
 	}
 
 	private static void setScaledRenderBackBufferOverride (int handle, int width, int height) {
@@ -635,6 +697,58 @@ public class LwjglApplication implements Application {
 
 		// Avoid double-throttling when swap interval is already pacing us near the active refresh rate.
 		return frameRate + VSYNC_SOFTWARE_SYNC_MARGIN_FPS < refreshRate;
+	}
+
+	private void syncSoftwareFrame (int frameRate) {
+		if (!ANDROID_FRAME_PACER_ENABLED) {
+			Display.sync(frameRate);
+			return;
+		}
+		if (!androidFramePacerLogged) {
+			androidFramePacerLogged = true;
+			System.out.println("[gdx-patch] Android frame pacer enabled");
+		}
+		syncAndroidFramePacer(frameRate);
+	}
+
+	private void syncAndroidFramePacer (int frameRate) {
+		if (frameRate <= 0) return;
+		long frameNanos = Math.max(1L, NANOS_PER_SECOND / frameRate);
+		long now = System.nanoTime();
+		if (androidFramePacerLastFrameRate != frameRate
+			|| androidFramePacerNextFrameNanos <= 0L
+			|| now - androidFramePacerNextFrameNanos > frameNanos * 2L) {
+			androidFramePacerLastFrameRate = frameRate;
+			androidFramePacerNextFrameNanos = now + frameNanos;
+		}
+
+		long deadline = androidFramePacerNextFrameNanos;
+		sleepUntilFrameDeadline(deadline);
+		long afterWait = System.nanoTime();
+		androidFramePacerNextFrameNanos = deadline + frameNanos;
+		if (afterWait - androidFramePacerNextFrameNanos > frameNanos * 2L) {
+			androidFramePacerNextFrameNanos = afterWait + frameNanos;
+		}
+	}
+
+	private void sleepUntilFrameDeadline (long deadlineNanos) {
+		while (true) {
+			long remainingNanos = deadlineNanos - System.nanoTime();
+			if (remainingNanos <= 0L) return;
+			if (remainingNanos > ANDROID_FRAME_PACER_YIELD_THRESHOLD_NANOS) {
+				long sleepNanos = remainingNanos - ANDROID_FRAME_PACER_SLEEP_MARGIN_NANOS;
+				long millis = sleepNanos / 1000000L;
+				int nanos = (int)(sleepNanos - millis * 1000000L);
+				try {
+					Thread.sleep(millis, nanos);
+				} catch (InterruptedException ignored) {
+					Thread.currentThread().interrupt();
+					return;
+				}
+			} else {
+				Thread.yield();
+			}
+		}
 	}
 
 	private int resolveActiveRefreshRate () {
@@ -1035,7 +1149,10 @@ public class LwjglApplication implements Application {
 
 	private void bindDefaultFramebufferForSwap (boolean allowBindingCache) {
 		ensureDisplayContextCurrent("pre-swap-fbo-rebind");
-		boolean useBindingCache = allowBindingCache && readBooleanSystemProperty(DEFAULT_FBO_REBIND_CACHE_PROP, true);
+		boolean useBindingCache = allowBindingCache
+			&& (DEFAULT_FBO_FAST_REBIND_ENABLED
+				? DEFAULT_FBO_REBIND_CACHE_ENABLED_AT_START
+				: readBooleanSystemProperty(DEFAULT_FBO_REBIND_CACHE_PROP, true));
 		boolean needsBind = !useBindingCache || !isDrawFramebufferKnownDefault();
 		boolean bound = false;
 		if (needsBind) {
@@ -1063,7 +1180,12 @@ public class LwjglApplication implements Application {
 			if (bound) noteFramebufferBound(org.lwjgl.opengl.GL30.GL_FRAMEBUFFER, 0);
 		}
 		try {
-			org.lwjgl.opengl.GL11.glViewport(0, 0, resolvePhysicalDisplayWidth(), resolvePhysicalDisplayHeight());
+			int viewportWidth = resolvePhysicalDisplayWidth();
+			int viewportHeight = resolvePhysicalDisplayHeight();
+			if (!DEFAULT_FBO_FAST_REBIND_ENABLED || needsBind || !isViewportKnown(0, 0, viewportWidth, viewportHeight)) {
+				org.lwjgl.opengl.GL11.glViewport(0, 0, viewportWidth, viewportHeight);
+				noteViewportSet(0, 0, viewportWidth, viewportHeight);
+			}
 		} catch (Throwable ignored) {
 		}
 	}
@@ -1078,6 +1200,12 @@ public class LwjglApplication implements Application {
 	}
 
 	private boolean shouldForceDefaultFramebuffer () {
+		if (HOT_LOOP_NOOP_TRIM_ENABLED) {
+			if (FORCE_DEFAULT_FBO_OVERRIDE_AT_START != null) {
+				return FORCE_DEFAULT_FBO_OVERRIDE_AT_START.booleanValue();
+			}
+			return LwjglGraphics.isGLESContextActive();
+		}
 		String configured = System.getProperty(FORCE_DEFAULT_FBO_PROP);
 		if (configured != null) {
 			configured = configured.trim();
@@ -1088,6 +1216,12 @@ public class LwjglApplication implements Application {
 		// Default to enabled on GLES-backed contexts to avoid swapping a stale black backbuffer
 		// when third-party code leaves an offscreen FBO bound at end of frame.
 		return LwjglGraphics.isGLESContextActive();
+	}
+
+	private static boolean shouldPostRenderClear () {
+		return HOT_LOOP_NOOP_TRIM_ENABLED
+			? POST_RENDER_CLEAR_ENABLED_AT_START
+			: Boolean.getBoolean(POST_RENDER_CLEAR_PROP);
 	}
 
 	private static Field findField (Class<?> type, String name) throws NoSuchFieldException {
@@ -1228,7 +1362,10 @@ public class LwjglApplication implements Application {
 	}
 
 	private boolean shouldEnableGlobalTextureCompat () {
-		return readBooleanSystemProperty(RUNTIME_TEXTURE_COMPAT_PROP, false) && LwjglGraphics.isGLESContextActive();
+		boolean enabled = HOT_LOOP_NOOP_TRIM_ENABLED
+			? RUNTIME_TEXTURE_COMPAT_ENABLED_AT_START
+			: readBooleanSystemProperty(RUNTIME_TEXTURE_COMPAT_PROP, false);
+		return enabled && LwjglGraphics.isGLESContextActive();
 	}
 
 	private static boolean readBooleanSystemProperty (String key, boolean defaultValue) {
@@ -1243,6 +1380,31 @@ public class LwjglApplication implements Application {
 			return true;
 		}
 		return defaultValue;
+	}
+
+	private static Boolean readOptionalBooleanSystemProperty (String key) {
+		String configured = System.getProperty(key);
+		if (configured == null) return null;
+		configured = configured.trim();
+		if (configured.length() == 0) return null;
+		if ("false".equalsIgnoreCase(configured) || "0".equals(configured) || "off".equalsIgnoreCase(configured)) {
+			return Boolean.FALSE;
+		}
+		if ("true".equalsIgnoreCase(configured) || "1".equals(configured) || "on".equalsIgnoreCase(configured)) {
+			return Boolean.TRUE;
+		}
+		return null;
+	}
+
+	private static boolean isGpuLeakInjectorModeEnabled (String mode) {
+		if (mode == null) return false;
+		mode = mode.trim();
+		return "texture".equalsIgnoreCase(mode) || "both".equalsIgnoreCase(mode);
+	}
+
+	private static boolean isGpuResourceGuardianModeEnabled (String mode) {
+		if (mode == null || mode.trim().length() == 0) return true;
+		return !"off".equalsIgnoreCase(mode.trim());
 	}
 
 	private static int readIntSystemProperty (String key, int defaultValue, int minValue, int maxValue) {
@@ -1480,7 +1642,10 @@ public class LwjglApplication implements Application {
 	}
 
 	private boolean shouldRunGlobalTextureCompatScan () {
-		if (!readBooleanSystemProperty(RUNTIME_TEXTURE_COMPAT_PERIODIC_SCAN_PROP, false)) return false;
+		boolean enabled = HOT_LOOP_NOOP_TRIM_ENABLED
+			? RUNTIME_TEXTURE_COMPAT_PERIODIC_SCAN_ENABLED_AT_START
+			: readBooleanSystemProperty(RUNTIME_TEXTURE_COMPAT_PERIODIC_SCAN_PROP, false);
+		if (!enabled) return false;
 		long frame = graphics.frameId;
 		if (frame < 3600) return (frame % 60) == 0;
 		if (frame < 7200) return (frame % 10) == 0;
@@ -1489,11 +1654,15 @@ public class LwjglApplication implements Application {
 	}
 
 	private boolean shouldEnableGlobalAtlasFilterCompatFallback () {
-		return readBooleanSystemProperty(GLOBAL_ATLAS_FILTER_COMPAT_PROP, true);
+		return HOT_LOOP_NOOP_TRIM_ENABLED
+			? GLOBAL_ATLAS_FILTER_COMPAT_ENABLED_AT_START
+			: readBooleanSystemProperty(GLOBAL_ATLAS_FILTER_COMPAT_PROP, true);
 	}
 
 	private boolean shouldEnableGlobalTextureCompatVerboseLog () {
-		return readBooleanSystemProperty(GLOBAL_TEXTURE_COMPAT_VERBOSE_PROP, false);
+		return HOT_LOOP_NOOP_TRIM_ENABLED
+			? GLOBAL_TEXTURE_COMPAT_VERBOSE_ENABLED_AT_START
+			: readBooleanSystemProperty(GLOBAL_TEXTURE_COMPAT_VERBOSE_PROP, false);
 	}
 
 	private static void drainGlErrors () {
@@ -1813,6 +1982,9 @@ public class LwjglApplication implements Application {
 		} catch (LWJGLException e) {
 			throw new GdxRuntimeException(e);
 		}
+		if (HOT_LOOP_NOOP_TRIM_ENABLED) {
+			System.out.println("[gdx-patch] Hot-loop no-op trim enabled");
+		}
 		int configuredVirtualWidth = resolveConfiguredVirtualWidth();
 		int configuredVirtualHeight = resolveConfiguredVirtualHeight();
 		if (configuredVirtualWidth > 0) graphics.config.width = configuredVirtualWidth;
@@ -2052,15 +2224,20 @@ public class LwjglApplication implements Application {
 					stageStartNanos = now;
 				}
 				boolean forceDefaultFbo = shouldForceDefaultFramebuffer() || scaledRender != null;
-				if (forceDefaultFbo || Boolean.getBoolean("amethyst.lwjgl.diag.post_render_clear")) {
+				boolean postRenderClear = shouldPostRenderClear();
+				if (forceDefaultFbo || postRenderClear) {
+					if (DEFAULT_FBO_FAST_REBIND_ENABLED && !defaultFboFastRebindLogged) {
+						defaultFboFastRebindLogged = true;
+						System.out.println("[gdx-patch] Default framebuffer fast rebind enabled");
+					}
 					if (forceDefaultFbo && !defaultFramebufferRebindLogged) {
 						// Reduced log mode: default-fbo one-time info log disabled.
 						// System.out.println("[gdx-patch] Enabling default framebuffer rebind before swap");
 						defaultFramebufferRebindLogged = true;
 					}
-					bindDefaultFramebufferForSwap(scaledRender != null);
+					bindDefaultFramebufferForSwap(scaledRender != null || DEFAULT_FBO_FAST_REBIND_ENABLED);
 				}
-				if (Boolean.getBoolean("amethyst.lwjgl.diag.post_render_clear")) {
+				if (postRenderClear) {
 					org.lwjgl.opengl.GL11.glClearColor(1f, 0f, 0f, 1f);
 					org.lwjgl.opengl.GL11.glClear(org.lwjgl.opengl.GL11.GL_COLOR_BUFFER_BIT);
 				}
@@ -2086,7 +2263,7 @@ public class LwjglApplication implements Application {
 				if (frameRate == 0) frameRate = graphics.config.backgroundFPS;
 				if (frameRate == 0) frameRate = 30;
 			}
-			if (shouldUseSoftwareSync(renderedFrame, isActive, frameRate)) Display.sync(frameRate);
+			if (shouldUseSoftwareSync(renderedFrame, isActive, frameRate)) syncSoftwareFrame(frameRate);
 		}
 
 		synchronized (lifecycleListeners) {
@@ -2107,6 +2284,9 @@ public class LwjglApplication implements Application {
 	}
 
 	private static boolean shouldLogGpuResourceSummary () {
+		if (HOT_LOOP_NOOP_TRIM_ENABLED) {
+			return GPU_RESOURCE_DIAG_ENABLED_AT_START || GPU_RESOURCE_SUMMARY_ENABLED_AT_START;
+		}
 		return readBooleanSystemProperty(GPU_RESOURCE_DIAG_ENABLED_PROP, false)
 			|| readBooleanSystemProperty(GPU_RESOURCE_SUMMARY_ENABLED_PROP, false);
 	}
@@ -2162,10 +2342,8 @@ public class LwjglApplication implements Application {
 	}
 
 	private static boolean isGpuLeakInjectorEnabled () {
-		String mode = System.getProperty(GPU_LEAK_INJECTOR_MODE_PROP);
-		if (mode == null) return false;
-		mode = mode.trim();
-		return "texture".equalsIgnoreCase(mode) || "both".equalsIgnoreCase(mode);
+		if (HOT_LOOP_NOOP_TRIM_ENABLED) return GPU_LEAK_INJECTOR_ENABLED_AT_START;
+		return isGpuLeakInjectorModeEnabled(System.getProperty(GPU_LEAK_INJECTOR_MODE_PROP));
 	}
 
 	private static Method getGpuLeakInjectorAfterFrameMethod () {
@@ -2187,6 +2365,7 @@ public class LwjglApplication implements Application {
 	}
 
 	private static void callGpuResourceGuardianAfterRender (Application app, long frameId) {
+		if (HOT_LOOP_NOOP_TRIM_ENABLED && !GPU_RESOURCE_GUARDIAN_ENABLED_AT_START) return;
 		Method afterRender = getGpuResourceGuardianAfterRenderMethod();
 		if (afterRender == null) return;
 		try {

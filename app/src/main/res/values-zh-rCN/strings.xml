@@ -177,6 +177,12 @@
     <string name="compat_hina_character_render_desc">开启后，Blue Archive Hina 的 3D 角色辅助渲染会保留原始逻辑相机倍率，但改用更适合移动端的离屏 FrameBuffer 和更简单的最终拷贝路径，用于修复 Android 兼容运行时下日奈人物显示为空白或尺寸异常的问题。若你要对比原始模组行为，可临时关闭。这是运行时兼容开关。</string>
     <string name="compat_non_renderable_fbo_format_compat_title">不可渲染的 FBO 格式修复</string>
     <string name="compat_non_renderable_fbo_format_compat_desc">开启后会把 GLES 下不可作为颜色附件的 FrameBuffer 格式（Alpha/Intensity/LuminanceAlpha）自动升级为 RGBA8888，以避免“frame buffer couldn\'t be constructed: incomplete attachment”这类启动崩溃。关闭后更接近模组原始行为，但可能再次触发启动崩溃。如果你的 Haberdashery 遗物展示模组出现问题，可以考虑启用此项。</string>
+    <string name="compat_android_lwjgl_frame_pacing_title">Android/LWJGL 帧节奏控制</string>
+    <string name="compat_android_lwjgl_frame_pacing_desc">开启后，修补过的 LWJGL 循环会按 Android 显示节奏等待下一帧，避免帧间忙等。它可能降低重渲染模组场景里的 CPU 发热，不改变任何视觉特效。下次启动生效。</string>
+    <string name="compat_lwjgl_hot_loop_noop_trim_title">LWJGL 热循环 no-op 瘦身</string>
+    <string name="compat_lwjgl_hot_loop_noop_trim_desc">开启后，修补过的主循环会跳过活跃帧中的重复空操作，降低 CPU 开销；不会关闭渲染、动画、shader 或特效。下次启动生效。</string>
+    <string name="compat_default_framebuffer_fast_rebind_title">默认 framebuffer rebind/viewport 去重</string>
+    <string name="compat_default_framebuffer_fast_rebind_desc">开启后，修补过的 GDX/LWJGL 路径会缓存并去重重复的默认 framebuffer 绑定和 viewport 恢复，减少 GL 驱动调用；不改变分辨率、shader 或特效。下次启动生效。</string>
     <string name="compat_fbo_manager_title">全局 FBO 管理</string>
     <string name="compat_fbo_manager_desc">已锁定。此旧版全局 FBO 管理器仅在 GPU 资源守护器设为“旧版”时启用。</string>
     <string name="compat_fbo_idle_reclaim_title">FBO 空闲回收</string>
@@ -1988,6 +1994,9 @@
     <string name="settings_status_native_touchscreen_allowlist_compat">原生触屏兼容白名单：%1$s</string>
     <string name="settings_status_texture_pressure_downscale_divisor">纹理压力降采样倍率：x%1$d</string>
     <string name="settings_status_force_linear_mipmap_filter">强制线性 mipmap filter：%1$s</string>
+    <string name="settings_status_android_lwjgl_frame_pacing">Android/LWJGL 帧节奏控制：%1$s</string>
+    <string name="settings_status_lwjgl_hot_loop_noop_trim">LWJGL 热循环 no-op 瘦身：%1$s</string>
+    <string name="settings_status_default_framebuffer_fast_rebind">默认 framebuffer rebind/viewport 去重：%1$s</string>
     <string name="settings_status_bundled_jre_path">内置 JRE 路径：%1$s</string>
     <string name="settings_status_core_dependency_missing">%1$s：缺失</string>
     <string name="settings_status_core_dependency_available">%1$s：可用（来源：%2$s，版本：%3$s）</string>

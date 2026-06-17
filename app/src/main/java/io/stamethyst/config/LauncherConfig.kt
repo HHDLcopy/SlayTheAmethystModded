@@ -156,6 +156,12 @@ object LauncherConfig {
         "compat_hina_character_render"
     private const val PREF_KEY_NON_RENDERABLE_FBO_FORMAT_COMPAT =
         "compat_non_renderable_fbo_format_compat"
+    private const val PREF_KEY_ANDROID_LWJGL_FRAME_PACING_COMPAT =
+        "compat_android_lwjgl_frame_pacing"
+    private const val PREF_KEY_LWJGL_HOT_LOOP_NOOP_TRIM_COMPAT =
+        "compat_lwjgl_hot_loop_noop_trim"
+    private const val PREF_KEY_DEFAULT_FRAMEBUFFER_FAST_REBIND_COMPAT =
+        "compat_default_framebuffer_fast_rebind"
     private const val PREF_KEY_FBO_MANAGER_COMPAT = "compat_fbo_manager"
     private const val PREF_KEY_FBO_IDLE_RECLAIM_COMPAT = "compat_fbo_idle_reclaim"
     private const val PREF_KEY_FBO_PRESSURE_DOWNSCALE_COMPAT =
@@ -333,6 +339,9 @@ object LauncherConfig {
     val DEFAULT_GPU_RESOURCE_GUARDIAN_MODE: GpuResourceGuardianMode = GpuResourceGuardianMode.OFF
     const val DEFAULT_GPU_RESOURCE_GUARDIAN_PRESSURE_DOWNSCALE_ENABLED = false
     const val DEFAULT_HINA_CHARACTER_RENDER_COMPAT_ENABLED = true
+    const val DEFAULT_ANDROID_LWJGL_FRAME_PACING_COMPAT_ENABLED = false
+    const val DEFAULT_LWJGL_HOT_LOOP_NOOP_TRIM_COMPAT_ENABLED = false
+    const val DEFAULT_FRAMEBUFFER_FAST_REBIND_COMPAT_ENABLED = false
     const val DEFAULT_FBO_MANAGER_COMPAT_ENABLED = false
     const val DEFAULT_FBO_IDLE_RECLAIM_COMPAT_ENABLED = false
     const val DEFAULT_FBO_PRESSURE_DOWNSCALE_COMPAT_ENABLED = false
@@ -1481,6 +1490,45 @@ object LauncherConfig {
     fun setNonRenderableFboFormatCompatEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_NON_RENDERABLE_FBO_FORMAT_COMPAT, enabled)
+        }
+    }
+
+    fun isAndroidLwjglFramePacingCompatEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_ANDROID_LWJGL_FRAME_PACING_COMPAT,
+            DEFAULT_ANDROID_LWJGL_FRAME_PACING_COMPAT_ENABLED
+        )
+    }
+
+    fun setAndroidLwjglFramePacingCompatEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_ANDROID_LWJGL_FRAME_PACING_COMPAT, enabled)
+        }
+    }
+
+    fun isLwjglHotLoopNoopTrimCompatEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_LWJGL_HOT_LOOP_NOOP_TRIM_COMPAT,
+            DEFAULT_LWJGL_HOT_LOOP_NOOP_TRIM_COMPAT_ENABLED
+        )
+    }
+
+    fun setLwjglHotLoopNoopTrimCompatEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_LWJGL_HOT_LOOP_NOOP_TRIM_COMPAT, enabled)
+        }
+    }
+
+    fun isDefaultFramebufferFastRebindCompatEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_DEFAULT_FRAMEBUFFER_FAST_REBIND_COMPAT,
+            DEFAULT_FRAMEBUFFER_FAST_REBIND_COMPAT_ENABLED
+        )
+    }
+
+    fun setDefaultFramebufferFastRebindCompatEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_DEFAULT_FRAMEBUFFER_FAST_REBIND_COMPAT, enabled)
         }
     }
 

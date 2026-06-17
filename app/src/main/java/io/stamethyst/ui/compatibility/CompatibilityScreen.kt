@@ -116,6 +116,15 @@ fun LauncherCompatibilityScreen(
         onNonRenderableFboFormatCompatToggled = { enabled ->
             viewModel.onNonRenderableFboFormatCompatToggled(context, enabled)
         },
+        onAndroidLwjglFramePacingCompatToggled = { enabled ->
+            viewModel.onAndroidLwjglFramePacingCompatToggled(context, enabled)
+        },
+        onLwjglHotLoopNoopTrimCompatToggled = { enabled ->
+            viewModel.onLwjglHotLoopNoopTrimCompatToggled(context, enabled)
+        },
+        onDefaultFramebufferFastRebindCompatToggled = { enabled ->
+            viewModel.onDefaultFramebufferFastRebindCompatToggled(context, enabled)
+        },
         onFboManagerCompatToggled = { enabled ->
             viewModel.onFboManagerCompatToggled(context, enabled)
         },
@@ -167,6 +176,9 @@ private fun LauncherCompatibilityScreenPreview() {
             forceLinearMipmapFilterEnabled = true,
             hinaCharacterRenderCompatEnabled = true,
             nonRenderableFboFormatCompatEnabled = true,
+            androidLwjglFramePacingCompatEnabled = false,
+            lwjglHotLoopNoopTrimCompatEnabled = false,
+            defaultFramebufferFastRebindCompatEnabled = false,
             fboManagerCompatEnabled = true,
             fboIdleReclaimCompatEnabled = true,
             fboPressureDownscaleCompatEnabled = true
@@ -205,6 +217,9 @@ private fun LauncherCompatibilityScreenContent(
     onForceLinearMipmapFilterToggled: (Boolean) -> Unit = {},
     onHinaCharacterRenderCompatToggled: (Boolean) -> Unit = {},
     onNonRenderableFboFormatCompatToggled: (Boolean) -> Unit = {},
+    onAndroidLwjglFramePacingCompatToggled: (Boolean) -> Unit = {},
+    onLwjglHotLoopNoopTrimCompatToggled: (Boolean) -> Unit = {},
+    onDefaultFramebufferFastRebindCompatToggled: (Boolean) -> Unit = {},
     onFboManagerCompatToggled: (Boolean) -> Unit = {},
     onFboIdleReclaimCompatToggled: (Boolean) -> Unit = {},
     onFboPressureDownscaleCompatToggled: (Boolean) -> Unit = {},
@@ -333,6 +348,30 @@ private fun LauncherCompatibilityScreenContent(
                     checked = uiState.nonRenderableFboFormatCompatEnabled,
                     enabled = !uiState.busy,
                     onCheckedChange = onNonRenderableFboFormatCompatToggled
+                )
+
+                CompatibilitySwitchRow(
+                    title = stringResource(R.string.compat_android_lwjgl_frame_pacing_title),
+                    description = stringResource(R.string.compat_android_lwjgl_frame_pacing_desc),
+                    checked = uiState.androidLwjglFramePacingCompatEnabled,
+                    enabled = !uiState.busy,
+                    onCheckedChange = onAndroidLwjglFramePacingCompatToggled
+                )
+
+                CompatibilitySwitchRow(
+                    title = stringResource(R.string.compat_lwjgl_hot_loop_noop_trim_title),
+                    description = stringResource(R.string.compat_lwjgl_hot_loop_noop_trim_desc),
+                    checked = uiState.lwjglHotLoopNoopTrimCompatEnabled,
+                    enabled = !uiState.busy,
+                    onCheckedChange = onLwjglHotLoopNoopTrimCompatToggled
+                )
+
+                CompatibilitySwitchRow(
+                    title = stringResource(R.string.compat_default_framebuffer_fast_rebind_title),
+                    description = stringResource(R.string.compat_default_framebuffer_fast_rebind_desc),
+                    checked = uiState.defaultFramebufferFastRebindCompatEnabled,
+                    enabled = !uiState.busy,
+                    onCheckedChange = onDefaultFramebufferFastRebindCompatToggled
                 )
 
                 CompatibilitySwitchRow(

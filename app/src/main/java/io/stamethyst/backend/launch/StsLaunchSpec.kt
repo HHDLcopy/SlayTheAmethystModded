@@ -42,7 +42,10 @@ object StsLaunchSpec {
         "amethyst.gdx.gpu_guardian_texture_min_bytes",
         "amethyst.gdx.gpu_guardian_texture_max_checks_per_sweep",
         "amethyst.gdx.gpu_guardian_texture_max_reclaims_per_sweep",
-        "amethyst.gdx.gpu_guardian_texture_max_bytes_per_sweep"
+        "amethyst.gdx.gpu_guardian_texture_max_bytes_per_sweep",
+        "amethyst.lwjgl.android_frame_pacer",
+        "amethyst.lwjgl.hot_loop_noop_trim",
+        "amethyst.lwjgl.default_fbo_fast_rebind"
     )
     const val LAUNCH_MODE_VANILLA = "vanilla"
     const val LAUNCH_MODE_MTS = "mts"
@@ -497,6 +500,30 @@ object StsLaunchSpec {
         args.add(
             "-Damethyst.gdx.non_renderable_fbo_format_compat=" +
                 if (CompatibilitySettings.isNonRenderableFboFormatCompatEnabled(context)) "true" else "false"
+        )
+        args.add(
+            "-Damethyst.lwjgl.android_frame_pacer=" +
+                if (CompatibilitySettings.isAndroidLwjglFramePacingCompatEnabled(context)) {
+                    "true"
+                } else {
+                    "false"
+                }
+        )
+        args.add(
+            "-Damethyst.lwjgl.hot_loop_noop_trim=" +
+                if (CompatibilitySettings.isLwjglHotLoopNoopTrimCompatEnabled(context)) {
+                    "true"
+                } else {
+                    "false"
+                }
+        )
+        args.add(
+            "-Damethyst.lwjgl.default_fbo_fast_rebind=" +
+                if (CompatibilitySettings.isDefaultFramebufferFastRebindCompatEnabled(context)) {
+                    "true"
+                } else {
+                    "false"
+                }
         )
         args.add(
             "-Damethyst.gdx.fbo_manager=" +

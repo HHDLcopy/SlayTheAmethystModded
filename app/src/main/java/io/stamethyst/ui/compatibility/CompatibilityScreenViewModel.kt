@@ -40,6 +40,9 @@ class CompatibilityScreenViewModel : ViewModel() {
         val forceLinearMipmapFilterEnabled: Boolean = true,
         val hinaCharacterRenderCompatEnabled: Boolean = true,
         val nonRenderableFboFormatCompatEnabled: Boolean = true,
+        val androidLwjglFramePacingCompatEnabled: Boolean = false,
+        val lwjglHotLoopNoopTrimCompatEnabled: Boolean = false,
+        val defaultFramebufferFastRebindCompatEnabled: Boolean = false,
         val fboManagerCompatEnabled: Boolean = false,
         val fboIdleReclaimCompatEnabled: Boolean = false,
         val fboPressureDownscaleCompatEnabled: Boolean = false,
@@ -97,6 +100,12 @@ class CompatibilityScreenViewModel : ViewModel() {
             forceLinearMipmapFilterEnabled = CompatibilitySettings.isForceLinearMipmapFilterEnabled(host),
             hinaCharacterRenderCompatEnabled = CompatibilitySettings.isHinaCharacterRenderCompatEnabled(host),
             nonRenderableFboFormatCompatEnabled = CompatibilitySettings.isNonRenderableFboFormatCompatEnabled(host),
+            androidLwjglFramePacingCompatEnabled =
+                CompatibilitySettings.isAndroidLwjglFramePacingCompatEnabled(host),
+            lwjglHotLoopNoopTrimCompatEnabled =
+                CompatibilitySettings.isLwjglHotLoopNoopTrimCompatEnabled(host),
+            defaultFramebufferFastRebindCompatEnabled =
+                CompatibilitySettings.isDefaultFramebufferFastRebindCompatEnabled(host),
             fboManagerCompatEnabled = CompatibilitySettings.isFboManagerCompatEnabled(host),
             fboIdleReclaimCompatEnabled = CompatibilitySettings.isFboIdleReclaimCompatEnabled(host),
             fboPressureDownscaleCompatEnabled = CompatibilitySettings.isFboPressureDownscaleCompatEnabled(host),
@@ -309,6 +318,30 @@ class CompatibilityScreenViewModel : ViewModel() {
         }
         CompatibilitySettings.setNonRenderableFboFormatCompatEnabled(host, enabled)
         uiState = uiState.copy(nonRenderableFboFormatCompatEnabled = enabled)
+    }
+
+    fun onAndroidLwjglFramePacingCompatToggled(host: Context, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        CompatibilitySettings.setAndroidLwjglFramePacingCompatEnabled(host, enabled)
+        uiState = uiState.copy(androidLwjglFramePacingCompatEnabled = enabled)
+    }
+
+    fun onLwjglHotLoopNoopTrimCompatToggled(host: Context, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        CompatibilitySettings.setLwjglHotLoopNoopTrimCompatEnabled(host, enabled)
+        uiState = uiState.copy(lwjglHotLoopNoopTrimCompatEnabled = enabled)
+    }
+
+    fun onDefaultFramebufferFastRebindCompatToggled(host: Context, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        CompatibilitySettings.setDefaultFramebufferFastRebindCompatEnabled(host, enabled)
+        uiState = uiState.copy(defaultFramebufferFastRebindCompatEnabled = enabled)
     }
 
     fun onFboManagerCompatToggled(host: Context, enabled: Boolean) {

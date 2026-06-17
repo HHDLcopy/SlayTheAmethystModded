@@ -515,6 +515,12 @@ public class LwjglGraphics implements Graphics {
 		}
 
 		@Override
+		public void glViewport (int x, int y, int width, int height) {
+			super.glViewport(x, y, width, height);
+			LwjglApplication.noteViewportSet(x, y, width, height);
+		}
+
+		@Override
 		public void glBindRenderbuffer (int target, int renderbuffer) {
 			try {
 				if (canUseCorePath()) {
@@ -722,6 +728,12 @@ public class LwjglGraphics implements Graphics {
 				LwjglApplication.remapRequestedFramebufferHandle(framebuffer)
 			);
 			LwjglApplication.noteFramebufferBound(target, framebuffer);
+		}
+
+		@Override
+		public void glViewport (int x, int y, int width, int height) {
+			super.glViewport(x, y, width, height);
+			LwjglApplication.noteViewportSet(x, y, width, height);
 		}
 	}
 

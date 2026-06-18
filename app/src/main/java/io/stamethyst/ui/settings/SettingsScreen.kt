@@ -4494,6 +4494,15 @@ internal fun SettingsInputBasicsSection(
     )
 
     SwitchSettingRow(
+        checked = uiState.touchDoubleClickAsRightClick,
+        enabled = !uiState.busy,
+        enabledText = stringResource(R.string.settings_touch_double_click_as_right_click_enabled),
+        disabledText = stringResource(R.string.settings_touch_double_click_as_right_click_disabled),
+        description = stringResource(R.string.settings_touch_double_click_as_right_click_desc),
+        onCheckedChange = onTouchDoubleClickAsRightClickChanged
+    )
+
+    SwitchSettingRow(
         checked = uiState.touchIndicatorEnabled,
         enabled = !uiState.busy && uiState.touchscreenInputMode.touchscreenEnabled,
         enabledText = stringResource(R.string.settings_touch_indicator_enabled),

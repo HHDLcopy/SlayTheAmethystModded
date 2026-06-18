@@ -185,6 +185,8 @@
     <string name="compat_default_framebuffer_fast_rebind_desc">開啟後，修補過的 GDX/LWJGL 路徑會快取並去重重複的預設 framebuffer 綁定和 viewport 恢復，減少 GL 驅動呼叫；不改變解析度、shader 或特效。下次啟動生效。</string>
     <string name="compat_native_pre_swap_pacing_title">Native pre-swap 影格節奏控制</string>
     <string name="compat_native_pre_swap_pacing_desc">開啟後，原生 EGL bridge 會依選擇的 FPS 目標在 eglSwapBuffers 前等待，減少已完成影格之間的忙等；不改變解析度、shader、動畫或特效。下次啟動生效。</string>
+    <string name="compat_egl_swap_interval_pacing_title">EGL swap interval 影格節奏控制</string>
+    <string name="compat_egl_swap_interval_pacing_desc">開啟後，Android EGL bridge 會強制 swap interval 節奏控制，並讓 LWJGL 將 vsync 視為啟用，減少重複的軟體等待；不改變渲染特效。下次啟動生效。</string>
     <string name="compat_fbo_manager_title">全域性 FBO 管理</string>
     <string name="compat_fbo_manager_desc">已鎖定。此舊版全域性 FBO 管理器僅在 GPU 資源守護器設為「舊版」時啟用。</string>
     <string name="compat_fbo_idle_reclaim_title">FBO 空閒回收</string>
@@ -2037,6 +2039,7 @@
     <string name="settings_status_lwjgl_hot_loop_noop_trim">LWJGL 熱迴圈 no-op 瘦身：%1$s</string>
     <string name="settings_status_default_framebuffer_fast_rebind">預設 framebuffer rebind/viewport 去重：%1$s</string>
     <string name="settings_status_native_pre_swap_pacing">Native pre-swap 影格節奏控制：%1$s</string>
+    <string name="settings_status_egl_swap_interval_pacing">EGL swap interval 影格節奏控制：%1$s</string>
     <string name="settings_status_bundled_jre_path">內建 JRE 路徑：%1$s</string>
     <string name="settings_status_core_dependency_missing">%1$s：缺失</string>
     <string name="settings_status_core_dependency_available">%1$s：可用（來源：%2$s，版本：%3$s）</string>

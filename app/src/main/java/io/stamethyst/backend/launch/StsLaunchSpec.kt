@@ -45,7 +45,8 @@ object StsLaunchSpec {
         "amethyst.gdx.gpu_guardian_texture_max_bytes_per_sweep",
         "amethyst.lwjgl.android_frame_pacer",
         "amethyst.lwjgl.hot_loop_noop_trim",
-        "amethyst.lwjgl.default_fbo_fast_rebind"
+        "amethyst.lwjgl.default_fbo_fast_rebind",
+        "amethyst.lwjgl.egl_swap_interval_pacing"
     )
     const val LAUNCH_MODE_VANILLA = "vanilla"
     const val LAUNCH_MODE_MTS = "mts"
@@ -520,6 +521,14 @@ object StsLaunchSpec {
         args.add(
             "-Damethyst.lwjgl.default_fbo_fast_rebind=" +
                 if (CompatibilitySettings.isDefaultFramebufferFastRebindCompatEnabled(context)) {
+                    "true"
+                } else {
+                    "false"
+                }
+        )
+        args.add(
+            "-Damethyst.lwjgl.egl_swap_interval_pacing=" +
+                if (CompatibilitySettings.isEglSwapIntervalPacingCompatEnabled(context)) {
                     "true"
                 } else {
                     "false"

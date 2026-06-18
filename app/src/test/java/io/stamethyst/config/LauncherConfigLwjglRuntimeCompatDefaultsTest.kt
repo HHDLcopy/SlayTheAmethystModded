@@ -23,4 +23,9 @@ class LauncherConfigLwjglRuntimeCompatDefaultsTest {
     fun nativePreSwapPacing_defaultsDisabled() {
         assertFalse(LauncherConfig.DEFAULT_NATIVE_PRE_SWAP_PACING_COMPAT_ENABLED)
     }
+
+    @Test
+    fun eglSwapIntervalPacing_defaultsDisabled() {
+        assertFalse(LauncherConfig.DEFAULT_EGL_SWAP_INTERVAL_PACING_COMPAT_ENABLED)
+    }
 }

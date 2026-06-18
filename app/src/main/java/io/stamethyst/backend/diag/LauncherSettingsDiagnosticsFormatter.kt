@@ -289,6 +289,9 @@ internal object LauncherSettingsDiagnosticsFormatter {
                         "nativePreSwapPacingCompat" to formatBoolean(
                             CompatibilitySettings.isNativePreSwapPacingCompatEnabled(context)
                         ),
+                        "eglSwapIntervalPacingCompat" to formatBoolean(
+                            CompatibilitySettings.isEglSwapIntervalPacingCompatEnabled(context)
+                        ),
                         "fboManagerCompat" to formatBoolean(
                             CompatibilitySettings.isFboManagerCompatEnabled(context)
                         ),

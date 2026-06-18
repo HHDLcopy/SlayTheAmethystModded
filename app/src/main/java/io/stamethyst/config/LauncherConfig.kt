@@ -164,6 +164,8 @@ object LauncherConfig {
         "compat_default_framebuffer_fast_rebind"
     private const val PREF_KEY_NATIVE_PRE_SWAP_PACING_COMPAT =
         "compat_native_pre_swap_pacing"
+    private const val PREF_KEY_EGL_SWAP_INTERVAL_PACING_COMPAT =
+        "compat_egl_swap_interval_pacing"
     private const val PREF_KEY_FBO_MANAGER_COMPAT = "compat_fbo_manager"
     private const val PREF_KEY_FBO_IDLE_RECLAIM_COMPAT = "compat_fbo_idle_reclaim"
     private const val PREF_KEY_FBO_PRESSURE_DOWNSCALE_COMPAT =
@@ -345,6 +347,7 @@ object LauncherConfig {
     const val DEFAULT_LWJGL_HOT_LOOP_NOOP_TRIM_COMPAT_ENABLED = false
     const val DEFAULT_FRAMEBUFFER_FAST_REBIND_COMPAT_ENABLED = false
     const val DEFAULT_NATIVE_PRE_SWAP_PACING_COMPAT_ENABLED = false
+    const val DEFAULT_EGL_SWAP_INTERVAL_PACING_COMPAT_ENABLED = false
     const val DEFAULT_FBO_MANAGER_COMPAT_ENABLED = false
     const val DEFAULT_FBO_IDLE_RECLAIM_COMPAT_ENABLED = false
     const val DEFAULT_FBO_PRESSURE_DOWNSCALE_COMPAT_ENABLED = false
@@ -1545,6 +1548,19 @@ object LauncherConfig {
     fun setNativePreSwapPacingCompatEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_NATIVE_PRE_SWAP_PACING_COMPAT, enabled)
+        }
+    }
+
+    fun isEglSwapIntervalPacingCompatEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_EGL_SWAP_INTERVAL_PACING_COMPAT,
+            DEFAULT_EGL_SWAP_INTERVAL_PACING_COMPAT_ENABLED
+        )
+    }
+
+    fun setEglSwapIntervalPacingCompatEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_EGL_SWAP_INTERVAL_PACING_COMPAT, enabled)
         }
     }
 

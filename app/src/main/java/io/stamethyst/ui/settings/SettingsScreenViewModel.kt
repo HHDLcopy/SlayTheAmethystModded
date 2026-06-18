@@ -4156,6 +4156,10 @@ class SettingsScreenViewModel : ViewModel() {
             toggleStateText(host, compatibility.nativePreSwapPacingCompatEnabled)
         )
         lines += host.getString(
+            R.string.settings_status_egl_swap_interval_pacing,
+            toggleStateText(host, compatibility.eglSwapIntervalPacingCompatEnabled)
+        )
+        lines += host.getString(
             R.string.settings_status_bundled_jre_path,
             "app/src/main/assets/components/jre"
         )

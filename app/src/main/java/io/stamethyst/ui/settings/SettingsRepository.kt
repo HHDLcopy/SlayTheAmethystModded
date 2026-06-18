@@ -131,6 +131,7 @@ internal object SettingsRepository {
         val lwjglHotLoopNoopTrimCompatEnabled: Boolean,
         val defaultFramebufferFastRebindCompatEnabled: Boolean,
         val nativePreSwapPacingCompatEnabled: Boolean,
+        val eglSwapIntervalPacingCompatEnabled: Boolean,
         val runtimeDownscaleMaterialPolicy: RuntimeDownscaleMaterialPolicy,
         val importDownscaleMaterialPolicy: ImportDownscaleMaterialPolicy
     )
@@ -279,6 +280,8 @@ internal object SettingsRepository {
                     CompatibilitySettings.isDefaultFramebufferFastRebindCompatEnabled(context),
                 nativePreSwapPacingCompatEnabled =
                     CompatibilitySettings.isNativePreSwapPacingCompatEnabled(context),
+                eglSwapIntervalPacingCompatEnabled =
+                    CompatibilitySettings.isEglSwapIntervalPacingCompatEnabled(context),
                 runtimeDownscaleMaterialPolicy =
                     CompatibilitySettings.readRuntimeDownscaleMaterialPolicy(context),
                 importDownscaleMaterialPolicy =

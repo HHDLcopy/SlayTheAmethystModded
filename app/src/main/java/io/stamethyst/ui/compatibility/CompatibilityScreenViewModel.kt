@@ -44,6 +44,7 @@ class CompatibilityScreenViewModel : ViewModel() {
         val lwjglHotLoopNoopTrimCompatEnabled: Boolean = false,
         val defaultFramebufferFastRebindCompatEnabled: Boolean = false,
         val nativePreSwapPacingCompatEnabled: Boolean = false,
+        val eglSwapIntervalPacingCompatEnabled: Boolean = false,
         val fboManagerCompatEnabled: Boolean = false,
         val fboIdleReclaimCompatEnabled: Boolean = false,
         val fboPressureDownscaleCompatEnabled: Boolean = false,
@@ -109,6 +110,8 @@ class CompatibilityScreenViewModel : ViewModel() {
                 CompatibilitySettings.isDefaultFramebufferFastRebindCompatEnabled(host),
             nativePreSwapPacingCompatEnabled =
                 CompatibilitySettings.isNativePreSwapPacingCompatEnabled(host),
+            eglSwapIntervalPacingCompatEnabled =
+                CompatibilitySettings.isEglSwapIntervalPacingCompatEnabled(host),
             fboManagerCompatEnabled = CompatibilitySettings.isFboManagerCompatEnabled(host),
             fboIdleReclaimCompatEnabled = CompatibilitySettings.isFboIdleReclaimCompatEnabled(host),
             fboPressureDownscaleCompatEnabled = CompatibilitySettings.isFboPressureDownscaleCompatEnabled(host),
@@ -353,6 +356,14 @@ class CompatibilityScreenViewModel : ViewModel() {
         }
         CompatibilitySettings.setNativePreSwapPacingCompatEnabled(host, enabled)
         uiState = uiState.copy(nativePreSwapPacingCompatEnabled = enabled)
+    }
+
+    fun onEglSwapIntervalPacingCompatToggled(host: Context, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        CompatibilitySettings.setEglSwapIntervalPacingCompatEnabled(host, enabled)
+        uiState = uiState.copy(eglSwapIntervalPacingCompatEnabled = enabled)
     }
 
     fun onFboManagerCompatToggled(host: Context, enabled: Boolean) {

@@ -132,8 +132,11 @@ public final class JREUtils {
         env.put("TMPDIR", context.getCacheDir().getAbsolutePath());
         env.put("LD_LIBRARY_PATH", LD_LIBRARY_PATH);
         env.put("PATH", javaHome + "/bin:" + safeGetEnv("PATH"));
-        env.put("FORCE_VSYNC", "false");
-        env.put("LIBGL_VSYNC", "0");
+        boolean eglSwapIntervalPacing =
+                CompatibilitySettings.isEglSwapIntervalPacingCompatEnabled(context);
+        env.put("FORCE_VSYNC", eglSwapIntervalPacing ? "true" : "false");
+        env.put("LIBGL_VSYNC", eglSwapIntervalPacing ? "1" : "0");
+        env.put("AMETHYST_EGL_SWAP_INTERVAL_PACING", eglSwapIntervalPacing ? "1" : "0");
         env.put("LIBGL_SHADERNOGLES", "1");
         env.put("LIBGL_NOHIGHP", "1");
         boolean nativePreSwapPacing =

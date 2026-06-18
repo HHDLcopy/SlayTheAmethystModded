@@ -211,9 +211,12 @@ void load_vulkan() {
 int pojavInitOpenGL() {
     g_bridge_ready = false;
     // Only affects GL4ES as of now
+    pojav_environ->force_vsync = false;
     const char *forceVsync = getenv("FORCE_VSYNC");
-    if (forceVsync != NULL && strcmp(forceVsync, "true") == 0)
+    if (forceVsync != NULL && strcmp(forceVsync, "true") == 0) {
         pojav_environ->force_vsync = true;
+        printf("EGLBridge: force swap interval pacing enabled\n");
+    }
 
     // NOTE: Override for now.
     const char *renderer = getenv("AMETHYST_RENDERER");

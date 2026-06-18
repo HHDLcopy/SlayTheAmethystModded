@@ -104,6 +104,10 @@ object CompatibilitySettings {
             context,
             LauncherConfig.DEFAULT_NATIVE_PRE_SWAP_PACING_COMPAT_ENABLED
         )
+        setEglSwapIntervalPacingCompatEnabled(
+            context,
+            LauncherConfig.DEFAULT_EGL_SWAP_INTERVAL_PACING_COMPAT_ENABLED
+        )
         setFboManagerCompatEnabled(context, LauncherConfig.DEFAULT_FBO_MANAGER_COMPAT_ENABLED)
         setFboIdleReclaimCompatEnabled(context, LauncherConfig.DEFAULT_FBO_IDLE_RECLAIM_COMPAT_ENABLED)
         setFboPressureDownscaleCompatEnabled(
@@ -459,6 +463,16 @@ object CompatibilitySettings {
     @JvmStatic
     fun setNativePreSwapPacingCompatEnabled(context: Context, enabled: Boolean) {
         LauncherConfig.setNativePreSwapPacingCompatEnabled(context, enabled)
+    }
+
+    @JvmStatic
+    fun isEglSwapIntervalPacingCompatEnabled(context: Context): Boolean {
+        return LauncherConfig.isEglSwapIntervalPacingCompatEnabled(context)
+    }
+
+    @JvmStatic
+    fun setEglSwapIntervalPacingCompatEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setEglSwapIntervalPacingCompatEnabled(context, enabled)
     }
 
     @JvmStatic

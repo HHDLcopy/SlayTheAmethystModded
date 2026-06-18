@@ -5,7 +5,7 @@ app/src/main/jni/** linguist-vendored
 # Windows batch files must use CRLF so cmd.exe parses them correctly.
 *.bat text eol=crlf
 *.cmd text eol=crlf
-*.ps1 text eol=crlf
+*.py text eol=lf
 *.sh text eol=lf
 cloud-function/scf_bootstrap text eol=lf
 

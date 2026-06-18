@@ -1,5 +1,6 @@
 @echo off
 setlocal
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0prepare-release.ps1" %*
+if "%PYTHON%"=="" set "PYTHON=python"
+"%PYTHON%" "%~dp0build\main.py" prepare-release %*
 exit /b %ERRORLEVEL%

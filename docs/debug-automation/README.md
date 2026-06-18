@@ -3,9 +3,11 @@
 This repository exposes device automation through two layers:
 
 1. Gradle adb tasks owned by `:app`.
-2. A harness wrapper at `scripts/sts-harness.ps1` that records machine-readable results and artifacts.
+2. A Python harness at `scripts/tools/main.py sts-harness` that records machine-readable results and artifacts.
 
 The harness is the preferred entrypoint for repeatable local debugging, CI smoke checks, and Codex-driven device work. It uses the existing Gradle tasks for launcher start/stop/log export instead of bypassing the app's launch chain.
+
+When adding or changing harness commands or options, update both `scripts/README.md` and this guide in the same change.
 
 ## Contract
 
@@ -19,6 +21,8 @@ Harness commands must write `result.json` under the selected output directory. T
 - `launchMode`: requested launch mode.
 - `artifacts`: output paths such as `resultJson`, `logsZip`, `screenshot`, `debugApk`, and `harnessLogcat`.
 - `statusSnapshot`: for `doctor`, `status`, `logs`, and `smoke`; includes `observedState`, optional `runtimeSignalState`, process pids, runtime storage root, desktop jar patch artifact state, boot bridge event summary, latest log tail summary, harness logcat crash summary, and package version.
+- `deviceMods`: for `mods` and `set-mods`; includes required mods, optional mods in `sts/mods_library`, legacy runtime mods in `sts/mods`, raw `enabled_mods.txt` tokens, enabled optional mods, and `.mts_mod_file_list`.
+- `modSelection`: for `set-mods`; includes requested tokens and the exact optional mod storage paths written to `enabled_mods.txt`.
 - `operations`: every native command invoked, with exit code, timestamps, duration, command line, and output tail.
 
 Observed runtime states are intentionally limited to signals the project actually emits:
@@ -46,23 +50,30 @@ TYPE<TAB>PROGRESS<TAB>MESSAGE
 
 Windows:
 
-```powershell
-.\scripts\sts-harness.ps1 -Command doctor
-.\scripts\sts-harness.ps1 -Command install
-.\scripts\sts-harness.ps1 -Command start -LaunchMode mts_basemod
-.\scripts\sts-harness.ps1 -Command status
-.\scripts\sts-harness.ps1 -Command screenshot
-.\scripts\sts-harness.ps1 -Command logs
-.\scripts\sts-harness.ps1 -Command stop
-.\scripts\sts-harness.ps1 -Command smoke -LaunchMode mts_basemod -TimeoutSeconds 120
-.\scripts\sts-harness.ps1 -Command smoke -Autoplay
+```bat
+python .\scripts\tools\main.py sts-harness -Command doctor
+python .\scripts\tools\main.py sts-harness -Command install
+python .\scripts\tools\main.py sts-harness -Command start -LaunchMode mts_basemod
+python .\scripts\tools\main.py sts-harness -Command status
+python .\scripts\tools\main.py sts-harness -Command mods
+python .\scripts\tools\main.py sts-harness -Command set-mods -Mods "Downfall.jar,ReplayTheSpire"
+python .\scripts\tools\main.py sts-harness -Command set-mods -ModListFile .\agent-tmp\enabled-mods.txt
+python .\scripts\tools\main.py sts-harness -Command set-mods -EnableAllMods
+python .\scripts\tools\main.py sts-harness -Command set-mods -DisableAllMods
+python .\scripts\tools\main.py sts-harness -Command screenshot
+python .\scripts\tools\main.py sts-harness -Command logs
+python .\scripts\tools\main.py sts-harness -Command stop
+python .\scripts\tools\main.py sts-harness -Command smoke -LaunchMode mts_basemod -TimeoutSeconds 120
+python .\scripts\tools\main.py sts-harness -Command smoke -Autoplay
 ```
 
-PowerShell 7 on macOS/Linux:
+macOS/Linux:
 
 ```bash
-pwsh ./scripts/sts-harness.ps1 -Command doctor
-pwsh ./scripts/sts-harness.ps1 -Command smoke -LaunchMode mts_basemod -TimeoutSeconds 120
+python3 ./scripts/tools/main.py sts-harness -Command doctor
+python3 ./scripts/tools/main.py sts-harness -Command mods
+python3 ./scripts/tools/main.py sts-harness -Command set-mods -Mods "Downfall.jar,ReplayTheSpire"
+python3 ./scripts/tools/main.py sts-harness -Command smoke -LaunchMode mts_basemod -TimeoutSeconds 120
 ```
 
 Common options:
@@ -76,12 +87,18 @@ Common options:
 - `-ForceRuntimeCrash`: expects a runtime crash marker during `smoke`.
 - `-SkipInstall`: skip APK build/install during `smoke`.
 - `-NoStopAfterSmoke`: leave the app running after `smoke`.
+- `-Mods <tokens>`: comma- or newline-separated optional mod ids, jar names, display names, launch ids, or storage paths for `set-mods`; repeatable.
+- `-ModListFile <path>`: local UTF-8 file with one optional mod token per line for `set-mods`; blank lines and `#` comments are ignored.
+- `-EnableAllMods`: enable every optional mod currently found in `sts/mods_library`.
+- `-DisableAllMods`: disable every optional mod.
+
+`mods` reads device state only. `set-mods` replaces the enabled optional mod selection by writing `sts/enabled_mods.txt` and deleting the stale `.mts_mod_file_list` so the next MTS launch rebuilds it. Required mods such as BaseMod, StSLib, Amethyst Runtime Compat, Amethyst Floating Tools, and Ram Saver are not controlled by `enabled_mods.txt`.
 
 `smoke` starts a harness-owned `adb logcat` capture before launching the app. On crashes that happen before `latest.log` or `boot_bridge_events.log` can be written, `result.json` reports `LOGCAT_CRASH`, stores a short crash excerpt under `statusSnapshot.harnessLogcat.crash`, and writes the full capture to `artifacts.harnessLogcat`. Main-process desktop jar patch failures are also written as a boot bridge `FAIL` event so autoplay smoke can return a concrete failure instead of timing out in the launcher.
 
 ## Gradle Harness Tasks
 
-Gradle wrapper tasks call the same harness script:
+Gradle wrapper tasks call the same Python harness:
 
 Windows:
 
@@ -112,6 +129,7 @@ Gradle properties:
 - `-PharnessTimeoutSeconds=<seconds>`
 - `-PharnessPollIntervalSeconds=<seconds>`
 - `-PharnessSkipInstall=true`
+- `-PpythonExecutable=<python-command>`
 - `-Pautoplay=true`
 - `-PforceJvmCrash=true`
 - `-PforceRuntimeCrash=true`
@@ -186,4 +204,4 @@ Bundle contents:
 - Android SDK configured through `local.properties` `sdk.dir`, `ANDROID_SDK_ROOT`, `ANDROID_HOME`, or PATH.
 - At least one online adb device or emulator.
 - Build dependencies required by the app, including `desktop-1.0.jar` and `runtime-pack/jre8-pojav.zip`, before running install/smoke.
-- PowerShell for the harness script. Windows PowerShell works on Windows; use PowerShell 7 (`pwsh`) on macOS/Linux.
+- Python 3.10 or newer for `scripts/tools/main.py`.

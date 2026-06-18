@@ -26,6 +26,16 @@ public final class CompatRuntimeState {
         "amethyst.touch_indicator_enabled";
     private static final String TOUCHSCREEN_STATE_CLEANUP_PROP =
         "amethyst.runtime_compat.touchscreen_state_cleanup";
+    private static final String TOUCHSCREEN_CARD_GESTURE_PROP =
+        "amethyst.runtime_compat.touchscreen_card_gesture";
+    private static final String TOUCHSCREEN_CARD_TAP_INSPECT_PROP =
+        "amethyst.runtime_compat.touchscreen_card_tap_inspect";
+    private static final String TOUCHSCREEN_CURSOR_WARP_CLEANUP_PROP =
+        "amethyst.runtime_compat.touchscreen_cursor_warp_cleanup";
+    private static final String TOUCHSCREEN_TARGET_ASSIST_PROP =
+        "amethyst.runtime_compat.touchscreen_target_assist";
+    private static final String TOUCHSCREEN_IDLE_CARD_HOVER_CLEANUP_PROP =
+        "amethyst.runtime_compat.touchscreen_idle_card_hover_cleanup";
     private static final String HAND_LAYOUT_ROOM_CONTEXT_RESCUE_PROP =
         "amethyst.runtime_compat.rescue.hand_layout_room_context";
     private static final String ROOM_TRANSITION_RESCUE_PROP =
@@ -64,6 +74,16 @@ public final class CompatRuntimeState {
         readBooleanSystemProperty(TOUCH_INDICATOR_ENABLED_PROP, NATIVE_TOUCHSCREEN_ENABLED);
     private static final boolean TOUCHSCREEN_STATE_CLEANUP_ENABLED =
         readBooleanSystemProperty(TOUCHSCREEN_STATE_CLEANUP_PROP, true);
+    private static final boolean TOUCHSCREEN_CARD_GESTURE_ENABLED =
+        readBooleanSystemProperty(TOUCHSCREEN_CARD_GESTURE_PROP, true);
+    private static final boolean TOUCHSCREEN_CARD_TAP_INSPECT_ENABLED =
+        readBooleanSystemProperty(TOUCHSCREEN_CARD_TAP_INSPECT_PROP, true);
+    private static final boolean TOUCHSCREEN_CURSOR_WARP_CLEANUP_ENABLED =
+        readBooleanSystemProperty(TOUCHSCREEN_CURSOR_WARP_CLEANUP_PROP, true);
+    private static final boolean TOUCHSCREEN_TARGET_ASSIST_ENABLED =
+        readBooleanSystemProperty(TOUCHSCREEN_TARGET_ASSIST_PROP, true);
+    private static final boolean TOUCHSCREEN_IDLE_CARD_HOVER_CLEANUP_ENABLED =
+        readBooleanSystemProperty(TOUCHSCREEN_IDLE_CARD_HOVER_CLEANUP_PROP, true);
     private static final boolean HAND_LAYOUT_ROOM_CONTEXT_RESCUE_ENABLED =
         readBooleanSystemProperty(HAND_LAYOUT_ROOM_CONTEXT_RESCUE_PROP, true);
     private static final boolean ROOM_TRANSITION_RESCUE_ENABLED =
@@ -135,6 +155,16 @@ public final class CompatRuntimeState {
                     + Boolean.toString(TOUCH_INDICATOR_ENABLED)
                     + " touchStateCleanup="
                     + Boolean.toString(TOUCHSCREEN_STATE_CLEANUP_ENABLED)
+                    + " touchCardGesture="
+                    + Boolean.toString(TOUCHSCREEN_CARD_GESTURE_ENABLED)
+                    + " touchCardTapInspect="
+                    + Boolean.toString(TOUCHSCREEN_CARD_TAP_INSPECT_ENABLED)
+                    + " touchCursorWarpCleanup="
+                    + Boolean.toString(TOUCHSCREEN_CURSOR_WARP_CLEANUP_ENABLED)
+                    + " touchTargetAssist="
+                    + Boolean.toString(TOUCHSCREEN_TARGET_ASSIST_ENABLED)
+                    + " touchIdleCardHoverCleanup="
+                    + Boolean.toString(TOUCHSCREEN_IDLE_CARD_HOVER_CLEANUP_ENABLED)
                     + " rescueHandLayoutRoom="
                     + Boolean.toString(HAND_LAYOUT_ROOM_CONTEXT_RESCUE_ENABLED)
                     + " rescueRoomTransition="
@@ -235,6 +265,26 @@ public final class CompatRuntimeState {
 
     public static boolean isTouchscreenStateCleanupEnabled() {
         return TOUCHSCREEN_STATE_CLEANUP_ENABLED;
+    }
+
+    public static boolean isTouchscreenCardGestureEnabled() {
+        return TOUCHSCREEN_CARD_GESTURE_ENABLED;
+    }
+
+    public static boolean isTouchscreenCardTapInspectEnabled() {
+        return TOUCHSCREEN_CARD_TAP_INSPECT_ENABLED;
+    }
+
+    public static boolean isTouchscreenCursorWarpCleanupEnabled() {
+        return TOUCHSCREEN_CURSOR_WARP_CLEANUP_ENABLED;
+    }
+
+    public static boolean isTouchscreenTargetAssistEnabled() {
+        return TOUCHSCREEN_TARGET_ASSIST_ENABLED;
+    }
+
+    public static boolean isTouchscreenIdleCardHoverCleanupEnabled() {
+        return TOUCHSCREEN_IDLE_CARD_HOVER_CLEANUP_ENABLED;
     }
 
     public static boolean isHandLayoutRoomContextRescueEnabled() {

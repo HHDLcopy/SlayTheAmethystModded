@@ -97,6 +97,10 @@ Token permissions:
 Recommended local release flow:
 
 ```bash
+python3 scripts/build/main.py prepare-release
+```
+
+```bash
 bash scripts/prepare-release.sh
 ```
 
@@ -120,6 +124,7 @@ Notes:
 - On Windows, run it from Git Bash or another Bash environment.
 - On Windows Command Prompt or PowerShell, you can use `scripts\prepare-release.bat`.
 - If you explicitly want to skip the preflight, use `scripts\prepare-release.bat -SkipLocalCheck` or `bash scripts/prepare-release.sh --skip-local-check`.
+- The canonical Python entrypoint is `scripts/build/main.py`; shell and batch scripts are compatibility wrappers.
 
 Tag-based release (publishes GitHub Release automatically):
 
@@ -150,11 +155,11 @@ apksigner verify --verbose --print-certs SlayTheAmethyst-dev-<version>.APK
 
 Fast local package:
 
-```powershell
-.\scripts\build-fast-release.ps1
+```bat
+python .\scripts\build\main.py fast-release
 ```
 
-This builds `:app:assembleFastRelease` with release signing inputs, but skips release preflight lint, lint vital, R8 minification, resource shrinking, and release native cache cleanup. Use it for local smoke testing only; official releases should still use `scripts\build-release.ps1` or the tag-based workflow.
+This builds `:app:assembleFastSlimRelease` with release signing inputs, but skips release preflight lint, lint vital, R8 minification, resource shrinking, and release native cache cleanup. Use it for local smoke testing only; official releases should still use `python scripts/build/main.py release` or the tag-based workflow.
 
 ## Troubleshooting
 

@@ -683,7 +683,8 @@ private fun Project.registerAdbTasks(adb: Provider<String>, packageName: String)
 }
 
 private fun Project.registerHarnessTasks() {
-    val harnessScript = rootProject.layout.projectDirectory.file("scripts/sts-harness.ps1")
+    val harnessScript = rootProject.layout.projectDirectory.file("scripts/tools/main.py")
+    val pythonExecutable = readGradleProperty("pythonExecutable", "python")
     val deviceSerial = readGradleProperty("deviceSerial")
     val launchMode = readGradleProperty("launchMode", "mts_basemod")
     val harnessOutDir = readGradleProperty("harnessOutDir")
@@ -715,11 +716,8 @@ private fun Project.registerHarnessTasks() {
             }
             workingDir(rootProject.layout.projectDirectory.asFile)
             val args = mutableListOf(
-                "-NoProfile",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-File",
                 harnessScript.asFile.absolutePath,
+                "sts-harness",
                 "-Command",
                 command,
                 "-LaunchMode",
@@ -752,13 +750,7 @@ private fun Project.registerHarnessTasks() {
             if (noStopAfterSmoke.toBooleanStrictOrNull() == true) {
                 args.add("-NoStopAfterSmoke")
             }
-            val powerShellExecutable =
-                if (System.getProperty("os.name").contains("Windows", ignoreCase = true)) {
-                    "powershell"
-                } else {
-                    "pwsh"
-                }
-            commandLine(powerShellExecutable, *args.toTypedArray())
+            commandLine(pythonExecutable, *args.toTypedArray())
         }
     }
 

@@ -8,6 +8,8 @@
 local.properties
 android-ndk-r10e/
 build/
+!scripts/build/
+!scripts/build/**
 /boot-bridge/bin/
 /gradle/build-logic/bin/
 /patches/gdx-patch/bin/
@@ -32,8 +34,9 @@ artifacts/
 $dir/
 note.md
 tmp_render_scale.txt
-/scripts/package-cloud-function.ps1
 /com/
+__pycache__/
+*.py[cod]
 RingOfDestiny/
 desktop-1.0.jar
 

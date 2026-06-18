@@ -4,14 +4,9 @@ import com.evacipated.cardcrawl.modthespire.lib.SpirePatch2;
 import com.evacipated.cardcrawl.modthespire.lib.SpirePostfixPatch;
 import com.evacipated.cardcrawl.modthespire.lib.SpirePrefixPatch;
 import com.evacipated.cardcrawl.modthespire.lib.SpireReturn;
-import com.megacrit.cardcrawl.cards.AbstractCard;
 import com.megacrit.cardcrawl.characters.AbstractPlayer;
 import com.megacrit.cardcrawl.core.CardCrawlGame;
-import com.megacrit.cardcrawl.core.Settings;
-import com.megacrit.cardcrawl.dungeons.AbstractDungeon;
 import com.megacrit.cardcrawl.helpers.input.InputHelper;
-import com.megacrit.cardcrawl.monsters.AbstractMonster;
-import com.megacrit.cardcrawl.rooms.AbstractRoom;
 
 public final class TouchscreenSingleTargetCancelPatches {
     private static boolean blankTapCancelLogged;
@@ -65,7 +60,7 @@ public final class TouchscreenSingleTargetCancelPatches {
     }
 
     private static boolean shouldCancelBlankTargetTap(AbstractPlayer player) {
-        if (!isNativeTouchscreenCardInputActive()) {
+        if (!TouchscreenCardInputRuntime.isNativeTouchscreenCardInputActive()) {
             return false;
         }
         if (player == null || player.hoveredCard == null) {
@@ -80,14 +75,14 @@ public final class TouchscreenSingleTargetCancelPatches {
         if (!InputHelper.justClickedLeft && !InputHelper.justReleasedClickLeft) {
             return false;
         }
-        if (!isTargetedCard(player.hoveredCard)) {
+        if (!TouchscreenCardInputRuntime.isTargetedCard(player.hoveredCard)) {
             return false;
         }
-        return !isHoveringLiveMonster();
+        return !TouchscreenCardInputRuntime.isHoveringOrNearLiveMonster();
     }
 
     private static boolean shouldCancelBlankSingleTargetClick(AbstractPlayer player) {
-        if (!isNativeTouchscreenCardInputActive()) {
+        if (!TouchscreenCardInputRuntime.isNativeTouchscreenCardInputActive()) {
             return false;
         }
         if (player == null || !player.inSingleTargetMode || player.hoveredCard == null) {
@@ -96,11 +91,11 @@ public final class TouchscreenSingleTargetCancelPatches {
         if (!InputHelper.justClickedLeft) {
             return false;
         }
-        return !isHoveringLiveMonster();
+        return !TouchscreenCardInputRuntime.isHoveringOrNearLiveMonster();
     }
 
     private static boolean shouldCancelBlankSingleTargetRelease(AbstractPlayer player) {
-        if (!isNativeTouchscreenCardInputActive()) {
+        if (!TouchscreenCardInputRuntime.isNativeTouchscreenCardInputActive()) {
             return false;
         }
         if (player == null || !player.inSingleTargetMode || player.hoveredCard == null) {
@@ -109,45 +104,11 @@ public final class TouchscreenSingleTargetCancelPatches {
         return InputHelper.justReleasedClickLeft;
     }
 
-    private static boolean isNativeTouchscreenCardInputActive() {
-        return CompatRuntimeState.resolveVanillaAllowlistedTouchscreenFlag(Settings.isTouchScreen)
-            && !Settings.isControllerMode;
-    }
-
-    private static boolean isTargetedCard(AbstractCard card) {
-        return card.target == AbstractCard.CardTarget.ENEMY
-            || card.target == AbstractCard.CardTarget.SELF_AND_ENEMY;
-    }
-
-    private static boolean isHoveringLiveMonster() {
-        try {
-            AbstractRoom room = AbstractDungeon.getCurrRoom();
-            if (room == null || room.monsters == null || room.monsters.areMonstersBasicallyDead()) {
-                return false;
-            }
-            for (AbstractMonster monster : room.monsters.monsters) {
-                if (monster == null || monster.hb == null) {
-                    continue;
-                }
-                if (monster.hb.hovered
-                    && !monster.isDying
-                    && !monster.isEscaping
-                    && monster.currentHealth > 0) {
-                    return true;
-                }
-            }
-        } catch (RuntimeException e) {
-            return false;
-        }
-        return false;
-    }
-
     private static void cancelSelectedCard(AbstractPlayer player, String reason, boolean playCancelSound) {
         if (playCancelSound) {
             CardCrawlGame.sound.play("UI_CLICK_2");
         }
-        InputHelper.moveCursorToNeutralPosition();
-        player.releaseCard();
+        TouchscreenCardInputRuntime.releaseSelectedCard(player);
         logCancelOnce(reason);
     }
 

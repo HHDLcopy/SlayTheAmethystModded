@@ -286,6 +286,9 @@ internal object LauncherSettingsDiagnosticsFormatter {
                         "defaultFramebufferFastRebindCompat" to formatBoolean(
                             CompatibilitySettings.isDefaultFramebufferFastRebindCompatEnabled(context)
                         ),
+                        "nativePreSwapPacingCompat" to formatBoolean(
+                            CompatibilitySettings.isNativePreSwapPacingCompatEnabled(context)
+                        ),
                         "fboManagerCompat" to formatBoolean(
                             CompatibilitySettings.isFboManagerCompatEnabled(context)
                         ),

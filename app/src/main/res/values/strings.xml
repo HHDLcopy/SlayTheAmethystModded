@@ -183,6 +183,8 @@
     <string name="compat_lwjgl_hot_loop_noop_trim_desc">When enabled, the patched main loop skips redundant no-op work in active frames. It reduces CPU overhead without disabling rendering, animation, shaders, or effects. Changes apply on the next launch.</string>
     <string name="compat_default_framebuffer_fast_rebind_title">Default framebuffer rebind dedupe</string>
     <string name="compat_default_framebuffer_fast_rebind_desc">When enabled, repeated default framebuffer binds and viewport restores are cached and de-duplicated in the patched GDX/LWJGL path. This reduces GL driver calls without changing resolution, shaders, or effects. Changes apply on the next launch.</string>
+    <string name="compat_native_pre_swap_pacing_title">Native pre-swap frame pacing</string>
+    <string name="compat_native_pre_swap_pacing_desc">When enabled, the native EGL bridge waits before eglSwapBuffers according to the selected FPS target. This reduces spin between completed frames without changing resolution, shaders, animations, or effects. Changes apply on the next launch.</string>
     <string name="compat_fbo_manager_title">Legacy global FBO manager</string>
     <string name="compat_fbo_manager_desc">Locked. This legacy global FBO manager is enabled only when GPU resource guardian is set to Legacy.</string>
     <string name="compat_fbo_idle_reclaim_title">Idle FBO reclaim</string>
@@ -2036,6 +2038,7 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_status_android_lwjgl_frame_pacing">Android/LWJGL frame pacing: %1$s</string>
     <string name="settings_status_lwjgl_hot_loop_noop_trim">LWJGL hot-loop no-op trim: %1$s</string>
     <string name="settings_status_default_framebuffer_fast_rebind">Default framebuffer rebind dedupe: %1$s</string>
+    <string name="settings_status_native_pre_swap_pacing">Native pre-swap frame pacing: %1$s</string>
     <string name="settings_status_bundled_jre_path">Bundled JRE path: %1$s</string>
     <string name="settings_status_core_dependency_missing">%1$s: missing</string>
     <string name="settings_status_core_dependency_available">%1$s: available (source: %2$s, version: %3$s)</string>

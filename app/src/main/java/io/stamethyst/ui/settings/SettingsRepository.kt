@@ -130,6 +130,7 @@ internal object SettingsRepository {
         val androidLwjglFramePacingCompatEnabled: Boolean,
         val lwjglHotLoopNoopTrimCompatEnabled: Boolean,
         val defaultFramebufferFastRebindCompatEnabled: Boolean,
+        val nativePreSwapPacingCompatEnabled: Boolean,
         val runtimeDownscaleMaterialPolicy: RuntimeDownscaleMaterialPolicy,
         val importDownscaleMaterialPolicy: ImportDownscaleMaterialPolicy
     )
@@ -276,6 +277,8 @@ internal object SettingsRepository {
                     CompatibilitySettings.isLwjglHotLoopNoopTrimCompatEnabled(context),
                 defaultFramebufferFastRebindCompatEnabled =
                     CompatibilitySettings.isDefaultFramebufferFastRebindCompatEnabled(context),
+                nativePreSwapPacingCompatEnabled =
+                    CompatibilitySettings.isNativePreSwapPacingCompatEnabled(context),
                 runtimeDownscaleMaterialPolicy =
                     CompatibilitySettings.readRuntimeDownscaleMaterialPolicy(context),
                 importDownscaleMaterialPolicy =

@@ -125,6 +125,9 @@ fun LauncherCompatibilityScreen(
         onDefaultFramebufferFastRebindCompatToggled = { enabled ->
             viewModel.onDefaultFramebufferFastRebindCompatToggled(context, enabled)
         },
+        onNativePreSwapPacingCompatToggled = { enabled ->
+            viewModel.onNativePreSwapPacingCompatToggled(context, enabled)
+        },
         onFboManagerCompatToggled = { enabled ->
             viewModel.onFboManagerCompatToggled(context, enabled)
         },
@@ -220,6 +223,7 @@ private fun LauncherCompatibilityScreenContent(
     onAndroidLwjglFramePacingCompatToggled: (Boolean) -> Unit = {},
     onLwjglHotLoopNoopTrimCompatToggled: (Boolean) -> Unit = {},
     onDefaultFramebufferFastRebindCompatToggled: (Boolean) -> Unit = {},
+    onNativePreSwapPacingCompatToggled: (Boolean) -> Unit = {},
     onFboManagerCompatToggled: (Boolean) -> Unit = {},
     onFboIdleReclaimCompatToggled: (Boolean) -> Unit = {},
     onFboPressureDownscaleCompatToggled: (Boolean) -> Unit = {},
@@ -372,6 +376,14 @@ private fun LauncherCompatibilityScreenContent(
                     checked = uiState.defaultFramebufferFastRebindCompatEnabled,
                     enabled = !uiState.busy,
                     onCheckedChange = onDefaultFramebufferFastRebindCompatToggled
+                )
+
+                CompatibilitySwitchRow(
+                    title = stringResource(R.string.compat_native_pre_swap_pacing_title),
+                    description = stringResource(R.string.compat_native_pre_swap_pacing_desc),
+                    checked = uiState.nativePreSwapPacingCompatEnabled,
+                    enabled = !uiState.busy,
+                    onCheckedChange = onNativePreSwapPacingCompatToggled
                 )
 
                 CompatibilitySwitchRow(

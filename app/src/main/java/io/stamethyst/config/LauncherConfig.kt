@@ -162,6 +162,8 @@ object LauncherConfig {
         "compat_lwjgl_hot_loop_noop_trim"
     private const val PREF_KEY_DEFAULT_FRAMEBUFFER_FAST_REBIND_COMPAT =
         "compat_default_framebuffer_fast_rebind"
+    private const val PREF_KEY_NATIVE_PRE_SWAP_PACING_COMPAT =
+        "compat_native_pre_swap_pacing"
     private const val PREF_KEY_FBO_MANAGER_COMPAT = "compat_fbo_manager"
     private const val PREF_KEY_FBO_IDLE_RECLAIM_COMPAT = "compat_fbo_idle_reclaim"
     private const val PREF_KEY_FBO_PRESSURE_DOWNSCALE_COMPAT =
@@ -342,6 +344,7 @@ object LauncherConfig {
     const val DEFAULT_ANDROID_LWJGL_FRAME_PACING_COMPAT_ENABLED = false
     const val DEFAULT_LWJGL_HOT_LOOP_NOOP_TRIM_COMPAT_ENABLED = false
     const val DEFAULT_FRAMEBUFFER_FAST_REBIND_COMPAT_ENABLED = false
+    const val DEFAULT_NATIVE_PRE_SWAP_PACING_COMPAT_ENABLED = false
     const val DEFAULT_FBO_MANAGER_COMPAT_ENABLED = false
     const val DEFAULT_FBO_IDLE_RECLAIM_COMPAT_ENABLED = false
     const val DEFAULT_FBO_PRESSURE_DOWNSCALE_COMPAT_ENABLED = false
@@ -1529,6 +1532,19 @@ object LauncherConfig {
     fun setDefaultFramebufferFastRebindCompatEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_DEFAULT_FRAMEBUFFER_FAST_REBIND_COMPAT, enabled)
+        }
+    }
+
+    fun isNativePreSwapPacingCompatEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_NATIVE_PRE_SWAP_PACING_COMPAT,
+            DEFAULT_NATIVE_PRE_SWAP_PACING_COMPAT_ENABLED
+        )
+    }
+
+    fun setNativePreSwapPacingCompatEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_NATIVE_PRE_SWAP_PACING_COMPAT, enabled)
         }
     }
 

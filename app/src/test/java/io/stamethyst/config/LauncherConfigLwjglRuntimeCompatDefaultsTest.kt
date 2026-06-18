@@ -18,4 +18,9 @@ class LauncherConfigLwjglRuntimeCompatDefaultsTest {
     fun defaultFramebufferFastRebind_defaultsDisabled() {
         assertFalse(LauncherConfig.DEFAULT_FRAMEBUFFER_FAST_REBIND_COMPAT_ENABLED)
     }
+
+    @Test
+    fun nativePreSwapPacing_defaultsDisabled() {
+        assertFalse(LauncherConfig.DEFAULT_NATIVE_PRE_SWAP_PACING_COMPAT_ENABLED)
+    }
 }

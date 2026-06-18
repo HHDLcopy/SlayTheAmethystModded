@@ -14,6 +14,7 @@ import android.system.ErrnoException;
 import android.system.Os;
 import android.util.Log;
 
+import io.stamethyst.backend.mods.CompatibilitySettings;
 import io.stamethyst.backend.render.RendererDecision;
 import io.stamethyst.config.LauncherConfig;
 import io.stamethyst.config.RuntimePaths;
@@ -135,6 +136,15 @@ public final class JREUtils {
         env.put("LIBGL_VSYNC", "0");
         env.put("LIBGL_SHADERNOGLES", "1");
         env.put("LIBGL_NOHIGHP", "1");
+        boolean nativePreSwapPacing =
+                CompatibilitySettings.isNativePreSwapPacingCompatEnabled(context);
+        env.put("AMETHYST_NATIVE_PRE_SWAP_PACING", nativePreSwapPacing ? "1" : "0");
+        if (nativePreSwapPacing) {
+            env.put(
+                    "AMETHYST_NATIVE_PRE_SWAP_TARGET_FPS",
+                    Integer.toString(LauncherConfig.INSTANCE.readTargetFps(context))
+            );
+        }
         if (LauncherConfig.INSTANCE.isGamePerformanceOverlayEnabled(context)) {
             env.put("AMETHYST_GDX_SWAP_PROFILER", "1");
             env.put("AMETHYST_GDX_SWAP_PROFILER_SLOW_MS", "16");

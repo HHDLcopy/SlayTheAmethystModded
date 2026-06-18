@@ -4152,6 +4152,10 @@ class SettingsScreenViewModel : ViewModel() {
             toggleStateText(host, compatibility.defaultFramebufferFastRebindCompatEnabled)
         )
         lines += host.getString(
+            R.string.settings_status_native_pre_swap_pacing,
+            toggleStateText(host, compatibility.nativePreSwapPacingCompatEnabled)
+        )
+        lines += host.getString(
             R.string.settings_status_bundled_jre_path,
             "app/src/main/assets/components/jre"
         )

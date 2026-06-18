@@ -30,6 +30,7 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.Set;
 import java.util.WeakHashMap;
+import java.util.concurrent.locks.LockSupport;
 
 import com.badlogic.gdx.ApplicationLogger;
 import org.lwjgl.LWJGLException;
@@ -142,6 +143,7 @@ public class LwjglApplication implements Application {
 	private static final long NANOS_PER_SECOND = 1000000000L;
 	private static final long ANDROID_FRAME_PACER_SLEEP_MARGIN_NANOS = 500000L;
 	private static final long ANDROID_FRAME_PACER_YIELD_THRESHOLD_NANOS = 1500000L;
+	private static final long ANDROID_FRAME_PACER_PARK_THRESHOLD_NANOS = 200000L;
 	private static final int GLOBAL_TEXTURE_COMPAT_GROWTH_CHECK_INTERVAL_FRAMES = 30;
 	private static final String[][] EXT_FRAMEBUFFER_FUNCTION_ALIASES = {
 		{"glBindFramebufferEXT", "glBindFramebuffer"},
@@ -745,8 +747,10 @@ public class LwjglApplication implements Application {
 					Thread.currentThread().interrupt();
 					return;
 				}
+			} else if (remainingNanos > ANDROID_FRAME_PACER_PARK_THRESHOLD_NANOS) {
+				LockSupport.parkNanos(remainingNanos);
 			} else {
-				Thread.yield();
+				return;
 			}
 		}
 	}

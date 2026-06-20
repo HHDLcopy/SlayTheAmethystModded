@@ -658,6 +658,8 @@ final class AutoplayDungeonActions {
 
     // region combat
 
+    private static boolean _testCrashInjected = false;
+
     private static void handleCombat(AbstractPlayer player, AbstractRoom room) {
         MonsterGroup monsters = room.monsters;
         if (monsters == null || monsters.areMonstersBasicallyDead()) {
@@ -671,6 +673,23 @@ final class AutoplayDungeonActions {
             || !actionManager.cardQueue.isEmpty()
             || actionManager.currentAction != null) {
             return; // an action chain is running; let it finish
+        }
+        // Inject test crash cards on first combat when debug property is set
+        if (!_testCrashInjected && Boolean.getBoolean("amethyst.autoplay.inject_test_crash")) {
+            _testCrashInjected = true;
+            try {
+                AbstractCard permCard = (AbstractCard) Class.forName("io.stamethyst.testcrash.cards.CrashPermissionCard").newInstance();
+                AbstractCard crashCard = (AbstractCard) Class.forName("io.stamethyst.testcrash.cards.TestCrashCard").newInstance();
+                permCard.upgrade();
+                crashCard.upgrade();
+                crashCard.costForTurn = 0;
+                crashCard.cost = 0;
+                player.hand.addToBottom(crashCard);
+                player.hand.addToBottom(permCard);
+                AutoplayLog.info("combat: injected test crash cards");
+            } catch (Exception e) {
+                AutoplayLog.warn("combat: failed to inject test crash cards", e);
+            }
         }
         if (actionManager.turnHasEnded || !actionManager.phase.equals(
             GameActionManager.Phase.WAITING_ON_USER)) {

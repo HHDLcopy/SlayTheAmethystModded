@@ -16,6 +16,10 @@ public final class AutoplayConfig {
         "amethyst.debug.autoplay.tick_interval_ms";
     /** Optional verbose logging toggle. */
     public static final String AUTOPLAY_DEBUG_PROP = "amethyst.debug.autoplay.debug";
+    /** When true, the driver makes no autonomous decisions until an agent
+     *  PlayMonitorAgent connects.  Useful for harness demo runs. */
+    public static final String AUTOPLAY_WAIT_FOR_AGENT_PROP =
+        "amethyst.autoplay.wait_for_agent";
 
     private static final long DEFAULT_TICK_INTERVAL_MS = 250L;
     private static final long MIN_TICK_INTERVAL_MS = 50L;
@@ -25,6 +29,8 @@ public final class AutoplayConfig {
         readBoolean(AUTOPLAY_ENABLED_PROP, false);
     private static final boolean DEBUG_LOG_ENABLED =
         readBoolean(AUTOPLAY_DEBUG_PROP, false);
+    private static final boolean WAIT_FOR_AGENT =
+        readBoolean(AUTOPLAY_WAIT_FOR_AGENT_PROP, false);
     private static final long TICK_INTERVAL_MS =
         clampLong(readLong(AUTOPLAY_TICK_INTERVAL_MS_PROP, DEFAULT_TICK_INTERVAL_MS),
             MIN_TICK_INTERVAL_MS, MAX_TICK_INTERVAL_MS);
@@ -42,6 +48,10 @@ public final class AutoplayConfig {
 
     public static long getTickIntervalMs() {
         return TICK_INTERVAL_MS;
+    }
+
+    public static boolean isWaitForAgentEnabled() {
+        return WAIT_FOR_AGENT;
     }
 
     private static boolean readBoolean(String key, boolean defaultValue) {

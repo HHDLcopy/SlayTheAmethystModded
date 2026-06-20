@@ -592,6 +592,21 @@ class SettingsScreenViewModel : ViewModel() {
         }
     }
 
+    fun onBootOverlayImageCropFailed(host: Activity, error: Throwable) {
+        if (uiState.busy) {
+            return
+        }
+        showToast(
+            host,
+            UiText.StringResource(
+                R.string.settings_boot_overlay_custom_image_failed,
+                error.message ?: error.javaClass.simpleName
+            ),
+            Toast.LENGTH_LONG
+        )
+        refreshStatus(host)
+    }
+
     fun onResetBootOverlayImages(host: Activity) {
         if (uiState.busy) {
             return

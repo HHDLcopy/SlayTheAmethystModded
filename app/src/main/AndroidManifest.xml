@@ -63,6 +63,11 @@
             android:noHistory="true"
             android:theme="@style/Theme.SlayTheAmethyst.Dialog" />
 
+        <activity
+            android:name="com.canhub.cropper.CropImageActivity"
+            android:screenOrientation="fullUser"
+            android:theme="@style/Base.Theme.AppCompat" />
+
         <service
             android:name="io.stamethyst.backend.launch.LaunchPreparationProcessService"
             android:exported="false"

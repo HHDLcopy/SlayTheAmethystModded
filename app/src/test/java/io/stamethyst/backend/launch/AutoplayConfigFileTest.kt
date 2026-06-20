@@ -43,6 +43,23 @@ class AutoplayConfigFileTest {
         }
     }
 
+    @Test
+    fun syncForLaunch_writesAutoplaySaveModeForDebugLaunch() {
+        val root = Files.createTempDirectory("autoplay-config-save-mode").toFile()
+        try {
+            AutoplayConfigFile.syncForLaunch(
+                root,
+                enabled = true,
+                saveMode = AutoplaySaveMode.CONTINUE
+            )
+
+            assertAutoplaySaveMode(File(root, "autoplay.properties"), "continue")
+            assertAutoplaySaveMode(File(root, "config/autoplay.properties"), "continue")
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
     private fun assertAutoplayValue(file: File, value: String) {
         val text = file.readText(StandardCharsets.UTF_8)
         assertTrue(text.contains("amethyst.autoplay.enabled=$value"))
@@ -51,5 +68,10 @@ class AutoplayConfigFileTest {
         assertTrue(text.contains("amethyst.autoplay.end_turn=$value"))
         assertTrue(text.contains("amethyst.autoplay.select_reward=$value"))
         assertTrue(text.contains("amethyst.autoplay.auto_navigate=$value"))
+    }
+
+    private fun assertAutoplaySaveMode(file: File, value: String) {
+        val text = file.readText(StandardCharsets.UTF_8)
+        assertTrue(text.contains("amethyst.autoplay.save_mode=$value"))
     }
 }

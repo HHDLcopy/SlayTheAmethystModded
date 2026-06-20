@@ -894,6 +894,7 @@
     <string name="settings_boot_overlay_custom_image_default_badge">內建</string>
     <string name="settings_boot_overlay_custom_image_saved">已儲存自訂載入圖。</string>
     <string name="settings_boot_overlay_custom_image_failed">儲存自訂載入圖失敗：%1$s</string>
+    <string name="settings_boot_overlay_custom_image_crop_title">選擇顯示區域</string>
     <string name="settings_loading_animation_title">載入動畫</string>
     <string name="settings_loading_animation_desc">選擇動畫診斷載入介面使用的動畫。</string>
     <string name="settings_loading_animation_dialog_title">載入動畫</string>

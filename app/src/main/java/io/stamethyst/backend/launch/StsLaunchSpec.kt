@@ -110,7 +110,8 @@ object StsLaunchSpec {
         renderScaleOverride: Float? = null,
         forceJvmCrash: Boolean = false,
         forceRuntimeCrash: Boolean = false,
-        autoplay: Boolean = false
+        autoplay: Boolean = false,
+        autoplaySaveMode: AutoplaySaveMode = AutoplaySaveMode.DEFAULT
     ): List<String> {
         val stsRoot = RuntimePaths.stsRoot(context)
         val stsHome = RuntimePaths.stsHome(context)
@@ -604,9 +605,18 @@ object StsLaunchSpec {
         args.add("-Damethyst.bridge.mode=$launchMode")
         args.add("-Damethyst.debug.force_jvm_crash=${if (forceJvmCrash) "true" else "false"}")
         args.add("-Damethyst.debug.force_runtime_crash=${if (BuildConfig.BUILD_TYPE == "debug" && forceRuntimeCrash) "true" else "false"}")
-        // Bundled amethyst-runtime-compat reads this to enable the autoplay driver.
-        // Vanilla launches ignore it (the property is never read).
-        args.add("-Damethyst.debug.autoplay=${if (autoplay && isMtsLaunchMode(launchMode)) "true" else "false"}")
+        // Bundled amethyst-runtime-compat reads these to enable and configure the autoplay driver.
+        // Vanilla launches ignore them (the properties are never read).
+        val effectiveAutoplay = autoplay && isMtsLaunchMode(launchMode)
+        args.add("-Damethyst.debug.autoplay=${if (effectiveAutoplay) "true" else "false"}")
+        args.add(
+            "-Damethyst.debug.autoplay.save_mode=" +
+                if (effectiveAutoplay) {
+                    autoplaySaveMode.persistedValue
+                } else {
+                    AutoplaySaveMode.DEFAULT.persistedValue
+                }
+        )
         args.add("-Damethyst.bridge.events=${RuntimePaths.bootBridgeEventsLog(context).absolutePath}")
         if (isMtsLaunchMode(launchMode)) {
             args.add("-Damethyst.mts.mod_file_list=${RuntimePaths.mtsModFileList(context).absolutePath}")

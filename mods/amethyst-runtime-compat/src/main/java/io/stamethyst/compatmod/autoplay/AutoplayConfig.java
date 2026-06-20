@@ -16,6 +16,11 @@ public final class AutoplayConfig {
         "amethyst.debug.autoplay.tick_interval_ms";
     /** Optional verbose logging toggle. */
     public static final String AUTOPLAY_DEBUG_PROP = "amethyst.debug.autoplay.debug";
+    /** Save handling mode: clear stale saves and start fresh, or resume the last run. */
+    public static final String AUTOPLAY_SAVE_MODE_PROP = "amethyst.debug.autoplay.save_mode";
+
+    public static final String SAVE_MODE_FRESH = "fresh";
+    public static final String SAVE_MODE_CONTINUE = "continue";
 
     private static final long DEFAULT_TICK_INTERVAL_MS = 250L;
     private static final long MIN_TICK_INTERVAL_MS = 50L;
@@ -25,6 +30,8 @@ public final class AutoplayConfig {
         readBoolean(AUTOPLAY_ENABLED_PROP, false);
     private static final boolean DEBUG_LOG_ENABLED =
         readBoolean(AUTOPLAY_DEBUG_PROP, false);
+    private static final String SAVE_MODE =
+        readSaveMode(AUTOPLAY_SAVE_MODE_PROP, SAVE_MODE_FRESH);
     private static final long TICK_INTERVAL_MS =
         clampLong(readLong(AUTOPLAY_TICK_INTERVAL_MS_PROP, DEFAULT_TICK_INTERVAL_MS),
             MIN_TICK_INTERVAL_MS, MAX_TICK_INTERVAL_MS);
@@ -42,6 +49,14 @@ public final class AutoplayConfig {
 
     public static long getTickIntervalMs() {
         return TICK_INTERVAL_MS;
+    }
+
+    public static String getSaveMode() {
+        return SAVE_MODE;
+    }
+
+    public static boolean shouldContinueLastSave() {
+        return SAVE_MODE_CONTINUE.equals(SAVE_MODE);
     }
 
     private static boolean readBoolean(String key, boolean defaultValue) {
@@ -78,6 +93,25 @@ public final class AutoplayConfig {
         } catch (NumberFormatException ignored) {
             return defaultValue;
         }
+    }
+
+    private static String readSaveMode(String key, String defaultValue) {
+        String configured = System.getProperty(key);
+        if (configured == null) {
+            return defaultValue;
+        }
+        configured = configured.trim().toLowerCase(java.util.Locale.ROOT);
+        if (configured.length() == 0) {
+            return defaultValue;
+        }
+        if (SAVE_MODE_FRESH.equals(configured) || "clear".equals(configured)
+            || "reset".equals(configured) || "new".equals(configured)) {
+            return SAVE_MODE_FRESH;
+        }
+        if (SAVE_MODE_CONTINUE.equals(configured) || "resume".equals(configured)) {
+            return SAVE_MODE_CONTINUE;
+        }
+        return defaultValue;
     }
 
     private static long clampLong(long value, long min, long max) {

@@ -41,6 +41,7 @@ import io.stamethyst.backend.launch.LauncherReturnActionResolver
 import io.stamethyst.backend.launch.LauncherReturnSnapshot
 import io.stamethyst.backend.launch.MainProcessGameBodyPatchCoordinator
 import io.stamethyst.backend.launch.StartupProgressCallback
+import io.stamethyst.backend.launch.AutoplaySaveMode
 import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.mods.ModManager
@@ -274,14 +275,15 @@ class MainScreenViewModel : ViewModel() {
     @Volatile
     private var launchInFlight = false
     /**
-     * Latched when [maybeLaunchFromDebugExtra] sees `EXTRA_DEBUG_AUTOPLAY=true`, and consumed
-     * in [launchGameActivityInternal] so the autoplay flag flows to [StsGameActivity] without
-     * having to thread an extra parameter through the long chain of dialog/cleanup steps in
-     * between. Reset back to false after every launch attempt so a follow-up manual launch
-     * doesn't accidentally inherit autoplay.
+     * Latched when [maybeLaunchFromDebugExtra] sees debug autoplay extras, and consumed in
+     * [launchGameActivityInternal] so the autoplay settings flow to [StsGameActivity] without
+     * having to thread extra parameters through the long chain of dialog/cleanup steps. Reset
+     * after every launch attempt so a follow-up manual launch doesn't inherit script settings.
      */
     @Volatile
     private var pendingAutoplay: Boolean = false
+    @Volatile
+    private var pendingAutoplaySaveMode: AutoplaySaveMode = AutoplaySaveMode.DEFAULT
     @Volatile
     private var modNameMigrationInFlight = false
     private var modNameMigrationInsufficientNoticeShown = false
@@ -2164,6 +2166,9 @@ class MainScreenViewModel : ViewModel() {
             false
         )
         val autoplay = intent.getBooleanExtra(LauncherActivity.EXTRA_DEBUG_AUTOPLAY, false)
+        val autoplaySaveMode = AutoplaySaveMode.fromPersistedValue(
+            intent.getStringExtra(LauncherActivity.EXTRA_DEBUG_AUTOPLAY_SAVE_MODE)
+        )
         if (debugLaunchMode != StsLaunchSpec.LAUNCH_MODE_VANILLA &&
             !StsLaunchSpec.isMtsLaunchMode(debugLaunchMode)
         ) {
@@ -2178,6 +2183,7 @@ class MainScreenViewModel : ViewModel() {
         // thread an extra parameter through every method in the launch pipeline.
         // Consumed (and cleared) in launchGameActivityInternal.
         pendingAutoplay = autoplay
+        pendingAutoplaySaveMode = autoplaySaveMode
         beginLaunchFlow(
             host,
             debugLaunchMode ?: StsLaunchSpec.LAUNCH_MODE_VANILLA,
@@ -2569,7 +2575,9 @@ class MainScreenViewModel : ViewModel() {
         // One-shot consume: every launch attempt drains the autoplay latch so a follow-up
         // manual press of "Play" doesn't accidentally run autoplay again.
         val autoplay = pendingAutoplay
+        val autoplaySaveMode = pendingAutoplaySaveMode
         pendingAutoplay = false
+        pendingAutoplaySaveMode = AutoplaySaveMode.DEFAULT
         try {
             StsGameActivity.launch(
                 host,
@@ -2578,7 +2586,8 @@ class MainScreenViewModel : ViewModel() {
                 manualDismissBootOverlay,
                 forceJvmCrash,
                 forceRuntimeCrash,
-                autoplay
+                autoplay,
+                autoplaySaveMode
             )
             clearNewlyImportedHighlights(host)
         } catch (error: Throwable) {
@@ -3726,6 +3735,7 @@ class MainScreenViewModel : ViewModel() {
         // Drop the autoplay latch too — if we're aborting a launch, the next user-triggered
         // launch shouldn't silently inherit autoplay from the cancelled debug intent.
         pendingAutoplay = false
+        pendingAutoplaySaveMode = AutoplaySaveMode.DEFAULT
         if (uiState.launchInFlight ||
             (clearPendingEnabledModSizeWarning && uiState.pendingEnabledModSizeLaunchWarning != null)
         ) {

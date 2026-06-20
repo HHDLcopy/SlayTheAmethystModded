@@ -1,5 +1,6 @@
 package io.stamethyst
 
+import android.view.WindowManager
 import io.stamethyst.backend.render.VirtualResolutionMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -237,6 +238,75 @@ class RenderSurfaceManagerPolicyTest {
                 rootHeight = 1080,
                 cropInsets = RenderViewportInsets(left = 100, right = 120),
                 virtualResolutionMode = VirtualResolutionMode.FULLSCREEN_FILL
+            )
+        )
+    }
+
+    @Test
+    fun resolveDisplayCutoutMode_keepsBootOverlayFullScreen() {
+        assertEquals(
+            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES,
+            RenderSurfaceManager.resolveDisplayCutoutMode(
+                avoidDisplayCutout = true,
+                bootOverlayActive = true
+            )
+        )
+        assertEquals(
+            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES,
+            RenderSurfaceManager.resolveDisplayCutoutMode(
+                avoidDisplayCutout = false,
+                bootOverlayActive = true
+            )
+        )
+    }
+
+    @Test
+    fun resolveDisplayCutoutMode_restoresGameCutoutAvoidanceAfterBootOverlay() {
+        assertEquals(
+            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_NEVER,
+            RenderSurfaceManager.resolveDisplayCutoutMode(
+                avoidDisplayCutout = true,
+                bootOverlayActive = false
+            )
+        )
+        assertEquals(
+            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES,
+            RenderSurfaceManager.resolveDisplayCutoutMode(
+                avoidDisplayCutout = false,
+                bootOverlayActive = false
+            )
+        )
+    }
+
+    @Test
+    fun shouldApplyManualDisplayCutoutAvoidance_onlyWhileWindowIsUnconstrained() {
+        assertTrue(
+            RenderSurfaceManager.shouldApplyManualDisplayCutoutAvoidance(
+                avoidDisplayCutout = true,
+                windowConstrained = false
+            )
+        )
+        assertFalse(
+            RenderSurfaceManager.shouldApplyManualDisplayCutoutAvoidance(
+                avoidDisplayCutout = true,
+                windowConstrained = true
+            )
+        )
+        assertFalse(
+            RenderSurfaceManager.shouldApplyManualDisplayCutoutAvoidance(
+                avoidDisplayCutout = false,
+                windowConstrained = false
+            )
+        )
+    }
+
+    @Test
+    fun mergeViewportInsets_preservesIndependentGameCrops() {
+        assertEquals(
+            RenderViewportInsets(left = 72, top = 12, right = 96, bottom = 0),
+            RenderSurfaceManager.mergeViewportInsets(
+                RenderViewportInsets(right = 96),
+                RenderViewportInsets(left = 72, top = 12)
             )
         )
     }

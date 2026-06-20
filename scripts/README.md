@@ -70,6 +70,7 @@ Common harness options:
 - `-LaunchMode mts_basemod|mts|vanilla`: defaults to `mts_basemod`.
 - `-TimeoutSeconds <seconds>` and `-PollIntervalSeconds <seconds>`: runtime observation controls.
 - `-Autoplay`: enable the bundled autoplay driver for MTS smoke runs.
+- `-AutoplaySaveMode fresh|continue`: autoplay save handling. `fresh` clears stale saves and starts a new run; `continue` keeps saves and resumes the previous run when available.
 - `-ForceJvmCrash` and `-ForceRuntimeCrash`: smoke expectations for crash-path validation.
 - `-SkipInstall`: skip APK build/install during `smoke`.
 - `-NoStopAfterSmoke`: leave the app running after `smoke`.
@@ -95,6 +96,7 @@ python scripts/tools/main.py sts-harness -Command set-mods -EnableAllMods
 python scripts/tools/main.py sts-harness -Command set-mods -DisableAllMods
 python scripts/tools/main.py sts-harness -Command smoke -LaunchMode mts_basemod -TimeoutSeconds 120
 python scripts/tools/main.py sts-harness -Command smoke -Autoplay
+python scripts/tools/main.py sts-harness -Command smoke -Autoplay -AutoplaySaveMode continue
 ```
 
 Harness output is always written to `result.json`. The `mods` and `set-mods` commands add `deviceMods`; `set-mods` also adds `modSelection`.

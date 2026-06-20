@@ -896,6 +896,7 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_boot_overlay_custom_image_default_badge">Default</string>
     <string name="settings_boot_overlay_custom_image_saved">Custom loading image saved.</string>
     <string name="settings_boot_overlay_custom_image_failed">Failed to save custom loading image: %1$s</string>
+    <string name="settings_boot_overlay_custom_image_crop_title">Choose visible area</string>
     <string name="settings_loading_animation_title">Loading animation</string>
     <string name="settings_loading_animation_desc">Choose the animation used by the animated diagnostics loading screen.</string>
     <string name="settings_loading_animation_dialog_title">Loading animation</string>

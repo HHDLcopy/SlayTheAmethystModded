@@ -217,6 +217,7 @@ dependencies {
     implementation(libs.haze.materials)
     implementation(libs.okhttp)
     implementation(libs.reorderable)
+    implementation("com.vanniktech:android-image-cropper:4.7.0")
     implementation(libs.androidx.navigation3.ui)
     implementation(libs.androidx.lifecycle.viewmodel.navigation3)
     implementation(libs.kotlinx.serialization.core)

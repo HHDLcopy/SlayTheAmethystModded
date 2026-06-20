@@ -245,14 +245,14 @@
     <string name="settings_touch_mouse_interaction_desc">选择鼠标悬浮窗如何展开快捷菜单和切换左/右键。</string>
     <string name="settings_touch_double_click_as_right_click_enabled">触摸长按视为右键：开启</string>
     <string name="settings_touch_double_click_as_right_click_disabled">触摸长按视为右键：关闭</string>
-    <string name="settings_touch_double_click_as_right_click_desc">开启后，按住游戏画面 0.5 秒会发送一次右键点击。0.5 秒前如果手指发生拖动，本次右键手势会被取消。</string>
+    <string name="settings_touch_double_click_as_right_click_desc">开启后，长按将被视为使用右键。</string>
     <string name="status_touch_mouse_interaction_format">鼠标悬浮窗交互模式：%1$s</string>
     <string name="settings_built_in_soft_keyboard_enabled">游戏内置软键盘：启用</string>
     <string name="settings_built_in_soft_keyboard_disabled">游戏内置软键盘：禁用</string>
     <string name="settings_built_in_soft_keyboard_desc">启用后，悬浮菜单中的打开键盘操作会改为打开一个内置键盘，而不是系统输入法。若仍需系统输入法，可关闭此项。</string>
     <string name="settings_haptic_feedback_enabled">震动反馈：启用</string>
     <string name="settings_haptic_feedback_disabled">震动反馈：禁用</string>
-    <string name="settings_haptic_feedback_desc">统一控制启动器与游戏内悬浮层的震动反馈，包括点击、开关、滑条和模组启用切换。</string>
+    <string name="settings_haptic_feedback_desc">统一控制启动器与游戏内悬浮层的震动反馈的开关，包括点击、开关、滑条和模组启用切换。</string>
     <string name="status_built_in_soft_keyboard_format">游戏内置软键盘：%1$s</string>
     <string name="status_haptic_feedback_format">震动反馈：%1$s</string>
     <string name="settings_compendium_upgrade_touch_fix_enabled">百科大全看升级版触控修复：启用</string>
@@ -895,6 +895,7 @@
     <string name="settings_boot_overlay_custom_image_default_badge">内置</string>
     <string name="settings_boot_overlay_custom_image_saved">已保存自定义加载图。</string>
     <string name="settings_boot_overlay_custom_image_failed">保存自定义加载图失败：%1$s</string>
+    <string name="settings_boot_overlay_custom_image_crop_title">选择显示区域</string>
     <string name="settings_loading_animation_title">加载动画</string>
     <string name="settings_loading_animation_desc">选择动画诊断加载界面使用的动画。</string>
     <string name="settings_loading_animation_dialog_title">加载动画</string>
@@ -1890,7 +1891,7 @@
     <string name="settings_ram_saver_experimental_chip">实验性</string>
     <string name="settings_performance_overlay_enabled">性能叠层：开启</string>
     <string name="settings_performance_overlay_disabled">性能叠层：关闭</string>
-    <string name="settings_performance_overlay_desc">控制是否在游戏中显示实时 FPS / 内存叠层。帧、swap、GC 和 GPU 资源深度 profiler 只会在同时开启 GPU 资源诊断时运行。</string>
+    <string name="settings_performance_overlay_desc">控制是否在游戏中显示实时 FPS / 内存信息。</string>
     <string name="settings_touchscreen_enabled">触屏输入：开启</string>
     <string name="settings_touchscreen_disabled">触屏输入：关闭</string>
     <string name="settings_touchscreen_desc">控制是否使用原生触控适配模式。关闭后会显示鼠标光标，并使用桌面版 UI。</string>

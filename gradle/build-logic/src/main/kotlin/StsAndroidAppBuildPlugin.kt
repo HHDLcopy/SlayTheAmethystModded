@@ -595,6 +595,7 @@ private fun Project.registerAdbTasks(adb: Provider<String>, packageName: String)
     val forceJvmCrash = readGradleProperty("forceJvmCrash", "false")
     val forceRuntimeCrash = readGradleProperty("forceRuntimeCrash", "false")
     val autoplay = readGradleProperty("autoplay", "false")
+    val autoplaySaveMode = readGradleProperty("autoplaySaveMode", "fresh")
     val deviceSerial = readGradleProperty("deviceSerial")
     val logsDir = readGradleProperty("logsDir")
     require(launchMode in supportedLaunchModes) {
@@ -614,7 +615,8 @@ private fun Project.registerAdbTasks(adb: Provider<String>, packageName: String)
         launchMode: String,
         forceJvmCrash: String,
         forceRuntimeCrash: String,
-        autoplay: String
+        autoplay: String,
+        autoplaySaveMode: String
     ): List<String> = adbCommand(
         "shell",
         "am",
@@ -632,7 +634,10 @@ private fun Project.registerAdbTasks(adb: Provider<String>, packageName: String)
         forceRuntimeCrash,
         "--ez",
         "io.stamethyst.debug_autoplay",
-        autoplay
+        autoplay,
+        "--es",
+        "io.stamethyst.debug_autoplay_save_mode",
+        autoplaySaveMode
     )
 
     tasks.register<Exec>("stsStart") {
@@ -643,7 +648,8 @@ private fun Project.registerAdbTasks(adb: Provider<String>, packageName: String)
                 launchMode = launchMode,
                 forceJvmCrash = forceJvmCrash,
                 forceRuntimeCrash = forceRuntimeCrash,
-                autoplay = autoplay
+                autoplay = autoplay,
+                autoplaySaveMode = autoplaySaveMode
             )
         )
     }
@@ -652,8 +658,9 @@ private fun Project.registerAdbTasks(adb: Provider<String>, packageName: String)
         group = "debug"
         description = "Start SlayTheAmethyst with the bundled autoplay driver enabled. " +
             "Forces launchMode=mts so amethyst-runtime-compat is loaded; the driver auto-starts " +
-            "a fresh run after force-stopping any previous session, then plays random cards, " +
-            "ends each turn, and advances through the map until the run ends."
+            "or resumes according to -PautoplaySaveMode after force-stopping any previous " +
+            "session, then plays random cards, ends each turn, and advances through the map " +
+            "until the run ends."
         dependsOn("stsStop")
         val autoplayLaunchMode = "mts"
         commandLine(
@@ -661,7 +668,8 @@ private fun Project.registerAdbTasks(adb: Provider<String>, packageName: String)
                 launchMode = autoplayLaunchMode,
                 forceJvmCrash = "false",
                 forceRuntimeCrash = "false",
-                autoplay = "true"
+                autoplay = "true",
+                autoplaySaveMode = autoplaySaveMode
             )
         )
     }
@@ -696,6 +704,7 @@ private fun Project.registerHarnessTasks() {
     val forceJvmCrash = readGradleProperty("forceJvmCrash", "false")
     val forceRuntimeCrash = readGradleProperty("forceRuntimeCrash", "false")
     val autoplay = readGradleProperty("autoplay", "false")
+    val autoplaySaveMode = readGradleProperty("autoplaySaveMode", "fresh")
     val noStopAfterSmoke = readGradleProperty("noStopAfterSmoke", "false")
 
     fun registerHarnessExecTask(
@@ -744,6 +753,8 @@ private fun Project.registerHarnessTasks() {
             if (taskAutoplay) {
                 args.add("-Autoplay")
             }
+            args.add("-AutoplaySaveMode")
+            args.add(autoplaySaveMode)
             if (command == "smoke" && harnessSkipInstall.toBooleanStrictOrNull() == true) {
                 args.add("-SkipInstall")
             }

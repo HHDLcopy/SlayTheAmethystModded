@@ -65,6 +65,7 @@ python .\scripts\tools\main.py sts-harness -Command logs
 python .\scripts\tools\main.py sts-harness -Command stop
 python .\scripts\tools\main.py sts-harness -Command smoke -LaunchMode mts_basemod -TimeoutSeconds 120
 python .\scripts\tools\main.py sts-harness -Command smoke -Autoplay
+python .\scripts\tools\main.py sts-harness -Command smoke -Autoplay -AutoplaySaveMode continue
 ```
 
 macOS/Linux:
@@ -83,6 +84,7 @@ Common options:
 - `-LaunchMode mts_basemod|mts|vanilla`: defaults to `mts_basemod`.
 - `-TimeoutSeconds <seconds>`: smoke/status wait timeout, default `120`; direct `-Autoplay` smoke defaults to `300` unless this option is explicitly set.
 - `-Autoplay`: enable the bundled autoplay driver. Requires `mts` or `mts_basemod` launch mode.
+- `-AutoplaySaveMode fresh|continue`: controls autoplay save handling. `fresh` is the default and clears stale saves before starting a new run; `continue` leaves saves intact and presses Resume/Continue when the main menu exposes it, falling back to a new run without clearing if no previous save is visible.
 - `-ForceJvmCrash`: expects a boot bridge `FAIL` during `smoke`.
 - `-ForceRuntimeCrash`: expects a runtime crash marker during `smoke`.
 - `-SkipInstall`: skip APK build/install during `smoke`.
@@ -131,6 +133,7 @@ Gradle properties:
 - `-PharnessSkipInstall=true`
 - `-PpythonExecutable=<python-command>`
 - `-Pautoplay=true`
+- `-PautoplaySaveMode=fresh|continue`
 - `-PforceJvmCrash=true`
 - `-PforceRuntimeCrash=true`
 - `-PnoStopAfterSmoke=true`
@@ -140,6 +143,7 @@ Example:
 ```powershell
 .\gradlew.bat :app:stsHarnessSmoke -PdeviceSerial=emulator-5554 -PlaunchMode=vanilla -PharnessOutDir=debug-artifacts\harness\vanilla-smoke
 .\gradlew.bat :app:stsHarnessAutoplaySmoke -PdeviceSerial=emulator-5554 -PharnessOutDir=debug-artifacts\harness\autoplay-smoke
+.\gradlew.bat :app:stsHarnessAutoplaySmoke -PdeviceSerial=emulator-5554 -PautoplaySaveMode=continue -PharnessOutDir=debug-artifacts\harness\autoplay-continue
 ```
 
 `:app:stsHarnessAutoplaySmoke` and `:app:stsHarnessSmoke -Pautoplay=true` default to a 300-second harness timeout so first-run desktop jar patching can finish; pass `-PharnessTimeoutSeconds=<seconds>` to override it.
@@ -171,6 +175,7 @@ Options:
 - `-PlogsDir=<path>`.
 - `-PforceJvmCrash=true`.
 - `-PforceRuntimeCrash=true`.
+- `-Pautoplay=true` and `-PautoplaySaveMode=fresh|continue` for debug autoplay starts.
 
 `stsStart` sends `io.stamethyst.debug_launch_mode` to `LauncherActivity`. The launcher then follows the normal route through `MainScreenViewModel`, main-process desktop jar patching when MTS needs it, `StsGameActivity`, launch preparation, and `JvmLaunchController`.
 

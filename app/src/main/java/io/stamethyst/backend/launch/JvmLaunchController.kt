@@ -36,6 +36,7 @@ class JvmLaunchController(
     private val forceJvmCrash: Boolean,
     private val forceRuntimeCrash: Boolean,
     private val autoplay: Boolean,
+    private val autoplaySaveMode: AutoplaySaveMode,
     private val mirrorJvmLogsToLogcat: Boolean,
     private val onProgressUpdate: (Int, String) -> Unit,
     private val onLaunchComplete: (exitCode: Int) -> Unit,
@@ -251,7 +252,8 @@ class JvmLaunchController(
                 throwIfCancelled()
                 AutoplayConfigFile.syncForLaunch(
                     context = activity,
-                    enabled = autoplay && StsLaunchSpec.isMtsLaunchMode(launchMode)
+                    enabled = autoplay && StsLaunchSpec.isMtsLaunchMode(launchMode),
+                    saveMode = autoplaySaveMode
                 )
 
                 throwIfCancelled()
@@ -317,7 +319,8 @@ class JvmLaunchController(
                         renderScale,
                         forceJvmCrash,
                         forceRuntimeCrash,
-                        autoplay
+                        autoplay,
+                        autoplaySaveMode
                     )
                 )
                 MemoryDiagnosticsLogger.logEvent(

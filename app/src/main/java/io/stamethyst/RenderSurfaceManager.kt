@@ -88,6 +88,7 @@ class RenderSurfaceManager(
     private val mainHandler = Handler(Looper.getMainLooper())
     private var displayManager: DisplayManager? = null
     private var lastDisplayRotation: Int? = null
+    private var bootOverlayActive = true
 
     private val foregroundResyncRunnable = Runnable {
         applyQueuedResync()
@@ -670,6 +671,15 @@ class RenderSurfaceManager(
         renderRoot?.let { ViewCompat.requestApplyInsets(it) }
     }
 
+    fun setBootOverlayActive(active: Boolean) {
+        if (bootOverlayActive == active) {
+            return
+        }
+        bootOverlayActive = active
+        applyImmersiveMode()
+        applyViewportLayout()
+    }
+
     @Suppress("DEPRECATION")
     private fun applyLegacyImmersiveMode() {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
@@ -684,7 +694,7 @@ class RenderSurfaceManager(
                 View.SYSTEM_UI_FLAG_LAYOUT_STABLE
     }
 
-    private fun applyViewportLayout(insets: WindowInsetsCompat? = lastWindowInsets) {
+    private fun applyViewportLayout(insets: WindowInsetsCompat? = null) {
         if (!::renderView.isInitialized) {
             return
         }
@@ -694,8 +704,9 @@ class RenderSurfaceManager(
         if (rootWidth <= 0 || rootHeight <= 0) {
             return
         }
+        val resolvedInsets = insets ?: currentWindowInsets()
         val windowCropHint = resolveWindowConstrainedCropHint(root)
-        val cropInsets = resolveScreenBottomCropInsets(insets, windowCropHint)
+        val cropInsets = resolveViewportCropInsets(resolvedInsets, windowCropHint)
         val layout = resolveViewportLayout(
             rootWidth = rootWidth,
             rootHeight = rootHeight,
@@ -733,6 +744,10 @@ class RenderSurfaceManager(
                 "margins=${layout.leftMargin},${layout.topMargin},${layout.rightMargin},${layout.bottomMargin}"
         )
         requestForegroundResync("viewport_layout")
+    }
+
+    private fun currentWindowInsets(): WindowInsetsCompat? {
+        return lastWindowInsets ?: renderRoot?.let { ViewCompat.getRootWindowInsets(it) }
     }
 
     private fun registerDisplayRotationListener() {
@@ -793,6 +808,25 @@ class RenderSurfaceManager(
             fallbackInset = resolveStatusBarHeightPx(),
             windowCropHint = windowCropHint
         )
+    }
+
+    private fun resolveViewportCropInsets(
+        insets: WindowInsetsCompat?,
+        windowCropHint: RenderViewportCropHint?
+    ): RenderViewportInsets {
+        val screenBottomCropInsets = resolveScreenBottomCropInsets(insets, windowCropHint)
+        val displayCutoutAvoidanceInsets = if (
+            insets != null &&
+            shouldApplyManualDisplayCutoutAvoidance(
+                avoidDisplayCutout = avoidDisplayCutout,
+                windowConstrained = windowCropHint != null
+            )
+        ) {
+            resolveDisplayCutoutInsets(insets)
+        } else {
+            RenderViewportInsets()
+        }
+        return mergeViewportInsets(screenBottomCropInsets, displayCutoutAvoidanceInsets)
     }
 
     private fun resolveWindowConstrainedCropHint(root: View): RenderViewportCropHint? {
@@ -892,6 +926,25 @@ class RenderSurfaceManager(
         return RenderViewportInsets(left = left, top = top, right = right, bottom = bottom)
     }
 
+    private fun resolveDisplayCutoutInsets(insets: WindowInsetsCompat): RenderViewportInsets {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.P) {
+            return RenderViewportInsets()
+        }
+        val cutoutInsets = insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.displayCutout())
+        var left = cutoutInsets.left
+        var top = cutoutInsets.top
+        var right = cutoutInsets.right
+        var bottom = cutoutInsets.bottom
+        val cutout = activity.window.decorView.rootWindowInsets?.displayCutout
+        if (cutout != null) {
+            left = maxOf(left, cutout.safeInsetLeft)
+            top = maxOf(top, cutout.safeInsetTop)
+            right = maxOf(right, cutout.safeInsetRight)
+            bottom = maxOf(bottom, cutout.safeInsetBottom)
+        }
+        return RenderViewportInsets(left = left, top = top, right = right, bottom = bottom)
+    }
+
     private fun resolveStatusBarHeightPx(): Int {
         val resourceId = activity.resources.getIdentifier("status_bar_height", "dimen", "android")
         if (resourceId == 0) {
@@ -905,11 +958,10 @@ class RenderSurfaceManager(
             return
         }
         val attributes = activity.window.attributes
-        val targetMode = if (avoidDisplayCutout) {
-            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_NEVER
-        } else {
-            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-        }
+        val targetMode = resolveDisplayCutoutMode(
+            avoidDisplayCutout = avoidDisplayCutout,
+            bootOverlayActive = bootOverlayActive
+        )
         if (attributes.layoutInDisplayCutoutMode == targetMode) {
             return
         }
@@ -1032,6 +1084,36 @@ class RenderSurfaceManager(
                 gestureInsets.right > gestureInsets.left -> HorizontalCropSide.RIGHT
                 else -> HorizontalCropSide.RIGHT
             }
+        }
+
+        internal fun resolveDisplayCutoutMode(
+            avoidDisplayCutout: Boolean,
+            bootOverlayActive: Boolean
+        ): Int {
+            return if (bootOverlayActive || !avoidDisplayCutout) {
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            } else {
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_NEVER
+            }
+        }
+
+        internal fun shouldApplyManualDisplayCutoutAvoidance(
+            avoidDisplayCutout: Boolean,
+            windowConstrained: Boolean
+        ): Boolean {
+            return avoidDisplayCutout && !windowConstrained
+        }
+
+        internal fun mergeViewportInsets(
+            first: RenderViewportInsets,
+            second: RenderViewportInsets
+        ): RenderViewportInsets {
+            return RenderViewportInsets(
+                left = maxOf(first.left, second.left),
+                top = maxOf(first.top, second.top),
+                right = maxOf(first.right, second.right),
+                bottom = maxOf(first.bottom, second.bottom)
+            )
         }
 
         internal fun resolveForegroundResyncDelayMs(

@@ -16,12 +16,13 @@ import java.util.ArrayList;
 /**
  * Drives the main menu and character-select screens.
  *
- * <p>Fresh-run policy:
+ * <p>Save policy:
  * <ol>
- *   <li>Delete stale autosaves once per autoplay JVM session and remove already-built
- *       Resume/Abandon menu buttons.</li>
- *   <li>Open the character select screen directly, queue a native character-option click, then
- *       trigger the Embark confirm.</li>
+ *   <li>In {@code fresh} mode, delete stale autosaves once per autoplay JVM session, remove
+ *       already-built Resume/Abandon menu buttons, and open character select for a new run.</li>
+ *   <li>In {@code continue} mode, keep save files intact and press Resume/Continue when that
+ *       button is available. If no previous save is visible, open character select without
+ *       clearing saves so the automation does not stall on the main menu.</li>
  * </ol>
  *
  * <p>The driver never opens the panel screen; it skips straight to {@code charSelectScreen.open()}
@@ -31,6 +32,7 @@ final class AutoplayMainMenuActions {
     private static final String PREFERRED_ORI_CLASS = "ORI";
     private static String lastStateSnapshot;
     private static boolean staleSavesDeleted;
+    private static boolean continueFallbackLogged;
 
     private AutoplayMainMenuActions() {
     }
@@ -95,15 +97,55 @@ final class AutoplayMainMenuActions {
     }
 
     private static void handleMainMenuRoot(MainMenuScreen menu) {
+        if (AutoplayConfig.shouldContinueLastSave()) {
+            if (clickResumeButtonIfAvailable(menu)) {
+                return;
+            }
+            if (!continueFallbackLogged) {
+                continueFallbackLogged = true;
+                AutoplayLog.info("main menu: no resumable save found; starting new run without clearing saves");
+            }
+            startFreshRun(menu, false);
+            return;
+        }
+
         deleteStaleSavesOnce();
         removeStaleResumeButtons(menu);
+        startFreshRun(menu, true);
+    }
 
+    private static void startFreshRun(MainMenuScreen menu, boolean clearedSaves) {
         // Always skip the panel hop and open character select directly for a fresh autoplay run.
         if (menu.charSelectScreen == null) {
             return;
         }
-        AutoplayLog.info("main menu: opening character select for fresh autoplay run");
+        AutoplayLog.info(
+            "main menu: opening character select for fresh autoplay run clearedSaves="
+                + clearedSaves
+        );
         menu.charSelectScreen.open(false);
+    }
+
+    private static boolean clickResumeButtonIfAvailable(MainMenuScreen menu) {
+        ArrayList<MenuButton> buttons = menu.buttons;
+        if (buttons == null) {
+            return false;
+        }
+        for (MenuButton button : buttons) {
+            if (button == null || button.result != MenuButton.ClickResult.RESUME_GAME) {
+                continue;
+            }
+            if (button.hb == null) {
+                AutoplayLog.warn("main menu: resume button hitbox missing", null);
+                return true;
+            }
+            if (!button.hb.clicked) {
+                button.hb.clicked = true;
+                AutoplayLog.info("main menu: pressed Resume/Continue for autoplay save_mode=continue");
+            }
+            return true;
+        }
+        return false;
     }
 
     private static void removeStaleResumeButtons(MainMenuScreen menu) {

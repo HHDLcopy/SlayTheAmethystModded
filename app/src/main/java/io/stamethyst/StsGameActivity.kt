@@ -24,6 +24,7 @@ import io.stamethyst.backend.diag.MemoryDiagnosticsLogger
 import io.stamethyst.backend.launch.GameProcessLaunchGuard
 import io.stamethyst.backend.presence.GamePresenceStateMarker
 import io.stamethyst.backend.render.DisplayPerformanceController
+import io.stamethyst.backend.launch.AutoplaySaveMode
 import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.LauncherConfig
@@ -41,6 +42,7 @@ class StsGameActivity : AppCompatActivity() {
         const val EXTRA_FORCE_JVM_CRASH = "io.stamethyst.force_jvm_crash"
         const val EXTRA_FORCE_RUNTIME_CRASH = "io.stamethyst.force_runtime_crash"
         const val EXTRA_AUTOPLAY = "io.stamethyst.autoplay"
+        const val EXTRA_AUTOPLAY_SAVE_MODE = "io.stamethyst.autoplay_save_mode"
 
         @JvmStatic
         fun launch(
@@ -50,7 +52,8 @@ class StsGameActivity : AppCompatActivity() {
             manualDismissBootOverlay: Boolean,
             forceJvmCrash: Boolean = false,
             forceRuntimeCrash: Boolean = false,
-            autoplay: Boolean = false
+            autoplay: Boolean = false,
+            autoplaySaveMode: AutoplaySaveMode = AutoplaySaveMode.DEFAULT
         ) {
             val intent = Intent(context, StsGameActivity::class.java)
             intent.putExtra(EXTRA_LAUNCH_MODE, launchMode)
@@ -63,6 +66,7 @@ class StsGameActivity : AppCompatActivity() {
             intent.putExtra(EXTRA_FORCE_JVM_CRASH, forceJvmCrash)
             intent.putExtra(EXTRA_FORCE_RUNTIME_CRASH, forceRuntimeCrash)
             intent.putExtra(EXTRA_AUTOPLAY, autoplay)
+            intent.putExtra(EXTRA_AUTOPLAY_SAVE_MODE, autoplaySaveMode.persistedValue)
             context.startActivity(intent)
         }
     }

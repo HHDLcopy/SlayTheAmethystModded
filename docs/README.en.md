@@ -129,6 +129,7 @@ Use the harness entrypoint for repeatable device automation. It writes machine-r
 python .\scripts\tools\main.py sts-harness -Command doctor
 python .\scripts\tools\main.py sts-harness -Command smoke -LaunchMode mts_basemod -TimeoutSeconds 120
 python .\scripts\tools\main.py sts-harness -Command smoke -Autoplay
+python .\scripts\tools\main.py sts-harness -Command smoke -Autoplay -AutoplaySaveMode continue
 ```
 
 The same harness is also exposed through Gradle:
@@ -153,9 +154,10 @@ Extra options:
 - `-PlogsDir=<path>`
 - `-PharnessOutDir=<path>`
 - `-Pautoplay=true`
+- `-PautoplaySaveMode=fresh|continue`
 - `-PpythonExecutable=<python-command>`
 
-`smoke` also saves a harness-side logcat capture. If the game crashes before JVM logs are written, `result.json` reports `LOGCAT_CRASH` and points `artifacts.harnessLogcat` at the full error log. Autoplay smoke defaults to a 300-second wait so first-run `desktop-1.0.jar` patching can finish; main-process patch failures are returned as `FAIL` in `result.json`.
+`smoke` also saves a harness-side logcat capture. If the game crashes before JVM logs are written, `result.json` reports `LOGCAT_CRASH` and points `artifacts.harnessLogcat` at the full error log. Autoplay smoke defaults to a 300-second wait so first-run `desktop-1.0.jar` patching can finish; default `autoplaySaveMode=fresh` clears old saves and starts a new run, while `continue` keeps saves and resumes the previous run when available. Main-process patch failures are returned as `FAIL` in `result.json`.
 
 Further reading:
 - [Simplified Chinese README](../README.md)

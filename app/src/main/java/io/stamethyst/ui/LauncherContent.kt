@@ -136,6 +136,7 @@ import io.stamethyst.ui.settings.LauncherSteamCloudSyncBlacklistSettingsScreen
 import io.stamethyst.ui.settings.SettingsEffectsHandler
 import io.stamethyst.ui.settings.SettingsScreenViewModel
 import io.stamethyst.ui.preferences.LauncherPreferences
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
@@ -181,8 +182,11 @@ fun LauncherContent(
     val dockPagerState = rememberPagerState(initialPage = initialDockPage) {
         LauncherDockRoutes.size
     }
-    val dockPageRoute = dockPagerState.currentLauncherDockRoute()
     val coroutineScope = rememberCoroutineScope()
+    var pendingDockRoute by remember { mutableStateOf<Route?>(null) }
+    var dockNavigationRequestId by remember { mutableStateOf(0) }
+    var dockNavigationJob by remember { mutableStateOf<Job?>(null) }
+    val dockPageRoute = pendingDockRoute ?: dockPagerState.currentLauncherDockRoute()
     val showDockPager = rootRoute.launcherDockIndex() != null || currentRoute.launcherDockIndex() != null
     val showOverlayNav = currentRoute.launcherDockIndex() == null || navigator.stackSize > 1
     var forwardPageTransition by remember { mutableStateOf(true) }
@@ -213,18 +217,37 @@ fun LauncherContent(
     fun selectDockRoute(route: Route) {
         val page = route.launcherDockIndex() ?: return
         forwardPageTransition = isForwardDockTransition(
-            from = dockPagerState.currentLauncherDockRoute(),
+            from = pendingDockRoute ?: currentRoute.launcherDockRoute()
+                ?: dockPagerState.currentLauncherDockRoute(),
             to = route,
         )
-        if (dockPagerState.currentPage == page) {
+        dockNavigationJob?.cancel()
+        dockNavigationJob = null
+        dockNavigationRequestId += 1
+        val requestId = dockNavigationRequestId
+        if (!dockPagerState.isScrollInProgress && dockPagerState.settledPage == page) {
+            pendingDockRoute = null
             if (currentRoute != route || navigator.stackSize > 1) {
                 navigator.resetRoot(route)
             }
             return
         }
-        coroutineScope.launch {
-            dockPagerState.animateScrollToPage(page)
-            navigator.resetRoot(route)
+        pendingDockRoute = route
+        dockNavigationJob = coroutineScope.launch {
+            try {
+                dockPagerState.animateScrollToPage(page)
+                if (dockNavigationRequestId == requestId && pendingDockRoute == route) {
+                    pendingDockRoute = null
+                    navigator.resetRoot(route)
+                }
+            } finally {
+                if (dockNavigationRequestId == requestId) {
+                    dockNavigationJob = null
+                    if (pendingDockRoute == route) {
+                        pendingDockRoute = null
+                    }
+                }
+            }
         }
     }
 
@@ -296,16 +319,27 @@ fun LauncherContent(
 
     LaunchedEffect(currentRoute) {
         val page = currentRoute.launcherDockIndex() ?: return@LaunchedEffect
+        if (pendingDockRoute != null && pendingDockRoute != currentRoute) {
+            return@LaunchedEffect
+        }
         if (dockPagerState.currentPage != page) {
             dockPagerState.scrollToPage(page)
         }
     }
 
-    LaunchedEffect(dockPagerState, showOverlayNav, currentRoute, navigator.stackSize) {
+    LaunchedEffect(showOverlayNav, pendingDockRoute) {
+        if (showOverlayNav && pendingDockRoute != null) {
+            dockNavigationJob?.cancel()
+            dockNavigationJob = null
+            pendingDockRoute = null
+        }
+    }
+
+    LaunchedEffect(dockPagerState, showOverlayNav, currentRoute, navigator.stackSize, pendingDockRoute) {
         snapshotFlow { dockPagerState.settledPage }
             .distinctUntilChanged()
             .collect { page ->
-                if (!showOverlayNav) {
+                if (!showOverlayNav && pendingDockRoute == null) {
                     val route = LauncherDockRoutes[page]
                     if (currentRoute != route || navigator.stackSize > 1) {
                         navigator.resetRoot(route)

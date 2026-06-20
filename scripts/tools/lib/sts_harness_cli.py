@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 
-from .sts_harness import COMMANDS, LAUNCH_MODES, Harness, HarnessOptions
+from .sts_harness import AUTOPLAY_SAVE_MODES, COMMANDS, LAUNCH_MODES, Harness, HarnessOptions
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -16,6 +16,14 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("-ForceJvmCrash", "--force-jvm-crash", dest="force_jvm_crash", action="store_true")
     parser.add_argument("-ForceRuntimeCrash", "--force-runtime-crash", dest="force_runtime_crash", action="store_true")
     parser.add_argument("-Autoplay", "--autoplay", dest="autoplay", action="store_true")
+    parser.add_argument(
+        "-AutoplaySaveMode",
+        "--autoplay-save-mode",
+        dest="autoplay_save_mode",
+        choices=AUTOPLAY_SAVE_MODES,
+        default="fresh",
+        help="Autoplay save handling: fresh clears stale saves before starting; continue resumes the previous run when available.",
+    )
     parser.add_argument("-SkipInstall", "--skip-install", dest="skip_install", action="store_true")
     parser.add_argument("-NoStopAfterSmoke", "--no-stop-after-smoke", dest="no_stop_after_smoke", action="store_true")
     parser.add_argument(
@@ -54,6 +62,7 @@ def main(argv: list[str] | None = None) -> int:
         force_jvm_crash=args.force_jvm_crash,
         force_runtime_crash=args.force_runtime_crash,
         autoplay=args.autoplay,
+        autoplay_save_mode=args.autoplay_save_mode,
         skip_install=args.skip_install,
         no_stop_after_smoke=args.no_stop_after_smoke,
         mods=args.mods,

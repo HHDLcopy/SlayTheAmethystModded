@@ -43,6 +43,7 @@ class LauncherActivity : AppCompatActivity() {
         const val EXTRA_DEBUG_FORCE_JVM_CRASH = "io.stamethyst.debug_force_jvm_crash"
         const val EXTRA_DEBUG_FORCE_RUNTIME_CRASH = "io.stamethyst.debug_force_runtime_crash"
         const val EXTRA_DEBUG_AUTOPLAY = "io.stamethyst.debug_autoplay"
+        const val EXTRA_DEBUG_AUTOPLAY_SAVE_MODE = "io.stamethyst.debug_autoplay_save_mode"
         const val EXTRA_CRASH_OCCURRED = "io.stamethyst.crash_occurred"
         const val EXTRA_CRASH_CODE = "io.stamethyst.crash_code"
         const val EXTRA_CRASH_IS_SIGNAL = "io.stamethyst.crash_is_signal"

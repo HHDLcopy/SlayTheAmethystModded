@@ -2,6 +2,7 @@ package io.stamethyst
 
 import android.content.Context
 import android.content.Intent
+import io.stamethyst.backend.launch.AutoplaySaveMode
 import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.backend.render.AndroidGameModeSnapshot
 import io.stamethyst.backend.render.AndroidGameModeSupport
@@ -25,6 +26,7 @@ internal data class GameSessionConfig(
     val forceJvmCrash: Boolean,
     val forceRuntimeCrash: Boolean,
     val autoplay: Boolean,
+    val autoplaySaveMode: AutoplaySaveMode,
     val specialKeyInputMode: SpecialKeyInputMode,
     val showFloatingMouseWindow: Boolean,
     val showGamePerformanceOverlay: Boolean,
@@ -87,6 +89,9 @@ internal data class GameSessionConfig(
                 forceJvmCrash = intent.getBooleanExtra(StsGameActivity.EXTRA_FORCE_JVM_CRASH, false),
                 forceRuntimeCrash = intent.getBooleanExtra(StsGameActivity.EXTRA_FORCE_RUNTIME_CRASH, false),
                 autoplay = intent.getBooleanExtra(StsGameActivity.EXTRA_AUTOPLAY, false),
+                autoplaySaveMode = AutoplaySaveMode.fromPersistedValue(
+                    intent.getStringExtra(StsGameActivity.EXTRA_AUTOPLAY_SAVE_MODE)
+                ),
                 specialKeyInputMode = specialKeyInputMode,
                 showFloatingMouseWindow =
                     specialKeyInputMode == SpecialKeyInputMode.LEGACY_FLOATING_WINDOW,

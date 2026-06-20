@@ -14,6 +14,7 @@ from . import device_mods
 
 COMMANDS = ("doctor", "install", "start", "stop", "logs", "screenshot", "status", "mods", "set-mods", "smoke")
 LAUNCH_MODES = ("mts_basemod", "mts", "vanilla")
+AUTOPLAY_SAVE_MODES = ("fresh", "continue")
 
 
 def repo_root() -> Path:
@@ -116,6 +117,7 @@ class HarnessOptions:
     force_jvm_crash: bool
     force_runtime_crash: bool
     autoplay: bool
+    autoplay_save_mode: str
     skip_install: bool
     no_stop_after_smoke: bool
     mods: list[str]
@@ -313,6 +315,7 @@ class Harness:
             f"-PforceJvmCrash={str(self.options.force_jvm_crash).lower()}",
             f"-PforceRuntimeCrash={str(self.options.force_runtime_crash).lower()}",
             f"-Pautoplay={str(self.options.autoplay).lower()}",
+            f"-PautoplaySaveMode={self.options.autoplay_save_mode}",
             *self.gradle_device_properties(),
         ]
         self.gradle(args)
@@ -1012,6 +1015,7 @@ fi
             "forceJvmCrash": self.options.force_jvm_crash,
             "forceRuntimeCrash": self.options.force_runtime_crash,
             "autoplay": self.options.autoplay,
+            "autoplaySaveMode": self.options.autoplay_save_mode,
             "timeoutSeconds": self.options.timeout_seconds,
             "artifacts": {"outDir": str(resolved_out_dir), "resultJson": str(result_path)},
             "statusSnapshot": None,

@@ -104,6 +104,8 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.canhub.cropper.CropImageOptions
+import com.canhub.cropper.CropImageView
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import io.stamethyst.R
@@ -5275,10 +5277,42 @@ fun SettingsEffectsHandler(
         viewModel.onLogsExportPicked(activity, uri)
     }
     var pendingBootOverlayImageSlot by remember { mutableStateOf<BootOverlayImageSlot?>(null) }
-    val bootOverlayImageLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+    @Suppress("DEPRECATION")
+    val bootOverlayImageCropLauncher = rememberLauncherForActivityResult(com.canhub.cropper.CropImageContract()) { result ->
         val slot = pendingBootOverlayImageSlot ?: return@rememberLauncherForActivityResult
         pendingBootOverlayImageSlot = null
-        viewModel.onBootOverlayImagePicked(activity, slot, uri)
+        if (result.isSuccessful) {
+            viewModel.onBootOverlayImagePicked(activity, slot, result.uriContent)
+        } else {
+            val error = result.error ?: return@rememberLauncherForActivityResult
+            viewModel.onBootOverlayImageCropFailed(activity, error)
+        }
+    }
+    val bootOverlayImageLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (pendingBootOverlayImageSlot == null) {
+            return@rememberLauncherForActivityResult
+        }
+        if (uri == null) {
+            pendingBootOverlayImageSlot = null
+            return@rememberLauncherForActivityResult
+        }
+        @Suppress("DEPRECATION")
+        val cropContractOptions = com.canhub.cropper.CropImageContractOptions(
+            uri = uri,
+            cropImageOptions = CropImageOptions(
+                guidelines = CropImageView.Guidelines.ON,
+                fixAspectRatio = true,
+                aspectRatioX = 16,
+                aspectRatioY = 9,
+                outputRequestWidth = 1920,
+                outputRequestHeight = 1080,
+                outputRequestSizeOptions = CropImageView.RequestSizeOptions.RESIZE_EXACT,
+                outputCompressFormat = Bitmap.CompressFormat.JPEG,
+                outputCompressQuality = 95,
+                activityTitle = activity.getString(R.string.settings_boot_overlay_custom_image_crop_title)
+            )
+        )
+        bootOverlayImageCropLauncher.launch(cropContractOptions)
     }
 
     LaunchedEffect(viewModel) {

@@ -137,6 +137,7 @@ APK 输出目录：
 python .\scripts\tools\main.py sts-harness -Command doctor
 python .\scripts\tools\main.py sts-harness -Command smoke -LaunchMode mts_basemod -TimeoutSeconds 120
 python .\scripts\tools\main.py sts-harness -Command smoke -Autoplay
+python .\scripts\tools\main.py sts-harness -Command smoke -Autoplay -AutoplaySaveMode continue
 ```
 
 也可以通过 Gradle 调用同一套 harness：
@@ -162,9 +163,10 @@ python .\scripts\tools\main.py sts-harness -Command smoke -Autoplay
 - `-PlogsDir=<path>`
 - `-PharnessOutDir=<path>`
 - `-Pautoplay=true`
+- `-PautoplaySaveMode=fresh|continue`
 - `-PpythonExecutable=<python-command>`
 
-`smoke` 会额外保存 harness 侧 logcat；如果游戏在写出 JVM 日志前崩溃，`result.json` 会报告 `LOGCAT_CRASH` 并在 `artifacts.harnessLogcat` 指向完整错误日志。Autoplay smoke 默认等待 300 秒，以便首次修补 `desktop-1.0.jar`；主进程修补失败会作为 `FAIL` 结果写入 `result.json`。
+`smoke` 会额外保存 harness 侧 logcat；如果游戏在写出 JVM 日志前崩溃，`result.json` 会报告 `LOGCAT_CRASH` 并在 `artifacts.harnessLogcat` 指向完整错误日志。Autoplay smoke 默认等待 300 秒，以便首次修补 `desktop-1.0.jar`；默认 `autoplaySaveMode=fresh` 会清理旧存档并开新局，传 `continue` 时会保留存档并优先继续上次运行。主进程修补失败会作为 `FAIL` 结果写入 `result.json`。
 
 更多文档：
 

@@ -113,6 +113,7 @@ internal class GameSessionCoordinator(
         manualDismissBootOverlay = config.manualDismissBootOverlay,
         useTextureViewSurface = config.useTextureViewSurface,
         onDismissed = {
+            renderSurfaceManager.setBootOverlayActive(false)
             updateFloatingMouseVisibility()
             updatePerformanceOverlayVisibility()
             updateSystemGameState()
@@ -134,6 +135,7 @@ internal class GameSessionCoordinator(
         forceJvmCrash = config.forceJvmCrash,
         forceRuntimeCrash = config.forceRuntimeCrash,
         autoplay = config.autoplay,
+        autoplaySaveMode = config.autoplaySaveMode,
         mirrorJvmLogsToLogcat = config.mirrorJvmLogsToLogcat,
         onProgressUpdate = { percent, message ->
             bootOverlayController.updateProgress(

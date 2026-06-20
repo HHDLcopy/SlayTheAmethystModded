@@ -48,6 +48,7 @@ public final class AutoplayDriver {
         bannerLogged = true;
         AutoplayLog.info(
             "autoplay engaged tickIntervalMs=" + AutoplayConfig.getTickIntervalMs()
+                + " saveMode=" + AutoplayConfig.getSaveMode()
                 + " debugLog=" + AutoplayConfig.isDebugLogEnabled()
         );
     }

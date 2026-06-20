@@ -30,7 +30,9 @@ app/src/main/assets/components/jre
 _tmp*
 .tmp*
 tmp/
+agent-tmp/
 artifacts/
+demo-artifacts/
 $dir/
 note.md
 tmp_render_scale.txt

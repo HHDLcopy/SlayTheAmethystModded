@@ -264,6 +264,9 @@ internal class MainModManagementController(
     }
 
     fun applyPendingSelection(host: Activity) {
+        if (!pendingSelectionInitialized) {
+            return
+        }
         ModManager.replaceEnabledOptionalModIds(host, LinkedHashSet(pendingEnabledOptionalModIds))
     }
 

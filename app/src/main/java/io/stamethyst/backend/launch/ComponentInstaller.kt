@@ -62,6 +62,17 @@ object ComponentInstaller {
     }
 
     @JvmStatic
+    fun arePackagedComponentsCurrent(context: Context): Boolean {
+        RuntimePaths.ensureBaseDirs(context)
+        val resources = RuntimeResourceProvider(context)
+        return evaluatePackagedComponentsState(
+            context = context,
+            resources = resources,
+            expectedMarker = resolvePackagedComponentsMarker(context)
+        ).current
+    }
+
+    @JvmStatic
     @Throws(IOException::class)
     fun ensureInstalled(context: Context, progressCallback: StartupProgressCallback?) {
         throwIfInterrupted()

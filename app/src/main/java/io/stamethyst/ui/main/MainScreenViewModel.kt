@@ -2409,26 +2409,18 @@ class MainScreenViewModel : ViewModel() {
         forceJvmCrash: Boolean,
         forceRuntimeCrash: Boolean,
     ) {
+        val progressPublisher = DelayedGameBodyPatchProgressPublisher(host)
         launchExecutor.execute {
             try {
                 MainProcessGameBodyPatchCoordinator.prepareBeforeLaunch(
                     context = host.applicationContext,
                     launchMode = launchMode,
                     progressCallback = StartupProgressCallback { percent, message ->
-                        host.runOnUiThread {
-                            if (host.isFinishing || host.isDestroyed || !launchInFlight) {
-                                return@runOnUiThread
-                            }
-                            setBusy(
-                                busy = true,
-                                message = UiText.DynamicString(message),
-                                operation = UiBusyOperation.GAME_BODY_PATCH,
-                                progressPercent = percent
-                            )
-                        }
+                        progressPublisher.onProgress(percent, message)
                     }
                 )
                 host.runOnUiThread {
+                    progressPublisher.cancel()
                     setBusy(false, null)
                     if (host.isFinishing || host.isDestroyed) {
                         clearLaunchInFlightState()
@@ -2451,6 +2443,7 @@ class MainScreenViewModel : ViewModel() {
                         (error.message ?: error.javaClass.simpleName)
                 )
                 host.runOnUiThread {
+                    progressPublisher.cancel()
                     setBusy(false, null)
                     if (host.isFinishing || host.isDestroyed) {
                         clearLaunchInFlightState()
@@ -2468,6 +2461,74 @@ class MainScreenViewModel : ViewModel() {
                     clearLaunchInFlightState()
                 }
             }
+        }
+    }
+
+    private inner class DelayedGameBodyPatchProgressPublisher(
+        private val host: Activity
+    ) {
+        private val handler = Handler(Looper.getMainLooper())
+        private var showScheduled = false
+        private var visible = false
+        private var cancelled = false
+        private var latestProgressPercent = 0
+        private var latestMessage = ""
+        private val showRunnable = Runnable {
+            showScheduled = false
+            if (!canPublish()) {
+                return@Runnable
+            }
+            visible = true
+            publishLatest()
+        }
+
+        fun onProgress(percent: Int, message: String) {
+            handler.post {
+                if (cancelled) {
+                    return@post
+                }
+                latestProgressPercent = percent.coerceIn(0, 100)
+                latestMessage = message
+                if (visible) {
+                    publishLatest()
+                } else if (!showScheduled) {
+                    showScheduled = true
+                    handler.postDelayed(
+                        showRunnable,
+                        GAME_BODY_PATCH_BUSY_OVERLAY_DELAY_MS
+                    )
+                }
+            }
+        }
+
+        fun cancel() {
+            if (Looper.myLooper() == Looper.getMainLooper()) {
+                cancelOnMain()
+            } else {
+                handler.post { cancelOnMain() }
+            }
+        }
+
+        private fun cancelOnMain() {
+            cancelled = true
+            showScheduled = false
+            handler.removeCallbacks(showRunnable)
+        }
+
+        private fun canPublish(): Boolean {
+            return !cancelled && !host.isFinishing && !host.isDestroyed && launchInFlight
+        }
+
+        private fun publishLatest() {
+            if (!canPublish()) {
+                return
+            }
+            setBusy(
+                busy = true,
+                message = UiText.DynamicString(latestMessage),
+                operation = UiBusyOperation.GAME_BODY_PATCH,
+                progressPercent = latestProgressPercent
+            )
         }
     }
 
@@ -3727,6 +3788,7 @@ class MainScreenViewModel : ViewModel() {
         private const val LOGCAT_TAG = "STS-MainScreenVM"
         private const val PASSIVE_REFRESH_DEBOUNCE_MS = 750L
         private const val STEAM_CLOUD_STATUS_REFRESH_INTERVAL_MS = 60_000L
+        private const val GAME_BODY_PATCH_BUSY_OVERLAY_DELAY_MS = 500L
         private const val BYTES_PER_MIB = 1024L * 1024L
         private const val ENABLED_MOD_SIZE_WARNING_THRESHOLD_BYTES = 1024L * BYTES_PER_MIB
         private val DEFAULT_UNASSIGNED_FOLDER_NAME: String = if (Locale.getDefault().language.startsWith("zh")) {

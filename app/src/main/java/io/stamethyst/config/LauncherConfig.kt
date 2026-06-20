@@ -78,6 +78,7 @@ object LauncherConfig {
         "mobileglues_fsr1_quality_preset"
     private const val PREF_KEY_THEME_MODE = "theme_mode"
     private const val PREF_KEY_THEME_COLOR = "theme_color"
+    private const val PREF_KEY_LAUNCHER_ICON_MODE = "launcher_icon_mode"
     private const val PREF_KEY_CHROME_BACKGROUND_OPACITY = "chrome_background_opacity"
     private const val LEGACY_PREF_KEY_HOME_CHROME_TRANSPARENCY = "home_chrome_transparency"
     private const val PREF_KEY_BOOT_OVERLAY_STYLE = "boot_overlay_style"
@@ -262,6 +263,7 @@ object LauncherConfig {
         MobileGluesFsr1QualityPreset.DISABLED
     val DEFAULT_THEME_MODE: LauncherThemeMode = LauncherThemeMode.FOLLOW_SYSTEM
     val DEFAULT_THEME_COLOR: LauncherThemeColor = LauncherThemeColor.COLORLESS
+    val DEFAULT_LAUNCHER_ICON_MODE: LauncherIconMode = LauncherIconMode.AMETHYST
     const val DEFAULT_CHROME_BACKGROUND_OPACITY = 0.0f
     const val MIN_CHROME_BACKGROUND_OPACITY = 0.0f
     const val MAX_CHROME_BACKGROUND_OPACITY = 1.0f
@@ -867,6 +869,20 @@ object LauncherConfig {
     fun saveThemeColor(context: Context, themeColor: LauncherThemeColor) {
         prefs(context).edit {
             putString(PREF_KEY_THEME_COLOR, themeColor.persistedValue)
+        }
+    }
+
+    fun readLauncherIconMode(context: Context): LauncherIconMode {
+        val stored = prefs(context).getString(
+            PREF_KEY_LAUNCHER_ICON_MODE,
+            DEFAULT_LAUNCHER_ICON_MODE.persistedValue
+        )
+        return LauncherIconMode.fromPersistedValue(stored) ?: DEFAULT_LAUNCHER_ICON_MODE
+    }
+
+    fun saveLauncherIconMode(context: Context, iconMode: LauncherIconMode) {
+        prefs(context).edit {
+            putString(PREF_KEY_LAUNCHER_ICON_MODE, iconMode.persistedValue)
         }
     }
 

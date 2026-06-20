@@ -856,6 +856,10 @@
     <string name="settings_theme_mode_follow_system">跟随系统</string>
     <string name="settings_theme_mode_light">亮色</string>
     <string name="settings_theme_mode_dark">暗色</string>
+    <string name="settings_app_icon_title">应用图标</string>
+    <string name="settings_app_icon_desc">选择桌面上显示的启动器图标。</string>
+    <string name="settings_app_icon_amethyst">紫水晶</string>
+    <string name="settings_app_icon_watcher">观者</string>
     <string name="settings_theme_color_title">主题色</string>
     <string name="settings_theme_color_desc">设置启动器的强调色。亮色和暗色模式会自动适配同一套主题色。</string>
     <string name="settings_theme_color_zhanshige">战士</string>

@@ -20,6 +20,7 @@ import io.stamethyst.config.BootOverlayAnimation
 import io.stamethyst.config.BootOverlayStyle
 import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.config.LauncherConfig
+import io.stamethyst.config.LauncherIconMode
 import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeMode
 import io.stamethyst.config.RenderSurfaceBackend
@@ -83,6 +84,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_THEME_MODE
     val DEFAULT_THEME_COLOR: LauncherThemeColor
         get() = LauncherConfig.DEFAULT_THEME_COLOR
+    val DEFAULT_LAUNCHER_ICON_MODE: LauncherIconMode
+        get() = LauncherConfig.DEFAULT_LAUNCHER_ICON_MODE
     val DEFAULT_CHROME_BACKGROUND_OPACITY: Float
         get() = LauncherConfig.DEFAULT_CHROME_BACKGROUND_OPACITY
     val MIN_CHROME_BACKGROUND_OPACITY: Float
@@ -367,6 +370,14 @@ object LauncherPreferences {
 
     fun saveThemeColor(context: Context, themeColor: LauncherThemeColor) {
         LauncherConfig.saveThemeColor(context, themeColor)
+    }
+
+    fun readLauncherIconMode(context: Context): LauncherIconMode {
+        return LauncherConfig.readLauncherIconMode(context)
+    }
+
+    fun saveLauncherIconMode(context: Context, iconMode: LauncherIconMode) {
+        LauncherConfig.saveLauncherIconMode(context, iconMode)
     }
 
     fun readChromeBackgroundOpacity(context: Context): Float {

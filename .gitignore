@@ -50,7 +50,8 @@ tmp-feedback-smoke/
 /app/$out*/
 /cloud-function*.zip
 /video_script.md
-
+/app/agent-tmp/*
+/agent-tmp/*
 # Local Codex/tool workspace state
 /.codex/
 /.codex_tmp/

@@ -129,6 +129,7 @@ import io.stamethyst.config.BootOverlayImageMode
 import io.stamethyst.config.BootOverlayImageSlot
 import io.stamethyst.config.BootOverlayStyle
 import io.stamethyst.config.GpuResourceGuardianMode
+import io.stamethyst.config.LauncherIconMode
 import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeMode
 import io.stamethyst.config.RenderSurfaceBackend
@@ -220,6 +221,9 @@ fun LauncherSettingsLauncherScreen(
         },
         onThemeColorChanged = { themeColor ->
             viewModel.onThemeColorChanged(activity, themeColor)
+        },
+        onLauncherIconModeChanged = { iconMode ->
+            viewModel.onLauncherIconModeChanged(activity, iconMode)
         },
         onChromeBackgroundOpacityChanged = { opacity ->
             viewModel.onChromeBackgroundOpacityChanged(activity, opacity)
@@ -707,6 +711,7 @@ private fun LauncherSettingsLauncherScreenContent(
     onOpenBasicTutorial: () -> Unit = {},
     onThemeModeChanged: (LauncherThemeMode) -> Unit = {},
     onThemeColorChanged: (LauncherThemeColor) -> Unit = {},
+    onLauncherIconModeChanged: (LauncherIconMode) -> Unit = {},
     onChromeBackgroundOpacityChanged: (Float) -> Unit = {},
     onBootOverlayStyleChanged: (BootOverlayStyle) -> Unit = {},
     onBootOverlayAnimationChanged: (BootOverlayAnimation) -> Unit = {},
@@ -748,6 +753,7 @@ private fun LauncherSettingsLauncherScreenContent(
                     uiState = uiState,
                     onThemeModeChanged = onThemeModeChanged,
                     onThemeColorChanged = onThemeColorChanged,
+                    onLauncherIconModeChanged = onLauncherIconModeChanged,
                     onChromeBackgroundOpacityChanged = onChromeBackgroundOpacityChanged,
                     onBootOverlayStyleChanged = onBootOverlayStyleChanged,
                     onBootOverlayAnimationChanged = onBootOverlayAnimationChanged,
@@ -1810,6 +1816,7 @@ internal fun SettingsAppearanceSection(
     uiState: SettingsScreenViewModel.UiState,
     onThemeModeChanged: (LauncherThemeMode) -> Unit,
     onThemeColorChanged: (LauncherThemeColor) -> Unit,
+    onLauncherIconModeChanged: (LauncherIconMode) -> Unit,
     onChromeBackgroundOpacityChanged: (Float) -> Unit,
     onBootOverlayStyleChanged: (BootOverlayStyle) -> Unit,
     onBootOverlayAnimationChanged: (BootOverlayAnimation) -> Unit,
@@ -1821,6 +1828,7 @@ internal fun SettingsAppearanceSection(
     val view = LocalView.current
     var showThemeModeDialog by rememberSaveable { mutableStateOf(false) }
     var showThemeColorDialog by rememberSaveable { mutableStateOf(false) }
+    var showLauncherIconModeDialog by rememberSaveable { mutableStateOf(false) }
     var showBootOverlayStyleDialog by rememberSaveable { mutableStateOf(false) }
     var showBootOverlayAnimationDialog by rememberSaveable { mutableStateOf(false) }
     var showBootOverlayCustomImageDialog by rememberSaveable { mutableStateOf(false) }
@@ -1840,6 +1848,17 @@ internal fun SettingsAppearanceSection(
         )
         Text(
             text = stringResource(R.string.settings_theme_mode_desc),
+            style = MaterialTheme.typography.bodySmall
+        )
+
+        SettingsActionListItem(
+            title = stringResource(R.string.settings_app_icon_title),
+            supportingText = launcherIconModeDisplayName(uiState.launcherIconMode),
+            enabled = !uiState.busy,
+            onClick = { showLauncherIconModeDialog = true }
+        )
+        Text(
+            text = stringResource(R.string.settings_app_icon_desc),
             style = MaterialTheme.typography.bodySmall
         )
 
@@ -1997,6 +2016,33 @@ internal fun SettingsAppearanceSection(
             },
             confirmButton = {
                 HapticTextButton(onClick = { showThemeModeDialog = false }) {
+                    Text(stringResource(R.string.main_folder_dialog_confirm))
+                }
+            }
+        )
+    }
+
+    if (showLauncherIconModeDialog) {
+        AlertDialog(
+            onDismissRequest = { showLauncherIconModeDialog = false },
+            title = { Text(stringResource(R.string.settings_app_icon_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    LauncherIconMode.entries.forEach { iconMode ->
+                        SettingsRadioOptionRow(
+                            selected = uiState.launcherIconMode == iconMode,
+                            enabled = !uiState.busy,
+                            text = launcherIconModeDisplayName(iconMode),
+                            onSelect = {
+                                onLauncherIconModeChanged(iconMode)
+                                showLauncherIconModeDialog = false
+                            }
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                HapticTextButton(onClick = { showLauncherIconModeDialog = false }) {
                     Text(stringResource(R.string.main_folder_dialog_confirm))
                 }
             }
@@ -2801,6 +2847,15 @@ private fun themeModeDisplayName(themeMode: LauncherThemeMode): String {
     }
 }
 
+@Composable
+private fun launcherIconModeDisplayName(iconMode: LauncherIconMode): String {
+    return when (iconMode) {
+        LauncherIconMode.AMETHYST ->
+            stringResource(R.string.settings_app_icon_amethyst)
+        LauncherIconMode.WATCHER ->
+            stringResource(R.string.settings_app_icon_watcher)
+    }
+}
 
 @Composable
 private fun loadingAnimationDisplayName(animation: BootOverlayAnimation): String {

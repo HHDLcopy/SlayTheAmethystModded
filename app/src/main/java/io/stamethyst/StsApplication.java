@@ -8,6 +8,7 @@ import io.stamethyst.backend.feedback.StreamChatPreviewInitializer;
 import io.stamethyst.backend.presence.GamePresenceReporter;
 import io.stamethyst.backend.process.AppProcess;
 import io.stamethyst.config.CloudControlConfig;
+import io.stamethyst.config.LauncherIconController;
 import io.stamethyst.config.LauncherThemeController;
 import net.kdt.pojavlaunch.MainActivity;
 
@@ -21,6 +22,7 @@ public class StsApplication extends Application {
         MemoryDiagnosticsLogger.install(getApplicationContext());
         MainActivity.init(getApplicationContext());
         if (AppProcess.isDefaultProcess(getApplicationContext())) {
+            LauncherIconController.applySavedIconMode(getApplicationContext());
             StreamChatPreviewInitializer.initialize(getApplicationContext());
             CloudControlConfig.refreshOnAppStart(getApplicationContext());
             GamePresenceReporter.install(this);

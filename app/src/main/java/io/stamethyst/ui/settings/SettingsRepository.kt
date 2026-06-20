@@ -25,6 +25,7 @@ import io.stamethyst.config.BootOverlayAnimation
 import io.stamethyst.config.BootOverlayImageConfig
 import io.stamethyst.config.BootOverlayStyle
 import io.stamethyst.config.GpuResourceGuardianMode
+import io.stamethyst.config.LauncherIconMode
 import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeMode
 import io.stamethyst.config.RenderSurfaceBackend
@@ -39,6 +40,7 @@ internal object SettingsRepository {
     data class SettingsSnapshot(
         val themeMode: LauncherThemeMode,
         val themeColor: LauncherThemeColor,
+        val launcherIconMode: LauncherIconMode,
         val chromeBackgroundOpacity: Float,
         val bootOverlayStyle: BootOverlayStyle,
         val bootOverlayAnimation: BootOverlayAnimation,
@@ -152,6 +154,10 @@ internal object SettingsRepository {
         return LauncherPreferences.readThemeColor(context)
     }
 
+    fun loadLauncherIconMode(context: Context): LauncherIconMode {
+        return LauncherPreferences.readLauncherIconMode(context)
+    }
+
     fun loadChromeBackgroundOpacity(context: Context): Float {
         return LauncherPreferences.readChromeBackgroundOpacity(context)
     }
@@ -183,6 +189,7 @@ internal object SettingsRepository {
         return SettingsSnapshot(
             themeMode = LauncherPreferences.readThemeMode(context),
             themeColor = LauncherPreferences.readThemeColor(context),
+            launcherIconMode = LauncherPreferences.readLauncherIconMode(context),
             chromeBackgroundOpacity = LauncherPreferences.readChromeBackgroundOpacity(context),
             bootOverlayStyle = LauncherPreferences.readBootOverlayStyle(context),
             bootOverlayAnimation = LauncherPreferences.readBootOverlayAnimation(context),
@@ -303,6 +310,10 @@ internal object SettingsRepository {
     fun resetLauncherSettingsToDefaults(context: Context) {
         LauncherPreferences.saveThemeMode(context, LauncherPreferences.DEFAULT_THEME_MODE)
         LauncherPreferences.saveThemeColor(context, LauncherPreferences.DEFAULT_THEME_COLOR)
+        LauncherPreferences.saveLauncherIconMode(
+            context,
+            LauncherPreferences.DEFAULT_LAUNCHER_ICON_MODE
+        )
         LauncherPreferences.saveChromeBackgroundOpacity(
             context,
             LauncherPreferences.DEFAULT_CHROME_BACKGROUND_OPACITY

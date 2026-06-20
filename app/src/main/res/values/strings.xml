@@ -857,6 +857,10 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_theme_mode_follow_system">Follow system</string>
     <string name="settings_theme_mode_light">Light</string>
     <string name="settings_theme_mode_dark">Dark</string>
+    <string name="settings_app_icon_title">App icon</string>
+    <string name="settings_app_icon_desc">Choose the launcher icon shown on the home screen.</string>
+    <string name="settings_app_icon_amethyst">Amethyst</string>
+    <string name="settings_app_icon_watcher">Watcher</string>
     <string name="settings_theme_color_title">Theme color</string>
     <string name="settings_theme_color_desc">Choose the launcher accent color. The same color palette is automatically adapted for light and dark mode.</string>
     <string name="settings_theme_color_zhanshige">Ironclad</string>

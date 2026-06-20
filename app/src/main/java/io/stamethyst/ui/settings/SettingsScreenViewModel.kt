@@ -96,6 +96,8 @@ import io.stamethyst.config.BootOverlayImageSlot
 import io.stamethyst.config.BootOverlayStyle
 import io.stamethyst.config.CloudControlConfig
 import io.stamethyst.config.GpuResourceGuardianMode
+import io.stamethyst.config.LauncherIconController
+import io.stamethyst.config.LauncherIconMode
 import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeController
 import io.stamethyst.config.LauncherThemeMode
@@ -277,6 +279,7 @@ class SettingsScreenViewModel : ViewModel() {
             LauncherPreferences.DEFAULT_GPU_RESOURCE_GUARDIAN_PRESSURE_DOWNSCALE_ENABLED,
         val themeMode: LauncherThemeMode = LauncherPreferences.DEFAULT_THEME_MODE,
         val themeColor: LauncherThemeColor = LauncherPreferences.DEFAULT_THEME_COLOR,
+        val launcherIconMode: LauncherIconMode = LauncherPreferences.DEFAULT_LAUNCHER_ICON_MODE,
         val chromeBackgroundOpacity: Float =
             LauncherPreferences.DEFAULT_CHROME_BACKGROUND_OPACITY,
         val bootOverlayStyle: BootOverlayStyle =
@@ -498,6 +501,7 @@ class SettingsScreenViewModel : ViewModel() {
         uiState = uiState.copy(
             themeMode = SettingsRepository.loadThemeMode(host),
             themeColor = SettingsRepository.loadThemeColor(host),
+            launcherIconMode = SettingsRepository.loadLauncherIconMode(host),
             chromeBackgroundOpacity = SettingsRepository.loadChromeBackgroundOpacity(host),
             bootOverlayStyle = SettingsRepository.loadBootOverlayStyle(host),
             bootOverlayAnimation = SettingsRepository.loadBootOverlayAnimation(host),
@@ -512,6 +516,14 @@ class SettingsScreenViewModel : ViewModel() {
 
     fun onThemeColorChanged(host: Activity, themeColor: LauncherThemeColor) {
         saveThemeColorSelection(host, themeColor)
+        syncThemeAppearance(host)
+    }
+
+    fun onLauncherIconModeChanged(host: Activity, iconMode: LauncherIconMode) {
+        if (uiState.busy || uiState.launcherIconMode == iconMode) {
+            return
+        }
+        saveLauncherIconModeSelection(host, iconMode)
         syncThemeAppearance(host)
     }
 
@@ -3076,6 +3088,7 @@ class SettingsScreenViewModel : ViewModel() {
                 host.runOnUiThread {
                     nativeLibraryMarketCatalog = emptyList()
                     LauncherThemeController.apply(host, LauncherPreferences.DEFAULT_THEME_MODE)
+                    LauncherIconController.apply(host, LauncherPreferences.DEFAULT_LAUNCHER_ICON_MODE)
                     syncThemeAppearance(host)
                     syncStoredUpdateState(host)
                     uiState = uiState.copy(
@@ -3424,6 +3437,7 @@ class SettingsScreenViewModel : ViewModel() {
         uiState = uiState.copy(
             themeMode = snapshot.themeMode,
             themeColor = snapshot.themeColor,
+            launcherIconMode = snapshot.launcherIconMode,
             chromeBackgroundOpacity = snapshot.chromeBackgroundOpacity,
             bootOverlayStyle = snapshot.bootOverlayStyle,
             bootOverlayAnimation = snapshot.bootOverlayAnimation,
@@ -4815,6 +4829,11 @@ class SettingsScreenViewModel : ViewModel() {
 
     private fun saveThemeColorSelection(host: Activity, themeColor: LauncherThemeColor) {
         LauncherPreferences.saveThemeColor(host, themeColor)
+    }
+
+    private fun saveLauncherIconModeSelection(host: Activity, iconMode: LauncherIconMode) {
+        LauncherPreferences.saveLauncherIconMode(host, iconMode)
+        LauncherIconController.apply(host, iconMode)
     }
 
     private fun saveChromeBackgroundOpacitySelection(host: Activity, opacity: Float) {

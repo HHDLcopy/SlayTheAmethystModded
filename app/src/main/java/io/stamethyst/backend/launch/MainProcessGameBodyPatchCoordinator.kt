@@ -27,17 +27,26 @@ object MainProcessGameBodyPatchCoordinator {
             throw IOException("Game body patching must run in the main process before launch")
         }
 
+        val stsJar = RuntimePaths.importedStsJar(appContext)
+        val patchJar = RuntimePaths.gdxPatchJar(appContext)
+        val packagedComponentsCurrent = ComponentInstaller.arePackagedComponentsCurrent(appContext)
+        val alreadyPatchedBeforeInstall = packagedComponentsCurrent &&
+            StsDesktopJarPatcher.isPatchedWithCurrentPatch(stsJar, patchJar)
+        val visibleProgressCallback = if (alreadyPatchedBeforeInstall) {
+            null
+        } else {
+            progressCallback
+        }
+
         ComponentInstaller.ensureInstalled(
             context = appContext,
             progressCallback = mapProgressRange(
-                progressCallback,
+                visibleProgressCallback,
                 0,
                 COMPONENT_PREPARE_END_PERCENT
             )
         )
 
-        val stsJar = RuntimePaths.importedStsJar(appContext)
-        val patchJar = RuntimePaths.gdxPatchJar(appContext)
         val alreadyPatched = StsDesktopJarPatcher.isPatchedWithCurrentPatch(stsJar, patchJar)
         MemoryDiagnosticsLogger.logEvent(
             context = appContext,

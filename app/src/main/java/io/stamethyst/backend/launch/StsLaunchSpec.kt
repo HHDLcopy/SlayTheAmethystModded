@@ -570,6 +570,8 @@ object StsLaunchSpec {
         // Bundled amethyst-runtime-compat reads this to enable the autoplay driver.
         // Vanilla launches ignore it (the property is never read).
         args.add("-Damethyst.debug.autoplay=${if (autoplay && isMtsLaunchMode(launchMode)) "true" else "false"}")
+        args.add("-Damethyst.autoplay.inject_test_crash=${if (autoplay && isMtsLaunchMode(launchMode)) "true" else "false"}")
+        args.add("-Damethyst.autoplay.wait_for_agent=${if (autoplay && isMtsLaunchMode(launchMode)) "true" else "false"}")
         args.add("-Damethyst.bridge.events=${RuntimePaths.bootBridgeEventsLog(context).absolutePath}")
         if (isMtsLaunchMode(launchMode)) {
             args.add("-Damethyst.mts.mod_file_list=${RuntimePaths.mtsModFileList(context).absolutePath}")
@@ -582,6 +584,7 @@ object StsLaunchSpec {
         addCacioBootClasspath(args, RuntimePaths.cacioDir(context))
 
         args.add("-javaagent:${RuntimePaths.lwjgl2InjectorJar(context).absolutePath}")
+        args.add("-javaagent:${RuntimePaths.agentConnectorJar(context).absolutePath}=port=9099,spec=tracing@classes=io.stamethyst.testcrash.cards.TestCrashCard@methods=use@locals=true")
         args.add("-cp")
         if (isMtsLaunchMode(launchMode)) {
             val classpathEntries = arrayListOf(

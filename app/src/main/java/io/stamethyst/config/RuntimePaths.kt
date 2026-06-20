@@ -356,6 +356,13 @@ object RuntimePaths {
         File(lwjgl2InjectorDir(context), "lwjgl2_methods_injector.jar")
 
     @JvmStatic
+    fun agentConnectorDir(context: Context): File = File(componentRoot(context), "agent_connector")
+
+    @JvmStatic
+    fun agentConnectorJar(context: Context): File =
+        File(agentConnectorDir(context), "agent-connector.jar")
+
+    @JvmStatic
     fun bootBridgeDir(context: Context): File = File(componentRoot(context), "boot_bridge")
 
     @JvmStatic
@@ -619,6 +626,7 @@ object RuntimePaths {
         mtsLocalJreBinDir(context).mkdirs()
         lwjglDir(context).mkdirs()
         lwjgl2InjectorDir(context).mkdirs()
+        agentConnectorDir(context).mkdirs()
         bootBridgeDir(context).mkdirs()
         gdxPatchDir(context).mkdirs()
         gdxPatchNativesDir(context).mkdirs()

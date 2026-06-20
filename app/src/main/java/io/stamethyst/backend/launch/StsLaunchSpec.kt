@@ -2,6 +2,7 @@ package io.stamethyst.backend.launch
 
 import android.content.Context
 import android.os.Build
+import android.util.Log
 import io.stamethyst.BuildConfig
 import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.mods.ModManager
@@ -23,10 +24,20 @@ import java.util.Locale
 import java.util.TimeZone
 
 object StsLaunchSpec {
+    private const val TAG = "STS-LaunchSpec"
     private const val DEFAULT_G1_MAX_PAUSE_MILLIS = 80
     private const val DEFAULT_ACTIVE_PROCESSOR_COUNT = 3
     private const val DEFAULT_TIERED_STOP_AT_LEVEL = 2
     private const val DEBUG_GPU_GUARDIAN_TEST_PREFS = "sts_debug_gpu_guardian_test"
+    private val EFFECTIVE_PERFORMANCE_PROPERTY_KEYS = listOf(
+        "amethyst.lwjgl.android_frame_pacer",
+        "amethyst.lwjgl.hot_loop_noop_trim",
+        "amethyst.lwjgl.default_fbo_fast_rebind",
+        "amethyst.lwjgl.egl_swap_interval_pacing",
+        "amethyst.gdx.frame_profiler",
+        "amethyst.gdx.gpu_resource_summary",
+        "amethyst.gdx.gpu_resource_diag"
+    )
     private val DEBUG_GPU_GUARDIAN_PROPERTY_KEYS = setOf(
         "amethyst.gdx.debug_leak_injector",
         "amethyst.gdx.debug_leak_interval_frames",
@@ -43,11 +54,19 @@ object StsLaunchSpec {
         "amethyst.gdx.gpu_guardian_texture_max_checks_per_sweep",
         "amethyst.gdx.gpu_guardian_texture_max_reclaims_per_sweep",
         "amethyst.gdx.gpu_guardian_texture_max_bytes_per_sweep",
+        // Legacy debug keys kept for old scripts. They must not override the
+        // launcher-managed compatibility switches already present in args.
         "amethyst.lwjgl.android_frame_pacer",
         "amethyst.lwjgl.hot_loop_noop_trim",
         "amethyst.lwjgl.default_fbo_fast_rebind",
         "amethyst.lwjgl.egl_swap_interval_pacing"
     )
+
+    internal data class DebugJvmPropertyAppendResult(
+        val appendedKeys: List<String>,
+        val skippedManagedKeys: List<String>
+    )
+
     const val LAUNCH_MODE_VANILLA = "vanilla"
     const val LAUNCH_MODE_MTS = "mts"
     // Legacy alias kept only so old debug scripts still resolve to the single MTS mode.
@@ -102,6 +121,9 @@ object StsLaunchSpec {
         val forceInterpreterFlag = File(stsRoot, "compat_xint.flag")
         val classTraceFlag = File(stsRoot, "classload_trace.flag")
         val is64BitRuntime = is64BitRuntime(javaHome)
+        val showPerformanceOverlay = LauncherConfig.isGamePerformanceOverlayEnabled(context)
+        val performanceDeepDiagnostics =
+            LauncherConfig.isGamePerformanceDeepDiagnosticsEnabled(context)
 
         val args = ArrayList<String>()
         // Performance-first by default, with a compatibility fallback file switch.
@@ -147,7 +169,7 @@ object StsLaunchSpec {
             }
         }
         args.add("-XX:ErrorFile=/dev/null")
-        if (LauncherConfig.isGamePerformanceOverlayEnabled(context)) {
+        if (performanceDeepDiagnostics) {
             args.add("-XX:+UnlockDiagnosticVMOptions")
             args.add("-verbose:gc")
             args.add("-Xloggc:${RuntimePaths.jvmGcLog(context).absolutePath}")
@@ -563,10 +585,16 @@ object StsLaunchSpec {
             "-Damethyst.gdx.gpu_resource_diag=" +
                 if (LauncherConfig.isGpuResourceDiagEnabled(context)) "true" else "false"
         )
-        if (LauncherConfig.isGamePerformanceOverlayEnabled(context)) {
+        if (performanceDeepDiagnostics) {
             args.add("-Damethyst.gdx.gpu_resource_summary=true")
         }
-        addDebugGpuGuardianTestProperties(context, args)
+        val debugPropertyResult = addDebugGpuGuardianTestProperties(context, args)
+        logEffectivePerformanceProperties(
+            args = args,
+            showPerformanceOverlay = showPerformanceOverlay,
+            performanceDeepDiagnostics = performanceDeepDiagnostics,
+            debugPropertyResult = debugPropertyResult
+        )
         val bridgeDelegateMainClass = if (isMtsLaunchMode(launchMode)) {
             "com.evacipated.cardcrawl.modthespire.Loader"
         } else {
@@ -583,8 +611,10 @@ object StsLaunchSpec {
         if (isMtsLaunchMode(launchMode)) {
             args.add("-Damethyst.mts.mod_file_list=${RuntimePaths.mtsModFileList(context).absolutePath}")
         }
-        if (LauncherConfig.isGamePerformanceOverlayEnabled(context)) {
+        if (showPerformanceOverlay) {
             args.add("-Damethyst.bridge.heap_snapshot=${RuntimePaths.jvmHeapSnapshot(context).absolutePath}")
+        }
+        if (performanceDeepDiagnostics) {
             args.add("-Damethyst.bridge.gc_histogram_dir=${RuntimePaths.jvmHistogramsDir(context).absolutePath}")
         }
 
@@ -678,18 +708,40 @@ object StsLaunchSpec {
         return !ramSaverEnabled && configuredEnabled && offscreenFrameBuffersEnabled
     }
 
-    private fun addDebugGpuGuardianTestProperties(context: Context, args: MutableList<String>) {
+    private fun addDebugGpuGuardianTestProperties(
+        context: Context,
+        args: MutableList<String>
+    ): DebugJvmPropertyAppendResult {
         if (BuildConfig.BUILD_TYPE != "debug") {
-            return
+            return DebugJvmPropertyAppendResult(emptyList(), emptyList())
         }
         val prefs = context.getSharedPreferences(DEBUG_GPU_GUARDIAN_TEST_PREFS, Context.MODE_PRIVATE)
+        val rawProperties = LinkedHashMap<String, String>()
         for (key in DEBUG_GPU_GUARDIAN_PROPERTY_KEYS) {
-            val value = prefs.getString(key, null)?.trim().orEmpty()
+            rawProperties[key] = prefs.getString(key, null).orEmpty()
+        }
+        return appendDebugJvmPropertiesForLaunch(args, rawProperties)
+    }
+
+    internal fun appendDebugJvmPropertiesForLaunch(
+        args: MutableList<String>,
+        rawProperties: Map<String, String>
+    ): DebugJvmPropertyAppendResult {
+        val appendedKeys = ArrayList<String>()
+        val skippedManagedKeys = ArrayList<String>()
+        for (key in DEBUG_GPU_GUARDIAN_PROPERTY_KEYS) {
+            val value = rawProperties[key]?.trim().orEmpty()
             if (value.isEmpty() || !isSafeJvmPropertyValue(value)) {
                 continue
             }
+            if (hasJvmProperty(args, key)) {
+                skippedManagedKeys.add(key)
+                continue
+            }
             args.add("-D$key=$value")
+            appendedKeys.add(key)
         }
+        return DebugJvmPropertyAppendResult(appendedKeys, skippedManagedKeys)
     }
 
     private fun isSafeJvmPropertyValue(value: String): Boolean {
@@ -699,6 +751,46 @@ object StsLaunchSpec {
         return value.all { char ->
             char.isLetterOrDigit() || char == '_' || char == '-' || char == '.'
         }
+    }
+
+    private fun logEffectivePerformanceProperties(
+        args: List<String>,
+        showPerformanceOverlay: Boolean,
+        performanceDeepDiagnostics: Boolean,
+        debugPropertyResult: DebugJvmPropertyAppendResult
+    ) {
+        val effectiveProperties = EFFECTIVE_PERFORMANCE_PROPERTY_KEYS.joinToString(",") { key ->
+            "$key=${readEffectiveJvmProperty(args, key) ?: "<unset>"}"
+        }
+        Log.i(
+            TAG,
+            "performanceOverlay=$showPerformanceOverlay, " +
+                "deepDiagnostics=$performanceDeepDiagnostics, " +
+                "debugJvmPropertiesApplied=" +
+                debugPropertyResult.appendedKeys.joinToString("|").ifEmpty { "none" } +
+                ", debugJvmPropertiesSkippedManaged=" +
+                debugPropertyResult.skippedManagedKeys.joinToString("|").ifEmpty { "none" } +
+                ", effectivePerformanceProperties={$effectiveProperties}"
+        )
+    }
+
+    private fun hasJvmProperty(args: List<String>, key: String): Boolean {
+        return readEffectiveJvmProperty(args, key) != null
+    }
+
+    private fun readEffectiveJvmProperty(args: List<String>, key: String): String? {
+        val exact = "-D$key"
+        val prefix = "$exact="
+        for (index in args.indices.reversed()) {
+            val arg = args[index]
+            if (arg == exact) {
+                return ""
+            }
+            if (arg.startsWith(prefix)) {
+                return arg.substring(prefix.length)
+            }
+        }
+        return null
     }
 
     private fun addCacioBootClasspath(args: MutableList<String>, cacioDir: File) {

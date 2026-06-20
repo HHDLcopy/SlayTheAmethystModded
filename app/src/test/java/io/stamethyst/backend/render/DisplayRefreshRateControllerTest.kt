@@ -86,6 +86,27 @@ class DisplayRefreshRateControllerTest {
     }
 
     @Test
+    fun resolveWindowRefreshPreference_prefersNative90HzMode() {
+        val preference = DisplayRefreshRateController.resolveWindowRefreshPreference(
+            targetFpsLimit = 90,
+            currentDisplayModeId = 1,
+            supportedModes = listOf(
+                mode(modeId = 1, width = 2400, height = 1080, refreshRateHz = 60f),
+                mode(modeId = 2, width = 2400, height = 1080, refreshRateHz = 90f),
+                mode(modeId = 3, width = 2400, height = 1080, refreshRateHz = 120f)
+            )
+        )
+
+        assertEquals(
+            WindowRefreshPreference(
+                preferredRefreshRateHz = 90f,
+                preferredDisplayModeId = 2
+            ),
+            preference
+        )
+    }
+
+    @Test
     fun resolveWindowRefreshPreference_canSwitchDownToHighRefreshTargetMode() {
         val preference = DisplayRefreshRateController.resolveWindowRefreshPreference(
             targetFpsLimit = 120,

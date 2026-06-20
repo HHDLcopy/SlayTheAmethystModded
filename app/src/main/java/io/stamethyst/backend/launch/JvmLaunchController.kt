@@ -8,6 +8,7 @@ import io.stamethyst.R
 import io.stamethyst.StsGameActivity
 import io.stamethyst.backend.crash.LatestLogCrashDetector
 import io.stamethyst.backend.diag.MemoryDiagnosticsLogger
+import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.render.MobileGluesConfigFile
 import io.stamethyst.backend.render.RendererBackend
@@ -61,6 +62,17 @@ class JvmLaunchController(
         private const val RUNTIME_HEAP_SNAPSHOT_POLL_INTERVAL_MS = 1_000L
         private const val HEAP_PRESSURE_WARNING_RATIO = 0.90
         private const val LOGCAT_TAG = "STS-JVM"
+        private val PERFORMANCE_AUDIT_JVM_PROPERTIES = listOf(
+            "amethyst.lwjgl.android_frame_pacer",
+            "amethyst.lwjgl.hot_loop_noop_trim",
+            "amethyst.lwjgl.default_fbo_fast_rebind",
+            "amethyst.lwjgl.egl_swap_interval_pacing",
+            "amethyst.gdx.frame_profiler",
+            "amethyst.gdx.gpu_resource_summary",
+            "amethyst.gdx.gpu_resource_diag",
+            "amethyst.bridge.heap_snapshot",
+            "amethyst.bridge.gc_histogram_dir"
+        )
     }
 
     @Volatile
@@ -319,6 +331,7 @@ class JvmLaunchController(
                         "rendererFallback" to rendererDecision.fallbackSummary()
                     )
                 )
+                logPerformanceLaunchAudit(launchArgs)
                 Log.i(
                     LOGCAT_TAG,
                     "Renderer selection mode=${rendererDecision.selectionMode.persistedValue}, " +
@@ -926,6 +939,57 @@ class JvmLaunchController(
                 "usagePercent" to (usageRatio * 100.0).roundToInt()
             )
         )
+    }
+
+    private fun logPerformanceLaunchAudit(launchArgs: List<String>) {
+        val extras = LinkedHashMap<String, String>()
+        val showPerformanceOverlay = LauncherConfig.isGamePerformanceOverlayEnabled(activity)
+        val performanceDeepDiagnostics =
+            LauncherConfig.isGamePerformanceDeepDiagnosticsEnabled(activity)
+        extras["launchMode"] = launchMode
+        extras["showPerformanceOverlay"] = showPerformanceOverlay.toString()
+        extras["performanceDeepDiagnostics"] = performanceDeepDiagnostics.toString()
+        extras["javaEnvSwapProfilerExpected"] = performanceDeepDiagnostics.toString()
+        extras["javaEnvEglSwapIntervalPacingExpected"] =
+            CompatibilitySettings.isEglSwapIntervalPacingCompatEnabled(activity).toString()
+        extras["javaEnvNativePreSwapPacingExpected"] =
+            CompatibilitySettings.isNativePreSwapPacingCompatEnabled(activity).toString()
+        for (key in PERFORMANCE_AUDIT_JVM_PROPERTIES) {
+            extras[key] = readEffectiveJvmProperty(launchArgs, key) ?: "<unset>"
+        }
+        val auditFile = RuntimePaths.performanceLaunchAuditLog(activity)
+        val auditText = buildString {
+            append("event=jvm_performance_args_audit\n")
+            extras.forEach { (key, value) ->
+                append(key).append('=').append(sanitizeAuditValue(value)).append('\n')
+            }
+        }
+        runCatching {
+            auditFile.parentFile?.mkdirs()
+            auditFile.writeText(auditText, StandardCharsets.UTF_8)
+        }.onSuccess {
+            Log.i(LOGCAT_TAG, "Wrote performance launch audit to ${auditFile.absolutePath}")
+        }.onFailure { error ->
+            Log.w(LOGCAT_TAG, "Failed to write performance launch audit", error)
+        }
+    }
+
+    private fun sanitizeAuditValue(value: String): String =
+        value.replace("\r", "\\r").replace("\n", "\\n")
+
+    private fun readEffectiveJvmProperty(args: List<String>, key: String): String? {
+        val exact = "-D$key"
+        val prefix = "$exact="
+        for (index in args.indices.reversed()) {
+            val arg = args[index]
+            if (arg == exact) {
+                return ""
+            }
+            if (arg.startsWith(prefix)) {
+                return arg.substring(prefix.length)
+            }
+        }
+        return null
     }
 
     private fun enforceLatestLogCap(logFile: File) {

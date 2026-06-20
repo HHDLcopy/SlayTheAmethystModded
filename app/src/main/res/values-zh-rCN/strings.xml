@@ -1886,7 +1886,7 @@
     <string name="settings_ram_saver_experimental_chip">实验性</string>
     <string name="settings_performance_overlay_enabled">性能叠层：开启</string>
     <string name="settings_performance_overlay_disabled">性能叠层：关闭</string>
-    <string name="settings_performance_overlay_desc">控制是否在游戏右上角显示实时 FPS / 内存叠层。</string>
+    <string name="settings_performance_overlay_desc">控制是否在游戏中显示实时 FPS / 内存叠层。帧、swap、GC 和 GPU 资源深度 profiler 只会在同时开启 GPU 资源诊断时运行。</string>
     <string name="settings_touchscreen_enabled">触屏输入：开启</string>
     <string name="settings_touchscreen_disabled">触屏输入：关闭</string>
     <string name="settings_touchscreen_desc">控制是否使用原生触控适配模式。关闭后会显示鼠标光标，并使用桌面版 UI。</string>
@@ -1935,7 +1935,7 @@
     <string name="settings_jvm_logcat_mirror_desc">将 `latest.log` 中追加的内容同步镜像到 logcat。默认关闭。</string>
     <string name="settings_gpu_resource_diag_enabled">GPU 资源诊断：开启</string>
     <string name="settings_gpu_resource_diag_disabled">GPU 资源诊断：关闭</string>
-    <string name="settings_gpu_resource_diag_desc">控制额外的 `[gdx-diag]` 逐资源跟踪日志、栈采样、大纹理上传诊断、运行时内存诊断，以及主菜单回合内的纹理 owner/source 归因。默认关闭；开启后会增加日志量和少量运行时开销。</string>
+    <string name="settings_gpu_resource_diag_desc">控制额外的 `[gdx-diag]` 逐资源跟踪日志、栈采样、大纹理上传诊断、运行时内存诊断，以及主菜单回合内的纹理 owner/source 归因。性能叠层开启时，此开关还会启用帧、swap、GC 和 GPU 资源深度 profiler。默认关闭；开启后会增加日志量和运行时开销。</string>
     <string name="settings_gdx_pad_cursor_debug_enabled">GDX 手柄光标日志：开启</string>
     <string name="settings_gdx_pad_cursor_debug_disabled">GDX 手柄光标日志：关闭</string>
     <string name="settings_gdx_pad_cursor_debug_desc">控制 `[gdx-pad-debug]` 的 setCursorPosition 输出。默认关闭，以减少日志刷屏。</string>

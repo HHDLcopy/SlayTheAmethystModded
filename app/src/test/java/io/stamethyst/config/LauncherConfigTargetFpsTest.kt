@@ -6,17 +6,23 @@ import org.junit.Test
 
 class LauncherConfigTargetFpsTest {
     @Test
-    fun targetFpsOptions_include24And30Fps() {
+    fun defaultTargetFps_is90Fps() {
+        assertEquals(90, LauncherConfig.DEFAULT_TARGET_FPS)
+    }
+
+    @Test
+    fun targetFpsOptions_include90Fps() {
         assertArrayEquals(
-            intArrayOf(24, 30, 60, 120, 240),
+            intArrayOf(24, 30, 60, 90, 120, 240),
             LauncherConfig.TARGET_FPS_OPTIONS
         )
     }
 
     @Test
-    fun normalizeTargetFps_accepts24And30Fps() {
+    fun normalizeTargetFps_acceptsSupportedFpsValues() {
         assertEquals(24, LauncherConfig.normalizeTargetFps(24))
         assertEquals(30, LauncherConfig.normalizeTargetFps(30))
+        assertEquals(90, LauncherConfig.normalizeTargetFps(90))
     }
 
     @Test

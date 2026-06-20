@@ -19,7 +19,7 @@ class DisplayConfigSyncTest {
     }
 
     @Test
-    fun buildConfigLines_usesGameDefaultsWhenExistingConfigMissing() {
+    fun buildConfigLines_usesLauncherDefaultFpsWhenExistingConfigMissing() {
         val lines = DisplayConfigSync.buildConfigLines(
             existingLines = null,
             width = 320,
@@ -27,7 +27,7 @@ class DisplayConfigSyncTest {
         )
 
         assertEquals(
-            listOf("320", "200", "60", "false", "false", "true"),
+            listOf("320", "200", "90", "false", "false", "true"),
             lines
         )
     }
@@ -52,11 +52,11 @@ class DisplayConfigSyncTest {
             existingLines = listOf("1920", "1080", "120", "true", "false", "false"),
             width = 1600,
             height = 900,
-            targetFpsLimitOverride = 30
+            targetFpsLimitOverride = 90
         )
 
         assertEquals(
-            listOf("1600", "900", "30", "true", "false", "false"),
+            listOf("1600", "900", "90", "true", "false", "false"),
             lines
         )
     }
@@ -65,11 +65,11 @@ class DisplayConfigSyncTest {
     fun buildTargetFpsConfigLines_updatesOnlyFpsLimit() {
         val lines = DisplayConfigSync.buildTargetFpsConfigLines(
             existingLines = listOf("1920", "1080", "60", "true", "false", "true"),
-            targetFpsLimit = 120
+            targetFpsLimit = 90
         )
 
         assertEquals(
-            listOf("1920", "1080", "120", "true", "false", "true"),
+            listOf("1920", "1080", "90", "true", "false", "true"),
             lines
         )
     }

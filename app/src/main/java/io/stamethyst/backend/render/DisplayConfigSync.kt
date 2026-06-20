@@ -11,13 +11,13 @@ import java.util.Locale
 object DisplayConfigSync {
     private const val DEFAULT_WIDTH = 1280
     private const val DEFAULT_HEIGHT = 720
-    private const val DEFAULT_FPS_LIMIT = 60
+    private const val DEFAULT_FPS_LIMIT = 90
     private const val DEFAULT_FULLSCREEN = false
     private const val DEFAULT_WINDOWED_FULLSCREEN = false
     private const val DEFAULT_VSYNC = true
     private const val MIN_WIDTH = 1
     private const val MIN_HEIGHT = 1
-    private val SUPPORTED_FPS_LIMITS = intArrayOf(24, 30, 60, 120, 240)
+    private val SUPPORTED_FPS_LIMITS = intArrayOf(24, 30, 60, 90, 120, 240)
 
     @JvmStatic
     @Throws(IOException::class)

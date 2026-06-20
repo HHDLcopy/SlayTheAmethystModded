@@ -228,8 +228,8 @@ object LauncherConfig {
     const val DEFAULT_BACK_IMMEDIATE_EXIT = true
     val DEFAULT_BACK_BEHAVIOR: BackBehavior = BackBehavior.EXIT_TO_LAUNCHER
     const val DEFAULT_MANUAL_DISMISS_BOOT_OVERLAY = false
-    const val DEFAULT_TARGET_FPS = 60
-    val TARGET_FPS_OPTIONS = intArrayOf(24, 30, 60, 120, 240)
+    const val DEFAULT_TARGET_FPS = 90
+    val TARGET_FPS_OPTIONS = intArrayOf(24, 30, 60, 90, 120, 240)
     const val KEEP_SCREEN_ON_TIMEOUT_ALWAYS_MINUTES = 0
     const val DEFAULT_KEEP_SCREEN_ON_TIMEOUT_MINUTES = KEEP_SCREEN_ON_TIMEOUT_ALWAYS_MINUTES
     val KEEP_SCREEN_ON_TIMEOUT_MINUTE_OPTIONS = intArrayOf(
@@ -343,6 +343,11 @@ object LauncherConfig {
     val DEFAULT_GPU_RESOURCE_GUARDIAN_MODE: GpuResourceGuardianMode = GpuResourceGuardianMode.OFF
     const val DEFAULT_GPU_RESOURCE_GUARDIAN_PRESSURE_DOWNSCALE_ENABLED = false
     const val DEFAULT_HINA_CHARACTER_RENDER_COMPAT_ENABLED = true
+    // Keep the pacing experiments opt-in and off by default. Device AB runs
+    // showed no significant thermal/performance gain from Android/LWJGL frame
+    // pacing, libpojavexec native pre-swap pacing, or EGL swap interval pacing,
+    // so they should not be enabled by defaults or automatic compatibility
+    // policies.
     const val DEFAULT_ANDROID_LWJGL_FRAME_PACING_COMPAT_ENABLED = false
     const val DEFAULT_LWJGL_HOT_LOOP_NOOP_TRIM_COMPAT_ENABLED = false
     const val DEFAULT_FRAMEBUFFER_FAST_REBIND_COMPAT_ENABLED = false
@@ -1092,6 +1097,20 @@ object LauncherConfig {
         prefs(context).edit {
             putBoolean(PREF_KEY_SHOW_GAME_PERFORMANCE_OVERLAY, enabled)
         }
+    }
+
+    fun isGamePerformanceDeepDiagnosticsEnabled(context: Context): Boolean {
+        return resolveGamePerformanceDeepDiagnosticsEnabled(
+            showPerformanceOverlay = isGamePerformanceOverlayEnabled(context),
+            gpuResourceDiagEnabled = isGpuResourceDiagEnabled(context)
+        )
+    }
+
+    fun resolveGamePerformanceDeepDiagnosticsEnabled(
+        showPerformanceOverlay: Boolean,
+        gpuResourceDiagEnabled: Boolean
+    ): Boolean {
+        return showPerformanceOverlay && gpuResourceDiagEnabled
     }
 
     fun isSustainedPerformanceModeEnabled(context: Context): Boolean {

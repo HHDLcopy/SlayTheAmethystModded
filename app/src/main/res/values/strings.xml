@@ -1598,7 +1598,7 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_ram_saver_experimental_chip">实验性</string>
     <string name="settings_performance_overlay_enabled">Performance overlay: Enabled</string>
     <string name="settings_performance_overlay_disabled">Performance overlay: Disabled</string>
-    <string name="settings_performance_overlay_desc">Controls whether the real-time FPS / memory overlay in the top-right corner is shown in game.</string>
+    <string name="settings_performance_overlay_desc">Shows the real-time FPS / memory overlay in game. Deep frame, swap, GC, and GPU resource profilers only run when GPU resource diagnostics is also enabled.</string>
     <string name="settings_touchscreen_enabled">Touchscreen input: Enabled</string>
     <string name="settings_touchscreen_disabled">Touchscreen input: Disabled</string>
     <string name="settings_touchscreen_desc">Controls whether the native touch adaptation mode is used. When disabled, the mouse cursor is shown and the desktop UI is used.</string>
@@ -1647,7 +1647,7 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_jvm_logcat_mirror_desc">Mirrors appended content from `latest.log` to logcat. Disabled by default.</string>
     <string name="settings_gpu_resource_diag_enabled">GPU resource diagnostics: Enabled</string>
     <string name="settings_gpu_resource_diag_disabled">GPU resource diagnostics: Disabled</string>
-    <string name="settings_gpu_resource_diag_desc">Controls extra `[gdx-diag]` per-resource trace logs, stack samples, large-texture upload diagnostics, runtime memory diagnostics, and menu-cycle texture owner/source attribution. Disabled by default because this switch increases log volume and a small amount of runtime overhead.</string>
+    <string name="settings_gpu_resource_diag_desc">Controls extra `[gdx-diag]` per-resource trace logs, stack samples, large-texture upload diagnostics, runtime memory diagnostics, and menu-cycle texture owner/source attribution. When the performance overlay is enabled, this also enables deep frame, swap, GC, and GPU resource profilers. Disabled by default because this switch increases log volume and runtime overhead.</string>
     <string name="settings_gdx_pad_cursor_debug_enabled">GDX gamepad cursor log: Enabled</string>
     <string name="settings_gdx_pad_cursor_debug_disabled">GDX gamepad cursor log: Disabled</string>
     <string name="settings_gdx_pad_cursor_debug_desc">Controls `[gdx-pad-debug]` setCursorPosition output. Disabled by default to reduce log spam.</string>

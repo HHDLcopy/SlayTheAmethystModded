@@ -145,6 +145,8 @@ internal const val STS_PATCH_COLOR_TAB_BAR_CLASS =
     "com/megacrit/cardcrawl/screens/mainMenu/ColorTabBar.class"
 internal const val STS_PATCH_COLOR_TAB_BAR_PREFIX =
     "com/megacrit/cardcrawl/screens/mainMenu/ColorTabBar"
+internal const val STS_PATCH_OPTIONS_PANEL_CLASS =
+    "com/megacrit/cardcrawl/screens/options/OptionsPanel.class"
 internal const val STS_PATCH_DESKTOP_CONTROLLER_MANAGER_CLASS =
     "com/badlogic/gdx/controllers/desktop/DesktopControllerManager.class"
 internal const val STS_PATCH_DESKTOP_CONTROLLER_MANAGER_DIRECT_CLASS =

@@ -1,6 +1,7 @@
 package io.stamethyst.backend.launch
 
 import io.stamethyst.config.GpuResourceGuardianMode
+import io.stamethyst.config.LauncherConfig
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -87,6 +88,62 @@ class StsLaunchSpecRamSaverMemoryPolicyTest {
                 ramSaverEnabled = false,
                 configuredEnabled = true,
                 offscreenFrameBuffersEnabled = false
+            )
+        )
+    }
+
+    @Test
+    fun appendDebugJvmPropertiesForLaunch_doesNotOverrideManagedCompatibilityProperty() {
+        val args = mutableListOf("-Damethyst.lwjgl.default_fbo_fast_rebind=false")
+
+        val result = StsLaunchSpec.appendDebugJvmPropertiesForLaunch(
+            args,
+            mapOf("amethyst.lwjgl.default_fbo_fast_rebind" to "true")
+        )
+
+        assertEquals(listOf("amethyst.lwjgl.default_fbo_fast_rebind"), result.skippedManagedKeys)
+        assertTrue(result.appendedKeys.isEmpty())
+        assertEquals(listOf("-Damethyst.lwjgl.default_fbo_fast_rebind=false"), args)
+    }
+
+    @Test
+    fun appendDebugJvmPropertiesForLaunch_keepsUnmanagedDebugProperty() {
+        val args = mutableListOf("-Damethyst.lwjgl.default_fbo_fast_rebind=false")
+
+        val result = StsLaunchSpec.appendDebugJvmPropertiesForLaunch(
+            args,
+            mapOf("amethyst.gdx.debug_leak_interval_frames" to "120")
+        )
+
+        assertEquals(listOf("amethyst.gdx.debug_leak_interval_frames"), result.appendedKeys)
+        assertTrue(result.skippedManagedKeys.isEmpty())
+        assertTrue(args.contains("-Damethyst.gdx.debug_leak_interval_frames=120"))
+    }
+
+    @Test
+    fun resolveGamePerformanceDeepDiagnosticsEnabled_requiresOverlayAndGpuDiagnostics() {
+        assertFalse(
+            LauncherConfig.resolveGamePerformanceDeepDiagnosticsEnabled(
+                showPerformanceOverlay = false,
+                gpuResourceDiagEnabled = false
+            )
+        )
+        assertFalse(
+            LauncherConfig.resolveGamePerformanceDeepDiagnosticsEnabled(
+                showPerformanceOverlay = true,
+                gpuResourceDiagEnabled = false
+            )
+        )
+        assertFalse(
+            LauncherConfig.resolveGamePerformanceDeepDiagnosticsEnabled(
+                showPerformanceOverlay = false,
+                gpuResourceDiagEnabled = true
+            )
+        )
+        assertTrue(
+            LauncherConfig.resolveGamePerformanceDeepDiagnosticsEnabled(
+                showPerformanceOverlay = true,
+                gpuResourceDiagEnabled = true
             )
         )
     }

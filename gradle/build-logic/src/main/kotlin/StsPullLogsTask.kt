@@ -73,7 +73,8 @@ abstract class StsPullLogsTask : DefaultTask() {
             "boot_bridge_events.log",
             "jvm_gc.log",
             "jvm_heap_snapshot.txt",
-            "last_signal_dump.txt"
+            "last_signal_dump.txt",
+            "jvm_logs/performance_launch_audit.log"
         )
         optionalLogPaths.forEach { relativePath ->
             if (!remoteFileExists(deviceStsPaths, relativePath, packageName)) {

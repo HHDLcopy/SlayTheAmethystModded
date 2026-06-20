@@ -148,10 +148,21 @@ public final class JREUtils {
                     Integer.toString(LauncherConfig.INSTANCE.readTargetFps(context))
             );
         }
-        if (LauncherConfig.INSTANCE.isGamePerformanceOverlayEnabled(context)) {
+        boolean performanceDeepDiagnostics =
+                LauncherConfig.INSTANCE.isGamePerformanceDeepDiagnosticsEnabled(context);
+        if (performanceDeepDiagnostics) {
             env.put("AMETHYST_GDX_SWAP_PROFILER", "1");
             env.put("AMETHYST_GDX_SWAP_PROFILER_SLOW_MS", "16");
         }
+        Log.i(
+                TAG,
+                "Java env performance gates " +
+                        "overlay=" + LauncherConfig.INSTANCE.isGamePerformanceOverlayEnabled(context) +
+                        ", deepDiagnostics=" + performanceDeepDiagnostics +
+                        ", swapProfiler=" + (performanceDeepDiagnostics ? "1" : "0") +
+                        ", eglSwapIntervalPacing=" + (eglSwapIntervalPacing ? "1" : "0") +
+                        ", nativePreSwapPacing=" + (nativePreSwapPacing ? "1" : "0")
+        );
         env.put("AWTSTUB_WIDTH", Integer.toString(Math.max(1, windowWidth)));
         env.put("AWTSTUB_HEIGHT", Integer.toString(Math.max(1, windowHeight)));
         env.put("MESA_GLSL_CACHE_DIR", context.getCacheDir().getAbsolutePath());

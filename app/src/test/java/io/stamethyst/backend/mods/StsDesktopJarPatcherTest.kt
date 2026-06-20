@@ -2,8 +2,9 @@ package io.stamethyst.backend.mods
 
 import java.io.File
 import java.nio.file.Files
-import org.junit.Assert.assertTrue
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class StsDesktopJarPatcherTest {
@@ -23,6 +24,11 @@ class StsDesktopJarPatcherTest {
         assertTrue(REQUIRED_STS_PATCH_CLASSES.contains(STS_PATCH_GPU_RESOURCE_GUARDIAN_MODE_CLASS))
         assertTrue(REQUIRED_STS_PATCH_CLASSES.contains(STS_PATCH_GPU_RESOURCE_GUARDIAN_STATE_CLASS))
         assertTrue(REQUIRED_STS_PATCH_CLASSES.contains(STS_PATCH_GPU_LEAK_INJECTOR_CLASS))
+    }
+
+    @Test
+    fun requiredPatchClasses_doNotRequireOptionsPanelFromPatchJar() {
+        assertFalse(REQUIRED_STS_PATCH_CLASSES.contains(STS_PATCH_OPTIONS_PANEL_CLASS))
     }
 
     @Test

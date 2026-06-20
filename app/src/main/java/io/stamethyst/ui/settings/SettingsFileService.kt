@@ -675,12 +675,14 @@ internal object SettingsFileService {
     private fun writeJvmLogsBundle(host: Activity, output: OutputStream): Int {
         val logFiles = JvmLogRotationManager.listLogFiles(host)
         ZipOutputStream(output).use { zipOutput ->
+            var exportedCount = 0
             writeTextEntry(
                 zipOutput,
                 "sts/jvm_logs/device_info.txt",
                 buildJvmLogDeviceInfo(host)
             )
-            if (logFiles.isEmpty()) {
+            val auditFile = RuntimePaths.performanceLaunchAuditLog(host)
+            if (logFiles.isEmpty() && !auditFile.isFile) {
                 val message = "No JVM logs found.\n" +
                     "Expected files:\n" +
                     "- ${RuntimePaths.latestLog(host).absolutePath}\n" +
@@ -690,8 +692,13 @@ internal object SettingsFileService {
             }
             for (logFile in logFiles) {
                 writeFileToZip(zipOutput, logFile, "sts/jvm_logs/${logFile.name}")
+                exportedCount++
             }
-            return logFiles.size
+            if (auditFile.isFile) {
+                writeFileToZip(zipOutput, auditFile, "sts/jvm_logs/${auditFile.name}")
+                exportedCount++
+            }
+            return exportedCount
         }
     }
 

@@ -150,6 +150,13 @@ internal object StsDesktopJarPatcher {
                                         originalBytes
                                     )
                                 )
+                            } else if (name == STS_PATCH_OPTIONS_PANEL_CLASS) {
+                                val originalBytes = JarFileIoUtils.readAll(zipIn)
+                                zipOut.write(
+                                    StsFramerateOptionsPatcher.patchOptionsPanelClass(
+                                        originalBytes
+                                    )
+                                )
                             } else if (patchBytes != null &&
                                 StsUiTouchCompatPatcher.isMethodMergeClassEntry(name)
                             ) {
@@ -189,6 +196,12 @@ internal object StsDesktopJarPatcher {
                             throw IOException(
                                 "desktop-1.0.jar is missing required class: " +
                                     STS_PATCH_FREETYPE_BITMAP_FONT_DATA_CLASS
+                            )
+                        }
+                        if (!seenNames.contains(STS_PATCH_OPTIONS_PANEL_CLASS)) {
+                            throw IOException(
+                                "desktop-1.0.jar is missing required class: " +
+                                    STS_PATCH_OPTIONS_PANEL_CLASS
                             )
                         }
 
@@ -329,6 +342,12 @@ internal object StsDesktopJarPatcher {
                     ?: return false
                 val fontDataBytes = JarFileIoUtils.readEntryBytes(zipFile, fontDataEntry)
                 if (!StsFreeTypeGlyphFallbackPatcher.isPatchedFreeTypeBitmapFontDataClass(fontDataBytes)) {
+                    return false
+                }
+                val optionsPanelEntry = zipFile.getEntry(STS_PATCH_OPTIONS_PANEL_CLASS)
+                    ?: return false
+                val optionsPanelBytes = JarFileIoUtils.readEntryBytes(zipFile, optionsPanelEntry)
+                if (!StsFramerateOptionsPatcher.isPatchedOptionsPanelClass(optionsPanelBytes)) {
                     return false
                 }
                 true

@@ -28,6 +28,9 @@ internal data class MainScreenActions(
     val onUpdateWorkshopMod: (ModItemUi) -> Unit = {},
     val onOpenWorkshopDetails: (ModItemUi) -> Unit = {},
     val onToggleMod: (ModItemUi, Boolean) -> Unit = { _, _ -> },
+    val onAssociateMods: (ModItemUi, ModItemUi) -> Unit = { _, _ -> },
+    val onRemoveModAssociation: (ModItemUi, ModItemUi) -> Unit = { _, _ -> },
+    val onClearModAssociationGroup: (ModItemUi) -> Unit = {},
     val onSetPriority: (ModItemUi, Int?) -> Unit = { _, _ -> },
     val onSetModFavorite: (ModItemUi, Boolean) -> Unit = { _, _ -> },
     val onMarkModSuggestionRead: (ModItemUi, String) -> Unit = { _, _ -> },
@@ -103,6 +106,11 @@ internal fun rememberMainScreenActions(
                 onUpdateWorkshopMod = { mod -> viewModel.onUpdateWorkshopMod(activity, mod) },
                 onOpenWorkshopDetails = onOpenWorkshopDetails,
                 onToggleMod = { mod, checked -> viewModel.onToggleMod(activity, mod, checked) },
+                onAssociateMods = { source, target -> viewModel.associateMods(activity, source, target) },
+                onRemoveModAssociation = { source, target ->
+                    viewModel.removeModAssociation(activity, source, target)
+                },
+                onClearModAssociationGroup = { mod -> viewModel.clearModAssociationGroup(activity, mod) },
                 onSetPriority = { mod, priority ->
                     viewModel.onSetPriority(activity, mod, priority)
                 },

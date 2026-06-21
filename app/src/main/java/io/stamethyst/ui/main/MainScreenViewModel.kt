@@ -218,6 +218,7 @@ class MainScreenViewModel : ViewModel() {
         val unassignedFolderName: String = DEFAULT_UNASSIGNED_FOLDER_NAME,
         val unassignedFolderOrder: Int = 0,
         val favoriteModKeys: Set<String> = emptySet(),
+        val modAssociationState: ModAssociationState = ModAssociationState(),
         val showModFileNameRemovalNotice: Boolean = false,
         val steamCloudIndicator: SteamCloudIndicatorUi = SteamCloudIndicatorUi(),
         val pendingWorkshopJarSelection: PendingWorkshopJarSelection? = null,
@@ -714,6 +715,18 @@ class MainScreenViewModel : ViewModel() {
         if (enabled && modManagementController.clearEnabledNewlyImportedHighlights(host)) {
             republish(host)
         }
+    }
+
+    fun associateMods(host: Activity, source: ModItemUi, target: ModItemUi) {
+        modManagementController.associateMods(host, source, target)
+    }
+
+    fun removeModAssociation(host: Activity, source: ModItemUi, target: ModItemUi) {
+        modManagementController.removeModAssociation(host, source, target)
+    }
+
+    fun clearModAssociationGroup(host: Activity, mod: ModItemUi) {
+        modManagementController.clearModAssociationGroup(host, mod)
     }
 
     fun shouldPromptSteamCloudDirectMode(host: Activity): Boolean {
@@ -3537,6 +3550,7 @@ class MainScreenViewModel : ViewModel() {
             unassignedFolderName = snapshot.unassignedFolderName,
             unassignedFolderOrder = snapshot.unassignedFolderOrder,
             favoriteModKeys = snapshot.favoriteModKeys,
+            modAssociationState = snapshot.modAssociationState,
             showModFileNameRemovalNotice = false,
             steamCloudIndicator = currentSteamCloudIndicator,
         )

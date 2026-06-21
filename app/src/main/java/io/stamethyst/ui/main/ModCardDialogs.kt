@@ -15,6 +15,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -33,11 +35,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import io.stamethyst.R
 import io.stamethyst.backend.mods.ModManager
+import io.stamethyst.model.ModItemUi
 import io.stamethyst.ui.haptics.LauncherHaptics
 import kotlin.math.roundToInt
 
@@ -52,6 +57,11 @@ internal data class ModBatchMoveTarget(
     val folderName: String
 )
 
+internal data class ModAssociationPickerFolder(
+    val folderName: String,
+    val mods: List<ModItemUi>
+)
+
 @Composable
 internal fun ModActionsDialog(
     visible: Boolean,
@@ -63,6 +73,7 @@ internal fun ModActionsDialog(
     onEditPriority: () -> Unit,
     showOpenWorkshopDetails: Boolean = false,
     onOpenWorkshopDetails: () -> Unit = {},
+    onAssociate: () -> Unit,
     onExport: () -> Unit,
     onShare: () -> Unit,
     onRename: () -> Unit,
@@ -114,6 +125,13 @@ internal fun ModActionsDialog(
                         onDismiss()
                         onEditPriority()
                     }
+                    ModActionDialogListItem(
+                        text = stringResource(R.string.main_mod_associate),
+                        enabled = controlsEnabled
+                    ) {
+                        onDismiss()
+                        onAssociate()
+                    }
                     if (showOpenWorkshopDetails) {
                         ModActionDialogListItem(
                             text = stringResource(R.string.main_mod_open_market_page),
@@ -163,6 +181,238 @@ internal fun ModActionsDialog(
             }
         }
     }
+}
+
+@Composable
+internal fun AssociateModPickerDialog(
+    visible: Boolean,
+    sourceMod: ModItemUi,
+    folders: List<ModAssociationPickerFolder>,
+    associatedModKeys: Set<String>,
+    controlsEnabled: Boolean,
+    showModFileName: Boolean,
+    onDismiss: () -> Unit,
+    onSelectTarget: (ModItemUi) -> Unit
+) {
+    if (!visible) {
+        return
+    }
+    val sourceKey = resolveModAssociationKey(sourceMod)
+    val pickerFolders = folders.mapNotNull { folder ->
+        val selectableMods = folder.mods.filter { mod ->
+            mod.installed &&
+                !mod.required &&
+                resolveModAssociationKey(mod)?.let { key -> key != sourceKey } == true
+        }
+        if (selectableMods.isEmpty()) {
+            null
+        } else {
+            folder.copy(mods = selectableMods)
+        }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = stringResource(
+                    R.string.main_mod_association_picker_title_format,
+                    resolveModDisplayName(sourceMod, showModFileName = showModFileName)
+                )
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 500.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                if (pickerFolders.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.main_mod_association_picker_empty),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    pickerFolders.forEach { folder ->
+                        Text(
+                            text = folder.folderName,
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            folder.mods.forEach { targetMod ->
+                                val targetKey = resolveModAssociationKey(targetMod)
+                                val alreadyAssociated = targetKey != null && associatedModKeys.contains(targetKey)
+                                ModAssociationPickerListItem(
+                                    mod = targetMod,
+                                    alreadyAssociated = alreadyAssociated,
+                                    controlsEnabled = controlsEnabled,
+                                    showModFileName = showModFileName,
+                                    onClick = { onSelectTarget(targetMod) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            PillCancelButton(onClick = onDismiss) {
+                Text(stringResource(R.string.main_folder_dialog_cancel))
+            }
+        }
+    )
+}
+
+@Composable
+internal fun ModAssociationManageDialog(
+    visible: Boolean,
+    mod: ModItemUi,
+    associatedMods: List<ModItemUi>,
+    controlsEnabled: Boolean,
+    showModFileName: Boolean,
+    onDismiss: () -> Unit,
+    onAddAssociation: () -> Unit,
+    onRemoveAssociation: (ModItemUi) -> Unit,
+    onClearGroup: () -> Unit
+) {
+    if (!visible) {
+        return
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = stringResource(
+                    R.string.main_mod_association_manage_title_format,
+                    resolveModDisplayName(mod, showModFileName = showModFileName)
+                )
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 460.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (associatedMods.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.main_mod_association_manage_empty),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    associatedMods.forEach { associatedMod ->
+                        ListItem(
+                            headlineContent = {
+                                Text(
+                                    text = resolveModDisplayName(
+                                        associatedMod,
+                                        showModFileName = showModFileName
+                                    ),
+                                    maxLines = 1
+                                )
+                            },
+                            supportingContent = {
+                                Text(
+                                    text = associatedMod.manifestModId.ifBlank { associatedMod.modId },
+                                    maxLines = 1
+                                )
+                            },
+                            trailingContent = {
+                                IconButton(
+                                    onClick = { onRemoveAssociation(associatedMod) },
+                                    enabled = controlsEnabled
+                                ) {
+                                    Icon(
+                                        painter = painterResource(R.drawable.ic_delete),
+                                        contentDescription = stringResource(
+                                            R.string.main_mod_association_remove
+                                        )
+                                    )
+                                }
+                            },
+                            colors = ListItemDefaults.colors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onAddAssociation,
+                enabled = controlsEnabled
+            ) {
+                Text(stringResource(R.string.main_mod_association_add))
+            }
+        },
+        dismissButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(
+                    onClick = onClearGroup,
+                    enabled = controlsEnabled && associatedMods.isNotEmpty()
+                ) {
+                    Text(stringResource(R.string.main_mod_association_clear_group))
+                }
+                PillCancelButton(onClick = onDismiss) {
+                    Text(stringResource(R.string.main_folder_dialog_cancel))
+                }
+            }
+        }
+    )
+}
+
+@Composable
+private fun ModAssociationPickerListItem(
+    mod: ModItemUi,
+    alreadyAssociated: Boolean,
+    controlsEnabled: Boolean,
+    showModFileName: Boolean,
+    onClick: () -> Unit
+) {
+    ListItem(
+        headlineContent = {
+            Text(
+                text = resolveModDisplayName(mod, showModFileName = showModFileName),
+                maxLines = 1
+            )
+        },
+        supportingContent = {
+            Text(
+                text = mod.manifestModId.ifBlank { mod.modId },
+                maxLines = 1
+            )
+        },
+        trailingContent = {
+            Text(
+                text = if (alreadyAssociated) {
+                    stringResource(R.string.main_mod_association_already_added)
+                } else {
+                    ">"
+                },
+                style = MaterialTheme.typography.labelMedium
+            )
+        },
+        colors = ListItemDefaults.colors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(
+                enabled = controlsEnabled && !alreadyAssociated,
+                onClick = onClick
+            )
+    )
 }
 
 @Composable

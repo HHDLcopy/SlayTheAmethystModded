@@ -561,6 +561,16 @@
     <string name="main_mod_priority_dialog_clear">恢復預設</string>
     <string name="main_mod_favorite_add">新增到特別喜歡</string>
     <string name="main_mod_favorite_remove">從特別喜歡中移除</string>
+    <string name="main_mod_associate">關聯</string>
+    <string name="main_mod_association_badge_content_description">關聯模組</string>
+    <string name="main_mod_association_picker_title_format">為 %1$s 關聯另一個模組</string>
+    <string name="main_mod_association_picker_empty">沒有其他可關聯的已安裝模組。</string>
+    <string name="main_mod_association_manage_title_format">%1$s 的關聯模組</string>
+    <string name="main_mod_association_manage_empty">此模組還沒有關聯模組。</string>
+    <string name="main_mod_association_add">新增關聯</string>
+    <string name="main_mod_association_remove">刪除關聯</string>
+    <string name="main_mod_association_clear_group">解除整組關聯</string>
+    <string name="main_mod_association_already_added">已關聯</string>
     <string name="main_mod_export">匯出</string>
     <string name="main_mod_share">分享</string>
     <string name="main_mod_rename">重新命名</string>
@@ -1105,6 +1115,10 @@
     <string name="main_mod_file_name_display_removed_apply">調整為檔名</string>
     <string name="main_mod_file_name_display_removed_skip">不需要</string>
     <string name="main_mod_auto_enabled_dependencies">已自動啟用前置模組：%1$s</string>
+    <string name="main_mod_auto_enabled_associations">已自動啟用關聯模組：%1$s</string>
+    <string name="main_mod_association_added">已關聯「%1$s」和「%2$s」</string>
+    <string name="main_mod_association_removed">已刪除關聯：%1$s</string>
+    <string name="main_mod_association_group_cleared">已解除「%1$s」所在關聯組</string>
     <string name="main_mod_toggle_off_blocked_title">無法取消模組</string>
     <string name="main_mod_toggle_failed">更新模組勾選狀態失敗：%1$s</string>
     <string name="main_priority_unknown_mod">無法識別模組標識，載入優先順序設定失敗。</string>

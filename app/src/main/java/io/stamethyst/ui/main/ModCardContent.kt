@@ -28,7 +28,9 @@ import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -60,6 +62,9 @@ internal fun ModCardBodyContent(
     onSuggestionClick: () -> Unit = {},
     importPatchBadgeEnabled: Boolean = true,
     onImportPatchClick: () -> Unit = {},
+    associationBadge: ModAssociationBadgeUi? = null,
+    associationBadgeEnabled: Boolean = true,
+    onAssociationBadgeClick: () -> Unit = {},
     updateBadgeEnabled: Boolean = true,
     onUpdateBadgeClick: () -> Unit = {},
     onOpenWorkshopDetails: (ModItemUi) -> Unit = {},
@@ -103,6 +108,9 @@ internal fun ModCardBodyContent(
                 onSuggestionClick = onSuggestionClick,
                 importPatchBadgeEnabled = importPatchBadgeEnabled,
                 onImportPatchClick = onImportPatchClick,
+                associationBadge = associationBadge,
+                associationBadgeEnabled = associationBadgeEnabled,
+                onAssociationBadgeClick = onAssociationBadgeClick,
                 updateBadgeEnabled = updateBadgeEnabled,
                 onUpdateBadgeClick = onUpdateBadgeClick,
                 workshopBadgeEnabled = workshopBadgeEnabled,
@@ -299,6 +307,9 @@ private fun ModCardBadges(
     onSuggestionClick: () -> Unit,
     importPatchBadgeEnabled: Boolean,
     onImportPatchClick: () -> Unit,
+    associationBadge: ModAssociationBadgeUi?,
+    associationBadgeEnabled: Boolean,
+    onAssociationBadgeClick: () -> Unit,
     updateBadgeEnabled: Boolean,
     onUpdateBadgeClick: () -> Unit,
     workshopBadgeEnabled: Boolean,
@@ -316,7 +327,7 @@ private fun ModCardBadges(
             it != WorkshopModState.UpdateAvailable
     }
     val effectivePriority = mod.effectivePriority
-    val hasBadges = showSuggestion || showImportPatch || showUpdate || mod.favorite ||
+    val hasBadges = showSuggestion || showImportPatch || associationBadge != null || showUpdate || mod.favorite ||
         mod.newlyImported || workshopBadgeState != null || effectivePriority != null
     if (!hasBadges) return
 
@@ -338,6 +349,13 @@ private fun ModCardBadges(
             ModImportPatchBadge(
                 enabled = importPatchBadgeEnabled,
                 onClick = onImportPatchClick
+            )
+        }
+        associationBadge?.let { badge ->
+            ModAssociationBadge(
+                badge = badge,
+                enabled = associationBadgeEnabled,
+                onClick = onAssociationBadgeClick
             )
         }
         if (showUpdate) {
@@ -363,6 +381,24 @@ private fun ModCardBadges(
             PriorityLoadBadge(priority = effectivePriority)
         }
     }
+}
+
+@Composable
+private fun ModAssociationBadge(
+    badge: ModAssociationBadgeUi,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val containerColor = Color(badge.colorArgb)
+    ModCardLabelBadge(
+        iconResId = R.drawable.ic_link,
+        text = badge.associatedCount.toString(),
+        contentDescription = stringResource(R.string.main_mod_association_badge_content_description),
+        enabled = enabled,
+        onClick = onClick,
+        containerColor = containerColor,
+        contentColor = associationBadgeContentColor(containerColor, enabled)
+    )
 }
 
 @Composable
@@ -488,8 +524,19 @@ private fun ModCardLabelBadge(
     contentDescription: String?,
     enabled: Boolean,
     onClick: () -> Unit,
+    containerColor: Color = MaterialTheme.colorScheme.secondaryContainer,
+    contentColor: Color = if (enabled) {
+        MaterialTheme.colorScheme.onSecondaryContainer
+    } else {
+        MaterialTheme.colorScheme.outline
+    },
 ) {
-    ModCardBadgeSurface(enabled = enabled, onClick = onClick) {
+    ModCardBadgeSurface(
+        enabled = enabled,
+        onClick = onClick,
+        containerColor = containerColor,
+        contentColor = contentColor
+    ) {
         Row(
             modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -513,6 +560,12 @@ private fun ModCardLabelBadge(
 private fun ModCardBadgeSurface(
     enabled: Boolean = true,
     onClick: (() -> Unit)? = null,
+    containerColor: Color = MaterialTheme.colorScheme.secondaryContainer,
+    contentColor: Color = if (enabled) {
+        MaterialTheme.colorScheme.onSecondaryContainer
+    } else {
+        MaterialTheme.colorScheme.outline
+    },
     content: @Composable () -> Unit,
 ) {
     val surfaceModifier = if (onClick != null && enabled) {
@@ -521,16 +574,23 @@ private fun ModCardBadgeSurface(
         Modifier
     }
     Surface(
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        contentColor = if (enabled) {
-            MaterialTheme.colorScheme.onSecondaryContainer
-        } else {
-            MaterialTheme.colorScheme.outline
-        },
+        color = containerColor,
+        contentColor = contentColor,
         shape = RoundedCornerShape(999.dp)
     ) {
         Box(modifier = surfaceModifier) {
             content()
         }
+    }
+}
+
+private fun associationBadgeContentColor(containerColor: Color, enabled: Boolean): Color {
+    if (!enabled) {
+        return Color.White.copy(alpha = 0.72f)
+    }
+    return if (containerColor.luminance() > 0.48f) {
+        Color.Black
+    } else {
+        Color.White
     }
 }

@@ -84,12 +84,25 @@ internal class MainModManagementController(
         val dragLocked: Boolean,
         val unassignedFolderName: String,
         val unassignedFolderOrder: Int,
-        val favoriteModKeys: Set<String>
+        val favoriteModKeys: Set<String>,
+        val modAssociationState: ModAssociationState
     )
 
     private data class DependencyEnableResult(
-        val autoEnabledModNames: List<String>,
+        val autoEnabledDependencyModNames: List<String>,
+        val autoEnabledAssociationModNames: List<String>,
         val missingDependencies: List<String>
+    )
+
+    private enum class EnableReason {
+        ROOT,
+        DEPENDENCY,
+        ASSOCIATION
+    }
+
+    private data class EnableQueueItem(
+        val mod: ModItemUi,
+        val reason: EnableReason
     )
 
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
@@ -102,6 +115,7 @@ internal class MainModManagementController(
     private val profileStore = ModLaunchProfileStore()
     private var profileState = ModLaunchProfileStore.State(emptyList(), "default")
     private val folderStateStore = MainFolderStateStore()
+    private val associationStore = ModAssociationStore()
     private val favoriteModKeys = LinkedHashSet<String>()
     private val modFolders: MutableList<MainScreenViewModel.ModFolder>
         get() = folderStateStore.folders
@@ -141,6 +155,7 @@ internal class MainModManagementController(
 
     fun refresh(host: Activity, storageAccessible: Boolean) {
         folderStateStore.reload(host)
+        associationStore.reload(host)
         favoriteModKeys.clear()
         favoriteModKeys.addAll(FavoriteModStore.loadFavoriteKeys(host))
         NewlyImportedModHighlightStore.reload(host)
@@ -170,6 +185,7 @@ internal class MainModManagementController(
         profileState = profileStore.sanitizeSelections(host, profileState, collectInstalledOptionalModKeys())
         MainFolderAssignmentHandoffStore.consumePendingAssignments(host, folderStateStore)
         sanitizeFolderAssignments(optionalMods)
+        associationStore.sanitize(host, optionalMods)
         persistFolderState(host)
     }
 
@@ -187,7 +203,8 @@ internal class MainModManagementController(
             dragLocked = dragLocked,
             unassignedFolderName = unassignedFolderName,
             unassignedFolderOrder = unassignedFolderOrder.coerceIn(0, modFolders.size),
-            favoriteModKeys = LinkedHashSet(favoriteModKeys)
+            favoriteModKeys = LinkedHashSet(favoriteModKeys),
+            modAssociationState = associationStore.snapshot()
         )
     }
 
@@ -302,6 +319,83 @@ internal class MainModManagementController(
             emitSnackbar(host.getString(R.string.main_mod_favorite_removed))
         }
         markOptionalModsWithPendingSelectionDirty()
+        hostCallbacks.republish(host)
+    }
+
+    fun associateMods(host: Activity, source: ModItemUi, target: ModItemUi) {
+        if (!hostCallbacks.canEditMainScreenState() ||
+            source.required ||
+            target.required ||
+            !source.installed ||
+            !target.installed
+        ) {
+            return
+        }
+        val sourceKey = resolveModAssociationKey(source) ?: return
+        val targetKey = resolveModAssociationKey(target) ?: return
+        if (sourceKey == targetKey) {
+            return
+        }
+
+        val previousSelection = snapshotPendingSelection()
+        val shouldEnableGroup = isPendingOptionalModEnabled(source) || isPendingOptionalModEnabled(target)
+        if (!associationStore.associate(host, source, target)) {
+            return
+        }
+        if (shouldEnableGroup) {
+            try {
+                val enabledRoot = if (isPendingOptionalModEnabled(source)) source else target
+                val result = enableModWithDependencies(
+                    host = host,
+                    rootMod = enabledRoot,
+                    optionalMods = resolveOptionalModsWithPendingSelection()
+                )
+                emitAutoEnabledNotices(host, result)
+                if (result.missingDependencies.isNotEmpty()) {
+                    showMissingDependencyDialog(host, enabledRoot, result.missingDependencies)
+                }
+                if (!persistPendingSelection(host)) {
+                    restorePendingSelection(previousSelection)
+                }
+            } catch (error: Throwable) {
+                restorePendingSelection(previousSelection)
+                emitSnackbar(
+                    host.getString(
+                        R.string.main_mod_toggle_failed,
+                        error.message ?: host.getString(R.string.feedback_unknown_error)
+                    )
+                )
+            }
+        }
+        emitSnackbar(
+            host.getString(
+                R.string.main_mod_association_added,
+                resolveModDisplayName(source),
+                resolveModDisplayName(target)
+            )
+        )
+        hostCallbacks.republish(host)
+    }
+
+    fun removeModAssociation(host: Activity, source: ModItemUi, target: ModItemUi) {
+        if (!hostCallbacks.canEditMainScreenState()) {
+            return
+        }
+        if (!associationStore.removeAssociation(host, source, target)) {
+            return
+        }
+        emitSnackbar(host.getString(R.string.main_mod_association_removed, resolveModDisplayName(target)))
+        hostCallbacks.republish(host)
+    }
+
+    fun clearModAssociationGroup(host: Activity, mod: ModItemUi) {
+        if (!hostCallbacks.canEditMainScreenState()) {
+            return
+        }
+        if (!associationStore.clearGroup(host, mod)) {
+            return
+        }
+        emitSnackbar(host.getString(R.string.main_mod_association_group_cleared, resolveModDisplayName(mod)))
         hostCallbacks.republish(host)
     }
 
@@ -925,14 +1019,7 @@ internal class MainModManagementController(
                     rootMod = mod,
                     optionalMods = resolveOptionalModsWithPendingSelection()
                 )
-                if (result.autoEnabledModNames.isNotEmpty()) {
-                    emitSnackbar(
-                        host.getString(
-                            R.string.main_mod_auto_enabled_dependencies,
-                            result.autoEnabledModNames.joinToString(", ")
-                        )
-                    )
-                }
+                emitAutoEnabledNotices(host, result)
                 if (result.missingDependencies.isNotEmpty()) {
                     showMissingDependencyDialog(host, mod, result.missingDependencies)
                 }
@@ -1168,7 +1255,8 @@ internal class MainModManagementController(
     }
 
     private fun batchEnableMods(host: Activity, targetMods: List<ModItemUi>) {
-        val autoEnabled = LinkedHashSet<String>()
+        val autoEnabledDependencies = LinkedHashSet<String>()
+        val autoEnabledAssociations = LinkedHashSet<String>()
         val missingDependencies = LinkedHashSet<String>()
         targetMods.forEach { mod ->
             if (!mod.installed || mod.required || isPendingOptionalModEnabled(mod)) {
@@ -1179,15 +1267,24 @@ internal class MainModManagementController(
                 rootMod = mod,
                 optionalMods = resolveOptionalModsWithPendingSelection()
             )
-            autoEnabled.addAll(result.autoEnabledModNames)
+            autoEnabledDependencies.addAll(result.autoEnabledDependencyModNames)
+            autoEnabledAssociations.addAll(result.autoEnabledAssociationModNames)
             missingDependencies.addAll(result.missingDependencies)
         }
 
-        if (autoEnabled.isNotEmpty()) {
+        if (autoEnabledDependencies.isNotEmpty()) {
             emitSnackbar(
                 host.getString(
                     R.string.main_mod_auto_enabled_dependencies,
-                    autoEnabled.joinToString(", ")
+                    autoEnabledDependencies.joinToString(", ")
+                )
+            )
+        }
+        if (autoEnabledAssociations.isNotEmpty()) {
+            emitSnackbar(
+                host.getString(
+                    R.string.main_mod_auto_enabled_associations,
+                    autoEnabledAssociations.joinToString(", ")
                 )
             )
         }
@@ -1243,53 +1340,56 @@ internal class MainModManagementController(
         optionalMods: List<ModItemUi>
     ): DependencyEnableResult {
         val modById = LinkedHashMap<String, ModItemUi>()
-        val enabledIds = LinkedHashSet<String>()
+        val modByAssociationKey = LinkedHashMap<String, ModItemUi>()
         optionalMods.forEach { mod ->
             val normalizedModId = normalizeModId(mod.modId)
             if (normalizedModId.isNotEmpty()) {
                 modById[normalizedModId] = mod
-                if (mod.enabled) {
-                    enabledIds.add(normalizedModId)
-                }
             }
             val normalizedManifestId = normalizeModId(mod.manifestModId)
             if (normalizedManifestId.isNotEmpty() && !modById.containsKey(normalizedManifestId)) {
                 modById[normalizedManifestId] = mod
             }
-            if (mod.enabled && normalizedManifestId.isNotEmpty()) {
-                enabledIds.add(normalizedManifestId)
+            resolveModAssociationKey(mod)?.let { key ->
+                modByAssociationKey[key] = mod
             }
         }
 
-        val queue = ArrayDeque<ModItemUi>()
+        val associationState = associationStore.snapshot()
+        val queue = ArrayDeque<EnableQueueItem>()
         val visited = LinkedHashSet<String>()
-        val autoEnabledModNames = LinkedHashSet<String>()
+        val autoEnabledDependencyModNames = LinkedHashSet<String>()
+        val autoEnabledAssociationModNames = LinkedHashSet<String>()
         val missingDependencies = LinkedHashSet<String>()
-        queue.add(rootMod)
+        queue.add(EnableQueueItem(rootMod, EnableReason.ROOT))
 
         while (queue.isNotEmpty()) {
-            val current = queue.removeFirst()
-            val currentKey = normalizeModId(current.modId).ifBlank {
-                normalizeModId(current.manifestModId)
-            }
+            val item = queue.removeFirst()
+            val current = item.mod
+            val currentKey = resolveModEnableVisitKey(current)
             if (currentKey.isNotEmpty() && !visited.add(currentKey)) {
                 continue
             }
 
-            val wasEnabled = isModIdEnabled(enabledIds, current)
+            val wasEnabled = isPendingOptionalModEnabled(current)
             setPendingOptionalModEnabled(host, current, true)
 
             val normalizedCurrentModId = normalizeModId(current.modId)
-            if (normalizedCurrentModId.isNotEmpty()) {
-                enabledIds.add(normalizedCurrentModId)
-            }
             val normalizedCurrentManifestId = normalizeModId(current.manifestModId)
-            if (normalizedCurrentManifestId.isNotEmpty()) {
-                enabledIds.add(normalizedCurrentManifestId)
+
+            if (!wasEnabled) {
+                when (item.reason) {
+                    EnableReason.ROOT -> Unit
+                    EnableReason.DEPENDENCY -> autoEnabledDependencyModNames.add(resolveModDisplayName(current))
+                    EnableReason.ASSOCIATION -> autoEnabledAssociationModNames.add(resolveModDisplayName(current))
+                }
             }
 
-            if (!wasEnabled && current.modId != rootMod.modId) {
-                autoEnabledModNames.add(resolveModDisplayName(current))
+            associationState.groupFor(current)?.modKeys.orEmpty().forEach { associatedKey ->
+                val associatedMod = modByAssociationKey[associatedKey]
+                if (associatedMod != null && associatedMod.installed && !associatedMod.required) {
+                    queue.add(EnableQueueItem(associatedMod, EnableReason.ASSOCIATION))
+                }
             }
 
             val dependencies = current.dependencies
@@ -1300,7 +1400,10 @@ internal class MainModManagementController(
                 .toList()
             for (dependency in dependencies) {
                 val normalizedDependency = normalizeModId(dependency)
-                if (normalizedDependency.isEmpty() || normalizedDependency == currentKey) {
+                if (normalizedDependency.isEmpty() ||
+                    normalizedDependency == normalizedCurrentModId ||
+                    normalizedDependency == normalizedCurrentManifestId
+                ) {
                     continue
                 }
                 if (ModManager.isRequiredModId(normalizedDependency)) {
@@ -1314,14 +1417,34 @@ internal class MainModManagementController(
                     missingDependencies.add(dependency)
                     continue
                 }
-                queue.add(dependencyMod)
+                queue.add(EnableQueueItem(dependencyMod, EnableReason.DEPENDENCY))
             }
         }
 
         return DependencyEnableResult(
-            autoEnabledModNames = ArrayList(autoEnabledModNames),
+            autoEnabledDependencyModNames = ArrayList(autoEnabledDependencyModNames),
+            autoEnabledAssociationModNames = ArrayList(autoEnabledAssociationModNames),
             missingDependencies = ArrayList(missingDependencies)
         )
+    }
+
+    private fun emitAutoEnabledNotices(host: Activity, result: DependencyEnableResult) {
+        if (result.autoEnabledDependencyModNames.isNotEmpty()) {
+            emitSnackbar(
+                host.getString(
+                    R.string.main_mod_auto_enabled_dependencies,
+                    result.autoEnabledDependencyModNames.joinToString(", ")
+                )
+            )
+        }
+        if (result.autoEnabledAssociationModNames.isNotEmpty()) {
+            emitSnackbar(
+                host.getString(
+                    R.string.main_mod_auto_enabled_associations,
+                    result.autoEnabledAssociationModNames.joinToString(", ")
+                )
+            )
+        }
     }
 
     private fun findEnabledDependentModNames(
@@ -1408,6 +1531,14 @@ internal class MainModManagementController(
             ids.add(normalizedManifestId)
         }
         return ids
+    }
+
+    private fun resolveModEnableVisitKey(mod: ModItemUi): String {
+        return normalizeModId(mod.modId).ifBlank {
+            normalizeModId(mod.manifestModId).ifBlank {
+                resolveModAssociationKey(mod).orEmpty()
+            }
+        }
     }
 
     private fun showMissingDependencyDialog(
@@ -1837,15 +1968,6 @@ internal class MainModManagementController(
         return ModManager.normalizeModId(modId)
     }
 
-    private fun isModIdEnabled(enabledIds: Set<String>, mod: ModItemUi): Boolean {
-        val normalizedModId = normalizeModId(mod.modId)
-        if (normalizedModId.isNotEmpty() && enabledIds.contains(normalizedModId)) {
-            return true
-        }
-        val normalizedManifestId = normalizeModId(mod.manifestModId)
-        return normalizedManifestId.isNotEmpty() && enabledIds.contains(normalizedManifestId)
-    }
-
     private fun initializePendingSelection(optionalMods: List<ModItemUi>) {
         pendingEnabledOptionalModIds.clear()
         optionalMods.forEach { mod ->
@@ -2049,6 +2171,7 @@ internal class MainModManagementController(
 
     private fun removeStoredStateForDeletedMod(host: Activity, mod: ModItemUi) {
         clearAssignmentForMod(mod)
+        associationStore.removeMod(host, mod)
         ModAliasStore.setAlias(host, mod.storagePath, "")
     }
 

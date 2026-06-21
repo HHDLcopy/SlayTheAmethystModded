@@ -122,6 +122,7 @@ internal fun ModFolderSection(
     val showModFileName = uiState.showModFileName
     val unassignedFolderName = uiState.unassignedFolderName
     val unassignedFolderOrder = uiState.unassignedFolderOrder
+    val modAssociationState = uiState.modAssociationState
 
     val folderTargetIds = remember(folders, unassignedFolderOrder) {
         buildFolderTargetIds(folders = folders, unassignedFolderOrder = unassignedFolderOrder)
@@ -129,6 +130,8 @@ internal fun ModFolderSection(
     val interactionState = rememberModFolderSectionInteractionState(folderTargetIds = folderTargetIds)
     var pendingDeleteMod by remember { mutableStateOf<ModItemUi?>(null) }
     var pendingMoveMod by remember { mutableStateOf<ModItemUi?>(null) }
+    var pendingAssociationPickerMod by remember { mutableStateOf<ModItemUi?>(null) }
+    var pendingAssociationManageMod by remember { mutableStateOf<ModItemUi?>(null) }
     var batchSelectionMode by remember { mutableStateOf(false) }
     var batchMoveDialogVisible by remember { mutableStateOf(false) }
     var batchDeleteDialogVisible by remember { mutableStateOf(false) }
@@ -291,6 +294,38 @@ internal fun ModFolderSection(
             unassignedFolderName = unassignedFolderName
         )
     }
+    val associationFolderUiModels = remember(
+        folderTargetIds,
+        foldersById,
+        mods,
+        folderAssignments,
+        folderIds,
+        folderCollapsed,
+        unassignedCollapsed,
+        unassignedFolderName
+    ) {
+        val associationModsByFolderId = mods
+            .groupBy { resolveAssignedFolderId(it, folderAssignments, folderIds) }
+            .mapValues { (_, modsInFolder) ->
+                modsInFolder.sortedBy { if (it.favorite) 0 else 1 }
+            }
+        buildFolderUiModels(
+            displayFolderTargetIds = folderTargetIds,
+            foldersById = foldersById,
+            modsByFolderId = associationModsByFolderId,
+            folderCollapsed = folderCollapsed,
+            unassignedCollapsed = unassignedCollapsed,
+            unassignedFolderName = unassignedFolderName
+        )
+    }
+    val associationPickerFolders = remember(associationFolderUiModels) {
+        associationFolderUiModels.map { folderUiModel ->
+            ModAssociationPickerFolder(
+                folderName = folderUiModel.folderName,
+                mods = folderUiModel.mods
+            )
+        }
+    }
     val activeDragSourceFolderId = remember(
         interactionState.activeDragFolderId,
         activeModDragSession?.sourceFolderTokenId
@@ -302,16 +337,24 @@ internal fun ModFolderSection(
         }
     }
     val activeDragMod = activeModDragSession?.mod
+    val expandedFolderMountStructureKey = remember(filteredMods) {
+        filteredMods.map { it.storagePath }
+    }
+    // Selection-only ModItemUi changes should not restart the delayed expanded-body mount.
     var deferExpandedFolderItems by remember(
-        mods,
-        folders,
+        expandedFolderMountStructureKey,
+        folderTargetIds,
         folderAssignments,
-        filterText,
-        unassignedFolderOrder
+        filterKeyword
     ) {
         mutableStateOf(true)
     }
-    LaunchedEffect(mods, folders, folderAssignments, filterText, unassignedFolderOrder) {
+    LaunchedEffect(
+        expandedFolderMountStructureKey,
+        folderTargetIds,
+        folderAssignments,
+        filterKeyword
+    ) {
         deferExpandedFolderItems = true
         delay(EXPANDED_FOLDER_FULL_MOUNT_DELAY_MS)
         deferExpandedFolderItems = false
@@ -609,6 +652,48 @@ internal fun ModFolderSection(
                     } else {
                         callbacks.onAssignModToFolder(mod, targetFolderTokenId)
                     }
+                }
+            )
+        }
+
+        pendingAssociationPickerMod?.let { mod ->
+            AssociateModPickerDialog(
+                visible = true,
+                sourceMod = mod,
+                folders = associationPickerFolders,
+                associatedModKeys = modAssociationState.associatedModKeysFor(mod),
+                controlsEnabled = organizationControlsEnabled && mod.installed,
+                showModFileName = showModFileName,
+                onDismiss = { pendingAssociationPickerMod = null },
+                onSelectTarget = { target ->
+                    pendingAssociationPickerMod = null
+                    callbacks.onAssociateMods(mod, target)
+                }
+            )
+        }
+
+        pendingAssociationManageMod?.let { mod ->
+            val associatedMods = modAssociationState.associatedModsFor(mod, mods)
+            ModAssociationManageDialog(
+                visible = true,
+                mod = mod,
+                associatedMods = associatedMods,
+                controlsEnabled = organizationControlsEnabled && mod.installed,
+                showModFileName = showModFileName,
+                onDismiss = { pendingAssociationManageMod = null },
+                onAddAssociation = {
+                    pendingAssociationManageMod = null
+                    pendingAssociationPickerMod = mod
+                },
+                onRemoveAssociation = { associatedMod ->
+                    if (associatedMods.size <= 1) {
+                        pendingAssociationManageMod = null
+                    }
+                    callbacks.onRemoveModAssociation(mod, associatedMod)
+                },
+                onClearGroup = {
+                    pendingAssociationManageMod = null
+                    callbacks.onClearModAssociationGroup(mod)
                 }
             )
         }
@@ -1091,6 +1176,8 @@ internal fun ModFolderSection(
                                     onRestoreModOriginalName = { item ->
                                         latestCallbacks.value.onRestoreModOriginalName(item)
                                     },
+                                    onAssociateMod = { pendingAssociationPickerMod = it },
+                                    onAssociationBadgeClick = { pendingAssociationManageMod = it },
                                     onPatchWorkshopMod = { latestCallbacks.value.onPatchWorkshopMod(it) },
                                     onRetryWorkshopDownload = { latestCallbacks.value.onRetryWorkshopDownload(it) },
                                     onUpdateWorkshopMod = { latestCallbacks.value.onUpdateWorkshopMod(it) },
@@ -1137,6 +1224,8 @@ internal fun ModFolderSection(
                                     batchSelectionMode = batchSelectionMode,
                                     batchSelected = selectedBatchStoragePaths.contains(mod.storagePath),
                                     batchSelectionEnabled = organizationControlsEnabled && mod.canUseFolderSelection(),
+                                    associationBadge = modAssociationState.badgeFor(mod),
+                                    associationBadgeEnabled = hostAvailable,
                                     onBatchSelectionChange = onBatchSelectionChange,
                                     onSuggestionRead = onSuggestionRead,
                                     callbacks = modCardCallbacks

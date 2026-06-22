@@ -111,7 +111,11 @@ object StsLaunchSpec {
         forceJvmCrash: Boolean = false,
         forceRuntimeCrash: Boolean = false,
         autoplay: Boolean = false,
-        autoplaySaveMode: AutoplaySaveMode = AutoplaySaveMode.DEFAULT
+        autoplaySaveMode: AutoplaySaveMode = AutoplaySaveMode.DEFAULT,
+        autoplayMode: AutoplayMode = AutoplayMode.DEFAULT,
+        autoplaySingleRoomSpecPath: String = "",
+        autoplayChoiceDelayMs: Long = 0L,
+        cardObtainEffectOwnershipCompatEnabled: Boolean = true
     ): List<String> {
         val stsRoot = RuntimePaths.stsRoot(context)
         val stsHome = RuntimePaths.stsHome(context)
@@ -391,6 +395,10 @@ object StsLaunchSpec {
                 }
         )
         args.add(
+            "-Damethyst.runtime_compat.card_obtain_effect_ownership=" +
+                if (cardObtainEffectOwnershipCompatEnabled) "true" else "false"
+        )
+        args.add(
             "-Damethyst.runtime_compat.rescue.hand_layout_room_context=" +
                 if (CompatibilitySettings.isRoomContextHandLayoutRescueCompatEnabled(context)) "true" else "false"
         )
@@ -610,11 +618,35 @@ object StsLaunchSpec {
         val effectiveAutoplay = autoplay && isMtsLaunchMode(launchMode)
         args.add("-Damethyst.debug.autoplay=${if (effectiveAutoplay) "true" else "false"}")
         args.add(
+            "-Damethyst.debug.autoplay.mode=" +
+                if (effectiveAutoplay) {
+                    autoplayMode.persistedValue
+                } else {
+                    AutoplayMode.DEFAULT.persistedValue
+                }
+        )
+        args.add(
             "-Damethyst.debug.autoplay.save_mode=" +
                 if (effectiveAutoplay) {
                     autoplaySaveMode.persistedValue
                 } else {
                     AutoplaySaveMode.DEFAULT.persistedValue
+                }
+        )
+        args.add(
+            "-Damethyst.debug.autoplay.single_room_spec=" +
+                if (effectiveAutoplay && autoplayMode == AutoplayMode.SINGLE_ROOM) {
+                    autoplaySingleRoomSpecPath
+                } else {
+                    ""
+                }
+        )
+        args.add(
+            "-Damethyst.debug.autoplay.choice_delay_ms=" +
+                if (effectiveAutoplay) {
+                    autoplayChoiceDelayMs.coerceAtLeast(0L).toString()
+                } else {
+                    "0"
                 }
         )
         args.add("-Damethyst.bridge.events=${RuntimePaths.bootBridgeEventsLog(context).absolutePath}")

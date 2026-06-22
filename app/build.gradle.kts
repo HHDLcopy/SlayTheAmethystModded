@@ -213,6 +213,8 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
     implementation(libs.stream.chat.android.compose)
+    implementation(libs.telephoto.zoomable.image.coil3)
+    implementation(libs.coil3.network.okhttp)
     implementation(libs.haze)
     implementation(libs.haze.materials)
     implementation(libs.okhttp)

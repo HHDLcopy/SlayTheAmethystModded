@@ -37,6 +37,10 @@ class JvmLaunchController(
     private val forceRuntimeCrash: Boolean,
     private val autoplay: Boolean,
     private val autoplaySaveMode: AutoplaySaveMode,
+    private val autoplayMode: AutoplayMode,
+    private val autoplaySingleRoomSpecPath: String,
+    private val autoplayChoiceDelayMs: Long,
+    private val cardObtainEffectOwnershipCompatEnabled: Boolean,
     private val mirrorJvmLogsToLogcat: Boolean,
     private val onProgressUpdate: (Int, String) -> Unit,
     private val onLaunchComplete: (exitCode: Int) -> Unit,
@@ -253,7 +257,9 @@ class JvmLaunchController(
                 AutoplayConfigFile.syncForLaunch(
                     context = activity,
                     enabled = autoplay && StsLaunchSpec.isMtsLaunchMode(launchMode),
-                    saveMode = autoplaySaveMode
+                    saveMode = autoplaySaveMode,
+                    mode = autoplayMode,
+                    singleRoomSpecPath = autoplaySingleRoomSpecPath
                 )
 
                 throwIfCancelled()
@@ -320,7 +326,11 @@ class JvmLaunchController(
                         forceJvmCrash,
                         forceRuntimeCrash,
                         autoplay,
-                        autoplaySaveMode
+                        autoplaySaveMode,
+                        autoplayMode,
+                        autoplaySingleRoomSpecPath,
+                        autoplayChoiceDelayMs,
+                        cardObtainEffectOwnershipCompatEnabled
                     )
                 )
                 MemoryDiagnosticsLogger.logEvent(

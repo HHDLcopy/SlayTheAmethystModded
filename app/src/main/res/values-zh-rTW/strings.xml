@@ -2248,6 +2248,10 @@
     <string name="workshop_download_by_id_invalid">請輸入有效的創意工坊 ID。</string>
     <string name="workshop_download_by_id_confirm">開啟詳情</string>
     <string name="workshop_preview_content_description">%1$s 預覽圖</string>
+    <string name="workshop_preview_gallery_title">畫廊</string>
+    <string name="workshop_preview_gallery_counter">%1$d/%2$d</string>
+    <string name="workshop_preview_gallery_image_content_description">%1$s 宣傳圖，第 %2$d 張，共 %3$d 張</string>
+    <string name="workshop_preview_gallery_failed">圖片暫不可用</string>
     <string name="workshop_open_detail_hint">點選檢視詳情</string>
     <string name="workshop_rating_score_format">%1$d/%2$d</string>
     <string name="workshop_rating_unrated_score">無評分</string>

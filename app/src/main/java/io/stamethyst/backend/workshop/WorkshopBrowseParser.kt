@@ -199,9 +199,7 @@ internal object WorkshopBrowseParser {
                     description = item.stringValueOrNull("short_description").orEmpty(),
                     fileSizeBytes = item.longValueOrNull("file_size") ?: 0L,
                     downloadCount = item.longValueOrNull("subscriptions") ?: 0L,
-                    rating = item.objectValue("vote_data")
-                        ?.floatValueOrNull("score")
-                        .let(::normalizedWorkshopRating),
+                    rating = parseSsrRating(item),
                 )
             }
 
@@ -222,6 +220,14 @@ internal object WorkshopBrowseParser {
         val score = starRatingRegex.find(ratingAssetName)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: return null
         return WorkshopItemRating(score = score.coerceIn(1, 5), maxScore = 5)
     }
+
+    private fun parseSsrRating(item: JsonObject): WorkshopItemRating? =
+        (item.intValueOrNull("star_rating") ?: item.intValueOrNull("rating"))
+            ?.takeIf { rating -> rating > 0 }
+            ?.let { rating -> WorkshopItemRating(score = rating.coerceIn(1, 5), maxScore = 5) }
+            ?: item.objectValue("vote_data")
+                ?.floatValueOrNull("score")
+                .let(::normalizedWorkshopRating)
 
     private fun decodeJsonStringLiteral(encoded: String): String? =
         runCatching {
@@ -279,12 +285,15 @@ private fun JsonObject.arrayValueOrNull(key: String): JsonArray? = this[key] as?
 
 private fun JsonObject.stringValueOrNull(key: String): String? = this[key].stringContentOrNull()
 
-private fun JsonObject.intValueOrNull(key: String): Int? = stringValueOrNull(key)?.toIntOrNull()
+private fun JsonObject.intValueOrNull(key: String): Int? = primitiveValueOrNull(key)?.toIntOrNull()
 
-private fun JsonObject.longValueOrNull(key: String): Long? = stringValueOrNull(key)?.toLongOrNull()
+private fun JsonObject.longValueOrNull(key: String): Long? = primitiveValueOrNull(key)?.toLongOrNull()
 
-private fun JsonObject.floatValueOrNull(key: String): Float? = stringValueOrNull(key)?.toFloatOrNull()
+private fun JsonObject.floatValueOrNull(key: String): Float? = primitiveValueOrNull(key)?.toFloatOrNull()
 
 private fun JsonObject.uintValueOrNull(key: String): UInt? = stringValueOrNull(key)?.toUIntOrNull()
 
 private fun JsonObject.ulongValueOrNull(key: String): ULong? = stringValueOrNull(key)?.toULongOrNull()
+
+private fun JsonObject.primitiveValueOrNull(key: String): String? =
+    (this[key] as? JsonPrimitive)?.contentOrNull

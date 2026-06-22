@@ -58,7 +58,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -119,10 +118,12 @@ import io.stamethyst.backend.workshop.WorkshopPreviewCacheStore
 import io.stamethyst.backend.workshop.isActiveDownload
 import io.stamethyst.ui.CollapsibleFloatingGlassHeader
 import io.stamethyst.ui.Icons
+import io.stamethyst.ui.LoadingSkeletonBlock
 import io.stamethyst.ui.SearchHistoryStore
 import io.stamethyst.ui.SearchHistorySuggestions
 import io.stamethyst.ui.icon.ArrowBack
 import io.stamethyst.ui.icon.KeyboardArrowUp
+import io.stamethyst.ui.rememberLoadingSkeletonStyle
 import com.airbnb.lottie.LottieProperty
 import com.airbnb.lottie.compose.LottieAnimation
 import com.airbnb.lottie.compose.LottieCompositionSpec
@@ -356,13 +357,13 @@ internal fun WorkshopScreen(
 
                 when {
                     state.browseLoading && state.items.isEmpty() -> {
-                        item(key = "workshop-loading") {
-                            LoadingPanel(
-                                modifier = workshopListPlacementAnimation(enabled = !useFloatingHeader),
-                                text = when (state.listMode) {
-                                    WorkshopListMode.Browse -> stringResource(R.string.workshop_loading_browse)
-                                    WorkshopListMode.Subscriptions -> stringResource(R.string.workshop_loading_subscriptions)
-                                },
+                        items(
+                            count = WorkshopListSkeletonItemCount,
+                            key = { index -> "workshop-loading-skeleton-$index" },
+                        ) { index ->
+                            WorkshopListSkeletonCard(
+                                modifier = Modifier.fillMaxWidth(),
+                                variant = index,
                             )
                         }
                     }
@@ -1228,6 +1229,83 @@ private fun WorkshopItemCard(
 }
 
 @Composable
+private fun WorkshopListSkeletonCard(
+    modifier: Modifier = Modifier,
+    variant: Int,
+) {
+    val skeletonStyle = rememberLoadingSkeletonStyle("workshop_list_skeleton_$variant")
+    val titleWidth = when (variant % 3) {
+        0 -> 0.86f
+        1 -> 0.68f
+        else -> 0.78f
+    }
+    val bodyWidth = when (variant % 3) {
+        0 -> 0.94f
+        1 -> 0.82f
+        else -> 0.88f
+    }
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 96.dp),
+    ) {
+        Row(
+            Modifier.padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            LoadingSkeletonBlock(
+                modifier = Modifier.size(72.dp),
+                style = skeletonStyle,
+                shape = RoundedCornerShape(12.dp),
+            )
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                LoadingSkeletonBlock(
+                    modifier = Modifier
+                        .fillMaxWidth(titleWidth)
+                        .height(18.dp),
+                    style = skeletonStyle,
+                )
+                LoadingSkeletonBlock(
+                    modifier = Modifier
+                        .fillMaxWidth(bodyWidth)
+                        .height(13.dp),
+                    style = skeletonStyle,
+                )
+                LoadingSkeletonBlock(
+                    modifier = Modifier
+                        .fillMaxWidth(0.56f)
+                        .height(13.dp),
+                    style = skeletonStyle,
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    LoadingSkeletonBlock(
+                        modifier = Modifier
+                            .width(WorkshopRatingIndicatorWidth)
+                            .height(18.dp),
+                        style = skeletonStyle,
+                    )
+                    LoadingSkeletonBlock(
+                        modifier = Modifier
+                            .width(WorkshopDownloadCountIndicatorWidth)
+                            .height(18.dp),
+                        style = skeletonStyle,
+                    )
+                }
+            }
+            LoadingSkeletonBlock(
+                modifier = Modifier.size(48.dp),
+                style = skeletonStyle,
+                shape = RoundedCornerShape(999.dp),
+            )
+        }
+    }
+}
+
+@Composable
 private fun WorkshopDownloadCountIndicator(
     downloadCount: Long,
     modifier: Modifier = Modifier,
@@ -1308,6 +1386,8 @@ private fun WorkshopRatingIndicator(
 private val WorkshopRatingIndicatorWidth = 90.dp
 
 private val WorkshopDownloadCountIndicatorWidth = 84.dp
+
+private const val WorkshopListSkeletonItemCount = 5
 
 private const val WorkshopRatingStarPartialFillScale = 0.9f
 
@@ -1545,7 +1625,11 @@ private fun PreviewImageSkeleton(showLabel: Boolean) {
         if (showLabel) {
             Text("MOD", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
-            LinearProgressIndicator(Modifier.fillMaxWidth(0.62f))
+            LoadingSkeletonBlock(
+                modifier = Modifier.fillMaxSize(),
+                style = rememberLoadingSkeletonStyle("workshop_preview_image_skeleton"),
+                shape = RoundedCornerShape(12.dp),
+            )
         }
     }
 }
@@ -1632,21 +1716,6 @@ private val WORKSHOP_MOD_CATEGORY_LABEL_RES_IDS = mapOf(
 
 @Composable
 private fun WorkshopModCategory.displayName(): String = stringResource(WORKSHOP_MOD_CATEGORY_LABEL_RES_IDS.getValue(this))
-
-@Composable
-private fun LoadingPanel(
-    modifier: Modifier = Modifier,
-    text: String,
-) {
-    Card(modifier = modifier.fillMaxWidth()) {
-        Box(Modifier.fillMaxWidth().height(140.dp), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                CircularProgressIndicator()
-                Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-    }
-}
 
 private fun parseWorkshopPublishedFileId(input: String): ULong? {
     val trimmed = input.trim()

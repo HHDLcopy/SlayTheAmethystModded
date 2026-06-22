@@ -151,6 +151,12 @@ class WorkshopServiceTest {
                     """
                     <script>g_sessionID = "session123";</script>
                     <script>InitializeCommentThread("PublishedFile_Public", "0", {"owner":"123","feature":"456","feature2":"-1"}, 'https://steamcommunity.com/comment/PublishedFile_Public/');</script>
+                    <script>
+                    var rgFullScreenshotURLs = [
+                      { 'previewid' : '0', 'url': 'https://images.steamusercontent.com/ugc/111/AAA/?imw=5000&amp;imh=5000&amp;ima=fit&amp;impolicy=Letterbox&amp;imcolor=%23000000&amp;letterbox=false' },
+                      { 'previewid' : '1', 'url': 'https://images.steamusercontent.com/ugc/222/BBB/?imw=5000&imh=5000&ima=fit&impolicy=Letterbox&imcolor=%23000000&letterbox=false' },
+                    ];
+                    </script>
                     <span id="commentthread_123_totalcount">7</span>
                     <div class="workshopItemDescription" id="highlightContent">Localized Details</div>
                     """.trimIndent(),
@@ -193,6 +199,14 @@ class WorkshopServiceTest {
         assertEquals("Author", details.summary.authorName)
         assertEquals(42L, details.summary.downloadCount)
         assertEquals(downloadServer.url("/mod.jar").toString(), details.fileUrl)
+        assertEquals(
+            listOf(
+                "https://images.steamusercontent.com/ugc/111/AAA/?imw=1280&imh=720&ima=fit&impolicy=Letterbox&imcolor=%23000000&letterbox=false",
+                "https://images.steamusercontent.com/ugc/222/BBB/?imw=1280&imh=720&ima=fit&impolicy=Letterbox&imcolor=%23000000&letterbox=false",
+                "https://cdn.example/preview.jpg",
+            ),
+            details.previewImageUrls,
+        )
         assertEquals(7L, details.commentCount)
         assertTrue(details.hasNextCommentPage)
         assertEquals(1, details.dependencies.size)

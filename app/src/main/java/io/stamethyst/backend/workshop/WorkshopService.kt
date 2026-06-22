@@ -494,6 +494,10 @@ internal class WorkshopService(
                 hcontentFile = detail.hcontentFile?.takeIf { it > 0L }?.toULong(),
                 depotId = detail.consumerAppId?.takeIf { it > 0 }?.toUInt(),
                 jsonMetadata = payload,
+                previewImageUrls = buildWorkshopPreviewImageUrls(
+                    summary.previewUrl,
+                    localizedDetail?.previewImageUrls.orEmpty(),
+                ),
                 fullDescriptionUnavailable = fullDescriptionUnavailable,
                 changeNotesUrl = buildWorkshopChangeNotesUrl(publishedFileId, languagePreference.requestValue),
                 dependencies = dependencyIds.map { dependencyId ->
@@ -589,6 +593,7 @@ internal class WorkshopService(
             LocalizedWorkshopDetail(
                 description = extractWorkshopDescription(payload),
                 authorName = extractWorkshopAuthorName(payload),
+                previewImageUrls = extractPreviewImageUrls(payload),
                 requiredItemIds = extractRequiredItemIds(payload),
                 commentThreadContext = extractCommentThreadContext(payload),
                 commentCount = extractCommentCount(payload),
@@ -1241,6 +1246,108 @@ internal class WorkshopService(
                 ?.let(WorkshopServiceHtmlDecoder::stripTagsAndDecode)
                 .orEmpty()
 
+    private fun buildWorkshopPreviewImageUrls(
+        summaryPreviewUrl: String,
+        detailPreviewUrls: List<String>,
+    ): List<String> = (detailPreviewUrls + summaryPreviewUrl)
+        .map { url -> WorkshopServiceHtmlDecoder.decode(url).trim() }
+        .filter(String::isNotBlank)
+        .map(::resizeWorkshopPreviewImageUrl)
+        .distinctBy(::normalizePreviewImageUrlForDedupe)
+
+    private fun resizeWorkshopPreviewImageUrl(url: String): String =
+        runCatching {
+            val httpUrl = url.toHttpUrl()
+            if (!httpUrl.host.contains("steamusercontent.com", ignoreCase = true)) {
+                return@runCatching url
+            }
+            httpUrl.newBuilder()
+                .setQueryParameter("imw", "1280")
+                .setQueryParameter("imh", "720")
+                .setQueryParameter("ima", "fit")
+                .setQueryParameter("impolicy", "Letterbox")
+                .setQueryParameter("imcolor", "#000000")
+                .setQueryParameter("letterbox", "false")
+                .build()
+                .toString()
+        }.getOrDefault(url)
+
+    private fun normalizePreviewImageUrlForDedupe(url: String): String =
+        runCatching {
+            val httpUrl = url.toHttpUrl()
+            httpUrl.newBuilder()
+                .query(null)
+                .fragment(null)
+                .build()
+                .toString()
+        }.getOrDefault(url)
+
+    private fun extractPreviewImageUrls(payload: String): List<String> =
+        fullScreenshotUrlsBlockRegex.find(payload)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.let { block ->
+                javascriptStringRegex.findAll(block)
+                    .mapNotNull { match ->
+                        match.groupValues.getOrNull(1)
+                            ?.let(::decodeJavascriptStringLiteral)
+                            ?.let(WorkshopServiceHtmlDecoder::decode)
+                            ?.trim()
+                            ?.takeIf(::isSupportedPreviewImageUrl)
+                    }
+                    .toList()
+            }
+            .orEmpty()
+            .ifEmpty { extractPreviewImageEnlargeableUrls(payload) }
+            .distinctBy(::normalizePreviewImageUrlForDedupe)
+
+    private fun extractPreviewImageEnlargeableUrls(payload: String): List<String> =
+        previewImageEnlargeableRegex.findAll(payload)
+            .mapNotNull { match ->
+                match.groupValues.getOrNull(1)
+                    ?.let(WorkshopServiceHtmlDecoder::decode)
+                    ?.trim()
+                    ?.takeIf(::isSupportedPreviewImageUrl)
+            }
+            .toList()
+
+    private fun isSupportedPreviewImageUrl(url: String): Boolean =
+        url.startsWith("http://", ignoreCase = true) ||
+            url.startsWith("https://", ignoreCase = true)
+
+    private fun decodeJavascriptStringLiteral(value: String): String {
+        val result = StringBuilder(value.length)
+        var index = 0
+        while (index < value.length) {
+            val current = value[index]
+            if (current != '\\' || index == value.lastIndex) {
+                result.append(current)
+                index += 1
+                continue
+            }
+            val escaped = value[index + 1]
+            when (escaped) {
+                '\\', '"', '\'' -> result.append(escaped)
+                'n' -> result.append('\n')
+                'r' -> result.append('\r')
+                't' -> result.append('\t')
+                'u' -> {
+                    val hex = value.substring(index + 2, (index + 6).coerceAtMost(value.length))
+                    val charCode = hex.takeIf { it.length == 4 }?.toIntOrNull(16)
+                    if (charCode != null) {
+                        result.append(charCode.toChar())
+                        index += 4
+                    } else {
+                        result.append(escaped)
+                    }
+                }
+                else -> result.append(escaped)
+            }
+            index += 2
+        }
+        return result.toString()
+    }
+
     private fun extractCreatorBlockAuthorName(payload: String): String {
         val openingMatch = creatorsBlockOpeningRegex.find(payload) ?: return ""
         val section = extractDivBlock(
@@ -1484,6 +1591,18 @@ internal class WorkshopService(
         private val workshopDescriptionEndMarkerRegex = Regex(
             """(?is)</div>\s*</div>\s*(?:<script\b|<div\b[^>]*class="[^"]*\bdetailBox\b|$)""",
         )
+        private val fullScreenshotUrlsBlockRegex = Regex(
+            """var\s+rgFullScreenshotURLs\s*=\s*\[(.*?)\]\s*;""",
+            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE),
+        )
+        private val javascriptStringRegex = Regex(
+            """['"]((?:\\.|[^'"\\])*)['"]""",
+            setOf(RegexOption.DOT_MATCHES_ALL),
+        )
+        private val previewImageEnlargeableRegex = Regex(
+            """<a\b[^>]*onclick="ShowEnlargedImagePreview\(\s*'([^']+)'""",
+            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE),
+        )
     }
 }
 
@@ -1594,6 +1713,7 @@ private fun knownWorkshopDependencyTitle(publishedFileId: ULong): String? = when
 private data class LocalizedWorkshopDetail(
     val description: String,
     val authorName: String = "",
+    val previewImageUrls: List<String> = emptyList(),
     val requiredItemIds: List<ULong> = emptyList(),
     val commentThreadContext: WorkshopCommentThreadContext? = null,
     val commentCount: Long? = null,

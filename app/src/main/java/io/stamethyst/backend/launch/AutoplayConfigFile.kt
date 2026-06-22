@@ -9,16 +9,23 @@ import java.nio.charset.StandardCharsets
 object AutoplayConfigFile {
     private const val FILE_NAME = "autoplay.properties"
 
-    private val disabledConfig = buildConfig(enabled = false, saveMode = AutoplaySaveMode.DEFAULT)
+    private val disabledConfig = buildConfig(
+        enabled = false,
+        saveMode = AutoplaySaveMode.DEFAULT,
+        mode = AutoplayMode.DEFAULT,
+        singleRoomSpecPath = ""
+    )
 
     @JvmStatic
     @Throws(IOException::class)
     fun syncForLaunch(
         context: Context,
         enabled: Boolean,
-        saveMode: AutoplaySaveMode = AutoplaySaveMode.DEFAULT
+        saveMode: AutoplaySaveMode = AutoplaySaveMode.DEFAULT,
+        mode: AutoplayMode = AutoplayMode.DEFAULT,
+        singleRoomSpecPath: String = ""
     ) {
-        syncForLaunch(RuntimePaths.stsRoot(context), enabled, saveMode)
+        syncForLaunch(RuntimePaths.stsRoot(context), enabled, saveMode, mode, singleRoomSpecPath)
     }
 
     @JvmStatic
@@ -26,10 +33,17 @@ object AutoplayConfigFile {
     fun syncForLaunch(
         stsRoot: File,
         enabled: Boolean,
-        saveMode: AutoplaySaveMode = AutoplaySaveMode.DEFAULT
+        saveMode: AutoplaySaveMode = AutoplaySaveMode.DEFAULT,
+        mode: AutoplayMode = AutoplayMode.DEFAULT,
+        singleRoomSpecPath: String = ""
     ) {
         val text = if (enabled) {
-            buildConfig(enabled = true, saveMode = saveMode)
+            buildConfig(
+                enabled = true,
+                saveMode = saveMode,
+                mode = mode,
+                singleRoomSpecPath = singleRoomSpecPath
+            )
         } else {
             disabledConfig
         }
@@ -46,13 +60,20 @@ object AutoplayConfigFile {
         file.writeText(text, StandardCharsets.UTF_8)
     }
 
-    private fun buildConfig(enabled: Boolean, saveMode: AutoplaySaveMode): String {
+    private fun buildConfig(
+        enabled: Boolean,
+        saveMode: AutoplaySaveMode,
+        mode: AutoplayMode,
+        singleRoomSpecPath: String
+    ): String {
         val value = if (enabled) "true" else "false"
         return """
             |# Managed by SlayTheAmethyst at launch time.
             |# Normal launches force this off; the stsStartAutoplay debug task enables it.
             |amethyst.autoplay.enabled=$value
+            |amethyst.autoplay.mode=${mode.persistedValue}
             |amethyst.autoplay.save_mode=${saveMode.persistedValue}
+            |amethyst.autoplay.single_room_spec=$singleRoomSpecPath
             |amethyst.autoplay.start_run=$value
             |amethyst.autoplay.play_cards=$value
             |amethyst.autoplay.end_turn=$value

@@ -596,6 +596,10 @@ private fun Project.registerAdbTasks(adb: Provider<String>, packageName: String)
     val forceRuntimeCrash = readGradleProperty("forceRuntimeCrash", "false")
     val autoplay = readGradleProperty("autoplay", "false")
     val autoplaySaveMode = readGradleProperty("autoplaySaveMode", "fresh")
+    val autoplayMode = readGradleProperty("autoplayMode", "normal")
+    val autoplaySingleRoomSpec = readGradleProperty("autoplaySingleRoomSpec")
+    val disableCardObtainEffectOwnershipCompat =
+        readGradleProperty("disableCardObtainEffectOwnershipCompat", "false")
     val deviceSerial = readGradleProperty("deviceSerial")
     val logsDir = readGradleProperty("logsDir")
     require(launchMode in supportedLaunchModes) {
@@ -616,7 +620,10 @@ private fun Project.registerAdbTasks(adb: Provider<String>, packageName: String)
         forceJvmCrash: String,
         forceRuntimeCrash: String,
         autoplay: String,
-        autoplaySaveMode: String
+        autoplaySaveMode: String,
+        autoplayMode: String,
+        autoplaySingleRoomSpec: String,
+        disableCardObtainEffectOwnershipCompat: String
     ): List<String> = adbCommand(
         "shell",
         "am",
@@ -637,7 +644,16 @@ private fun Project.registerAdbTasks(adb: Provider<String>, packageName: String)
         autoplay,
         "--es",
         "io.stamethyst.debug_autoplay_save_mode",
-        autoplaySaveMode
+        autoplaySaveMode,
+        "--es",
+        "io.stamethyst.debug_autoplay_mode",
+        autoplayMode,
+        "--es",
+        "io.stamethyst.debug_autoplay_single_room_spec",
+        autoplaySingleRoomSpec,
+        "--ez",
+        "io.stamethyst.debug_disable_card_obtain_effect_ownership_compat",
+        disableCardObtainEffectOwnershipCompat
     )
 
     tasks.register<Exec>("stsStart") {
@@ -649,7 +665,10 @@ private fun Project.registerAdbTasks(adb: Provider<String>, packageName: String)
                 forceJvmCrash = forceJvmCrash,
                 forceRuntimeCrash = forceRuntimeCrash,
                 autoplay = autoplay,
-                autoplaySaveMode = autoplaySaveMode
+                autoplaySaveMode = autoplaySaveMode,
+                autoplayMode = autoplayMode,
+                autoplaySingleRoomSpec = autoplaySingleRoomSpec,
+                disableCardObtainEffectOwnershipCompat = disableCardObtainEffectOwnershipCompat
             )
         )
     }
@@ -669,7 +688,10 @@ private fun Project.registerAdbTasks(adb: Provider<String>, packageName: String)
                 forceJvmCrash = "false",
                 forceRuntimeCrash = "false",
                 autoplay = "true",
-                autoplaySaveMode = autoplaySaveMode
+                autoplaySaveMode = autoplaySaveMode,
+                autoplayMode = autoplayMode,
+                autoplaySingleRoomSpec = autoplaySingleRoomSpec,
+                disableCardObtainEffectOwnershipCompat = disableCardObtainEffectOwnershipCompat
             )
         )
     }
@@ -705,6 +727,14 @@ private fun Project.registerHarnessTasks() {
     val forceRuntimeCrash = readGradleProperty("forceRuntimeCrash", "false")
     val autoplay = readGradleProperty("autoplay", "false")
     val autoplaySaveMode = readGradleProperty("autoplaySaveMode", "fresh")
+    val autoplayMode = readGradleProperty("autoplayMode", "normal")
+    val autoplaySingleRoomSpec = readGradleProperty("autoplaySingleRoomSpec")
+    val singleRoomSpecFile = readGradleProperty("singleRoomSpecFile")
+    val singleRoomCharacter = readGradleProperty("singleRoomCharacter")
+    val singleRoomMonster = readGradleProperty("singleRoomMonster")
+    val singleRoomCards = readGradleProperty("singleRoomCards")
+    val disableCardObtainEffectOwnershipCompat =
+        readGradleProperty("disableCardObtainEffectOwnershipCompat", "false")
     val noStopAfterSmoke = readGradleProperty("noStopAfterSmoke", "false")
 
     fun registerHarnessExecTask(
@@ -755,6 +785,31 @@ private fun Project.registerHarnessTasks() {
             }
             args.add("-AutoplaySaveMode")
             args.add(autoplaySaveMode)
+            args.add("-AutoplayMode")
+            args.add(autoplayMode)
+            if (autoplaySingleRoomSpec.isNotEmpty()) {
+                args.add("-SingleRoomDeviceSpec")
+                args.add(autoplaySingleRoomSpec)
+            }
+            if (singleRoomSpecFile.isNotEmpty()) {
+                args.add("-SingleRoomSpec")
+                args.add(singleRoomSpecFile)
+            }
+            if (singleRoomCharacter.isNotEmpty()) {
+                args.add("-SingleRoomCharacter")
+                args.add(singleRoomCharacter)
+            }
+            if (singleRoomMonster.isNotEmpty()) {
+                args.add("-SingleRoomMonster")
+                args.add(singleRoomMonster)
+            }
+            if (singleRoomCards.isNotEmpty()) {
+                args.add("-SingleRoomCards")
+                args.add(singleRoomCards)
+            }
+            if (disableCardObtainEffectOwnershipCompat.toBooleanStrictOrNull() == true) {
+                args.add("-DisableCardObtainEffectOwnershipCompat")
+            }
             if (command == "smoke" && harnessSkipInstall.toBooleanStrictOrNull() == true) {
                 args.add("-SkipInstall")
             }
@@ -809,6 +864,12 @@ private fun Project.registerHarnessTasks() {
         taskName = "stsHarnessAutoplaySmoke",
         command = "smoke",
         taskDescription = "Run a SlayTheAmethyst smoke check with the bundled autoplay driver enabled.",
+        forceAutoplay = true
+    )
+    registerHarnessExecTask(
+        taskName = "stsHarnessSingleRoom",
+        command = "single-room",
+        taskDescription = "Run one configured autoplay combat room, export logs, and stop.",
         forceAutoplay = true
     )
 }

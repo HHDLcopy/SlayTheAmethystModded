@@ -1,6 +1,7 @@
 package io.stamethyst
 
 import io.stamethyst.backend.launch.AutoplaySaveMode
+import io.stamethyst.backend.launch.AutoplayMode
 import io.stamethyst.backend.render.AndroidGameModeSnapshot
 import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.backend.render.RendererDecision
@@ -51,6 +52,10 @@ class GameSessionConfigTest {
             forceRuntimeCrash = false,
             autoplay = false,
             autoplaySaveMode = AutoplaySaveMode.DEFAULT,
+            autoplayMode = AutoplayMode.DEFAULT,
+            autoplaySingleRoomSpecPath = "",
+            autoplayChoiceDelayMs = 0L,
+            cardObtainEffectOwnershipCompatEnabled = true,
             specialKeyInputMode = SpecialKeyInputMode.DISABLED,
             showFloatingMouseWindow = false,
             showGamePerformanceOverlay = false,

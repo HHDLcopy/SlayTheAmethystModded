@@ -44,6 +44,12 @@ internal fun resolveWorkshopDependencyUiStates(
     )
 }
 
+internal fun filterVisibleWorkshopDetailDependencies(
+    dependencies: List<WorkshopItemSummary>,
+): List<WorkshopItemSummary> = dependencies.filterNot { dependency ->
+    dependency.publishedFileId in hiddenWorkshopDetailDependencyIds
+}
+
 internal fun findMissingWorkshopDependencies(
     dependencies: List<WorkshopItemSummary>,
     installedMods: List<WorkshopInstalledModRecord>,
@@ -104,4 +110,10 @@ private val defaultInstalledWorkshopDependencyTokens = setOf(
     "amethystruntimecompatmod",
     "ramsaver",
     "ramsaverjar",
+)
+
+private val hiddenWorkshopDetailDependencyIds = setOf(
+    1605060445uL, // ModTheSpire
+    1605833019uL, // BaseMod
+    1609158507uL, // StSLib
 )

@@ -7,15 +7,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -79,9 +72,11 @@ import io.stamethyst.backend.feedback.GameIssueType
 import io.stamethyst.navigation.Route
 import io.stamethyst.navigation.currentNavigator
 import io.stamethyst.ui.Icons
+import io.stamethyst.ui.LoadingSkeletonBlock
 import io.stamethyst.ui.icon.ArrowBack
 import io.stamethyst.ui.icon.Close
 import io.stamethyst.ui.icon.Search
+import io.stamethyst.ui.rememberLoadingSkeletonStyle
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -1319,17 +1314,7 @@ private fun FeedbackIssueBrowserLoadingList(
 
 @Composable
 private fun FeedbackIssueBrowserLoadingCard() {
-    val transition = rememberInfiniteTransition(label = "feedback_issue_browser_loading")
-    val pulse by transition.animateFloat(
-        initialValue = 0.45f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 760),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "feedback_issue_browser_loading_alpha"
-    )
-    val placeholderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f + pulse * 0.08f)
+    val skeletonStyle = rememberLoadingSkeletonStyle("feedback_issue_browser_loading")
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
@@ -1349,62 +1334,56 @@ private fun FeedbackIssueBrowserLoadingCard() {
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                FeedbackLoadingBlock(
+                LoadingSkeletonBlock(
                     modifier = Modifier
                         .width(54.dp)
                         .height(22.dp),
-                    color = placeholderColor
+                    style = skeletonStyle,
+                    shape = RoundedCornerShape(6.dp),
                 )
-                FeedbackLoadingBlock(
+                LoadingSkeletonBlock(
                     modifier = Modifier
                         .weight(1f)
                         .height(14.dp),
-                    color = placeholderColor
+                    style = skeletonStyle,
+                    shape = RoundedCornerShape(6.dp),
                 )
             }
-            FeedbackLoadingBlock(
+            LoadingSkeletonBlock(
                 modifier = Modifier
                     .fillMaxWidth(0.84f)
                     .height(20.dp),
-                color = placeholderColor
+                style = skeletonStyle,
+                shape = RoundedCornerShape(6.dp),
             )
-            FeedbackLoadingBlock(
+            LoadingSkeletonBlock(
                 modifier = Modifier
                     .fillMaxWidth(0.48f)
                     .height(14.dp),
-                color = placeholderColor
+                style = skeletonStyle,
+                shape = RoundedCornerShape(6.dp),
             )
-            FeedbackLoadingBlock(
+            LoadingSkeletonBlock(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(34.dp),
-                color = placeholderColor
+                style = skeletonStyle,
+                shape = RoundedCornerShape(6.dp),
             )
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End
             ) {
-                FeedbackLoadingBlock(
+                LoadingSkeletonBlock(
                     modifier = Modifier
                         .width(148.dp)
                         .height(38.dp),
-                    color = placeholderColor
+                    style = skeletonStyle,
+                    shape = RoundedCornerShape(6.dp),
                 )
             }
         }
     }
-}
-
-@Composable
-private fun FeedbackLoadingBlock(
-    modifier: Modifier,
-    color: Color
-) {
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(color)
-    )
 }
 
 @Composable

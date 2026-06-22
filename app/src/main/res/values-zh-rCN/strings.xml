@@ -2249,6 +2249,10 @@
     <string name="workshop_download_by_id_invalid">请输入有效的创意工坊 ID。</string>
     <string name="workshop_download_by_id_confirm">打开详情</string>
     <string name="workshop_preview_content_description">%1$s 预览图</string>
+    <string name="workshop_preview_gallery_title">画廊</string>
+    <string name="workshop_preview_gallery_counter">%1$d/%2$d</string>
+    <string name="workshop_preview_gallery_image_content_description">%1$s 宣传图，第 %2$d 张，共 %3$d 张</string>
+    <string name="workshop_preview_gallery_failed">图片暂不可用</string>
     <string name="workshop_open_detail_hint">点击查看详情</string>
     <string name="workshop_rating_score_format">%1$d/%2$d</string>
     <string name="workshop_rating_unrated_score">无评分</string>

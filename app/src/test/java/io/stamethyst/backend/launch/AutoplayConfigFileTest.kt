@@ -60,6 +60,27 @@ class AutoplayConfigFileTest {
         }
     }
 
+    @Test
+    fun syncForLaunch_writesSingleRoomModeForDebugLaunch() {
+        val root = Files.createTempDirectory("autoplay-config-single-room").toFile()
+        try {
+            AutoplayConfigFile.syncForLaunch(
+                root,
+                enabled = true,
+                mode = AutoplayMode.SINGLE_ROOM,
+                singleRoomSpecPath = "files/sts/config/autoplay-single-room.properties"
+            )
+
+            assertAutoplayMode(File(root, "autoplay.properties"), "single_room")
+            assertAutoplaySingleRoomSpec(
+                File(root, "config/autoplay.properties"),
+                "files/sts/config/autoplay-single-room.properties"
+            )
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
     private fun assertAutoplayValue(file: File, value: String) {
         val text = file.readText(StandardCharsets.UTF_8)
         assertTrue(text.contains("amethyst.autoplay.enabled=$value"))
@@ -73,5 +94,15 @@ class AutoplayConfigFileTest {
     private fun assertAutoplaySaveMode(file: File, value: String) {
         val text = file.readText(StandardCharsets.UTF_8)
         assertTrue(text.contains("amethyst.autoplay.save_mode=$value"))
+    }
+
+    private fun assertAutoplayMode(file: File, value: String) {
+        val text = file.readText(StandardCharsets.UTF_8)
+        assertTrue(text.contains("amethyst.autoplay.mode=$value"))
+    }
+
+    private fun assertAutoplaySingleRoomSpec(file: File, value: String) {
+        val text = file.readText(StandardCharsets.UTF_8)
+        assertTrue(text.contains("amethyst.autoplay.single_room_spec=$value"))
     }
 }

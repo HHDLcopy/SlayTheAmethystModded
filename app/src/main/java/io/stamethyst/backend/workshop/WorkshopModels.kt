@@ -103,6 +103,7 @@ data class WorkshopItemDetails(
     val hcontentFile: ULong? = null,
     val depotId: UInt? = null,
     val jsonMetadata: String = "",
+    val previewImageUrls: List<String> = emptyList(),
     val fullDescriptionUnavailable: Boolean = false,
     val changeNotes: String = "",
     val changeNotesUrl: String = "",

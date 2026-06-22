@@ -44,6 +44,12 @@ class LauncherActivity : AppCompatActivity() {
         const val EXTRA_DEBUG_FORCE_RUNTIME_CRASH = "io.stamethyst.debug_force_runtime_crash"
         const val EXTRA_DEBUG_AUTOPLAY = "io.stamethyst.debug_autoplay"
         const val EXTRA_DEBUG_AUTOPLAY_SAVE_MODE = "io.stamethyst.debug_autoplay_save_mode"
+        const val EXTRA_DEBUG_AUTOPLAY_MODE = "io.stamethyst.debug_autoplay_mode"
+        const val EXTRA_DEBUG_AUTOPLAY_SINGLE_ROOM_SPEC = "io.stamethyst.debug_autoplay_single_room_spec"
+        const val EXTRA_DEBUG_AUTOPLAY_CHOICE_DELAY_MS =
+            "io.stamethyst.debug_autoplay_choice_delay_ms"
+        const val EXTRA_DEBUG_DISABLE_CARD_OBTAIN_EFFECT_OWNERSHIP_COMPAT =
+            "io.stamethyst.debug_disable_card_obtain_effect_ownership_compat"
         const val EXTRA_CRASH_OCCURRED = "io.stamethyst.crash_occurred"
         const val EXTRA_CRASH_CODE = "io.stamethyst.crash_code"
         const val EXTRA_CRASH_IS_SIGNAL = "io.stamethyst.crash_is_signal"

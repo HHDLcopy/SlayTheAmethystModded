@@ -41,6 +41,7 @@ import io.stamethyst.backend.launch.LauncherReturnActionResolver
 import io.stamethyst.backend.launch.LauncherReturnSnapshot
 import io.stamethyst.backend.launch.MainProcessGameBodyPatchCoordinator
 import io.stamethyst.backend.launch.StartupProgressCallback
+import io.stamethyst.backend.launch.AutoplayMode
 import io.stamethyst.backend.launch.AutoplaySaveMode
 import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.backend.mods.CompatibilitySettings
@@ -285,6 +286,14 @@ class MainScreenViewModel : ViewModel() {
     private var pendingAutoplay: Boolean = false
     @Volatile
     private var pendingAutoplaySaveMode: AutoplaySaveMode = AutoplaySaveMode.DEFAULT
+    @Volatile
+    private var pendingAutoplayMode: AutoplayMode = AutoplayMode.DEFAULT
+    @Volatile
+    private var pendingAutoplaySingleRoomSpecPath: String = ""
+    @Volatile
+    private var pendingAutoplayChoiceDelayMs: Long = 0L
+    @Volatile
+    private var pendingCardObtainEffectOwnershipCompatEnabled: Boolean = true
     @Volatile
     private var modNameMigrationInFlight = false
     private var modNameMigrationInsufficientNoticeShown = false
@@ -2182,6 +2191,20 @@ class MainScreenViewModel : ViewModel() {
         val autoplaySaveMode = AutoplaySaveMode.fromPersistedValue(
             intent.getStringExtra(LauncherActivity.EXTRA_DEBUG_AUTOPLAY_SAVE_MODE)
         )
+        val autoplayMode = AutoplayMode.fromPersistedValue(
+            intent.getStringExtra(LauncherActivity.EXTRA_DEBUG_AUTOPLAY_MODE)
+        )
+        val autoplaySingleRoomSpecPath =
+            intent.getStringExtra(LauncherActivity.EXTRA_DEBUG_AUTOPLAY_SINGLE_ROOM_SPEC)
+                .orEmpty()
+        val autoplayChoiceDelayMs = intent.getLongExtra(
+            LauncherActivity.EXTRA_DEBUG_AUTOPLAY_CHOICE_DELAY_MS,
+            0L
+        ).coerceAtLeast(0L)
+        val cardObtainEffectOwnershipCompatEnabled = !intent.getBooleanExtra(
+            LauncherActivity.EXTRA_DEBUG_DISABLE_CARD_OBTAIN_EFFECT_OWNERSHIP_COMPAT,
+            false
+        )
         if (debugLaunchMode != StsLaunchSpec.LAUNCH_MODE_VANILLA &&
             !StsLaunchSpec.isMtsLaunchMode(debugLaunchMode)
         ) {
@@ -2197,6 +2220,10 @@ class MainScreenViewModel : ViewModel() {
         // Consumed (and cleared) in launchGameActivityInternal.
         pendingAutoplay = autoplay
         pendingAutoplaySaveMode = autoplaySaveMode
+        pendingAutoplayMode = autoplayMode
+        pendingAutoplaySingleRoomSpecPath = autoplaySingleRoomSpecPath
+        pendingAutoplayChoiceDelayMs = autoplayChoiceDelayMs
+        pendingCardObtainEffectOwnershipCompatEnabled = cardObtainEffectOwnershipCompatEnabled
         beginLaunchFlow(
             host,
             debugLaunchMode ?: StsLaunchSpec.LAUNCH_MODE_VANILLA,
@@ -2589,8 +2616,16 @@ class MainScreenViewModel : ViewModel() {
         // manual press of "Play" doesn't accidentally run autoplay again.
         val autoplay = pendingAutoplay
         val autoplaySaveMode = pendingAutoplaySaveMode
+        val autoplayMode = pendingAutoplayMode
+        val autoplaySingleRoomSpecPath = pendingAutoplaySingleRoomSpecPath
+        val autoplayChoiceDelayMs = pendingAutoplayChoiceDelayMs
+        val cardObtainEffectOwnershipCompatEnabled = pendingCardObtainEffectOwnershipCompatEnabled
         pendingAutoplay = false
         pendingAutoplaySaveMode = AutoplaySaveMode.DEFAULT
+        pendingAutoplayMode = AutoplayMode.DEFAULT
+        pendingAutoplaySingleRoomSpecPath = ""
+        pendingAutoplayChoiceDelayMs = 0L
+        pendingCardObtainEffectOwnershipCompatEnabled = true
         try {
             StsGameActivity.launch(
                 host,
@@ -2600,7 +2635,11 @@ class MainScreenViewModel : ViewModel() {
                 forceJvmCrash,
                 forceRuntimeCrash,
                 autoplay,
-                autoplaySaveMode
+                autoplaySaveMode,
+                autoplayMode,
+                autoplaySingleRoomSpecPath,
+                autoplayChoiceDelayMs,
+                cardObtainEffectOwnershipCompatEnabled
             )
             clearNewlyImportedHighlights(host)
         } catch (error: Throwable) {
@@ -3750,6 +3789,10 @@ class MainScreenViewModel : ViewModel() {
         // launch shouldn't silently inherit autoplay from the cancelled debug intent.
         pendingAutoplay = false
         pendingAutoplaySaveMode = AutoplaySaveMode.DEFAULT
+        pendingAutoplayMode = AutoplayMode.DEFAULT
+        pendingAutoplaySingleRoomSpecPath = ""
+        pendingAutoplayChoiceDelayMs = 0L
+        pendingCardObtainEffectOwnershipCompatEnabled = true
         if (uiState.launchInFlight ||
             (clearPendingEnabledModSizeWarning && uiState.pendingEnabledModSizeLaunchWarning != null)
         ) {

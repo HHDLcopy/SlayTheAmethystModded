@@ -136,6 +136,10 @@ internal class GameSessionCoordinator(
         forceRuntimeCrash = config.forceRuntimeCrash,
         autoplay = config.autoplay,
         autoplaySaveMode = config.autoplaySaveMode,
+        autoplayMode = config.autoplayMode,
+        autoplaySingleRoomSpecPath = config.autoplaySingleRoomSpecPath,
+        autoplayChoiceDelayMs = config.autoplayChoiceDelayMs,
+        cardObtainEffectOwnershipCompatEnabled = config.cardObtainEffectOwnershipCompatEnabled,
         mirrorJvmLogsToLogcat = config.mirrorJvmLogsToLogcat,
         onProgressUpdate = { percent, message ->
             bootOverlayController.updateProgress(

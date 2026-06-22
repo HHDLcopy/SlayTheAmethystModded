@@ -2,6 +2,7 @@ package io.stamethyst
 
 import android.content.Context
 import android.content.Intent
+import io.stamethyst.backend.launch.AutoplayMode
 import io.stamethyst.backend.launch.AutoplaySaveMode
 import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.backend.render.AndroidGameModeSnapshot
@@ -27,6 +28,10 @@ internal data class GameSessionConfig(
     val forceRuntimeCrash: Boolean,
     val autoplay: Boolean,
     val autoplaySaveMode: AutoplaySaveMode,
+    val autoplayMode: AutoplayMode,
+    val autoplaySingleRoomSpecPath: String,
+    val autoplayChoiceDelayMs: Long,
+    val cardObtainEffectOwnershipCompatEnabled: Boolean,
     val specialKeyInputMode: SpecialKeyInputMode,
     val showFloatingMouseWindow: Boolean,
     val showGamePerformanceOverlay: Boolean,
@@ -91,6 +96,20 @@ internal data class GameSessionConfig(
                 autoplay = intent.getBooleanExtra(StsGameActivity.EXTRA_AUTOPLAY, false),
                 autoplaySaveMode = AutoplaySaveMode.fromPersistedValue(
                     intent.getStringExtra(StsGameActivity.EXTRA_AUTOPLAY_SAVE_MODE)
+                ),
+                autoplayMode = AutoplayMode.fromPersistedValue(
+                    intent.getStringExtra(StsGameActivity.EXTRA_AUTOPLAY_MODE)
+                ),
+                autoplaySingleRoomSpecPath =
+                    intent.getStringExtra(StsGameActivity.EXTRA_AUTOPLAY_SINGLE_ROOM_SPEC)
+                        .orEmpty(),
+                autoplayChoiceDelayMs = intent.getLongExtra(
+                    StsGameActivity.EXTRA_AUTOPLAY_CHOICE_DELAY_MS,
+                    0L
+                ).coerceAtLeast(0L),
+                cardObtainEffectOwnershipCompatEnabled = intent.getBooleanExtra(
+                    StsGameActivity.EXTRA_CARD_OBTAIN_EFFECT_OWNERSHIP_COMPAT_ENABLED,
+                    true
                 ),
                 specialKeyInputMode = specialKeyInputMode,
                 showFloatingMouseWindow =

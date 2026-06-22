@@ -24,6 +24,7 @@ import io.stamethyst.backend.diag.MemoryDiagnosticsLogger
 import io.stamethyst.backend.launch.GameProcessLaunchGuard
 import io.stamethyst.backend.presence.GamePresenceStateMarker
 import io.stamethyst.backend.render.DisplayPerformanceController
+import io.stamethyst.backend.launch.AutoplayMode
 import io.stamethyst.backend.launch.AutoplaySaveMode
 import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.config.BackBehavior
@@ -43,6 +44,11 @@ class StsGameActivity : AppCompatActivity() {
         const val EXTRA_FORCE_RUNTIME_CRASH = "io.stamethyst.force_runtime_crash"
         const val EXTRA_AUTOPLAY = "io.stamethyst.autoplay"
         const val EXTRA_AUTOPLAY_SAVE_MODE = "io.stamethyst.autoplay_save_mode"
+        const val EXTRA_AUTOPLAY_MODE = "io.stamethyst.autoplay_mode"
+        const val EXTRA_AUTOPLAY_SINGLE_ROOM_SPEC = "io.stamethyst.autoplay_single_room_spec"
+        const val EXTRA_AUTOPLAY_CHOICE_DELAY_MS = "io.stamethyst.autoplay_choice_delay_ms"
+        const val EXTRA_CARD_OBTAIN_EFFECT_OWNERSHIP_COMPAT_ENABLED =
+            "io.stamethyst.card_obtain_effect_ownership_compat_enabled"
 
         @JvmStatic
         fun launch(
@@ -53,7 +59,11 @@ class StsGameActivity : AppCompatActivity() {
             forceJvmCrash: Boolean = false,
             forceRuntimeCrash: Boolean = false,
             autoplay: Boolean = false,
-            autoplaySaveMode: AutoplaySaveMode = AutoplaySaveMode.DEFAULT
+            autoplaySaveMode: AutoplaySaveMode = AutoplaySaveMode.DEFAULT,
+            autoplayMode: AutoplayMode = AutoplayMode.DEFAULT,
+            autoplaySingleRoomSpecPath: String = "",
+            autoplayChoiceDelayMs: Long = 0L,
+            cardObtainEffectOwnershipCompatEnabled: Boolean = true
         ) {
             val intent = Intent(context, StsGameActivity::class.java)
             intent.putExtra(EXTRA_LAUNCH_MODE, launchMode)
@@ -67,6 +77,13 @@ class StsGameActivity : AppCompatActivity() {
             intent.putExtra(EXTRA_FORCE_RUNTIME_CRASH, forceRuntimeCrash)
             intent.putExtra(EXTRA_AUTOPLAY, autoplay)
             intent.putExtra(EXTRA_AUTOPLAY_SAVE_MODE, autoplaySaveMode.persistedValue)
+            intent.putExtra(EXTRA_AUTOPLAY_MODE, autoplayMode.persistedValue)
+            intent.putExtra(EXTRA_AUTOPLAY_SINGLE_ROOM_SPEC, autoplaySingleRoomSpecPath)
+            intent.putExtra(EXTRA_AUTOPLAY_CHOICE_DELAY_MS, autoplayChoiceDelayMs)
+            intent.putExtra(
+                EXTRA_CARD_OBTAIN_EFFECT_OWNERSHIP_COMPAT_ENABLED,
+                cardObtainEffectOwnershipCompatEnabled
+            )
             context.startActivity(intent)
         }
     }

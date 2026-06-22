@@ -65,7 +65,9 @@ import io.stamethyst.backend.workshop.WorkshopDownloadLogService
 import io.stamethyst.backend.workshop.WorkshopDownloadTaskStatus
 import io.stamethyst.backend.workshop.isActiveDownload
 import io.stamethyst.ui.Icons
+import io.stamethyst.ui.LoadingSkeletonBlock
 import io.stamethyst.ui.icon.ArrowBack
+import io.stamethyst.ui.rememberLoadingSkeletonStyle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -505,7 +507,11 @@ private fun WorkshopDownloadPreviewImage(url: String, contentDescription: String
         contentAlignment = Alignment.Center,
     ) {
         when (val current = imageState) {
-            DownloadPreviewImageState.Loading -> LinearProgressIndicator(Modifier.fillMaxWidth(0.62f))
+            DownloadPreviewImageState.Loading -> LoadingSkeletonBlock(
+                modifier = Modifier.fillMaxSize(),
+                style = rememberLoadingSkeletonStyle("workshop_download_preview_image_skeleton"),
+                shape = CardDefaults.shape,
+            )
             DownloadPreviewImageState.Failed -> Text("MOD", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             is DownloadPreviewImageState.Loaded -> Image(
                 bitmap = current.bitmap.asImageBitmap(),

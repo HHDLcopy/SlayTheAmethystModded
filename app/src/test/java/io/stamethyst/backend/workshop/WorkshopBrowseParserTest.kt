@@ -135,6 +135,30 @@ class WorkshopBrowseParserTest {
                           "file_size": "123456",
                           "subscriptions": "98765",
                           "vote_data": { "score": 0.72 }
+                        },
+                        {
+                          "publishedfileid": "3747700458",
+                          "creator": "76561198000000001",
+                          "consumer_appid": 646570,
+                          "preview_url": "https://example.com/mint.png",
+                          "title": "MintModSkinNew",
+                          "short_description": "Current Steam SSR shape",
+                          "file_size": "368739826",
+                          "subscriptions": 2408,
+                          "star_rating": 4,
+                          "total_votes": 56
+                        },
+                        {
+                          "publishedfileid": "3747848415",
+                          "creator": "76561198000000001",
+                          "consumer_appid": 646570,
+                          "preview_url": "https://example.com/unrated.png",
+                          "title": "Unrated SSR Item",
+                          "short_description": "Not enough votes",
+                          "file_size": 1024,
+                          "subscriptions": 23,
+                          "star_rating": -1,
+                          "total_votes": 1
                         }
                       ]
                     }
@@ -156,14 +180,28 @@ class WorkshopBrowseParserTest {
 
         assertEquals(2, page.page)
         assertTrue(page.hasNextPage)
-        assertEquals(1, page.items.size)
-        assertEquals(3677098410uL, page.items.single().publishedFileId)
-        assertEquals("Skip The Spire", page.items.single().title)
-        assertEquals("apricity", page.items.single().authorName)
-        assertEquals("A fun mod", page.items.single().description)
-        assertEquals(123456L, page.items.single().fileSizeBytes)
-        assertEquals(98765L, page.items.single().downloadCount)
-        assertEquals(4, page.items.single().rating?.score)
-        assertEquals(5, page.items.single().rating?.maxScore)
+        assertEquals(3, page.items.size)
+        val voteDataItem = page.items[0]
+        assertEquals(3677098410uL, voteDataItem.publishedFileId)
+        assertEquals("Skip The Spire", voteDataItem.title)
+        assertEquals("apricity", voteDataItem.authorName)
+        assertEquals("A fun mod", voteDataItem.description)
+        assertEquals(123456L, voteDataItem.fileSizeBytes)
+        assertEquals(98765L, voteDataItem.downloadCount)
+        assertEquals(4, voteDataItem.rating?.score)
+        assertEquals(5, voteDataItem.rating?.maxScore)
+        val topLevelRatingItem = page.items[1]
+        assertEquals(3747700458uL, topLevelRatingItem.publishedFileId)
+        assertEquals("MintModSkinNew", topLevelRatingItem.title)
+        assertEquals(368739826L, topLevelRatingItem.fileSizeBytes)
+        assertEquals(2408L, topLevelRatingItem.downloadCount)
+        assertEquals(4, topLevelRatingItem.rating?.score)
+        assertEquals(5, topLevelRatingItem.rating?.maxScore)
+        val unratedItem = page.items[2]
+        assertEquals(3747848415uL, unratedItem.publishedFileId)
+        assertEquals("Unrated SSR Item", unratedItem.title)
+        assertEquals(1024L, unratedItem.fileSizeBytes)
+        assertEquals(23L, unratedItem.downloadCount)
+        assertEquals(null, unratedItem.rating)
     }
 }

@@ -94,6 +94,7 @@ import io.stamethyst.config.BootOverlayImageConfig
 import io.stamethyst.config.BootOverlayImageMode
 import io.stamethyst.config.BootOverlayImageSlot
 import io.stamethyst.config.BootOverlayStyle
+import io.stamethyst.config.CardPlayOptimizationMode
 import io.stamethyst.config.CloudControlConfig
 import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.config.LauncherIconController
@@ -149,6 +150,18 @@ private fun TouchMouseInteractionMode.displayNameResId(): Int {
             R.string.settings_touch_mouse_interaction_mode_open_menu
         TouchMouseInteractionMode.TOGGLE_BUTTON_ON_TAP ->
             R.string.settings_touch_mouse_interaction_mode_toggle_button
+    }
+}
+
+@StringRes
+private fun CardPlayOptimizationMode.displayNameResId(): Int {
+    return when (this) {
+        CardPlayOptimizationMode.RELEASE_POP_BACK ->
+            R.string.settings_card_play_optimization_release_pop_back
+        CardPlayOptimizationMode.RELEASE_KEEP_OPEN ->
+            R.string.settings_card_play_optimization_release_keep_open
+        CardPlayOptimizationMode.VANILLA ->
+            R.string.settings_card_play_optimization_vanilla
     }
 }
 
@@ -335,6 +348,8 @@ class SettingsScreenViewModel : ViewModel() {
         val glBridgeSwapHeartbeatDebugEnabled: Boolean = LauncherPreferences.DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG,
         val touchscreenInputMode: TouchscreenInputMode =
             GameplaySettingsService.DEFAULT_TOUCHSCREEN_INPUT_MODE,
+        val cardPlayOptimizationMode: CardPlayOptimizationMode =
+            GameplaySettingsService.DEFAULT_CARD_PLAY_OPTIMIZATION_MODE,
         val touchIndicatorEnabled: Boolean = GameplaySettingsService.DEFAULT_TOUCH_INDICATOR_ENABLED,
         val gameplayFontScale: Float = GameplaySettingsService.DEFAULT_FONT_SCALE,
         val gameplayLargerUiEnabled: Boolean = GameplaySettingsService.DEFAULT_LARGER_UI_ENABLED,
@@ -454,6 +469,8 @@ class SettingsScreenViewModel : ViewModel() {
     private var quickStartSteamPauseController: PauseController? = null
     @Volatile
     private var quickStartSteamImportGeneration: Int = 0
+
+    private val automaticallyPromptedUpdateVersions = LinkedHashSet<String>()
 
     var uiState by mutableStateOf(UiState())
         private set
@@ -926,7 +943,14 @@ class SettingsScreenViewModel : ViewModel() {
         result: UpdateCheckExecutionResult.Success,
         userInitiated: Boolean,
     ): String? {
-        val decision = LauncherUpdateUiReducer.reduce(result, userInitiated)
+        val suppressAutomaticPrompt = result.hasUpdate &&
+            !userInitiated &&
+            automaticallyPromptedUpdateVersions.contains(result.release.normalizedVersion)
+        val decision = LauncherUpdateUiReducer.reduce(
+            result = result,
+            userInitiated = userInitiated,
+            suppressAutomaticPrompt = suppressAutomaticPrompt
+        )
         val checkedAtMs = System.currentTimeMillis()
         LauncherPreferences.saveLastUpdateCheckAtMs(host, checkedAtMs)
         LauncherPreferences.saveLastKnownRemoteTag(host, result.release.normalizedVersion)
@@ -949,6 +973,9 @@ class SettingsScreenViewModel : ViewModel() {
             availableUpdatePromptState = promptState,
             updatePromptState = if (decision.showPrompt) promptState else null
         )
+        if (decision.showPrompt && result.hasUpdate && !userInitiated) {
+            automaticallyPromptedUpdateVersions += result.release.normalizedVersion
+        }
         return when (decision.message) {
             UpdateUiMessage.LATEST -> host.getString(R.string.update_check_result_latest)
             UpdateUiMessage.FAILURE -> host.getString(
@@ -3029,6 +3056,17 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(host)
     }
 
+    fun onCardPlayOptimizationModeChanged(host: Activity, mode: CardPlayOptimizationMode) {
+        if (uiState.busy) {
+            return
+        }
+        if (!saveCardPlayOptimizationModeSelection(host, mode)) {
+            return
+        }
+        uiState = uiState.copy(cardPlayOptimizationMode = mode)
+        refreshStatus(host)
+    }
+
     fun onTouchIndicatorEnabledChanged(host: Activity, enabled: Boolean) {
         if (uiState.busy) {
             return
@@ -3519,6 +3557,7 @@ class SettingsScreenViewModel : ViewModel() {
                 nativeTouchscreenAllowlistEnabled =
                     compatibility.nativeTouchscreenAllowlistCompatEnabled
             ),
+            cardPlayOptimizationMode = input.cardPlayOptimizationMode,
             touchIndicatorEnabled = input.touchIndicatorEnabled,
             gameplayFontScale = input.fontScale,
             gameplayLargerUiEnabled = input.largerUiEnabled,
@@ -4047,6 +4086,10 @@ class SettingsScreenViewModel : ViewModel() {
                 nativeTouchscreenAllowlistEnabled =
                     compatibility.nativeTouchscreenAllowlistCompatEnabled
             ).displayName(host)
+        )
+        lines += host.getString(
+            R.string.settings_status_card_play_optimization,
+            input.cardPlayOptimizationMode.displayName(host)
         )
         lines += host.getString(
             R.string.settings_status_gameplay_font_scale,
@@ -4905,6 +4948,26 @@ class SettingsScreenViewModel : ViewModel() {
         }
     }
 
+    private fun saveCardPlayOptimizationModeSelection(
+        host: Activity,
+        mode: CardPlayOptimizationMode
+    ): Boolean {
+        return try {
+            GameplaySettingsService.saveCardPlayOptimizationMode(host, mode)
+            true
+        } catch (error: IOException) {
+            showToast(
+                host,
+                UiText.StringResource(
+                    R.string.settings_card_play_optimization_save_failed,
+                    error.message ?: host.getString(R.string.feedback_unknown_error)
+                ),
+                Toast.LENGTH_SHORT
+            )
+            false
+        }
+    }
+
     private fun saveGameplayFontScaleSelection(host: Activity, value: Float): Boolean {
         return try {
             GameplaySettingsService.saveFontScale(host, value)
@@ -5371,6 +5434,10 @@ class SettingsScreenViewModel : ViewModel() {
             TouchscreenInputMode.MOBILE ->
                 host.getString(R.string.settings_touchscreen_mode_mobile)
         }
+    }
+
+    private fun CardPlayOptimizationMode.displayName(host: Activity): String {
+        return host.getString(displayNameResId())
     }
 
     private fun SteamCloudSaveMode.displayName(host: Activity): String {

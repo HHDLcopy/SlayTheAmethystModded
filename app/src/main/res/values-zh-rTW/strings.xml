@@ -255,9 +255,9 @@
     <string name="settings_haptic_feedback_desc">統一控制啟動器與遊戲內懸浮層的震動反饋，包括點選、開關、滑條和模組啟用切換。</string>
     <string name="status_built_in_soft_keyboard_format">遊戲內建軟鍵盤：%1$s</string>
     <string name="status_haptic_feedback_format">震動反饋：%1$s</string>
-    <string name="settings_compendium_upgrade_touch_fix_enabled">百科大全看升級版觸控修復：啟用</string>
-    <string name="settings_compendium_upgrade_touch_fix_disabled">百科大全看升級版觸控修復：禁用</string>
-    <string name="settings_compendium_upgrade_touch_fix_desc">啟用後，在觸屏模式下會放大百科大全卡片放大介面裡“看升級版”的點選區域，並在按下時直接切換，減少滑動或手指輕微漂移導致的點不到的問題。</string>
+    <string name="settings_compendium_upgrade_touch_fix_enabled">點擊前刷新 hitbox 懸停：啟用</string>
+    <string name="settings_compendium_upgrade_touch_fix_disabled">點擊前刷新 hitbox 懸停：停用</string>
+    <string name="settings_compendium_upgrade_touch_fix_desc">啟用後，每次新點擊都會先按目前指標位置刷新 hitbox 的懸停狀態，原版和模組新增的複選框無需預先懸停也能直接點擊。</string>
     <string name="touch_mouse_floating_menu_collapse">收起</string>
     <string name="touch_mouse_floating_menu_keyboard">開啟鍵盤</string>
     <string name="touch_mouse_builtin_keyboard_shift">Shift</string>
@@ -1915,6 +1915,13 @@
     <string name="settings_touchscreen_mode_desktop_desc">顯示滑鼠並使用完整的桌面點選行為，對於點選行為相容性最好，但一些操作不適合移動端。</string>
     <string name="settings_touchscreen_mode_hybrid_desc">推薦。保留觸控輸入的 UI，預設顯示觸控小圓點，並僅對原版介面啟用觸屏邏輯，可以解決一些原生觸控下模組按鍵無法點選的問題。</string>
     <string name="settings_touchscreen_mode_mobile_desc">全域性原生觸屏，最接近原版的移動端觸屏行為，但更容易觸發模組 UI 相容問題。</string>
+    <string name="settings_card_play_optimization_title">出牌優化選項</string>
+    <string name="settings_card_play_optimization_release_pop_back">鬆手時彈回卡片</string>
+    <string name="settings_card_play_optimization_release_keep_open">鬆手時保持卡牌彈出</string>
+    <string name="settings_card_play_optimization_vanilla">原版行為</string>
+    <string name="settings_card_play_optimization_release_pop_back_desc">預設。手指離開後不繼續保留手牌懸停，點按只會短暫展示，然後讓卡片自然收回。</string>
+    <string name="settings_card_play_optimization_release_keep_open_desc">短按手牌後會保持該卡片浮起方便閱讀，直到點擊另一張卡或戰鬥空白處。</string>
+    <string name="settings_card_play_optimization_vanilla_desc">關閉啟動器的戰鬥卡牌觸控優化，使用遊戲原版行為。</string>
     <string name="settings_touch_indicator_enabled">觸控小圓點：顯示</string>
     <string name="settings_touch_indicator_disabled">觸控小圓點：隱藏</string>
     <string name="settings_touch_indicator_desc">控制在混合模式或移動觸屏模式下，點選遊戲畫面時是否顯示逐漸淡出的觸控小圓點。</string>
@@ -1975,6 +1982,7 @@
     <string name="settings_player_name_save_failed">儲存玩家名字失敗：%1$s</string>
     <string name="settings_touchscreen_save_failed">儲存觸屏輸入設定失敗：%1$s</string>
     <string name="settings_touchscreen_mode_save_failed">儲存觸屏輸入模式失敗：%1$s</string>
+    <string name="settings_card_play_optimization_save_failed">儲存出牌優化選項失敗：%1$s</string>
     <string name="settings_gameplay_font_scale_save_failed">儲存文字大小失敗：%1$s</string>
     <string name="settings_gameplay_larger_ui_save_failed">儲存更大的 UI 設定失敗：%1$s</string>
     <string name="settings_mobileglues_save_failed">儲存 MobileGlues 設定失敗：%1$s</string>
@@ -2024,10 +2032,11 @@
     <string name="settings_status_back_behavior">返回鍵行為：%1$s</string>
     <string name="settings_status_touchscreen">觸屏輸入：%1$s</string>
     <string name="settings_status_touchscreen_mode">觸屏模式：%1$s</string>
+    <string name="settings_status_card_play_optimization">出牌優化選項：%1$s</string>
     <string name="settings_status_gameplay_font_scale">文字大小：%1$s 倍</string>
     <string name="settings_status_gameplay_larger_ui">更大的 UI：%1$s</string>
     <string name="settings_status_mobile_hud">移動端 UI：%1$s</string>
-    <string name="settings_status_compendium_touch_fix">百科大全看升級版觸控修復：%1$s</string>
+    <string name="settings_status_compendium_touch_fix">點擊前刷新 hitbox 懸停：%1$s</string>
     <string name="settings_status_avoid_display_cutout">避開攝像頭開孔：%1$s</string>
     <string name="settings_status_crop_screen_bottom">裁掉螢幕底邊：%1$s</string>
     <string name="settings_status_keep_screen_on_timeout">熄屏時間：%1$s</string>

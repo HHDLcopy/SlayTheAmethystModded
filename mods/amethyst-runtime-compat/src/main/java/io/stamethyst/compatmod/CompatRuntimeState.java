@@ -26,6 +26,8 @@ public final class CompatRuntimeState {
         "amethyst.touch_indicator_enabled";
     private static final String TOUCHSCREEN_STATE_CLEANUP_PROP =
         "amethyst.runtime_compat.touchscreen_state_cleanup";
+    private static final String TOUCHSCREEN_CARD_PLAY_OPTIMIZATION_PROP =
+        "amethyst.runtime_compat.touchscreen_card_play_optimization";
     private static final String TOUCHSCREEN_CARD_GESTURE_PROP =
         "amethyst.runtime_compat.touchscreen_card_gesture";
     private static final String TOUCHSCREEN_CARD_TAP_INSPECT_PROP =
@@ -74,10 +76,12 @@ public final class CompatRuntimeState {
         readBooleanSystemProperty(TOUCH_INDICATOR_ENABLED_PROP, NATIVE_TOUCHSCREEN_ENABLED);
     private static final boolean TOUCHSCREEN_STATE_CLEANUP_ENABLED =
         readBooleanSystemProperty(TOUCHSCREEN_STATE_CLEANUP_PROP, true);
+    private static final boolean TOUCHSCREEN_CARD_PLAY_OPTIMIZATION_ENABLED =
+        readBooleanSystemProperty(TOUCHSCREEN_CARD_PLAY_OPTIMIZATION_PROP, true);
     private static final boolean TOUCHSCREEN_CARD_GESTURE_ENABLED =
         readBooleanSystemProperty(TOUCHSCREEN_CARD_GESTURE_PROP, true);
     private static final boolean TOUCHSCREEN_CARD_TAP_INSPECT_ENABLED =
-        readBooleanSystemProperty(TOUCHSCREEN_CARD_TAP_INSPECT_PROP, true);
+        readBooleanSystemProperty(TOUCHSCREEN_CARD_TAP_INSPECT_PROP, false);
     private static final boolean TOUCHSCREEN_CURSOR_WARP_CLEANUP_ENABLED =
         readBooleanSystemProperty(TOUCHSCREEN_CURSOR_WARP_CLEANUP_PROP, true);
     private static final boolean TOUCHSCREEN_TARGET_ASSIST_ENABLED =
@@ -155,6 +159,8 @@ public final class CompatRuntimeState {
                     + Boolean.toString(TOUCH_INDICATOR_ENABLED)
                     + " touchStateCleanup="
                     + Boolean.toString(TOUCHSCREEN_STATE_CLEANUP_ENABLED)
+                    + " touchCardPlayOptimization="
+                    + Boolean.toString(TOUCHSCREEN_CARD_PLAY_OPTIMIZATION_ENABLED)
                     + " touchCardGesture="
                     + Boolean.toString(TOUCHSCREEN_CARD_GESTURE_ENABLED)
                     + " touchCardTapInspect="
@@ -267,24 +273,28 @@ public final class CompatRuntimeState {
         return TOUCHSCREEN_STATE_CLEANUP_ENABLED;
     }
 
+    public static boolean isTouchscreenCardPlayOptimizationEnabled() {
+        return TOUCHSCREEN_CARD_PLAY_OPTIMIZATION_ENABLED;
+    }
+
     public static boolean isTouchscreenCardGestureEnabled() {
-        return TOUCHSCREEN_CARD_GESTURE_ENABLED;
+        return TOUCHSCREEN_CARD_PLAY_OPTIMIZATION_ENABLED && TOUCHSCREEN_CARD_GESTURE_ENABLED;
     }
 
     public static boolean isTouchscreenCardTapInspectEnabled() {
-        return TOUCHSCREEN_CARD_TAP_INSPECT_ENABLED;
+        return TOUCHSCREEN_CARD_PLAY_OPTIMIZATION_ENABLED && TOUCHSCREEN_CARD_TAP_INSPECT_ENABLED;
     }
 
     public static boolean isTouchscreenCursorWarpCleanupEnabled() {
-        return TOUCHSCREEN_CURSOR_WARP_CLEANUP_ENABLED;
+        return TOUCHSCREEN_CARD_PLAY_OPTIMIZATION_ENABLED && TOUCHSCREEN_CURSOR_WARP_CLEANUP_ENABLED;
     }
 
     public static boolean isTouchscreenTargetAssistEnabled() {
-        return TOUCHSCREEN_TARGET_ASSIST_ENABLED;
+        return TOUCHSCREEN_CARD_PLAY_OPTIMIZATION_ENABLED && TOUCHSCREEN_TARGET_ASSIST_ENABLED;
     }
 
     public static boolean isTouchscreenIdleCardHoverCleanupEnabled() {
-        return TOUCHSCREEN_IDLE_CARD_HOVER_CLEANUP_ENABLED;
+        return TOUCHSCREEN_CARD_PLAY_OPTIMIZATION_ENABLED && TOUCHSCREEN_IDLE_CARD_HOVER_CLEANUP_ENABLED;
     }
 
     public static boolean isHandLayoutRoomContextRescueEnabled() {

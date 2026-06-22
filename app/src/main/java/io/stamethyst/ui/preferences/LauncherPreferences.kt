@@ -18,6 +18,7 @@ import io.stamethyst.config.BootOverlayImageConfig
 import io.stamethyst.config.BootOverlayImageMode
 import io.stamethyst.config.BootOverlayAnimation
 import io.stamethyst.config.BootOverlayStyle
+import io.stamethyst.config.CardPlayOptimizationMode
 import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.LauncherIconMode
@@ -96,6 +97,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_SHOW_FLOATING_MOUSE_WINDOW
     val DEFAULT_TOUCH_MOUSE_INTERACTION_MODE: TouchMouseInteractionMode
         get() = LauncherConfig.DEFAULT_TOUCH_MOUSE_INTERACTION_MODE
+    val DEFAULT_CARD_PLAY_OPTIMIZATION_MODE: CardPlayOptimizationMode
+        get() = LauncherConfig.DEFAULT_CARD_PLAY_OPTIMIZATION_MODE
     val DEFAULT_BUILT_IN_SOFT_KEYBOARD_ENABLED: Boolean
         get() = LauncherConfig.DEFAULT_BUILT_IN_SOFT_KEYBOARD_ENABLED
     val DEFAULT_HAPTIC_FEEDBACK_ENABLED: Boolean
@@ -282,6 +285,14 @@ object LauncherPreferences {
 
     fun saveTouchMouseInteractionMode(context: Context, mode: TouchMouseInteractionMode) {
         LauncherConfig.saveTouchMouseInteractionMode(context, mode)
+    }
+
+    fun readCardPlayOptimizationMode(context: Context): CardPlayOptimizationMode {
+        return LauncherConfig.readCardPlayOptimizationMode(context)
+    }
+
+    fun saveCardPlayOptimizationMode(context: Context, mode: CardPlayOptimizationMode) {
+        LauncherConfig.saveCardPlayOptimizationMode(context, mode)
     }
 
     fun isBuiltInSoftKeyboardEnabled(context: Context): Boolean {

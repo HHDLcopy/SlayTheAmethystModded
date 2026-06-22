@@ -219,6 +219,7 @@ object StsLaunchSpec {
         args.add("-Damethyst.in_game_file_picker_result=${RuntimePaths.inGameFilePickerResultFile(context).absolutePath}")
         args.add("-Damethyst.runtime_rescue_toast_request=${RuntimePaths.runtimeRescueToastRequestFile(context).absolutePath}")
         val touchscreenInputMode = LauncherConfig.readTouchscreenInputMode(context)
+        val cardPlayOptimizationMode = LauncherConfig.readCardPlayOptimizationMode(context)
         args.add(
             "-Damethyst.touchscreen_enabled=" +
                 if (touchscreenInputMode == TouchscreenInputMode.MOBILE) {
@@ -250,6 +251,30 @@ object StsLaunchSpec {
                 }
         )
         args.add(
+            "-Damethyst.runtime_compat.touchscreen_card_play_optimization=" +
+                if (cardPlayOptimizationMode.optimizationEnabled) "true" else "false"
+        )
+        args.add(
+            "-Damethyst.runtime_compat.touchscreen_card_gesture=" +
+                if (cardPlayOptimizationMode.optimizationEnabled) "true" else "false"
+        )
+        args.add(
+            "-Damethyst.runtime_compat.touchscreen_card_tap_inspect=" +
+                if (cardPlayOptimizationMode.tapInspectEnabled) "true" else "false"
+        )
+        args.add(
+            "-Damethyst.runtime_compat.touchscreen_cursor_warp_cleanup=" +
+                if (cardPlayOptimizationMode.optimizationEnabled) "true" else "false"
+        )
+        args.add(
+            "-Damethyst.runtime_compat.touchscreen_target_assist=" +
+                if (cardPlayOptimizationMode.optimizationEnabled) "true" else "false"
+        )
+        args.add(
+            "-Damethyst.runtime_compat.touchscreen_idle_card_hover_cleanup=" +
+                if (cardPlayOptimizationMode.optimizationEnabled) "true" else "false"
+        )
+        args.add(
             "-Damethyst.font_scale=" +
                 LauncherConfig.formatGameplayFontScale(
                     LauncherConfig.readGameplayFontScale(context)
@@ -269,6 +294,14 @@ object StsLaunchSpec {
         )
         args.add(
             "-Damethyst.compendium_upgrade_touch_fix_enabled=" +
+                if (LauncherConfig.readCompendiumUpgradeTouchFixEnabled(context)) {
+                    "true"
+                } else {
+                    "false"
+                }
+        )
+        args.add(
+            "-Damethyst.pre_click_hitbox_hover_refresh_enabled=" +
                 if (LauncherConfig.readCompendiumUpgradeTouchFixEnabled(context)) {
                     "true"
                 } else {

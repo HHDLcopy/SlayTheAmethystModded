@@ -9,7 +9,9 @@ import org.objectweb.asm.tree.FieldInsnNode
 import org.objectweb.asm.tree.InsnList
 import org.objectweb.asm.tree.JumpInsnNode
 import org.objectweb.asm.tree.LineNumberNode
+import org.objectweb.asm.tree.MethodInsnNode
 import org.objectweb.asm.tree.MethodNode
+import org.objectweb.asm.tree.VarInsnNode
 
 internal object StsUiTouchCompatPatcher {
     private const val TIP_HELPER_INTERNAL_NAME = "com/megacrit/cardcrawl/helpers/TipHelper"
@@ -20,6 +22,16 @@ internal object StsUiTouchCompatPatcher {
         "com/megacrit/cardcrawl/characters/AbstractPlayer"
     private const val INPUT_HELPER_INTERNAL_NAME =
         "com/megacrit/cardcrawl/helpers/input/InputHelper"
+    private const val HITBOX_INTERNAL_NAME =
+        "com/megacrit/cardcrawl/helpers/Hitbox"
+    private const val INPUT_HELPER_UPDATE_FIRST_METHOD_NAME = "updateFirst"
+    private const val INPUT_HELPER_UPDATE_FIRST_METHOD_DESC = "()V"
+    private const val HITBOX_REFRESH_HOVER_METHOD_NAME = "refreshAllHoveredForFreshClick"
+    private const val HITBOX_REFRESH_HOVER_METHOD_DESC = "()V"
+    private const val HITBOX_REGISTER_METHOD_NAME = "registerForPreClickHoverRefresh"
+    private const val HITBOX_REGISTER_METHOD_DESC = "(Lcom/megacrit/cardcrawl/helpers/Hitbox;)V"
+    private const val HITBOX_CONSTRUCTOR_WITH_POSITION_DESC = "(FFFF)V"
+    private const val JUST_CLICKED_LEFT_FIELD_NAME = "justClickedLeft"
     private const val DROP_ZONE_HOVER_FIELD_NAME = "isHoveringDropZone"
     private const val TOUCH_MOUSE_DOWN_FIELD_NAME = "isMouseDown"
     private const val BOOLEAN_FIELD_DESC = "Z"
@@ -68,19 +80,27 @@ internal object StsUiTouchCompatPatcher {
                 MemberRef("render", "(Lcom/badlogic/gdx/graphics/g2d/SpriteBatch;)V")
             )
         ),
-        STS_PATCH_SINGLE_CARD_VIEW_POPUP_CLASS to MergeSpec(
+        STS_PATCH_HITBOX_CLASS to MergeSpec(
             fields = listOf(
-                MemberRef("COMPENDIUM_UPGRADE_TOUCH_FIX_ENABLED_PROP", "Ljava/lang/String;"),
-                MemberRef("NATIVE_TOUCHSCREEN_ENABLED_PROP", "Ljava/lang/String;"),
-                MemberRef("DEFAULT_BOTTOM_TOGGLE_W", "F"),
-                MemberRef("DEFAULT_BOTTOM_TOGGLE_H", "F"),
-                MemberRef("DEFAULT_BOTTOM_TOGGLE_CENTER_Y", "F"),
-                MemberRef("TOUCH_BOTTOM_TOGGLE_W", "F"),
-                MemberRef("TOUCH_BOTTOM_TOGGLE_H", "F"),
-                MemberRef("TOUCH_BOTTOM_TOGGLE_CENTER_Y", "F"),
-                MemberRef("compendiumUpgradeTouchFixEnabled", "Ljava/lang/Boolean;"),
-                MemberRef("nativeTouchscreenEnabled", "Ljava/lang/Boolean;")
+                MemberRef("PRE_CLICK_HOVER_REFRESH_ENABLED_PROP", "Ljava/lang/String;"),
+                MemberRef("preClickHoverRefreshEnabled", "Ljava/lang/Boolean;"),
+                MemberRef("registeredHitboxes", "Ljava/util/ArrayList;")
             ),
+            methods = listOf(
+                MemberRef("refreshAllHoveredForFreshClick", "()V"),
+                MemberRef("registerForPreClickHoverRefresh", "(Lcom/megacrit/cardcrawl/helpers/Hitbox;)V"),
+                MemberRef("isPreClickHoverRefreshEnabled", "()Z"),
+                MemberRef("parseBooleanLike", "(Ljava/lang/String;)Ljava/lang/Boolean;"),
+                MemberRef("refreshHoveredForFreshClick", "(Lcom/megacrit/cardcrawl/helpers/Hitbox;)V"),
+                MemberRef("isPointerInside", "(Lcom/megacrit/cardcrawl/helpers/Hitbox;)Z")
+            )
+        ),
+        STS_PATCH_INPUT_HELPER_CLASS to MergeSpec(
+            fields = emptyList(),
+            methods = emptyList()
+        ),
+        STS_PATCH_SINGLE_CARD_VIEW_POPUP_CLASS to MergeSpec(
+            fields = emptyList(),
             methods = listOf(
                 MemberRef(
                     "open",
@@ -93,40 +113,14 @@ internal object StsUiTouchCompatPatcher {
                 ),
                 MemberRef("close", "()V"),
                 MemberRef("update", "()V"),
-                MemberRef("updateUpgradePreview", "()V"),
-                MemberRef("refreshBottomToggleHitboxes", "()V"),
-                MemberRef("getBottomToggleWidth", "()F"),
-                MemberRef("getBottomToggleHeight", "()F"),
-                MemberRef("getBottomToggleCenterY", "()F"),
-                MemberRef("isCompendiumUpgradeTouchFixActive", "()Z"),
-                MemberRef("isCompendiumUpgradeTouchFixEnabled", "()Z"),
-                MemberRef("parseBooleanLike", "(Ljava/lang/String;)Ljava/lang/Boolean;"),
-                MemberRef("isNativeTouchscreenEnabled", "()Z")
+                MemberRef("updateUpgradePreview", "()V")
             )
         ),
         STS_PATCH_COLOR_TAB_BAR_CLASS to MergeSpec(
-            fields = listOf(
-                MemberRef("COMPENDIUM_UPGRADE_TOUCH_FIX_ENABLED_PROP", "Ljava/lang/String;"),
-                MemberRef("NATIVE_TOUCHSCREEN_ENABLED_PROP", "Ljava/lang/String;"),
-                MemberRef("VIEW_UPGRADE_HB_W", "F"),
-                MemberRef("VIEW_UPGRADE_HB_H", "F"),
-                MemberRef("TOUCH_VIEW_UPGRADE_HB_W", "F"),
-                MemberRef("TOUCH_VIEW_UPGRADE_HB_H", "F"),
-                MemberRef("TOUCH_VIEW_UPGRADE_HB_CENTER_Y_OFFSET", "F"),
-                MemberRef("compendiumUpgradeTouchFixEnabled", "Ljava/lang/Boolean;"),
-                MemberRef("nativeTouchscreenEnabled", "Ljava/lang/Boolean;")
-            ),
+            fields = emptyList(),
             methods = listOf(
-                MemberRef("update", "(F)V"),
-                MemberRef("toggleViewUpgrade", "()V"),
-                MemberRef("updateViewUpgradeHitbox", "(F)V"),
-                MemberRef("getViewUpgradeHitboxWidth", "()F"),
-                MemberRef("getViewUpgradeHitboxHeight", "()F"),
-                MemberRef("getViewUpgradeHitboxCenterYOffset", "()F"),
-                MemberRef("isCompendiumUpgradeTouchFixActive", "()Z"),
-                MemberRef("isCompendiumUpgradeTouchFixEnabled", "()Z"),
-                MemberRef("parseBooleanLike", "(Ljava/lang/String;)Ljava/lang/Boolean;"),
-                MemberRef("isNativeTouchscreenEnabled", "()Z")
+                MemberRef("<init>", "(Lcom/megacrit/cardcrawl/screens/mainMenu/TabBarListener;)V"),
+                MemberRef("update", "(F)V")
             )
         )
     )
@@ -141,6 +135,9 @@ internal object StsUiTouchCompatPatcher {
     ): ByteArray {
         if (entryName == STS_PATCH_TIP_HELPER_CLASS) {
             return patchTipHelperClass(targetClassBytes)
+        }
+        if (entryName == STS_PATCH_INPUT_HELPER_CLASS) {
+            return patchInputHelperClass(targetClassBytes)
         }
 
         val mergeSpec = mergeSpecs[entryName]
@@ -181,6 +178,10 @@ internal object StsUiTouchCompatPatcher {
             } else {
                 targetClass.methods.add(donorMethod)
             }
+        }
+
+        if (entryName == STS_PATCH_HITBOX_CLASS) {
+            patchHitboxConstructors(targetClass)
         }
 
         return writeClass(targetClass)
@@ -237,6 +238,84 @@ internal object StsUiTouchCompatPatcher {
         return writeClass(targetClass)
     }
 
+    @Throws(IOException::class)
+    private fun patchInputHelperClass(targetClassBytes: ByteArray): ByteArray {
+        val targetClass = readClassNode(targetClassBytes)
+        if (targetClass.name != INPUT_HELPER_INTERNAL_NAME) {
+            throw IOException("Unexpected target class for $STS_PATCH_INPUT_HELPER_CLASS: ${targetClass.name}")
+        }
+
+        val updateFirstMethod = targetClass.methods.firstOrNull { method ->
+            method.name == INPUT_HELPER_UPDATE_FIRST_METHOD_NAME &&
+                method.desc == INPUT_HELPER_UPDATE_FIRST_METHOD_DESC
+        } ?: throw IOException("Missing updateFirst method for $STS_PATCH_INPUT_HELPER_CLASS")
+
+        if (isInputHelperFreshClickHoverRefreshPatched(updateFirstMethod)) {
+            return targetClassBytes
+        }
+
+        var insertedCount = 0
+        var current = updateFirstMethod.instructions.first
+        while (current != null) {
+            val fieldInsn = current as? FieldInsnNode
+            if (isJustClickedLeftWrite(fieldInsn) && isTrueConstant(previousMeaningful(current.previous))) {
+                updateFirstMethod.instructions.insert(
+                    current,
+                    MethodInsnNode(
+                        Opcodes.INVOKESTATIC,
+                        HITBOX_INTERNAL_NAME,
+                        HITBOX_REFRESH_HOVER_METHOD_NAME,
+                        HITBOX_REFRESH_HOVER_METHOD_DESC,
+                        false
+                    )
+                )
+                insertedCount++
+            }
+            current = current.next
+        }
+
+        if (insertedCount == 0) {
+            throw IOException(
+                "Unsupported InputHelper.updateFirst bytecode: justClickedLeft=true write not found"
+            )
+        }
+
+        return writeClass(targetClass)
+    }
+
+    @Throws(IOException::class)
+    private fun patchHitboxConstructors(targetClass: ClassNode) {
+        if (targetClass.name != HITBOX_INTERNAL_NAME) {
+            throw IOException("Unexpected target class for $STS_PATCH_HITBOX_CLASS: ${targetClass.name}")
+        }
+
+        val constructor = targetClass.methods.firstOrNull { method ->
+            method.name == "<init>" && method.desc == HITBOX_CONSTRUCTOR_WITH_POSITION_DESC
+        } ?: throw IOException("Missing Hitbox constructor $HITBOX_CONSTRUCTOR_WITH_POSITION_DESC")
+
+        if (isHitboxRegistrationPatched(constructor)) {
+            return
+        }
+
+        val returnInsn = firstReturnInsn(constructor)
+            ?: throw IOException("Unsupported Hitbox constructor bytecode: return not found")
+        constructor.instructions.insertBefore(
+            returnInsn,
+            InsnList().apply {
+                add(VarInsnNode(Opcodes.ALOAD, 0))
+                add(
+                    MethodInsnNode(
+                        Opcodes.INVOKESTATIC,
+                        HITBOX_INTERNAL_NAME,
+                        HITBOX_REGISTER_METHOD_NAME,
+                        HITBOX_REGISTER_METHOD_DESC,
+                        false
+                    )
+                )
+            }
+        )
+    }
+
     private fun isLegacyTipHelperRender(renderMethod: MethodNode): Boolean {
         var hasLegacyStartLine = false
         var hasExpectedInsertLine = false
@@ -282,6 +361,63 @@ internal object StsUiTouchCompatPatcher {
 
         val mouseDownJump = nextMeaningful(mouseDownField.next) as? JumpInsnNode ?: return false
         return mouseDownJump.opcode == Opcodes.IFEQ && mouseDownJump.label === hoverGuardJump.label
+    }
+
+    private fun isInputHelperFreshClickHoverRefreshPatched(updateFirstMethod: MethodNode): Boolean {
+        var current = updateFirstMethod.instructions.first
+        while (current != null) {
+            val invoke = current as? MethodInsnNode
+            if (invoke != null &&
+                invoke.opcode == Opcodes.INVOKESTATIC &&
+                invoke.owner == HITBOX_INTERNAL_NAME &&
+                invoke.name == HITBOX_REFRESH_HOVER_METHOD_NAME &&
+                invoke.desc == HITBOX_REFRESH_HOVER_METHOD_DESC
+            ) {
+                return true
+            }
+            current = current.next
+        }
+        return false
+    }
+
+    private fun isHitboxRegistrationPatched(constructor: MethodNode): Boolean {
+        var current = constructor.instructions.first
+        while (current != null) {
+            val invoke = current as? MethodInsnNode
+            if (invoke != null &&
+                invoke.opcode == Opcodes.INVOKESTATIC &&
+                invoke.owner == HITBOX_INTERNAL_NAME &&
+                invoke.name == HITBOX_REGISTER_METHOD_NAME &&
+                invoke.desc == HITBOX_REGISTER_METHOD_DESC
+            ) {
+                return true
+            }
+            current = current.next
+        }
+        return false
+    }
+
+    private fun isJustClickedLeftWrite(fieldInsn: FieldInsnNode?): Boolean {
+        return fieldInsn != null &&
+            fieldInsn.opcode == Opcodes.PUTSTATIC &&
+            fieldInsn.owner == INPUT_HELPER_INTERNAL_NAME &&
+            fieldInsn.name == JUST_CLICKED_LEFT_FIELD_NAME &&
+            fieldInsn.desc == BOOLEAN_FIELD_DESC
+    }
+
+    private fun isTrueConstant(node: org.objectweb.asm.tree.AbstractInsnNode?): Boolean {
+        return node != null && node.opcode == Opcodes.ICONST_1
+    }
+
+    private fun firstReturnInsn(method: MethodNode): org.objectweb.asm.tree.AbstractInsnNode? {
+        var current = method.instructions.first
+        while (current != null) {
+            if (current.opcode == Opcodes.RETURN) {
+                return current
+            }
+            current = current.next
+        }
+        return null
     }
 
     private fun findTipHelperDropZoneHoverGuard(renderMethod: MethodNode): JumpInsnNode? {

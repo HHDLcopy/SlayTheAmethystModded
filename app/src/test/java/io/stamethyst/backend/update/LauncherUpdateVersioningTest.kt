@@ -2,6 +2,7 @@ package io.stamethyst.backend.update
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -34,6 +35,30 @@ class LauncherUpdateVersioningTest {
                 remoteVersionTag = "1.0.7"
             )
         )
+    }
+
+    @Test
+    fun compareReleaseVersions_ordersReleaseTagsAndReturnsNullForUnknownTags() {
+        assertEquals(
+            -1,
+            LauncherUpdateVersioning.compareReleaseVersions("v1.3.1", "1.3.2")
+        )
+        assertEquals(
+            0,
+            LauncherUpdateVersioning.compareReleaseVersions("v1.3.1", "1.3.1")
+        )
+        assertEquals(
+            1,
+            LauncherUpdateVersioning.compareReleaseVersions("1.3.2", "v1.3.1")
+        )
+        assertNull(LauncherUpdateVersioning.compareReleaseVersions("nightly", "v1.3.1"))
+    }
+
+    @Test
+    fun releaseVersionFamilyKey_ignoresHotfixSuffix() {
+        assertEquals("1.3.2", LauncherUpdateVersioning.releaseVersionFamilyKey("v1.3.2"))
+        assertEquals("1.3.2", LauncherUpdateVersioning.releaseVersionFamilyKey("1.3.2-hotfix2"))
+        assertNull(LauncherUpdateVersioning.releaseVersionFamilyKey("nightly"))
     }
 
     @Test

@@ -50,6 +50,11 @@ public final class TouchscreenCardInputRuntime {
             && !Settings.isControllerMode;
     }
 
+    public static boolean isNativeTouchscreenCardPlayOptimizationActive() {
+        return isNativeTouchscreenCardInputActive()
+            && CompatRuntimeState.isTouchscreenCardPlayOptimizationEnabled();
+    }
+
     public static boolean isTargetedCard(AbstractCard card) {
         return card != null
             && (card.target == AbstractCard.CardTarget.ENEMY

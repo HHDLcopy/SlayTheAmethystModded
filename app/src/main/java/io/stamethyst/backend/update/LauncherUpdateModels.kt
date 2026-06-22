@@ -242,12 +242,25 @@ object LauncherUpdateVersioning {
     fun isRemoteNewer(currentVersion: String, remoteVersionTag: String): Boolean {
         val normalizedCurrent = normalizeVersionTag(currentVersion)
         val normalizedRemote = normalizeVersionTag(remoteVersionTag)
-        val currentParsed = parseReleaseVersion(normalizedCurrent)
-        val remoteParsed = parseReleaseVersion(normalizedRemote)
-        if (currentParsed != null && remoteParsed != null) {
-            return currentParsed < remoteParsed
+        val comparison = compareReleaseVersions(normalizedCurrent, normalizedRemote)
+        if (comparison != null) {
+            return comparison < 0
         }
         return normalizedCurrent != normalizedRemote
+    }
+
+    fun compareReleaseVersions(leftVersionTag: String, rightVersionTag: String): Int? {
+        val leftParsed = parseReleaseVersion(normalizeVersionTag(leftVersionTag))
+        val rightParsed = parseReleaseVersion(normalizeVersionTag(rightVersionTag))
+        if (leftParsed != null && rightParsed != null) {
+            return leftParsed.compareTo(rightParsed)
+        }
+        return null
+    }
+
+    fun releaseVersionFamilyKey(versionTag: String): String? {
+        val parsed = parseReleaseVersion(normalizeVersionTag(versionTag)) ?: return null
+        return "${parsed.major}.${parsed.minor}.${parsed.patch}"
     }
 
     fun formatPublishedAt(value: String?): String {

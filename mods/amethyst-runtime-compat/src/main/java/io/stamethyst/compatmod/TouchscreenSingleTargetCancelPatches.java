@@ -60,7 +60,7 @@ public final class TouchscreenSingleTargetCancelPatches {
     }
 
     private static boolean shouldCancelBlankTargetTap(AbstractPlayer player) {
-        if (!TouchscreenCardInputRuntime.isNativeTouchscreenCardInputActive()) {
+        if (!TouchscreenCardInputRuntime.isNativeTouchscreenCardPlayOptimizationActive()) {
             return false;
         }
         if (player == null || player.hoveredCard == null) {
@@ -82,7 +82,7 @@ public final class TouchscreenSingleTargetCancelPatches {
     }
 
     private static boolean shouldCancelBlankSingleTargetClick(AbstractPlayer player) {
-        if (!TouchscreenCardInputRuntime.isNativeTouchscreenCardInputActive()) {
+        if (!TouchscreenCardInputRuntime.isNativeTouchscreenCardPlayOptimizationActive()) {
             return false;
         }
         if (player == null || !player.inSingleTargetMode || player.hoveredCard == null) {
@@ -95,7 +95,7 @@ public final class TouchscreenSingleTargetCancelPatches {
     }
 
     private static boolean shouldCancelBlankSingleTargetRelease(AbstractPlayer player) {
-        if (!TouchscreenCardInputRuntime.isNativeTouchscreenCardInputActive()) {
+        if (!TouchscreenCardInputRuntime.isNativeTouchscreenCardPlayOptimizationActive()) {
             return false;
         }
         if (player == null || !player.inSingleTargetMode || player.hoveredCard == null) {

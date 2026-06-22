@@ -130,6 +130,7 @@ import io.stamethyst.config.BootOverlayImageConfig
 import io.stamethyst.config.BootOverlayImageMode
 import io.stamethyst.config.BootOverlayImageSlot
 import io.stamethyst.config.BootOverlayStyle
+import io.stamethyst.config.CardPlayOptimizationMode
 import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.config.LauncherIconMode
 import io.stamethyst.config.LauncherThemeColor
@@ -302,6 +303,9 @@ fun LauncherSettingsGameScreen(
         onBackBehaviorChanged = { behavior -> viewModel.onBackBehaviorChanged(activity, behavior) },
         onTouchscreenInputModeChanged = { mode ->
             viewModel.onTouchscreenInputModeChanged(activity, mode)
+        },
+        onCardPlayOptimizationModeChanged = { mode ->
+            viewModel.onCardPlayOptimizationModeChanged(activity, mode)
         },
         onTouchIndicatorEnabledChanged = { enabled ->
             viewModel.onTouchIndicatorEnabledChanged(activity, enabled)
@@ -591,6 +595,7 @@ private fun LauncherSettingsScreenPreview() {
             gdxPadCursorDebugEnabled = false,
             glBridgeSwapHeartbeatDebugEnabled = false,
             touchscreenInputMode = TouchscreenInputMode.HYBRID,
+            cardPlayOptimizationMode = CardPlayOptimizationMode.RELEASE_POP_BACK,
             gameplayFontScale = 1.50f,
             gameplayLargerUiEnabled = GameplaySettingsService.DEFAULT_LARGER_UI_ENABLED,
             statusText = "desktop-1.0.jar: OK\nBaseMod.jar: OK\nStSLib.jar: OK\nAmethystRuntimeCompat.jar: OK",
@@ -840,6 +845,7 @@ private fun LauncherSettingsGameScreenContent(
     onPlayerNameChanged: (String) -> Boolean = { true },
     onBackBehaviorChanged: (BackBehavior) -> Unit = {},
     onTouchscreenInputModeChanged: (TouchscreenInputMode) -> Unit = {},
+    onCardPlayOptimizationModeChanged: (CardPlayOptimizationMode) -> Unit = {},
     onTouchIndicatorEnabledChanged: (Boolean) -> Unit = {},
     onSpecialKeyInputModeChanged: (SpecialKeyInputMode) -> Unit = {},
     onTouchMouseInteractionModeChanged: (TouchMouseInteractionMode) -> Unit = {},
@@ -879,6 +885,7 @@ private fun LauncherSettingsGameScreenContent(
                     onPlayerNameChanged = onPlayerNameChanged,
                     onBackBehaviorChanged = onBackBehaviorChanged,
                     onTouchscreenInputModeChanged = onTouchscreenInputModeChanged,
+                    onCardPlayOptimizationModeChanged = onCardPlayOptimizationModeChanged,
                     onTouchIndicatorEnabledChanged = onTouchIndicatorEnabledChanged,
                     onSpecialKeyInputModeChanged = onSpecialKeyInputModeChanged,
                     onTouchMouseInteractionModeChanged = onTouchMouseInteractionModeChanged,
@@ -4456,6 +4463,7 @@ private fun SettingsInputSection(
     onPlayerNameChanged: (String) -> Boolean,
     onBackBehaviorChanged: (BackBehavior) -> Unit,
     onTouchscreenInputModeChanged: (TouchscreenInputMode) -> Unit,
+    onCardPlayOptimizationModeChanged: (CardPlayOptimizationMode) -> Unit,
     onTouchIndicatorEnabledChanged: (Boolean) -> Unit,
     onSpecialKeyInputModeChanged: (SpecialKeyInputMode) -> Unit,
     onTouchMouseInteractionModeChanged: (TouchMouseInteractionMode) -> Unit,
@@ -4476,6 +4484,7 @@ private fun SettingsInputSection(
             onPlayerNameChanged = onPlayerNameChanged,
             onBackBehaviorChanged = onBackBehaviorChanged,
             onTouchscreenInputModeChanged = onTouchscreenInputModeChanged,
+            onCardPlayOptimizationModeChanged = onCardPlayOptimizationModeChanged,
             onTouchIndicatorEnabledChanged = onTouchIndicatorEnabledChanged,
             onTouchDoubleClickAsRightClickChanged = onTouchDoubleClickAsRightClickChanged,
             onHapticFeedbackChanged = onHapticFeedbackChanged,
@@ -4504,6 +4513,7 @@ internal fun SettingsInputBasicsSection(
     onPlayerNameChanged: (String) -> Boolean,
     onBackBehaviorChanged: (BackBehavior) -> Unit,
     onTouchscreenInputModeChanged: (TouchscreenInputMode) -> Unit,
+    onCardPlayOptimizationModeChanged: (CardPlayOptimizationMode) -> Unit,
     onTouchIndicatorEnabledChanged: (Boolean) -> Unit,
     onTouchDoubleClickAsRightClickChanged: (Boolean) -> Unit,
     onHapticFeedbackChanged: (Boolean) -> Unit,
@@ -4548,6 +4558,17 @@ internal fun SettingsInputBasicsSection(
         optionLabel = { mode -> mode.displayName() },
         optionDescription = { mode -> mode.description() },
         onOptionSelected = onTouchscreenInputModeChanged
+    )
+
+    SettingsDropdownField(
+        label = stringResource(R.string.settings_card_play_optimization_title),
+        valueText = uiState.cardPlayOptimizationMode.displayName(),
+        enabled = !uiState.busy && uiState.touchscreenInputMode.touchscreenEnabled,
+        supportingText = uiState.cardPlayOptimizationMode.description(),
+        options = CardPlayOptimizationMode.entries,
+        optionLabel = { mode -> mode.displayName() },
+        optionDescription = { mode -> mode.description() },
+        onOptionSelected = onCardPlayOptimizationModeChanged
     )
 
     SwitchSettingRow(
@@ -5501,6 +5522,34 @@ private fun TouchscreenInputMode.description(): String {
             TouchscreenInputMode.DESKTOP -> R.string.settings_touchscreen_mode_desktop_desc
             TouchscreenInputMode.HYBRID -> R.string.settings_touchscreen_mode_hybrid_desc
             TouchscreenInputMode.MOBILE -> R.string.settings_touchscreen_mode_mobile_desc
+        }
+    )
+}
+
+@Composable
+private fun CardPlayOptimizationMode.displayName(): String {
+    return stringResource(
+        when (this) {
+            CardPlayOptimizationMode.RELEASE_POP_BACK ->
+                R.string.settings_card_play_optimization_release_pop_back
+            CardPlayOptimizationMode.RELEASE_KEEP_OPEN ->
+                R.string.settings_card_play_optimization_release_keep_open
+            CardPlayOptimizationMode.VANILLA ->
+                R.string.settings_card_play_optimization_vanilla
+        }
+    )
+}
+
+@Composable
+private fun CardPlayOptimizationMode.description(): String {
+    return stringResource(
+        when (this) {
+            CardPlayOptimizationMode.RELEASE_POP_BACK ->
+                R.string.settings_card_play_optimization_release_pop_back_desc
+            CardPlayOptimizationMode.RELEASE_KEEP_OPEN ->
+                R.string.settings_card_play_optimization_release_keep_open_desc
+            CardPlayOptimizationMode.VANILLA ->
+                R.string.settings_card_play_optimization_vanilla_desc
         }
     )
 }

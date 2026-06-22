@@ -53,19 +53,7 @@ public class SingleCardViewPopup {
     private static final GlyphLayout gl = new GlyphLayout();
     public static boolean isViewingUpgrade = false;
     public static boolean enableUpgradeToggle = true;
-    private static final String COMPENDIUM_UPGRADE_TOUCH_FIX_ENABLED_PROP =
-        "amethyst.compendium_upgrade_touch_fix_enabled";
-    private static final String NATIVE_TOUCHSCREEN_ENABLED_PROP =
-        "amethyst.native_touchscreen_enabled";
-    private static final float DEFAULT_BOTTOM_TOGGLE_W = 250.0f;
-    private static final float DEFAULT_BOTTOM_TOGGLE_H = 80.0f;
-    private static final float DEFAULT_BOTTOM_TOGGLE_CENTER_Y = 70.0f;
-    private static final float TOUCH_BOTTOM_TOGGLE_W = 340.0f;
-    private static final float TOUCH_BOTTOM_TOGGLE_H = 112.0f;
-    private static final float TOUCH_BOTTOM_TOGGLE_CENTER_Y = 96.0f;
-    private static Boolean compendiumUpgradeTouchFixEnabled = null;
-    private static Boolean nativeTouchscreenEnabled = null;
-    private Hitbox upgradeHb = new Hitbox(getBottomToggleWidth(), getBottomToggleHeight());
+    private Hitbox upgradeHb = new Hitbox(250.0f * Settings.scale, 80.0f * Settings.scale);
     private Hitbox betaArtHb = null;
     private boolean viewBetaArt = false;
 
@@ -107,25 +95,24 @@ public class SingleCardViewPopup {
         this.current_y = (float)Settings.HEIGHT / 2.0f - 300.0f * Settings.scale;
         if (this.canToggleBetaArt()) {
             if (this.allowUpgradePreview()) {
-                this.betaArtHb = new Hitbox(getBottomToggleWidth(), getBottomToggleHeight());
+                this.betaArtHb = new Hitbox(250.0f * Settings.scale, 80.0f * Settings.scale);
                 this.betaArtHb.move(
                     (float)Settings.WIDTH / 2.0f + 270.0f * Settings.scale,
-                    getBottomToggleCenterY()
+                    70.0f * Settings.scale
                 );
                 this.upgradeHb.move(
                     (float)Settings.WIDTH / 2.0f - 180.0f * Settings.scale,
-                    getBottomToggleCenterY()
+                    70.0f * Settings.scale
                 );
             } else {
-                this.betaArtHb = new Hitbox(getBottomToggleWidth(), getBottomToggleHeight());
-                this.betaArtHb.move((float)Settings.WIDTH / 2.0f, getBottomToggleCenterY());
+                this.betaArtHb = new Hitbox(250.0f * Settings.scale, 80.0f * Settings.scale);
+                this.betaArtHb.move((float)Settings.WIDTH / 2.0f, 70.0f * Settings.scale);
             }
             this.viewBetaArt = UnlockTracker.betaCardPref.getBoolean(card.cardID, false);
         } else {
-            this.upgradeHb.move((float)Settings.WIDTH / 2.0f, getBottomToggleCenterY());
+            this.upgradeHb.move((float)Settings.WIDTH / 2.0f, 70.0f * Settings.scale);
             this.betaArtHb = null;
         }
-        this.refreshBottomToggleHitboxes();
     }
 
     private boolean canToggleBetaArt() {
@@ -180,20 +167,19 @@ public class SingleCardViewPopup {
         this.current_y = (float)Settings.HEIGHT / 2.0f - 300.0f * Settings.scale;
         this.betaArtHb = null;
         if (this.canToggleBetaArt()) {
-            this.betaArtHb = new Hitbox(getBottomToggleWidth(), getBottomToggleHeight());
+            this.betaArtHb = new Hitbox(250.0f * Settings.scale, 80.0f * Settings.scale);
             this.betaArtHb.move(
                 (float)Settings.WIDTH / 2.0f + 270.0f * Settings.scale,
-                getBottomToggleCenterY()
+                70.0f * Settings.scale
             );
             this.upgradeHb.move(
                 (float)Settings.WIDTH / 2.0f - 180.0f * Settings.scale,
-                getBottomToggleCenterY()
+                70.0f * Settings.scale
             );
             this.viewBetaArt = UnlockTracker.betaCardPref.getBoolean(card.cardID, false);
         } else {
-            this.upgradeHb.move((float)Settings.WIDTH / 2.0f, getBottomToggleCenterY());
+            this.upgradeHb.move((float)Settings.WIDTH / 2.0f, 70.0f * Settings.scale);
         }
-        this.refreshBottomToggleHitboxes();
     }
 
     public void close() {
@@ -208,17 +194,16 @@ public class SingleCardViewPopup {
     }
 
     public void update() {
-        this.refreshBottomToggleHitboxes();
         this.cardHb.update();
         this.updateArrows();
+        this.updateInput();
+        this.updateFade();
         if (this.allowUpgradePreview()) {
             this.updateUpgradePreview();
         }
         if (this.betaArtHb != null && this.canToggleBetaArt()) {
             this.updateBetaArtToggler();
         }
-        this.updateInput();
-        this.updateFade();
     }
 
     private void updateBetaArtToggler() {
@@ -242,14 +227,6 @@ public class SingleCardViewPopup {
     private void updateUpgradePreview() {
         this.upgradeHb.update();
         if (this.upgradeHb.hovered && InputHelper.justClickedLeft) {
-            if (isCompendiumUpgradeTouchFixActive()) {
-                CInputActionSet.proceed.unpress();
-                this.upgradeHb.clicked = false;
-                isViewingUpgrade = !isViewingUpgrade;
-                InputHelper.justClickedLeft = false;
-                InputHelper.justReleasedClickLeft = false;
-                return;
-            }
             this.upgradeHb.clickStarted = true;
         }
         if (this.upgradeHb.clicked || CInputActionSet.proceed.isJustPressed()) {
@@ -316,82 +293,6 @@ public class SingleCardViewPopup {
         } else if (this.nextCard != null && InputActionSet.right.isJustPressed()) {
             this.openNext();
         }
-    }
-
-    private void refreshBottomToggleHitboxes() {
-        this.upgradeHb.resize(getBottomToggleWidth(), getBottomToggleHeight());
-        if (this.betaArtHb != null) {
-            this.betaArtHb.resize(getBottomToggleWidth(), getBottomToggleHeight());
-        }
-    }
-
-    private static float getBottomToggleWidth() {
-        if (isCompendiumUpgradeTouchFixActive()) {
-            return TOUCH_BOTTOM_TOGGLE_W * Settings.scale;
-        }
-        return DEFAULT_BOTTOM_TOGGLE_W * Settings.scale;
-    }
-
-    private static float getBottomToggleHeight() {
-        if (isCompendiumUpgradeTouchFixActive()) {
-            return TOUCH_BOTTOM_TOGGLE_H * Settings.scale;
-        }
-        return DEFAULT_BOTTOM_TOGGLE_H * Settings.scale;
-    }
-
-    private static float getBottomToggleCenterY() {
-        if (isCompendiumUpgradeTouchFixActive()) {
-            return TOUCH_BOTTOM_TOGGLE_CENTER_Y * Settings.scale;
-        }
-        return DEFAULT_BOTTOM_TOGGLE_CENTER_Y * Settings.scale;
-    }
-
-    private static boolean isCompendiumUpgradeTouchFixActive() {
-        return (Settings.isTouchScreen || isNativeTouchscreenEnabled())
-            && isCompendiumUpgradeTouchFixEnabled();
-    }
-
-    private static boolean isCompendiumUpgradeTouchFixEnabled() {
-        if (compendiumUpgradeTouchFixEnabled != null) {
-            return compendiumUpgradeTouchFixEnabled.booleanValue();
-        }
-        Boolean parsed = parseBooleanLike(
-            System.getProperty(COMPENDIUM_UPGRADE_TOUCH_FIX_ENABLED_PROP)
-        );
-        compendiumUpgradeTouchFixEnabled = parsed == null ? Boolean.TRUE : parsed;
-        return compendiumUpgradeTouchFixEnabled.booleanValue();
-    }
-
-    private static Boolean parseBooleanLike(String rawValue) {
-        if (rawValue == null) {
-            return null;
-        }
-        String normalized = rawValue.trim();
-        if (normalized.isEmpty()) {
-            return null;
-        }
-        if ("true".equalsIgnoreCase(normalized)
-            || "1".equals(normalized)
-            || "yes".equalsIgnoreCase(normalized)
-            || "on".equalsIgnoreCase(normalized)) {
-            return Boolean.TRUE;
-        }
-        if ("false".equalsIgnoreCase(normalized)
-            || "0".equals(normalized)
-            || "no".equalsIgnoreCase(normalized)
-            || "off".equalsIgnoreCase(normalized)) {
-            return Boolean.FALSE;
-        }
-        return null;
-    }
-
-    private static boolean isNativeTouchscreenEnabled() {
-        if (nativeTouchscreenEnabled != null) {
-            return nativeTouchscreenEnabled.booleanValue();
-        }
-        Boolean parsed = parseBooleanLike(System.getProperty(NATIVE_TOUCHSCREEN_ENABLED_PROP));
-        nativeTouchscreenEnabled = parsed == null ? Boolean.FALSE : parsed;
-        return nativeTouchscreenEnabled.booleanValue();
     }
 
     private void openPrev() {

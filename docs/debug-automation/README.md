@@ -66,6 +66,7 @@ python .\scripts\tools\main.py sts-harness -Command stop
 python .\scripts\tools\main.py sts-harness -Command smoke -LaunchMode mts_basemod -TimeoutSeconds 120
 python .\scripts\tools\main.py sts-harness -Command smoke -Autoplay
 python .\scripts\tools\main.py sts-harness -Command smoke -Autoplay -AutoplaySaveMode continue
+python .\scripts\tools\main.py sts-harness -Command single-room -SingleRoomCharacter IRONCLAD -SingleRoomMonster Cultist -SingleRoomCards "Strike_R,Defend_R,Bash"
 ```
 
 macOS/Linux:
@@ -85,6 +86,10 @@ Common options:
 - `-TimeoutSeconds <seconds>`: smoke/status wait timeout, default `120`; direct `-Autoplay` smoke defaults to `300` unless this option is explicitly set.
 - `-Autoplay`: enable the bundled autoplay driver. Requires `mts` or `mts_basemod` launch mode.
 - `-AutoplaySaveMode fresh|continue`: controls autoplay save handling. `fresh` is the default and clears stale saves before starting a new run; `continue` leaves saves intact and presses Resume/Continue when the main menu exposes it, falling back to a new run without clearing if no previous save is visible.
+- `-AutoplayMode normal|single_room`: selects normal long-run autoplay or a one-room combat test.
+- `-DisableCardObtainEffectOwnershipCompat`: disables the bundled `ShowCardAndAddToHandEffect` ownership compatibility patch for repro runs.
+- `-SingleRoomCharacter <id>` / `-SingleRoomMonster <id>` / `-SingleRoomCards <ids>`: configure the `single-room` command. Character ids may be vanilla or modded player class enum names; monster ids may be BaseMod custom encounter ids or vanilla `MonsterHelper` encounter ids; card ids may include modded cards. Card ids are comma- or newline-separated.
+- `-SingleRoomSpec <path>`: local UTF-8 properties file for `single-room`, with `character=`, `monster=`, and `cards=`. Put ad hoc spec files under `agent-tmp/`.
 - `-ForceJvmCrash`: expects a boot bridge `FAIL` during `smoke`.
 - `-ForceRuntimeCrash`: expects a runtime crash marker during `smoke`.
 - `-SkipInstall`: skip APK build/install during `smoke`.
@@ -97,6 +102,10 @@ Common options:
 `mods` reads device state only. `set-mods` replaces the enabled optional mod selection by writing `sts/enabled_mods.txt` and deleting the stale `.mts_mod_file_list` so the next MTS launch rebuilds it. Required mods such as BaseMod, StSLib, Amethyst Runtime Compat, Amethyst Floating Tools, and Ram Saver are not controlled by `enabled_mods.txt`.
 
 `smoke` starts a harness-owned `adb logcat` capture before launching the app. On crashes that happen before `latest.log` or `boot_bridge_events.log` can be written, `result.json` reports `LOGCAT_CRASH`, stores a short crash excerpt under `statusSnapshot.harnessLogcat.crash`, and writes the full capture to `artifacts.harnessLogcat`. Main-process desktop jar patch failures are also written as a boot bridge `FAIL` event so autoplay smoke can return a concrete failure instead of timing out in the launcher.
+
+Autoplay randomly handles `CardRewardScreen` discovery/card reward choice pages and logs `[amethyst-autoplay] choice: ...` markers with the selected card id, source, group size, and current action. This makes scripted repros for discovery-card pages deterministic enough to reach the interaction; visual twitch detection still requires reviewing the captured screen/log evidence.
+
+`single-room` is a harness-owned autoplay run mode. The harness writes or forwards a properties spec, pushes it to the device when needed, starts MTS autoplay with `autoplayMode=single_room`, waits until the runtime logs `[amethyst-autoplay] single_room result ...`, copies that parsed line into `statusSnapshot.latestLog.singleRoomResult`, exports logs, and stops the app. Success is reported as `SINGLE_ROOM_COMPLETE`; crashes and boot failures still use the normal `LOGCAT_CRASH`, `CRASH_MARKER`, or `FAIL` paths.
 
 ## Gradle Harness Tasks
 
@@ -114,6 +123,7 @@ Windows:
 .\gradlew.bat :app:stsHarnessStop
 .\gradlew.bat :app:stsHarnessSmoke
 .\gradlew.bat :app:stsHarnessAutoplaySmoke
+.\gradlew.bat :app:stsHarnessSingleRoom
 ```
 
 macOS/Linux:
@@ -134,6 +144,12 @@ Gradle properties:
 - `-PpythonExecutable=<python-command>`
 - `-Pautoplay=true`
 - `-PautoplaySaveMode=fresh|continue`
+- `-PautoplayMode=normal|single_room`
+- `-PdisableCardObtainEffectOwnershipCompat=true`
+- `-PsingleRoomCharacter=<id>`
+- `-PsingleRoomMonster=<id>`
+- `-PsingleRoomCards=<comma-separated-card-ids>`
+- `-PsingleRoomSpecFile=<local-properties-path>`
 - `-PforceJvmCrash=true`
 - `-PforceRuntimeCrash=true`
 - `-PnoStopAfterSmoke=true`
@@ -144,6 +160,8 @@ Example:
 .\gradlew.bat :app:stsHarnessSmoke -PdeviceSerial=emulator-5554 -PlaunchMode=vanilla -PharnessOutDir=debug-artifacts\harness\vanilla-smoke
 .\gradlew.bat :app:stsHarnessAutoplaySmoke -PdeviceSerial=emulator-5554 -PharnessOutDir=debug-artifacts\harness\autoplay-smoke
 .\gradlew.bat :app:stsHarnessAutoplaySmoke -PdeviceSerial=emulator-5554 -PautoplaySaveMode=continue -PharnessOutDir=debug-artifacts\harness\autoplay-continue
+.\gradlew.bat :app:stsHarnessSingleRoom -PdeviceSerial=emulator-5554 -PsingleRoomCharacter=IRONCLAD -PsingleRoomMonster=Cultist -PsingleRoomCards=Strike_R,Defend_R,Bash -PharnessOutDir=debug-artifacts\harness\single-room
+.\gradlew.bat :app:stsHarnessSingleRoom -PdeviceSerial=emulator-5554 -PsingleRoomCharacter=IRONCLAD -PsingleRoomMonster=Looter -PsingleRoomCards=Strike_R -PdisableCardObtainEffectOwnershipCompat=true -PharnessOutDir=debug-artifacts\harness\card-obtain-ownership-unpatched
 ```
 
 `:app:stsHarnessAutoplaySmoke` and `:app:stsHarnessSmoke -Pautoplay=true` default to a 300-second harness timeout so first-run desktop jar patching can finish; pass `-PharnessTimeoutSeconds=<seconds>` to override it.

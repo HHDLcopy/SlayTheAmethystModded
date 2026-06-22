@@ -24,6 +24,7 @@ import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.BootOverlayAnimation
 import io.stamethyst.config.BootOverlayImageConfig
 import io.stamethyst.config.BootOverlayStyle
+import io.stamethyst.config.CardPlayOptimizationMode
 import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.config.LauncherIconMode
 import io.stamethyst.config.LauncherThemeColor
@@ -92,6 +93,7 @@ internal object SettingsRepository {
         val ramSaverEnabled: Boolean,
         val keepScreenOnTimeoutMinutes: Int,
         val touchscreenEnabled: Boolean,
+        val cardPlayOptimizationMode: CardPlayOptimizationMode,
         val touchIndicatorEnabled: Boolean,
         val fontScale: Float,
         val largerUiEnabled: Boolean
@@ -234,6 +236,8 @@ internal object SettingsRepository {
                 ramSaverEnabled = LauncherPreferences.isRamSaverEnabled(context),
                 keepScreenOnTimeoutMinutes = LauncherPreferences.readKeepScreenOnTimeoutMinutes(context),
                 touchscreenEnabled = GameplaySettingsService.readTouchscreenEnabled(context),
+                cardPlayOptimizationMode =
+                    GameplaySettingsService.readCardPlayOptimizationMode(context),
                 touchIndicatorEnabled = GameplaySettingsService.readTouchIndicatorEnabled(context),
                 fontScale = GameplaySettingsService.readFontScale(context),
                 largerUiEnabled = GameplaySettingsService.readLargerUiEnabled(context)
@@ -455,6 +459,10 @@ internal object SettingsRepository {
         GameplaySettingsService.saveTouchscreenInputMode(
             context,
             GameplaySettingsService.DEFAULT_TOUCHSCREEN_INPUT_MODE
+        )
+        GameplaySettingsService.saveCardPlayOptimizationMode(
+            context,
+            GameplaySettingsService.DEFAULT_CARD_PLAY_OPTIMIZATION_MODE
         )
         GameplaySettingsService.saveFontScale(context, GameplaySettingsService.DEFAULT_FONT_SCALE)
         GameplaySettingsService.saveLargerUiEnabled(

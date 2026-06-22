@@ -14,12 +14,13 @@ object LauncherUpdateUiReducer {
     fun reduce(
         result: UpdateCheckExecutionResult,
         userInitiated: Boolean,
+        suppressAutomaticPrompt: Boolean = false,
     ): UpdateUiDecision {
         return when (result) {
             is UpdateCheckExecutionResult.Success -> {
                 if (result.hasUpdate) {
                     UpdateUiDecision(
-                        showPrompt = true,
+                        showPrompt = userInitiated || !suppressAutomaticPrompt,
                         message = null
                     )
                 } else {

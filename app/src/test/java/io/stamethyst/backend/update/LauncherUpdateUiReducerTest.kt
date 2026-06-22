@@ -57,6 +57,25 @@ class LauncherUpdateUiReducerTest {
         assertNull(second.message)
     }
 
+    @Test
+    fun reduce_autoCheckWithSuppressedPromptKeepsManualPromptAvailable() {
+        val automatic = LauncherUpdateUiReducer.reduce(
+            result = success(hasUpdate = true),
+            userInitiated = false,
+            suppressAutomaticPrompt = true
+        )
+        val manual = LauncherUpdateUiReducer.reduce(
+            result = success(hasUpdate = true),
+            userInitiated = true,
+            suppressAutomaticPrompt = true
+        )
+
+        assertFalse(automatic.showPrompt)
+        assertTrue(manual.showPrompt)
+        assertNull(automatic.message)
+        assertNull(manual.message)
+    }
+
     private fun success(hasUpdate: Boolean): UpdateCheckExecutionResult.Success {
         val release = UpdateReleaseInfo(
             rawTagName = "v1.0.6-hotfix1",

@@ -18,6 +18,9 @@ object LauncherUpdateService {
     private const val RELEASE_HISTORY_API_URL =
         "https://api.github.com/repos/ModinMobileSTS/SlayTheAmethystModded/releases"
     private const val DEFAULT_RELEASE_HISTORY_LIMIT = 10
+    private const val MAX_RELEASE_HISTORY_LIMIT = 100
+    private const val PENDING_RELEASE_HISTORY_PAGE_SIZE = 100
+    private const val MAX_PENDING_RELEASE_HISTORY_PAGES = 5
     private const val CONNECT_TIMEOUT_MS = 8_000
     private const val READ_TIMEOUT_MS = 12_000
     private const val USER_AGENT = "SlayTheAmethyst-LauncherUpdate"
@@ -64,11 +67,18 @@ object LauncherUpdateService {
                 hasUpdate = false
             )
         }
+        val releaseWithPendingNotes = fetchReleaseWithPendingNotes(
+            clients = clients,
+            release = release,
+            currentVersion = currentVersion,
+            preferredUserSource = normalizedPreferredSource,
+            bypassAcceleratedLinks = bypassAcceleratedLinks,
+        )
 
         val downloadResolution = try {
             resolveDownloadResolution(
                 clients = clients,
-                release = release,
+                release = releaseWithPendingNotes,
                 preferredUserSource = normalizedPreferredSource,
                 metadataSource = metadataSource,
                 bypassAcceleratedLinks = bypassAcceleratedLinks,
@@ -77,14 +87,14 @@ object LauncherUpdateService {
             return UpdateCheckExecutionResult.Failure(
                 errorSummary = "Unable to resolve a reachable APK download link. ${GithubMirrorFallback.summarize(error)}"
                     .trim(),
-                release = release,
+                release = releaseWithPendingNotes,
                 metadataSource = metadataSource
             )
         }
 
         return UpdateCheckExecutionResult.Success(
             currentVersion = currentVersion,
-            release = release,
+            release = releaseWithPendingNotes,
             metadataSource = metadataSource,
             downloadResolution = downloadResolution,
             hasUpdate = true
@@ -99,7 +109,7 @@ object LauncherUpdateService {
         val clients = createGithubClients(context)
         val normalizedPreferredSource = UpdateSource.normalizePreferredUserSource(preferredUserSource.id)
         val bypassAcceleratedLinks = NetworkAccelerationPolicy.shouldBypassAcceleratedLinks(context)
-        val normalizedLimit = limit.coerceIn(1, 20)
+        val normalizedLimit = limit.coerceIn(1, MAX_RELEASE_HISTORY_LIMIT)
         val metadataResult = GithubMirrorFallback.run(
             normalizedPreferredSource,
             bypassAcceleratedLinks = bypassAcceleratedLinks,
@@ -203,6 +213,32 @@ object LauncherUpdateService {
         return entries
     }
 
+    internal fun buildPendingReleaseNotesText(
+        currentVersion: String,
+        latestRelease: UpdateReleaseInfo,
+        historyEntries: List<UpdateReleaseHistoryEntry>,
+    ): String {
+        val pendingEntries = selectPendingReleaseHistoryEntries(
+            currentVersion = currentVersion,
+            latestVersion = latestRelease.normalizedVersion,
+            historyEntries = historyEntries,
+        )
+        if (pendingEntries.isEmpty()) {
+            return latestRelease.notesText
+        }
+        return pendingEntries.joinToString(separator = "\n\n") { entry ->
+            buildString {
+                append("# ")
+                append(entry.rawTagName.ifBlank { "v${entry.normalizedVersion}" })
+                val notesText = entry.notesText.trim()
+                if (notesText.isNotBlank()) {
+                    append("\n\n")
+                    append(notesText)
+                }
+            }
+        }.trim()
+    }
+
     internal fun resolveDownloadResolution(
         clients: GithubRequestClients,
         release: UpdateReleaseInfo,
@@ -235,6 +271,122 @@ object LauncherUpdateService {
             readTimeoutMs = READ_TIMEOUT_MS,
             followRedirects = true,
         )
+    }
+
+    private fun fetchReleaseWithPendingNotes(
+        clients: GithubRequestClients,
+        release: UpdateReleaseInfo,
+        currentVersion: String,
+        preferredUserSource: UpdateSource,
+        bypassAcceleratedLinks: Boolean,
+    ): UpdateReleaseInfo {
+        if (LauncherUpdateVersioning.compareReleaseVersions(currentVersion, release.normalizedVersion) == null) {
+            return release
+        }
+        return runCatching {
+            val historyEntries = fetchPendingReleaseHistory(
+                clients = clients,
+                currentVersion = currentVersion,
+                preferredUserSource = preferredUserSource,
+                bypassAcceleratedLinks = bypassAcceleratedLinks,
+            )
+            val notesText = buildPendingReleaseNotesText(
+                currentVersion = currentVersion,
+                latestRelease = release,
+                historyEntries = historyEntries,
+            )
+            if (notesText.isBlank() || notesText == release.notesText) {
+                release
+            } else {
+                release.copy(notesText = notesText)
+            }
+        }.getOrElse {
+            release
+        }
+    }
+
+    private fun fetchPendingReleaseHistory(
+        clients: GithubRequestClients,
+        currentVersion: String,
+        preferredUserSource: UpdateSource,
+        bypassAcceleratedLinks: Boolean,
+    ): List<UpdateReleaseHistoryEntry> {
+        return GithubMirrorFallback.run(
+            preferredUserSource,
+            bypassAcceleratedLinks = bypassAcceleratedLinks,
+        ) { source ->
+            val entries = ArrayList<UpdateReleaseHistoryEntry>()
+            for (page in 1..MAX_PENDING_RELEASE_HISTORY_PAGES) {
+                val requestUrl = source.buildUrl(
+                    "$RELEASE_HISTORY_API_URL?per_page=$PENDING_RELEASE_HISTORY_PAGE_SIZE&page=$page"
+                )
+                val responseText = requestText(
+                    clients.pick(source.usesGithubAcceleration),
+                    requestUrl
+                )
+                val pageEntries = parseReleaseHistory(
+                    responseText,
+                    PENDING_RELEASE_HISTORY_PAGE_SIZE
+                )
+                if (pageEntries.isEmpty()) {
+                    break
+                }
+                entries += pageEntries
+                if (
+                    pageEntries.size < PENDING_RELEASE_HISTORY_PAGE_SIZE ||
+                    pageEntries.any { entry ->
+                        val comparison = LauncherUpdateVersioning.compareReleaseVersions(
+                            entry.normalizedVersion,
+                            currentVersion
+                        )
+                        comparison != null && comparison < 0
+                    }
+                ) {
+                    break
+                }
+            }
+            entries.takeIf { it.isNotEmpty() } ?: throw IOException("Release history is empty.")
+        }.value
+    }
+
+    private fun selectPendingReleaseHistoryEntries(
+        currentVersion: String,
+        latestVersion: String,
+        historyEntries: List<UpdateReleaseHistoryEntry>,
+    ): List<UpdateReleaseHistoryEntry> {
+        return historyEntries
+            .filter { entry ->
+                val currentToEntry = LauncherUpdateVersioning.compareReleaseVersions(
+                    currentVersion,
+                    entry.normalizedVersion
+                )
+                val entryToLatest = LauncherUpdateVersioning.compareReleaseVersions(
+                    entry.normalizedVersion,
+                    latestVersion
+                )
+                currentToEntry != null &&
+                    entryToLatest != null &&
+                    currentToEntry < 0 &&
+                    entryToLatest <= 0
+            }
+            .groupBy { entry ->
+                LauncherUpdateVersioning.releaseVersionFamilyKey(entry.normalizedVersion)
+            }
+            .values
+            .mapNotNull { familyEntries ->
+                familyEntries.maxWithOrNull { left, right ->
+                    LauncherUpdateVersioning.compareReleaseVersions(
+                        left.normalizedVersion,
+                        right.normalizedVersion
+                    ) ?: left.normalizedVersion.compareTo(right.normalizedVersion)
+                }
+            }
+            .sortedWith { left, right ->
+                LauncherUpdateVersioning.compareReleaseVersions(
+                    left.normalizedVersion,
+                    right.normalizedVersion
+                ) ?: left.normalizedVersion.compareTo(right.normalizedVersion)
+            }
     }
 
     private fun requestText(client: OkHttpClient, requestUrl: String): String {

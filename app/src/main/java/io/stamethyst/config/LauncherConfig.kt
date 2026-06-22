@@ -55,6 +55,7 @@ object LauncherConfig {
     private const val PREF_KEY_TOUCH_DOUBLE_CLICK_AS_RIGHT_CLICK =
         "touch_double_click_as_right_click"
     private const val PREF_KEY_TOUCHSCREEN_ENABLED = "touchscreen_enabled"
+    private const val PREF_KEY_CARD_PLAY_OPTIMIZATION_MODE = "card_play_optimization_mode"
     private const val PREF_KEY_TOUCH_INDICATOR_ENABLED = "touch_indicator_enabled"
     private const val PREF_KEY_RENDER_SURFACE_BACKEND = "render_surface_backend"
     private const val PREF_KEY_RENDERER_SELECTION_MODE = "renderer_selection_mode"
@@ -337,6 +338,8 @@ object LauncherConfig {
     const val DEFAULT_CARD_TOOLTIP_KEYWORD_RESCUE_COMPAT_ENABLED = true
     const val DEFAULT_NATIVE_TOUCHSCREEN_ALLOWLIST_COMPAT_ENABLED = true
     val DEFAULT_TOUCHSCREEN_INPUT_MODE: TouchscreenInputMode = TouchscreenInputMode.HYBRID
+    val DEFAULT_CARD_PLAY_OPTIMIZATION_MODE: CardPlayOptimizationMode =
+        CardPlayOptimizationMode.RELEASE_POP_BACK
     const val DEFAULT_LARGE_TEXTURE_DOWNSCALE_COMPAT_ENABLED = false
     const val DEFAULT_TEXTURE_RESIDENCY_MANAGER_COMPAT_ENABLED = false
     const val DEFAULT_TEXTURE_PRESSURE_DOWNSCALE_DIVISOR = 2
@@ -2253,6 +2256,12 @@ object LauncherConfig {
         )
     }
 
+    fun readCardPlayOptimizationMode(context: Context): CardPlayOptimizationMode {
+        return CardPlayOptimizationMode.fromPersistedValue(
+            prefs(context).getString(PREF_KEY_CARD_PLAY_OPTIMIZATION_MODE, null)
+        ) ?: DEFAULT_CARD_PLAY_OPTIMIZATION_MODE
+    }
+
     fun readTouchIndicatorEnabled(context: Context): Boolean {
         return prefs(context).getBoolean(
             PREF_KEY_TOUCH_INDICATOR_ENABLED,
@@ -2284,6 +2293,17 @@ object LauncherConfig {
             context,
             mode.nativeTouchscreenAllowlistEnabled
         )
+    }
+
+    @Throws(IOException::class)
+    fun saveCardPlayOptimizationMode(context: Context, mode: CardPlayOptimizationMode) {
+        val committed = prefs(context)
+            .edit()
+            .putString(PREF_KEY_CARD_PLAY_OPTIMIZATION_MODE, mode.persistedValue)
+            .commit()
+        if (!committed) {
+            throw IOException("Failed to persist launcher card play optimization mode")
+        }
     }
 
     fun readGameplayFontScale(context: Context): Float {

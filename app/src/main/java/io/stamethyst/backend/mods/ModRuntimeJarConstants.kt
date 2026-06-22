@@ -101,6 +101,10 @@ internal const val STS_PATCH_STEAM_INPUT_HELPER_CLASS =
     "com/megacrit/cardcrawl/helpers/steamInput/SteamInputHelper.class"
 internal const val STS_PATCH_TIP_HELPER_CLASS =
     "com/megacrit/cardcrawl/helpers/TipHelper.class"
+internal const val STS_PATCH_HITBOX_CLASS =
+    "com/megacrit/cardcrawl/helpers/Hitbox.class"
+internal const val STS_PATCH_INPUT_HELPER_CLASS =
+    "com/megacrit/cardcrawl/helpers/input/InputHelper.class"
 internal const val STS_PATCH_TYPE_HELPER_CLASS =
     "com/megacrit/cardcrawl/helpers/TypeHelper.class"
 internal const val STS_PATCH_RENAME_POPUP_CLASS =
@@ -175,6 +179,8 @@ internal val REQUIRED_STS_PATCH_CLASSES: Set<String> = HashSet(
         STS_PATCH_STEAM_UTILS_ENUM_CLASS,
         STS_PATCH_STEAM_INPUT_HELPER_CLASS,
         STS_PATCH_TIP_HELPER_CLASS,
+        STS_PATCH_HITBOX_CLASS,
+        STS_PATCH_INPUT_HELPER_CLASS,
         STS_PATCH_TYPE_HELPER_CLASS,
         STS_PATCH_RENAME_POPUP_CLASS,
         STS_PATCH_SEED_PANEL_CLASS,

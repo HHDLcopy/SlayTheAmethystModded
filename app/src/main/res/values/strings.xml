@@ -255,9 +255,9 @@
     <string name="settings_haptic_feedback_desc">Controls launcher and in-game overlay vibration feedback, including taps, switches, sliders, and mod toggles.</string>
     <string name="status_built_in_soft_keyboard_format">Built-in in-game keyboard: %1$s</string>
     <string name="status_haptic_feedback_format">Vibration feedback: %1$s</string>
-    <string name="settings_compendium_upgrade_touch_fix_enabled">Compendium upgrade toggle touch fix: Enabled</string>
-    <string name="settings_compendium_upgrade_touch_fix_disabled">Compendium upgrade toggle touch fix: Disabled</string>
-    <string name="settings_compendium_upgrade_touch_fix_desc">When enabled in touchscreen mode, enlarges the Compendium card popup &quot;View Upgrades&quot; tap area and switches directly on touch-down, reducing misses caused by swipes or slight finger drift.</string>
+    <string name="settings_compendium_upgrade_touch_fix_enabled">Pre-click hitbox hover refresh: Enabled</string>
+    <string name="settings_compendium_upgrade_touch_fix_disabled">Pre-click hitbox hover refresh: Disabled</string>
+    <string name="settings_compendium_upgrade_touch_fix_desc">When enabled, a fresh click first refreshes hitbox hover state at the current pointer position, so vanilla and mod-added checkboxes can be tapped without pre-hovering.</string>
     <string name="touch_mouse_floating_menu_collapse">Hide</string>
     <string name="touch_mouse_floating_menu_keyboard">Open keyboard</string>
     <string name="touch_mouse_builtin_keyboard_shift">Shift</string>
@@ -1628,6 +1628,13 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_touchscreen_mode_desktop_desc">Shows the mouse cursor and uses full desktop click behavior. This has the best click compatibility, but some operations are not suitable for mobile.</string>
     <string name="settings_touchscreen_mode_hybrid_desc">Recommended. Keeps the touch input UI, shows the touch indicator by default, and enables touchscreen logic only for vanilla screens. This can fix cases where mod buttons cannot be tapped under native touch.</string>
     <string name="settings_touchscreen_mode_mobile_desc">Restores global native touchscreen semantics. Closest to vanilla mobile touch behavior, but more likely to trigger mod UI issues.</string>
+    <string name="settings_card_play_optimization_title">Card play optimization</string>
+    <string name="settings_card_play_optimization_release_pop_back">Pop card back on release</string>
+    <string name="settings_card_play_optimization_release_keep_open">Keep card popped out on release</string>
+    <string name="settings_card_play_optimization_vanilla">Vanilla behavior</string>
+    <string name="settings_card_play_optimization_release_pop_back_desc">Default. Hand cards stop hovering after the finger lifts, so a tap inspects briefly and then returns the card.</string>
+    <string name="settings_card_play_optimization_release_keep_open_desc">A short tap keeps that hand card floated for reading until another card or blank combat space is tapped.</string>
+    <string name="settings_card_play_optimization_vanilla_desc">Disables the launcher card-play touch optimizations and uses the original game behavior.</string>
     <string name="settings_touch_indicator_enabled">Touch indicator: Shown</string>
     <string name="settings_touch_indicator_disabled">Touch indicator: Hidden</string>
     <string name="settings_touch_indicator_desc">Controls whether taps in hybrid or mobile touchscreen mode show the small fading circle in game.</string>
@@ -1977,6 +1984,7 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_player_name_save_failed">Failed to save player name: %1$s</string>
     <string name="settings_touchscreen_save_failed">Failed to save touchscreen setting: %1$s</string>
     <string name="settings_touchscreen_mode_save_failed">Failed to save touchscreen mode: %1$s</string>
+    <string name="settings_card_play_optimization_save_failed">Failed to save card play optimization mode: %1$s</string>
     <string name="settings_gameplay_font_scale_save_failed">Failed to save text size: %1$s</string>
     <string name="settings_gameplay_larger_ui_save_failed">Failed to save larger UI setting: %1$s</string>
     <string name="settings_mobileglues_save_failed">Failed to save MobileGlues settings: %1$s</string>
@@ -2026,10 +2034,11 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_status_back_behavior">Back behavior: %1$s</string>
     <string name="settings_status_touchscreen">Touchscreen input: %1$s</string>
     <string name="settings_status_touchscreen_mode">Touchscreen mode: %1$s</string>
+    <string name="settings_status_card_play_optimization">Card play optimization: %1$s</string>
     <string name="settings_status_gameplay_font_scale">Text size: %1$sx</string>
     <string name="settings_status_gameplay_larger_ui">Larger UI: %1$s</string>
     <string name="settings_status_mobile_hud">Mobile HUD: %1$s</string>
-    <string name="settings_status_compendium_touch_fix">Compendium upgrade touch fix: %1$s</string>
+    <string name="settings_status_compendium_touch_fix">Pre-click hitbox hover refresh: %1$s</string>
     <string name="settings_status_avoid_display_cutout">Avoid display cutout: %1$s</string>
     <string name="settings_status_crop_screen_bottom">Crop screen bottom: %1$s</string>
     <string name="settings_status_keep_screen_on_timeout">Screen awake timeout: %1$s</string>

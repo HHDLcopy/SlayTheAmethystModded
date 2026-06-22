@@ -178,13 +178,17 @@ class StsUiTouchCompatPatcherTest {
             methodFingerprint(findMethod(donorBytes, "updateUpgradePreview", "()V")),
             methodFingerprint(findMethod(patchedBytes, "updateUpgradePreview", "()V"))
         )
-        findMethod(patchedBytes, "isNativeTouchscreenEnabled", "()Z")
-        assertTrue(
-            containsMethodInvocation(
-                findMethod(patchedBytes, "isCompendiumUpgradeTouchFixActive", "()Z"),
-                Opcodes.INVOKESTATIC,
-                "com/megacrit/cardcrawl/screens/SingleCardViewPopup",
-                "isNativeTouchscreenEnabled",
+        assertFalse(
+            classHasMethod(
+                patchedBytes,
+                "isPointerOverAnyPopupHitbox",
+                "()Z"
+            )
+        )
+        assertFalse(
+            classHasMethod(
+                patchedBytes,
+                "isCompendiumUpgradeTouchFixActive",
                 "()Z"
             )
         )
@@ -228,19 +232,99 @@ class StsUiTouchCompatPatcherTest {
             methodFingerprint(findMethod(donorBytes, "update", "(F)V")),
             methodFingerprint(findMethod(patchedBytes, "update", "(F)V"))
         )
-        findMethod(patchedBytes, "isNativeTouchscreenEnabled", "()Z")
-        assertTrue(
-            containsMethodInvocation(
-                findMethod(patchedBytes, "isCompendiumUpgradeTouchFixActive", "()Z"),
-                Opcodes.INVOKESTATIC,
-                "com/megacrit/cardcrawl/screens/mainMenu/ColorTabBar",
-                "isNativeTouchscreenEnabled",
+        assertFalse(
+            classHasMethod(
+                patchedBytes,
+                "isCompendiumUpgradeTouchFixActive",
                 "()Z"
             )
         )
 
         val patchedAgain = StsUiTouchCompatPatcher.mergePatchedClass(
             entryName = STS_PATCH_COLOR_TAB_BAR_CLASS,
+            targetClassBytes = patchedBytes,
+            donorClassBytes = donorBytes
+        )
+        assertArrayEquals(patchedBytes, patchedAgain)
+    }
+
+    @Test
+    fun mergePatchedClass_hitbox_addsConstructorRegistrationAndRefreshMethods() {
+        val originalJar = resolveFixtureFile(
+            "tools/desktop-1.0.jar",
+            "../tools/desktop-1.0.jar"
+        )
+        val patchJar = resolveFixtureFile(
+            "patches/gdx-patch/build/libs/gdx-patch.jar",
+            "../patches/gdx-patch/build/libs/gdx-patch.jar"
+        )
+        assumeTrue(originalJar.isFile)
+        assumeTrue(patchJar.isFile)
+
+        val originalBytes = readJarEntry(originalJar, STS_PATCH_HITBOX_CLASS)
+        val donorBytes = readJarEntry(patchJar, STS_PATCH_HITBOX_CLASS)
+
+        val patchedBytes = StsUiTouchCompatPatcher.mergePatchedClass(
+            entryName = STS_PATCH_HITBOX_CLASS,
+            targetClassBytes = originalBytes,
+            donorClassBytes = donorBytes
+        )
+
+        assertFalse("new patch should not be a whole-class donor copy", patchedBytes.contentEquals(donorBytes))
+        findMethod(patchedBytes, "refreshAllHoveredForFreshClick", "()V")
+        assertTrue(
+            containsMethodInvocation(
+                findMethod(patchedBytes, "<init>", "(FFFF)V"),
+                Opcodes.INVOKESTATIC,
+                "com/megacrit/cardcrawl/helpers/Hitbox",
+                "registerForPreClickHoverRefresh",
+                "(Lcom/megacrit/cardcrawl/helpers/Hitbox;)V"
+            )
+        )
+
+        val patchedAgain = StsUiTouchCompatPatcher.mergePatchedClass(
+            entryName = STS_PATCH_HITBOX_CLASS,
+            targetClassBytes = patchedBytes,
+            donorClassBytes = donorBytes
+        )
+        assertArrayEquals(patchedBytes, patchedAgain)
+    }
+
+    @Test
+    fun mergePatchedClass_inputHelper_refreshesHitboxHoverAfterFreshClick() {
+        val originalJar = resolveFixtureFile(
+            "tools/desktop-1.0.jar",
+            "../tools/desktop-1.0.jar"
+        )
+        val patchJar = resolveFixtureFile(
+            "patches/gdx-patch/build/libs/gdx-patch.jar",
+            "../patches/gdx-patch/build/libs/gdx-patch.jar"
+        )
+        assumeTrue(originalJar.isFile)
+        assumeTrue(patchJar.isFile)
+
+        val originalBytes = readJarEntry(originalJar, STS_PATCH_INPUT_HELPER_CLASS)
+        val donorBytes = readJarEntry(patchJar, STS_PATCH_INPUT_HELPER_CLASS)
+
+        val patchedBytes = StsUiTouchCompatPatcher.mergePatchedClass(
+            entryName = STS_PATCH_INPUT_HELPER_CLASS,
+            targetClassBytes = originalBytes,
+            donorClassBytes = donorBytes
+        )
+
+        assertFalse("new patch should not be a whole-class donor copy", patchedBytes.contentEquals(donorBytes))
+        assertTrue(
+            containsMethodInvocation(
+                findMethod(patchedBytes, "updateFirst", "()V"),
+                Opcodes.INVOKESTATIC,
+                "com/megacrit/cardcrawl/helpers/Hitbox",
+                "refreshAllHoveredForFreshClick",
+                "()V"
+            )
+        )
+
+        val patchedAgain = StsUiTouchCompatPatcher.mergePatchedClass(
+            entryName = STS_PATCH_INPUT_HELPER_CLASS,
             targetClassBytes = patchedBytes,
             donorClassBytes = donorBytes
         )
@@ -334,6 +418,12 @@ class StsUiTouchCompatPatcherTest {
             current = current.next
         }
         return false
+    }
+
+    private fun classHasMethod(classBytes: ByteArray, name: String, desc: String): Boolean {
+        val classNode = ClassNode()
+        ClassReader(classBytes).accept(classNode, ClassReader.SKIP_FRAMES)
+        return classNode.methods.any { method -> method.name == name && method.desc == desc }
     }
 
     private fun containsMethodInvocation(

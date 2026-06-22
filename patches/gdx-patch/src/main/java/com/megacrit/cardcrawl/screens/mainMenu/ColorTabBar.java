@@ -20,17 +20,6 @@ public class ColorTabBar {
     private static final int TAB_W = 274;
     private static final int TAB_H = 68;
     private static final int TICKBOX_W = 48;
-    private static final String COMPENDIUM_UPGRADE_TOUCH_FIX_ENABLED_PROP =
-        "amethyst.compendium_upgrade_touch_fix_enabled";
-    private static final String NATIVE_TOUCHSCREEN_ENABLED_PROP =
-        "amethyst.native_touchscreen_enabled";
-    private static final float VIEW_UPGRADE_HB_W = 360.0f;
-    private static final float VIEW_UPGRADE_HB_H = 48.0f;
-    private static final float TOUCH_VIEW_UPGRADE_HB_W = 420.0f;
-    private static final float TOUCH_VIEW_UPGRADE_HB_H = 84.0f;
-    private static final float TOUCH_VIEW_UPGRADE_HB_CENTER_Y_OFFSET = -18.0f;
-    private static Boolean compendiumUpgradeTouchFixEnabled = null;
-    private static Boolean nativeTouchscreenEnabled = null;
 
     public Hitbox redHb;
     public Hitbox greenHb;
@@ -52,7 +41,7 @@ public class ColorTabBar {
         this.colorlessHb = new Hitbox(w, h);
         this.curseHb = new Hitbox(w, h);
         this.delegate = delegate;
-        this.viewUpgradeHb = new Hitbox(getViewUpgradeHitboxWidth(), getViewUpgradeHitboxHeight());
+        this.viewUpgradeHb = new Hitbox(360.0f * Settings.scale, 48.0f * Settings.scale);
     }
 
     public void update(float y) {
@@ -63,7 +52,7 @@ public class ColorTabBar {
         this.purpleHb.move(x += TAB_SPACING, y + 50.0f * Settings.scale);
         this.colorlessHb.move(x += TAB_SPACING, y + 50.0f * Settings.scale);
         this.curseHb.move(x += TAB_SPACING, y + 50.0f * Settings.scale);
-        this.updateViewUpgradeHitbox(y);
+        this.viewUpgradeHb.move(1410.0f * Settings.xScale, y);
         this.redHb.update();
         this.greenHb.update();
         this.blueHb.update();
@@ -130,21 +119,11 @@ public class ColorTabBar {
         if (this.viewUpgradeHb.justHovered) {
             CardCrawlGame.sound.playA("UI_HOVER", -0.3f);
         }
-        boolean handledTouchTap = false;
         if (this.viewUpgradeHb.hovered && InputHelper.justClickedLeft) {
-            if (isCompendiumUpgradeTouchFixActive()) {
-                this.toggleViewUpgrade();
-                this.viewUpgradeHb.clickStarted = false;
-                this.viewUpgradeHb.clicked = false;
-                InputHelper.justClickedLeft = false;
-                handledTouchTap = true;
-            } else {
-                this.viewUpgradeHb.clickStarted = true;
-            }
+            this.viewUpgradeHb.clickStarted = true;
         }
-        if (!handledTouchTap &&
-            (this.viewUpgradeHb.clicked ||
-                this.viewUpgradeHb.hovered && CInputActionSet.select.isJustPressed())) {
+        if (this.viewUpgradeHb.clicked ||
+            this.viewUpgradeHb.hovered && CInputActionSet.select.isJustPressed()) {
             this.toggleViewUpgrade();
         }
     }
@@ -298,87 +277,6 @@ public class ColorTabBar {
         this.viewUpgradeHb.clicked = false;
         CardCrawlGame.sound.playA("UI_CLICK_1", -0.2f);
         SingleCardViewPopup.isViewingUpgrade = !SingleCardViewPopup.isViewingUpgrade;
-    }
-
-    private void updateViewUpgradeHitbox(float y) {
-        float width = getViewUpgradeHitboxWidth();
-        float height = getViewUpgradeHitboxHeight();
-        if (this.viewUpgradeHb.width != width || this.viewUpgradeHb.height != height) {
-            this.viewUpgradeHb.resize(width, height);
-        }
-        this.viewUpgradeHb.move(
-            1410.0f * Settings.xScale,
-            y + getViewUpgradeHitboxCenterYOffset()
-        );
-    }
-
-    private static float getViewUpgradeHitboxWidth() {
-        if (isCompendiumUpgradeTouchFixActive()) {
-            return TOUCH_VIEW_UPGRADE_HB_W * Settings.scale;
-        }
-        return VIEW_UPGRADE_HB_W * Settings.scale;
-    }
-
-    private static float getViewUpgradeHitboxHeight() {
-        if (isCompendiumUpgradeTouchFixActive()) {
-            return TOUCH_VIEW_UPGRADE_HB_H * Settings.scale;
-        }
-        return VIEW_UPGRADE_HB_H * Settings.scale;
-    }
-
-    private static float getViewUpgradeHitboxCenterYOffset() {
-        if (isCompendiumUpgradeTouchFixActive()) {
-            return TOUCH_VIEW_UPGRADE_HB_CENTER_Y_OFFSET * Settings.scale;
-        }
-        return 0.0f;
-    }
-
-    private static boolean isCompendiumUpgradeTouchFixActive() {
-        return (Settings.isTouchScreen || isNativeTouchscreenEnabled())
-            && isCompendiumUpgradeTouchFixEnabled();
-    }
-
-    private static boolean isCompendiumUpgradeTouchFixEnabled() {
-        if (compendiumUpgradeTouchFixEnabled != null) {
-            return compendiumUpgradeTouchFixEnabled.booleanValue();
-        }
-        Boolean parsed = parseBooleanLike(
-            System.getProperty(COMPENDIUM_UPGRADE_TOUCH_FIX_ENABLED_PROP)
-        );
-        compendiumUpgradeTouchFixEnabled = parsed == null ? Boolean.TRUE : parsed;
-        return compendiumUpgradeTouchFixEnabled.booleanValue();
-    }
-
-    private static Boolean parseBooleanLike(String rawValue) {
-        if (rawValue == null) {
-            return null;
-        }
-        String normalized = rawValue.trim();
-        if (normalized.isEmpty()) {
-            return null;
-        }
-        if ("true".equalsIgnoreCase(normalized) ||
-            "1".equals(normalized) ||
-            "yes".equalsIgnoreCase(normalized) ||
-            "on".equalsIgnoreCase(normalized)) {
-            return Boolean.TRUE;
-        }
-        if ("false".equalsIgnoreCase(normalized) ||
-            "0".equals(normalized) ||
-            "no".equalsIgnoreCase(normalized) ||
-            "off".equalsIgnoreCase(normalized)) {
-            return Boolean.FALSE;
-        }
-        return null;
-    }
-
-    private static boolean isNativeTouchscreenEnabled() {
-        if (nativeTouchscreenEnabled != null) {
-            return nativeTouchscreenEnabled.booleanValue();
-        }
-        Boolean parsed = parseBooleanLike(System.getProperty(NATIVE_TOUCHSCREEN_ENABLED_PROP));
-        nativeTouchscreenEnabled = parsed == null ? Boolean.FALSE : parsed;
-        return nativeTouchscreenEnabled.booleanValue();
     }
 
     public enum CurrentTab {

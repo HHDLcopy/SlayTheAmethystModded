@@ -1,6 +1,7 @@
 package io.stamethyst.ui.settings
 
 import android.content.Context
+import io.stamethyst.config.CardPlayOptimizationMode
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.TouchscreenInputMode
 import java.io.IOException
@@ -10,6 +11,8 @@ internal object GameplaySettingsService {
     const val DEFAULT_TOUCH_INDICATOR_ENABLED = LauncherConfig.DEFAULT_TOUCH_INDICATOR_ENABLED
     val DEFAULT_TOUCHSCREEN_INPUT_MODE: TouchscreenInputMode =
         LauncherConfig.DEFAULT_TOUCHSCREEN_INPUT_MODE
+    val DEFAULT_CARD_PLAY_OPTIMIZATION_MODE: CardPlayOptimizationMode =
+        LauncherConfig.DEFAULT_CARD_PLAY_OPTIMIZATION_MODE
     const val DEFAULT_FONT_SCALE = LauncherConfig.DEFAULT_GAMEPLAY_FONT_SCALE
     const val MIN_FONT_SCALE = LauncherConfig.MIN_GAMEPLAY_FONT_SCALE
     const val MAX_FONT_SCALE = LauncherConfig.MAX_GAMEPLAY_FONT_SCALE
@@ -22,6 +25,10 @@ internal object GameplaySettingsService {
 
     fun readTouchscreenInputMode(context: Context): TouchscreenInputMode {
         return LauncherConfig.readTouchscreenInputMode(context)
+    }
+
+    fun readCardPlayOptimizationMode(context: Context): CardPlayOptimizationMode {
+        return LauncherConfig.readCardPlayOptimizationMode(context)
     }
 
     fun readTouchIndicatorEnabled(context: Context): Boolean {
@@ -40,6 +47,11 @@ internal object GameplaySettingsService {
     @Throws(IOException::class)
     fun saveTouchscreenInputMode(context: Context, mode: TouchscreenInputMode) {
         LauncherConfig.saveTouchscreenInputMode(context, mode)
+    }
+
+    @Throws(IOException::class)
+    fun saveCardPlayOptimizationMode(context: Context, mode: CardPlayOptimizationMode) {
+        LauncherConfig.saveCardPlayOptimizationMode(context, mode)
     }
 
     fun readFontScale(context: Context): Float {

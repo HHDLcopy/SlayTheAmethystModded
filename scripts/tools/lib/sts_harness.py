@@ -12,9 +12,24 @@ from typing import Any
 
 from . import device_mods
 
-COMMANDS = ("doctor", "install", "start", "stop", "logs", "screenshot", "status", "mods", "set-mods", "smoke")
+COMMANDS = (
+    "doctor",
+    "install",
+    "start",
+    "stop",
+    "logs",
+    "screenshot",
+    "status",
+    "mods",
+    "set-mods",
+    "smoke",
+    "single-room",
+)
 LAUNCH_MODES = ("mts_basemod", "mts", "vanilla")
 AUTOPLAY_SAVE_MODES = ("fresh", "continue")
+AUTOPLAY_MODES = ("normal", "single_room")
+SINGLE_ROOM_DEFAULT_REMOTE_SPEC = "autoplay-single-room.properties"
+SINGLE_ROOM_RESULT_PREFIX = "[amethyst-autoplay] single_room result "
 
 
 def repo_root() -> Path:
@@ -89,6 +104,25 @@ def text_contains(text: str | None, needle: str) -> bool:
     return bool(text) and needle.lower() in text.lower()
 
 
+def split_csv_tokens(value: str | None) -> list[str]:
+    if not value:
+        return []
+    tokens: list[str] = []
+    for token in re.split(r"[,\r\n]+", value):
+        stripped = token.strip()
+        if stripped:
+            tokens.append(stripped)
+    return tokens
+
+
+def encode_properties_value(value: str) -> str:
+    return (
+        value.replace("\\", "\\\\")
+        .replace("\r", "\\r")
+        .replace("\n", "\\n")
+    )
+
+
 @dataclass
 class CommandResult:
     exit_code: int
@@ -118,6 +152,13 @@ class HarnessOptions:
     force_runtime_crash: bool
     autoplay: bool
     autoplay_save_mode: str
+    autoplay_mode: str
+    single_room_spec: str
+    single_room_device_spec: str
+    single_room_character: str
+    single_room_monster: str
+    single_room_cards: str
+    disable_card_obtain_effect_ownership_compat: bool
     skip_install: bool
     no_stop_after_smoke: bool
     mods: list[str]
@@ -291,6 +332,11 @@ class Harness:
             raise RuntimeError("application.id cannot be empty.")
         if self.options.autoplay and self.options.launch_mode == "vanilla":
             raise RuntimeError("Autoplay requires -LaunchMode mts or mts_basemod because the bundled autoplay driver is loaded as an MTS mod.")
+        if self.options.command == "single-room":
+            if self.options.launch_mode == "vanilla":
+                raise RuntimeError("single-room requires -LaunchMode mts or mts_basemod because it is implemented by the bundled MTS autoplay mod.")
+            self.options.autoplay = True
+            self.options.autoplay_mode = "single_room"
         self.select_device()
 
     def gradle_device_properties(self) -> list[str]:
@@ -309,6 +355,9 @@ class Harness:
         self.adb(["install", "-r", str(apk)], timeout_seconds=180)
 
     def harness_start(self) -> None:
+        single_room_device_spec = ""
+        if self.options.autoplay_mode == "single_room":
+            single_room_device_spec = self.ensure_single_room_device_spec()
         args = [
             ":app:stsStart",
             f"-PlaunchMode={self.options.launch_mode}",
@@ -316,6 +365,10 @@ class Harness:
             f"-PforceRuntimeCrash={str(self.options.force_runtime_crash).lower()}",
             f"-Pautoplay={str(self.options.autoplay).lower()}",
             f"-PautoplaySaveMode={self.options.autoplay_save_mode}",
+            f"-PautoplayMode={self.options.autoplay_mode}",
+            f"-PautoplaySingleRoomSpec={single_room_device_spec}",
+            "-PdisableCardObtainEffectOwnershipCompat="
+            + str(self.options.disable_card_obtain_effect_ownership_compat).lower(),
             *self.gradle_device_properties(),
         ]
         self.gradle(args)
@@ -552,6 +605,67 @@ fi
             "mtimeEpochSeconds": mtime_epoch_seconds,
         }
 
+    def build_single_room_spec_text(self) -> str:
+        spec_file = self.options.single_room_spec.strip()
+        if spec_file:
+            path = self.resolve_repo_path(spec_file)
+            if not path.is_file():
+                raise RuntimeError(f"Single-room spec file not found: {path}")
+            self.result["artifacts"]["singleRoomInputSpec"] = str(path)
+            return path.read_text(encoding="utf-8")
+
+        character = self.options.single_room_character.strip()
+        monster = self.options.single_room_monster.strip()
+        cards = split_csv_tokens(self.options.single_room_cards)
+        if not character:
+            raise RuntimeError("single-room requires -SingleRoomCharacter or -SingleRoomSpec.")
+        if not monster:
+            raise RuntimeError("single-room requires -SingleRoomMonster or -SingleRoomSpec.")
+        if not cards:
+            raise RuntimeError("single-room requires at least one card through -SingleRoomCards or -SingleRoomSpec.")
+        lines = [
+            "# Managed by SlayTheAmethyst harness.",
+            "schemaVersion=1",
+            f"character={encode_properties_value(character)}",
+            f"monster={encode_properties_value(monster)}",
+            f"cards={encode_properties_value(','.join(cards))}",
+            "",
+        ]
+        return "\n".join(lines)
+
+    def ensure_single_room_device_spec(self) -> str:
+        if self.options.single_room_device_spec.strip():
+            return self.options.single_room_device_spec.strip()
+
+        local_spec = self.resolved_out_dir() / SINGLE_ROOM_DEFAULT_REMOTE_SPEC
+        local_spec.write_text(self.build_single_room_spec_text(), encoding="utf-8")
+        self.result["artifacts"]["singleRoomSpec"] = str(local_spec)
+
+        sts_root = self.resolve_device_sts_root()
+        remote_relative = f"config/{SINGLE_ROOM_DEFAULT_REMOTE_SPEC}"
+        remote_path = f"{sts_root['root']}/{remote_relative}"
+        if sts_root["accessMode"] == "run-as":
+            temp_remote = f"/data/local/tmp/sts-harness-{file_timestamp()}-{SINGLE_ROOM_DEFAULT_REMOTE_SPEC}"
+            self.adb(["push", str(local_spec), temp_remote], timeout_seconds=30)
+            self.adb(["shell", "chmod", "0644", temp_remote], timeout_seconds=5, allow_failure=True)
+            copy_script = (
+                "mkdir -p files/sts/config && "
+                f"cat {quote_android_shell(temp_remote)} > files/sts/{remote_relative}"
+            )
+            try:
+                self.adb(
+                    ["exec-out", "run-as", self.application_id or "", "sh", "-c", copy_script],
+                    timeout_seconds=10,
+                )
+            finally:
+                self.adb(["shell", "rm", "-f", temp_remote], timeout_seconds=5, allow_failure=True)
+            return f"files/sts/{remote_relative}"
+
+        parent = f"{sts_root['root']}/config"
+        self.adb_shell_script(f"mkdir -p {quote_android_shell(parent)}", timeout_seconds=10)
+        self.adb(["push", str(local_spec), remote_path], timeout_seconds=30)
+        return remote_path
+
     def desktop_jar_patch_snapshot(self, sts_root: dict[str, Any]) -> dict[str, Any]:
         desktop_jar = self.remote_sts_path_state(sts_root, "desktop-1.0.jar")
         temp_jar = self.remote_sts_path_state(sts_root, "desktop-1.0.jar.patching.tmp")
@@ -599,6 +713,31 @@ fi
             if text_contains(text, marker):
                 return marker
         return None
+
+    @staticmethod
+    def find_single_room_result(text: str | None) -> dict[str, Any] | None:
+        if not text or not text.strip():
+            return None
+        result_line = None
+        for line in re.split(r"\r?\n", text):
+            if SINGLE_ROOM_RESULT_PREFIX in line:
+                result_line = line.strip()
+        if result_line is None:
+            return None
+        payload = result_line.split(SINGLE_ROOM_RESULT_PREFIX, 1)[1].strip()
+        values: dict[str, str] = {}
+        for match in re.finditer(r"(\w+)=([^ ]+)", payload):
+            values[match.group(1)] = match.group(2)
+        return {
+            "line": result_line,
+            "outcome": values.get("outcome"),
+            "character": values.get("character"),
+            "monster": values.get("monster"),
+            "turns": values.get("turns"),
+            "playerHp": values.get("playerHp"),
+            "monsterHp": values.get("monsterHp"),
+            "detail": values.get("detail"),
+        }
 
     @staticmethod
     def find_harness_logcat_crash(text: str | None, package_name: str) -> dict[str, Any] | None:
@@ -695,6 +834,7 @@ fi
         desktop_jar_patch = self.desktop_jar_patch_snapshot(sts_root)
         boot = self.parse_boot_bridge_events(boot_text)
         crash_marker = self.find_crash_marker(latest_log_tail)
+        single_room_result = self.find_single_room_result(latest_log_tail)
 
         package_name = self.application_id or ""
         launcher_pid = self.process_pid_text(package_name)
@@ -715,6 +855,9 @@ fi
             observed_state = "FAIL"
         elif crash_marker is not None:
             observed_state = "CRASH_MARKER"
+        elif single_room_result is not None:
+            observed_state = "SINGLE_ROOM_COMPLETE"
+            runtime_signal_state = "SINGLE_ROOM_COMPLETE"
         elif terminal is not None and terminal["type"] == "READY" and game_pid.strip():
             observed_state = "READY"
         elif launcher_pid.strip() and desktop_jar_patch["inProgress"]:
@@ -754,6 +897,7 @@ fi
             "latestLog": {
                 "lastNonBlankLine": self.last_non_blank_line(latest_log_tail),
                 "crashMarker": crash_marker,
+                "singleRoomResult": single_room_result,
             },
             "harnessLogcat": harness_logcat,
         }
@@ -793,7 +937,12 @@ fi
                 logcat_path = str(logcat_capture.log_path)
                 logcat_text = read_local_text_tail(logcat_capture.log_path, max_bytes=262144)
             latest_status = self.harness_status(logcat_text, logcat_path)
-            if latest_status["observedState"] in ("READY", "FAIL", "CRASH_MARKER"):
+            terminal_states = (
+                ("SINGLE_ROOM_COMPLETE", "FAIL", "CRASH_MARKER")
+                if self.options.autoplay_mode == "single_room"
+                else ("READY", "FAIL", "CRASH_MARKER")
+            )
+            if latest_status["observedState"] in terminal_states:
                 return latest_status
             if latest_status.get("harnessLogcat") is not None and latest_status["harnessLogcat"].get("crash") is not None:
                 latest_status["observedState"] = "LOGCAT_CRASH"
@@ -919,6 +1068,10 @@ fi
             )
         elif command == "smoke":
             return self.run_smoke(resolved_out_dir)
+        elif command == "single-room":
+            self.options.autoplay = True
+            self.options.autoplay_mode = "single_room"
+            return self.run_smoke(resolved_out_dir)
         return 0
 
     def run_smoke(self, resolved_out_dir: Path) -> int:
@@ -970,8 +1123,18 @@ fi
 
         if status is None:
             raise RuntimeError("Smoke run did not produce a status snapshot.")
-        expected_state = "FAIL" if self.options.force_jvm_crash else "CRASH_MARKER" if self.options.force_runtime_crash else "READY"
-        if self.options.force_runtime_crash:
+        if self.options.autoplay_mode == "single_room":
+            expected_state = "SINGLE_ROOM_COMPLETE"
+        else:
+            expected_state = "FAIL" if self.options.force_jvm_crash else "CRASH_MARKER" if self.options.force_runtime_crash else "READY"
+        if self.options.autoplay_mode == "single_room":
+            single_room_result = status.get("latestLog", {}).get("singleRoomResult")
+            outcome = single_room_result.get("outcome") if isinstance(single_room_result, dict) else None
+            success = status["observedState"] == "SINGLE_ROOM_COMPLETE" and outcome in (
+                "monsters_defeated",
+                "player_dead",
+            )
+        elif self.options.force_runtime_crash:
             success = (
                 status["observedState"] in ("CRASH_MARKER", "LOGCAT_CRASH")
                 or status.get("latestLog", {}).get("crashMarker") is not None
@@ -984,6 +1147,17 @@ fi
             if success
             else f"Smoke run expected {expected_state} but observed {status['observedState']}"
         )
+        if self.options.autoplay_mode == "single_room":
+            single_room_result = status.get("latestLog", {}).get("singleRoomResult")
+            if isinstance(single_room_result, dict) and single_room_result.get("outcome"):
+                detail = single_room_result.get("detail")
+                message = (
+                    f"Single-room run completed with outcome={single_room_result.get('outcome')}"
+                    if success
+                    else f"Single-room run failed with outcome={single_room_result.get('outcome')}"
+                )
+                if detail:
+                    message = f"{message} detail={detail}"
         if not success:
             hints = []
             if self.result["artifacts"].get("logsZip"):
@@ -1016,6 +1190,17 @@ fi
             "forceRuntimeCrash": self.options.force_runtime_crash,
             "autoplay": self.options.autoplay,
             "autoplaySaveMode": self.options.autoplay_save_mode,
+            "autoplayMode": self.options.autoplay_mode,
+            "disableCardObtainEffectOwnershipCompat": (
+                self.options.disable_card_obtain_effect_ownership_compat
+            ),
+            "singleRoom": {
+                "character": self.options.single_room_character,
+                "monster": self.options.single_room_monster,
+                "cards": split_csv_tokens(self.options.single_room_cards),
+                "spec": self.options.single_room_spec,
+                "deviceSpec": self.options.single_room_device_spec,
+            },
             "timeoutSeconds": self.options.timeout_seconds,
             "artifacts": {"outDir": str(resolved_out_dir), "resultJson": str(result_path)},
             "statusSnapshot": None,

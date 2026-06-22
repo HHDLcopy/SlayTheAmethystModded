@@ -2,7 +2,14 @@ from __future__ import annotations
 
 import argparse
 
-from .sts_harness import AUTOPLAY_SAVE_MODES, COMMANDS, LAUNCH_MODES, Harness, HarnessOptions
+from .sts_harness import (
+    AUTOPLAY_MODES,
+    AUTOPLAY_SAVE_MODES,
+    COMMANDS,
+    LAUNCH_MODES,
+    Harness,
+    HarnessOptions,
+)
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -23,6 +30,59 @@ def create_parser() -> argparse.ArgumentParser:
         choices=AUTOPLAY_SAVE_MODES,
         default="fresh",
         help="Autoplay save handling: fresh clears stale saves before starting; continue resumes the previous run when available.",
+    )
+    parser.add_argument(
+        "-AutoplayMode",
+        "--autoplay-mode",
+        dest="autoplay_mode",
+        choices=AUTOPLAY_MODES,
+        default="normal",
+        help="Autoplay run mode. single_room runs one configured combat and exits after the player or monsters die.",
+    )
+    parser.add_argument(
+        "-SingleRoomSpec",
+        "--single-room-spec",
+        dest="single_room_spec",
+        default="",
+        help="Local UTF-8 properties file for single-room mode. Supports character=, monster=, and cards=.",
+    )
+    parser.add_argument(
+        "-SingleRoomDeviceSpec",
+        "--single-room-device-spec",
+        dest="single_room_device_spec",
+        default="",
+        help="Device-side properties path already visible to the game JVM for single-room mode.",
+    )
+    parser.add_argument(
+        "-SingleRoomCharacter",
+        "--single-room-character",
+        dest="single_room_character",
+        default="",
+        help="Player class id/name for single-room mode, including modded character enum names.",
+    )
+    parser.add_argument(
+        "-SingleRoomMonster",
+        "--single-room-monster",
+        dest="single_room_monster",
+        default="",
+        help="Encounter id for single-room mode. BaseMod custom encounters and vanilla MonsterHelper ids are supported.",
+    )
+    parser.add_argument(
+        "-SingleRoomCards",
+        "--single-room-cards",
+        dest="single_room_cards",
+        default="",
+        help="Comma- or newline-separated card ids for the initial hand in single-room mode, including modded cards.",
+    )
+    parser.add_argument(
+        "-DisableCardObtainEffectOwnershipCompat",
+        "--disable-card-obtain-effect-ownership-compat",
+        dest="disable_card_obtain_effect_ownership_compat",
+        action="store_true",
+        help=(
+            "Disable the shared ShowCardAndAddToHandEffect ownership compatibility patch "
+            "for repro runs."
+        ),
     )
     parser.add_argument("-SkipInstall", "--skip-install", dest="skip_install", action="store_true")
     parser.add_argument("-NoStopAfterSmoke", "--no-stop-after-smoke", dest="no_stop_after_smoke", action="store_true")
@@ -51,7 +111,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     timeout_seconds = args.timeout_seconds
     if timeout_seconds is None:
-        timeout_seconds = 300 if args.autoplay else 120
+        autoplay_like = args.autoplay or args.command == "single-room" or args.autoplay_mode == "single_room"
+        timeout_seconds = 300 if autoplay_like else 120
     options = HarnessOptions(
         command=args.command,
         launch_mode=args.launch_mode,
@@ -63,6 +124,13 @@ def main(argv: list[str] | None = None) -> int:
         force_runtime_crash=args.force_runtime_crash,
         autoplay=args.autoplay,
         autoplay_save_mode=args.autoplay_save_mode,
+        autoplay_mode=args.autoplay_mode,
+        single_room_spec=args.single_room_spec,
+        single_room_device_spec=args.single_room_device_spec,
+        single_room_character=args.single_room_character,
+        single_room_monster=args.single_room_monster,
+        single_room_cards=args.single_room_cards,
+        disable_card_obtain_effect_ownership_compat=args.disable_card_obtain_effect_ownership_compat,
         skip_install=args.skip_install,
         no_stop_after_smoke=args.no_stop_after_smoke,
         mods=args.mods,

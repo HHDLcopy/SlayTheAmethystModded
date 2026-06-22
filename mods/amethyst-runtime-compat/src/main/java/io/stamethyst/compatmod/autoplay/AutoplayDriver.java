@@ -33,6 +33,10 @@ public final class AutoplayDriver {
             return;
         }
         try {
+            if (AutoplayConfig.isSingleRoomMode()) {
+                AutoplaySingleRoomRunner.tick();
+                return;
+            }
             AutoplayMainMenuActions.tick();
             AutoplayEndScreenActions.tick();
             AutoplayDungeonActions.tick();
@@ -48,7 +52,9 @@ public final class AutoplayDriver {
         bannerLogged = true;
         AutoplayLog.info(
             "autoplay engaged tickIntervalMs=" + AutoplayConfig.getTickIntervalMs()
+                + " mode=" + AutoplayConfig.getMode()
                 + " saveMode=" + AutoplayConfig.getSaveMode()
+                + " singleRoomSpec=" + AutoplayConfig.getSingleRoomSpecPath()
                 + " debugLog=" + AutoplayConfig.isDebugLogEnabled()
         );
     }

@@ -138,6 +138,7 @@ python .\scripts\tools\main.py sts-harness -Command doctor
 python .\scripts\tools\main.py sts-harness -Command smoke -LaunchMode mts_basemod -TimeoutSeconds 120
 python .\scripts\tools\main.py sts-harness -Command smoke -Autoplay
 python .\scripts\tools\main.py sts-harness -Command smoke -Autoplay -AutoplaySaveMode continue
+python .\scripts\tools\main.py sts-harness -Command single-room -SingleRoomCharacter IRONCLAD -SingleRoomMonster Cultist -SingleRoomCards "Strike_R,Defend_R,Bash"
 ```
 
 也可以通过 Gradle 调用同一套 harness：
@@ -146,6 +147,7 @@ python .\scripts\tools\main.py sts-harness -Command smoke -Autoplay -AutoplaySav
 .\gradlew.bat :app:stsHarnessDoctor
 .\gradlew.bat :app:stsHarnessSmoke
 .\gradlew.bat :app:stsHarnessAutoplaySmoke
+.\gradlew.bat :app:stsHarnessSingleRoom
 ```
 
 低层设备调试命令：
@@ -164,9 +166,19 @@ python .\scripts\tools\main.py sts-harness -Command smoke -Autoplay -AutoplaySav
 - `-PharnessOutDir=<path>`
 - `-Pautoplay=true`
 - `-PautoplaySaveMode=fresh|continue`
+- `-PautoplayMode=normal|single_room`
+- `-PdisableCardObtainEffectOwnershipCompat=true`
+- `-PsingleRoomCharacter=<id>`
+- `-PsingleRoomMonster=<id>`
+- `-PsingleRoomCards=<逗号分隔的卡牌 id>`
+- `-PsingleRoomSpecFile=<本地 properties 文件>`
 - `-PpythonExecutable=<python-command>`
 
 `smoke` 会额外保存 harness 侧 logcat；如果游戏在写出 JVM 日志前崩溃，`result.json` 会报告 `LOGCAT_CRASH` 并在 `artifacts.harnessLogcat` 指向完整错误日志。Autoplay smoke 默认等待 300 秒，以便首次修补 `desktop-1.0.jar`；默认 `autoplaySaveMode=fresh` 会清理旧存档并开新局，传 `continue` 时会保留存档并优先继续上次运行。主进程修补失败会作为 `FAIL` 结果写入 `result.json`。
+
+Autoplay 会随机处理 `CardRewardScreen` 发现/奖励选牌页，日志中会出现 `[amethyst-autoplay] choice: ...`。`-PdisableCardObtainEffectOwnershipCompat=true` 可在复现同一张牌对象被获得特效和手牌布局同时驱动的问题时，关闭内置的 `ShowCardAndAddToHandEffect` 所有权兼容补丁。
+
+`single-room` 会启动一次可配置的单房间战斗，支持模组人物、模组卡牌和 BaseMod/原版 encounter id；玩家死亡或怪物全灭后退出，并把 `latest.log` 中的单房间结果解析到 `statusSnapshot.latestLog.singleRoomResult`。
 
 更多文档：
 

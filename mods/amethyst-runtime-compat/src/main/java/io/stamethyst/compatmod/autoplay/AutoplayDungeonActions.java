@@ -91,6 +91,9 @@ final class AutoplayDungeonActions {
         if (screen == null) {
             return;
         }
+        if (AutoplayChoiceScreenActions.handleOpenChoiceScreen("normal")) {
+            return;
+        }
         if (screen == AbstractDungeon.CurrentScreen.MAP) {
             handleMapScreen();
             return;

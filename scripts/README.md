@@ -71,6 +71,10 @@ Common harness options:
 - `-TimeoutSeconds <seconds>` and `-PollIntervalSeconds <seconds>`: runtime observation controls.
 - `-Autoplay`: enable the bundled autoplay driver for MTS smoke runs.
 - `-AutoplaySaveMode fresh|continue`: autoplay save handling. `fresh` clears stale saves and starts a new run; `continue` keeps saves and resumes the previous run when available.
+- `-AutoplayMode normal|single_room`: selects normal long-run autoplay or a one-room combat test.
+- `-DisableCardObtainEffectOwnershipCompat`: disables the bundled `ShowCardAndAddToHandEffect` ownership compatibility patch for repro runs.
+- `-SingleRoomCharacter <id>` / `-SingleRoomMonster <id>` / `-SingleRoomCards <ids>`: configure the `single-room` command. Card ids are comma- or newline-separated and may include modded cards.
+- `-SingleRoomSpec <path>`: local UTF-8 properties file with `character=`, `monster=`, and `cards=` for single-room tests. Put ad hoc spec files under `agent-tmp/`.
 - `-ForceJvmCrash` and `-ForceRuntimeCrash`: smoke expectations for crash-path validation.
 - `-SkipInstall`: skip APK build/install during `smoke`.
 - `-NoStopAfterSmoke`: leave the app running after `smoke`.
@@ -97,9 +101,11 @@ python scripts/tools/main.py sts-harness -Command set-mods -DisableAllMods
 python scripts/tools/main.py sts-harness -Command smoke -LaunchMode mts_basemod -TimeoutSeconds 120
 python scripts/tools/main.py sts-harness -Command smoke -Autoplay
 python scripts/tools/main.py sts-harness -Command smoke -Autoplay -AutoplaySaveMode continue
+python scripts/tools/main.py sts-harness -Command single-room -SingleRoomCharacter IRONCLAD -SingleRoomMonster Cultist -SingleRoomCards "Strike_R,Defend_R,Bash"
+python scripts/tools/main.py sts-harness -Command smoke -Autoplay -DisableCardObtainEffectOwnershipCompat
 ```
 
-Harness output is always written to `result.json`. The `mods` and `set-mods` commands add `deviceMods`; `set-mods` also adds `modSelection`.
+Harness output is always written to `result.json`. The `mods` and `set-mods` commands add `deviceMods`; `set-mods` also adds `modSelection`. Autoplay now also logs and auto-resolves `CardRewardScreen` discovery/card reward pages. `single-room` writes the pushed spec to `artifacts.singleRoomSpec`, waits for a `[amethyst-autoplay] single_room result ...` line in `latest.log`, stores it at `statusSnapshot.latestLog.singleRoomResult`, exports logs, and then stops the app.
 
 Implementation files:
 

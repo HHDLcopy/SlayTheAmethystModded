@@ -360,6 +360,7 @@
     <string name="startup_progress_installing_lwjgl_bridge">Installing LWJGL bridge...</string>
     <string name="startup_progress_installing_startup_bridge">Installing startup bridge...</string>
     <string name="startup_progress_installing_lwjgl2_injector">Installing LWJGL2 injector...</string>
+    <string name="startup_progress_installing_agent_connector">Installing agent connector...</string>
     <string name="startup_progress_installing_gdx_patches">Installing gdx patches...</string>
     <string name="startup_progress_installing_gdx_video_natives">Installing gdx video natives...</string>
     <string name="startup_progress_installing_bundled_native_libraries">Installing bundled native libraries...</string>

@@ -1,16 +1,21 @@
 
+import hashlib
 import json
 import os
 import re
 import shutil
 import subprocess
 import time
-from dataclasses import dataclass
+import urllib.request
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from . import device_mods
+from .agent_bridge import AgentBridge, AgentBridgeError
+from .agent_protocol import AgentProtocol
+from .harness_connection import HarnessConnection
 
 COMMANDS = (
     "doctor",
@@ -23,9 +28,18 @@ COMMANDS = (
     "mods",
     "set-mods",
     "smoke",
+    "decompil",
+    "agent-attach",
+    "agent-detach",
+    "agent-list",
+    "agent-status",
+    "play",
+    "perf",
+    "hotreload",
     "single-room",
 )
 LAUNCH_MODES = ("mts_basemod", "mts", "vanilla")
+AGENT_COMMANDS = ("attach", "detach", "list", "status")
 AUTOPLAY_SAVE_MODES = ("fresh", "continue")
 AUTOPLAY_MODES = ("normal", "single_room")
 SINGLE_ROOM_DEFAULT_REMOTE_SPEC = "autoplay-single-room.properties"
@@ -104,6 +118,22 @@ def text_contains(text: str | None, needle: str) -> bool:
     return bool(text) and needle.lower() in text.lower()
 
 
+def parse_decompil_target(raw: str) -> tuple[str, str | None]:
+    target = raw.strip()
+    if not target:
+        raise ValueError("decompil target must not be empty")
+    if "#" in target:
+        class_name, method_name = target.split("#", 1)
+        class_name = class_name.strip()
+        method_name = method_name.strip()
+        if not class_name:
+            raise ValueError(f"class name missing in decompil target: {target}")
+        if not method_name:
+            raise ValueError(f"method name missing in decompil target: {target}")
+        return class_name, method_name
+    return target, None
+
+
 def split_csv_tokens(value: str | None) -> list[str]:
     if not value:
         return []
@@ -151,20 +181,26 @@ class HarnessOptions:
     force_jvm_crash: bool
     force_runtime_crash: bool
     autoplay: bool
-    autoplay_save_mode: str
-    autoplay_mode: str
-    single_room_spec: str
-    single_room_device_spec: str
-    single_room_character: str
-    single_room_monster: str
-    single_room_cards: str
-    disable_card_obtain_effect_ownership_compat: bool
     skip_install: bool
     no_stop_after_smoke: bool
     mods: list[str]
     mod_list_file: str
     enable_all_mods: bool
     disable_all_mods: bool
+    autoplay_save_mode: str = "fresh"
+    autoplay_mode: str = "normal"
+    single_room_spec: str = ""
+    single_room_device_spec: str = ""
+    single_room_character: str = ""
+    single_room_monster: str = ""
+    single_room_cards: str = ""
+    disable_card_obtain_effect_ownership_compat: bool = False
+    decompil_targets: list[str] = field(default_factory=list)
+    agent_command: str = ""
+    agent_spec: str = ""
+    agent_port: int = 9090
+    agent_duration: float = 0.0
+    redefine_class_file: str = ""
 
 
 class Harness:
@@ -1002,6 +1038,479 @@ fi
             "after": after,
         }
 
+    def _jar_library_dir(self) -> Path:
+        return self.repo_root / "debug-artifacts" / "harness" / "jar-library"
+
+    def _compute_local_sha256(self, path: Path) -> str:
+        hasher = hashlib.sha256()
+        with path.open("rb") as stream:
+            while True:
+                chunk = stream.read(1 << 20)
+                if not chunk:
+                    break
+                hasher.update(chunk)
+        return hasher.hexdigest()
+
+    def _read_local_sha256(self, jar_path: Path) -> str | None:
+        sha_path = Path(str(jar_path) + ".sha256")
+        if not sha_path.exists():
+            return None
+        text = sha_path.read_text(encoding="utf-8").strip()
+        return text or None
+
+    def _write_local_sha256(self, jar_path: Path, digest: str) -> None:
+        sha_path = Path(str(jar_path) + ".sha256")
+        sha_path.write_text(digest.strip() + "\n", encoding="utf-8")
+
+    def remote_file_sha256(self, sts_root: dict[str, Any], relative_path: str) -> str | None:
+        trimmed = relative_path.lstrip("/")
+        root_path = str(sts_root["root"])
+        remote_path = root_path if not trimmed else f"{root_path}/{trimmed}"
+        quoted = quote_android_shell(remote_path)
+        script = f"""if [ -f {quoted} ]; then
+  sha=''
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha=$(sha256sum {quoted} | cut -d' ' -f1 2>/dev/null)
+  elif command -v md5sum >/dev/null 2>&1; then
+    sha="md5:$(md5sum {quoted} | cut -d' ' -f1 2>/dev/null)"
+  elif command -v md5 >/dev/null 2>&1; then
+    sha="md5:$(md5 {quoted} | sed 's/.*[[:space:]]//')"
+  fi
+  echo "sha256=$sha"
+  echo "exists=1"
+else
+  echo "exists=0"
+fi
+"""
+        result = self.remote_sts_root_script(
+            sts_root,
+            script,
+            timeout_seconds=30,
+            allow_failure=True,
+        )
+        sha_value = ""
+        for line in result.output.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("sha256="):
+                sha_value = stripped[len("sha256="):]
+            elif stripped == "exists=0":
+                return None
+        if not sha_value:
+            return None
+        return sha_value
+
+    def _pull_jar_if_needed(
+        self,
+        sts_root: dict[str, Any],
+        remote_relative: str,
+        local_path: Path,
+    ) -> None:
+        remote_key = remote_relative.lstrip("/")
+        remote_hash = self.remote_file_sha256(sts_root, remote_key)
+
+        if remote_hash is not None and local_path.exists():
+            local_hash = self._read_local_sha256(local_path)
+            if local_hash == remote_hash:
+                print(f"Jar {remote_key} unchanged (SHA-256 match), skipping pull.")
+                return
+
+        remote_full = f"{sts_root['root']}/{remote_key}"
+        if sts_root["accessMode"] == "run-as":
+            adb_path = self.adb_path
+            adb_args = self.build_adb_args(
+                [
+                    "exec-out",
+                    "run-as",
+                    self.application_id or "",
+                    "sh",
+                    "-c",
+                    f"cat {quote_android_shell(remote_full)}",
+                ]
+            )
+            with local_path.open("wb") as out:
+                process = subprocess.run(
+                    [adb_path, *adb_args],
+                    cwd=str(self.repo_root),
+                    stdout=out,
+                    timeout=600,
+                )
+            if process.returncode != 0 or not local_path.exists() or local_path.stat().st_size <= 0:
+                raise RuntimeError(
+                    f"Failed to pull {remote_full} from device via run-as "
+                    f"(exit {process.returncode})."
+                )
+        else:
+            self.adb(["pull", remote_full, str(local_path)], timeout_seconds=600)
+        if not local_path.exists():
+            raise RuntimeError(f"Failed to pull {remote_full} from device.")
+
+        local_digest = self._compute_local_sha256(local_path)
+        self._write_local_sha256(local_path, local_digest)
+
+    def _ensure_cfr(self) -> Path:
+        cfr_path = repo_root() / "scripts" / "tools" / "lib" / "cfr.jar"
+        if cfr_path.exists() and cfr_path.stat().st_size > 0:
+            return cfr_path
+        cfr_url = "https://repo1.maven.org/maven2/org/benf/cfr/0.152/cfr-0.152.jar"
+        print(f"Downloading CFR from {cfr_url} ...")
+        try:
+            urllib.request.urlretrieve(cfr_url, str(cfr_path))
+        except Exception as exc:
+            raise RuntimeError(f"Failed to download CFR jar from {cfr_url}: {exc}")
+        if not cfr_path.exists() or cfr_path.stat().st_size <= 0:
+            raise RuntimeError(f"CFR jar download produced an empty or missing file: {cfr_path}")
+        return cfr_path
+
+    def harness_decompil(self, resolved_out_dir: Path) -> tuple[dict[str, Any], bool, str, str]:
+        targets = self.options.decompil_targets
+        if not targets:
+            raise ValueError("At least one -Target is required for decompil command.")
+        cfr_path = self._ensure_cfr()
+        sts_root = self.resolve_device_sts_root()
+
+        jar_dir = self._jar_library_dir()
+        jar_dir.mkdir(parents=True, exist_ok=True)
+        desktop_jar_local = jar_dir / "desktop-1.0.jar"
+        self._pull_jar_if_needed(sts_root, "desktop-1.0.jar", desktop_jar_local)
+
+        src_dir = resolved_out_dir / "src"
+        src_dir.mkdir(parents=True, exist_ok=True)
+
+        decompiled_filenames: list[str] = []
+        for target in targets:
+            class_name, _method_name = parse_decompil_target(target)
+            args = [
+                "-jar",
+                str(cfr_path),
+                str(desktop_jar_local),
+                class_name,
+                "--outputdir",
+                str(src_dir),
+            ]
+            result = self.run_native("java", args, timeout_seconds=120, allow_failure=True)
+            if result.exit_code != 0:
+                raise RuntimeError(
+                    f"CFR failed for class '{class_name}': exit {result.exit_code}\n"
+                    f"{limit_text(result.output, 2000)}"
+                )
+            expected_file = src_dir / f"{class_name.replace('.', '/')}.java"
+            if expected_file.exists():
+                decompiled_filenames.append(str(expected_file))
+            else:
+                decompiled_filenames.append(
+                    f"(CFR output not found at expected path: {expected_file})"
+                )
+
+        self.result.setdefault("artifacts", {})
+        self.result["artifacts"]["decompiledClasses"] = decompiled_filenames
+        self.result["artifacts"]["pulledJar"] = str(desktop_jar_local)
+        self.result["artifacts"]["decompilSrcDir"] = str(src_dir)
+        decompil_info = {
+            "decompiledClasses": decompiled_filenames,
+            "pulledJar": str(desktop_jar_local),
+            "srcDir": str(src_dir),
+            "targets": targets,
+        }
+        return decompil_info, True, "OK", f"{len(targets)} class(es) decompiled"
+
+    def _connect_agent(self) -> HarnessConnection:
+        port = self.options.agent_port
+        conn = HarnessConnection(adb_runner=self.adb, port=port)
+        conn.setup_forward()
+        conn.connect()
+        return conn
+
+    def harness_agent_attach(self, resolved_out_dir: Path) -> None:
+        port = self.options.agent_port
+        spec = self.options.agent_spec
+        if not spec:
+            self.set_result_success(False, "ERROR", "Agent spec is required for agent-attach.")
+            return
+
+        conn = self._connect_agent()
+        bridge = AgentBridge(port=port, connection=conn)
+        try:
+            agent_id = bridge.attach(spec)
+            output_path = resolved_out_dir / f"agent_{agent_id}.jsonl"
+            self.result["artifacts"]["agentData"] = str(output_path)
+
+            duration = self.options.agent_duration or 30.0
+            event_count = bridge.subscribe_and_capture(
+                agent_id,
+                output_path,
+                timeout_seconds=duration,
+            )
+
+            info = bridge.status(agent_id)
+            self.result["agentInfo"] = {
+                "agentId": agent_id,
+                "spec": spec,
+                "port": port,
+                "state": info["state"],
+                "eventCount": event_count,
+                "outputFile": str(output_path),
+            }
+
+            self.set_result_success(
+                True,
+                "AGENT_ATTACHED",
+                f"Attached {agent_id}, captured {event_count} events.",
+            )
+        except AgentBridgeError as exc:
+            self.set_result_success(False, "ERROR", str(exc))
+        except Exception as exc:
+            self.set_result_success(False, "ERROR", f"Agent bridge error: {exc}")
+        finally:
+            conn.close()
+            conn.remove_forward()
+
+    def harness_agent_detach(self, resolved_out_dir: Path) -> None:
+        spec = self.options.agent_spec or ""
+        if not spec:
+            self.set_result_success(
+                False,
+                "ERROR",
+                "Agent spec prefix is required for agent-detach (used as agent ID prefix match).",
+            )
+            return
+
+        conn = self._connect_agent()
+        bridge = AgentBridge(port=self.options.agent_port, connection=conn)
+        try:
+            agent_id = spec.split("@")[0]
+            bridge.detach(agent_id)
+            self.set_result_success(True, "AGENT_DETACHED", f"Detached {agent_id}.")
+        except AgentBridgeError as exc:
+            self.set_result_success(False, "ERROR", str(exc))
+        except Exception as exc:
+            self.set_result_success(False, "ERROR", f"Agent bridge error: {exc}")
+        finally:
+            conn.close()
+            conn.remove_forward()
+
+    def harness_agent_list(self, resolved_out_dir: Path) -> None:
+        conn = self._connect_agent()
+        bridge = AgentBridge(port=self.options.agent_port, connection=conn)
+        try:
+            agents = bridge.list_agents()
+            self.result["agentList"] = agents
+            count = len(agents)
+            self.set_result_success(True, "AGENTS_LISTED", f"Found {count} attached agent(s).")
+        except AgentBridgeError as exc:
+            self.set_result_success(False, "ERROR", str(exc))
+        except Exception as exc:
+            self.set_result_success(False, "ERROR", f"Agent bridge error: {exc}")
+        finally:
+            conn.close()
+            conn.remove_forward()
+
+    def harness_agent_status(self, resolved_out_dir: Path) -> None:
+        spec = self.options.agent_spec or ""
+        if not spec:
+            self.set_result_success(
+                False,
+                "ERROR",
+                "Agent spec prefix is required for agent-status (used as agent ID prefix match).",
+            )
+            return
+
+        conn = self._connect_agent()
+        bridge = AgentBridge(port=self.options.agent_port, connection=conn)
+        try:
+            agent_id = spec.split("@")[0]
+            info = bridge.status(agent_id)
+            self.result["agentInfo"] = info
+            self.set_result_success(
+                True,
+                "AGENT_STATUS",
+                f"{agent_id}: {info['state']}, {info['event_count']} events.",
+            )
+        except AgentBridgeError as exc:
+            self.set_result_success(False, "ERROR", str(exc))
+        except Exception as exc:
+            self.set_result_success(False, "ERROR", f"Agent bridge error: {exc}")
+        finally:
+            conn.close()
+            conn.remove_forward()
+
+    def harness_play(self, resolved_out_dir: Path) -> None:
+        conn = self._connect_agent()
+        bridge = AgentBridge(port=self.options.agent_port, connection=conn)
+        proto = AgentProtocol(conn)
+        try:
+            agent_id = bridge.attach("play")
+            self.result["agentInfo"] = {"agentId": agent_id, "state": "active"}
+
+            print(
+                "\n=== Agent Play Mode ===\n"
+                f"Agent: {agent_id}\n"
+                "Commands: observe, play_card, end_turn, skip_room, exit\n"
+            )
+            while True:
+                try:
+                    line = input("play> ").strip()
+                except (EOFError, KeyboardInterrupt):
+                    break
+                if not line:
+                    continue
+                if line in ("exit", "quit", "q"):
+                    break
+                if line == "observe":
+                    state = proto.observe()
+                    print(json.dumps(state, indent=2))
+                elif line.startswith("play_card"):
+                    proto.execute("PLAY_CARD", {})
+                    state = proto.observe()
+                    print(json.dumps(state, indent=2))
+                elif line == "end_turn":
+                    proto.execute("END_TURN", {})
+                    state = proto.observe()
+                    print(json.dumps(state, indent=2))
+                elif line == "skip_room":
+                    proto.execute("SKIP_ROOM", {})
+                    state = proto.observe()
+                    print(json.dumps(state, indent=2))
+                elif line == "press_proceed":
+                    proto.execute("PRESS_PROCEED", {})
+                elif line.startswith("wait"):
+                    parts = line.split()
+                    ms = int(parts[1]) if len(parts) > 1 else 500
+                    proto.execute("WAIT", {"ms": ms})
+                else:
+                    print(f"Unknown: {line}")
+                    print(
+                        "Available: observe, play_card, end_turn, skip_room, "
+                        "press_proceed, wait <ms>, exit"
+                    )
+
+            bridge.detach(agent_id)
+            self.set_result_success(
+                True,
+                "AGENT_PLAY_COMPLETE",
+                "Interactive play session finished.",
+            )
+        except AgentBridgeError as exc:
+            self.set_result_success(False, "ERROR", str(exc))
+        except Exception as exc:
+            self.set_result_success(False, "ERROR", f"Play mode error: {exc}")
+        finally:
+            conn.close()
+            conn.remove_forward()
+
+    def harness_hotreload(self, resolved_out_dir: Path) -> None:
+        conn = self._connect_agent()
+        proto = AgentProtocol(conn)
+        try:
+            redefine_file = self.options.redefine_class_file.strip()
+            if redefine_file:
+                class_path = Path(redefine_file)
+                if not class_path.is_file():
+                    self.set_result_success(False, "ERROR", f"Class file not found: {redefine_file}")
+                    return
+                data = class_path.read_bytes()
+                proto.redefine_class(data)
+                self.set_result_success(
+                    True,
+                    "CLASS_REDEFINED",
+                    f"Redefined class from {redefine_file} ({len(data)} bytes)",
+                )
+            else:
+                target = (self.options.decompil_targets or [""])[0]
+                if not target.strip():
+                    self.set_result_success(False, "ERROR", "Specify -Target <class name> to dump.")
+                    return
+                class_name = target.strip()
+                data = proto.dump_class(class_name)
+                output = resolved_out_dir / f"{class_name.replace('.', '/')}.class"
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_bytes(data)
+                self.result["artifacts"]["dumpedClass"] = str(output)
+
+                decompiled = self._decompil_class_bytes(data, class_name, resolved_out_dir)
+                if decompiled:
+                    self.result["artifacts"]["decompiledSource"] = decompiled
+
+                self.set_result_success(
+                    True,
+                    "CLASS_DUMPED",
+                    f"Dumped {class_name} ({len(data)} bytes) to {output}" +
+                    (f", decompiled to {decompiled}" if decompiled else ""),
+                )
+        except AgentBridgeError as exc:
+            self.set_result_success(False, "ERROR", str(exc))
+        except Exception as exc:
+            self.set_result_success(False, "ERROR", f"Hotreload error: {exc}")
+        finally:
+            conn.close()
+            conn.remove_forward()
+
+    def _decompil_class_bytes(self, data: bytes, class_name: str, out_dir: Path) -> str | None:
+        cfr_jar = self.repo_root / "scripts" / "tools" / "lib" / "cfr.jar"
+        if not cfr_jar.exists():
+            return None
+        class_file = out_dir / f"{class_name}.class"
+        class_file.write_bytes(data)
+        java_file = out_dir / f"{class_name.replace('.', '/')}.java"
+        java_file.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            result = subprocess.run(
+                [
+                    "java",
+                    "-jar",
+                    str(cfr_jar),
+                    class_name,
+                    "--outputdir",
+                    str(out_dir),
+                    "--extraclasspath",
+                    str(class_file.parent),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                cwd=str(out_dir),
+            )
+            expected = out_dir / f"{class_name.replace('.', '/')}.java"
+            if expected.exists():
+                return str(expected)
+            if result.stdout.strip():
+                java_file.write_text(result.stdout)
+                return str(java_file)
+            return None
+        except Exception:
+            return None
+
+    def harness_perf(self, resolved_out_dir: Path) -> None:
+        conn = self._connect_agent()
+        bridge = AgentBridge(port=self.options.agent_port, connection=conn)
+        proto = AgentProtocol(conn)
+        try:
+            spec = self.options.agent_spec.strip()
+            if not spec:
+                self.set_result_success(False, "ERROR", "Specify -AgentSpec for perf test.")
+                return
+            agent_id = bridge.attach(spec)
+            proto.perf_start(agent_id)
+            duration = self.options.agent_duration or 10.0
+            out_path = resolved_out_dir / f"agent_{agent_id}.jsonl"
+            event_count = bridge.subscribe_and_capture(agent_id, out_path, duration)
+            perf_info = proto.perf_stop(agent_id)
+            status_info = bridge.status(agent_id)
+            self.result["agentInfo"] = {**status_info, "perf": perf_info}
+            self.result["artifacts"]["agentData"] = str(out_path)
+            bridge.detach(agent_id)
+            self.set_result_success(
+                True,
+                "PERF_COMPLETE",
+                f"Perf complete: {event_count} events, stats={perf_info}",
+            )
+        except AgentBridgeError as exc:
+            self.set_result_success(False, "ERROR", str(exc))
+        except Exception as exc:
+            self.set_result_success(False, "ERROR", f"Perf error: {exc}")
+        finally:
+            conn.close()
+            conn.remove_forward()
+
     def complete_result(self) -> None:
         ended_at = datetime.now(timezone.utc)
         self.result["endedAt"] = utc_timestamp(ended_at)
@@ -1068,6 +1577,24 @@ fi
             )
         elif command == "smoke":
             return self.run_smoke(resolved_out_dir)
+        elif command == "decompil":
+            info, success, status, message = self.harness_decompil(resolved_out_dir)
+            self.result["decompilInfo"] = info
+            self.set_result_success(success, status, message)
+        elif command == "agent-attach":
+            self.harness_agent_attach(resolved_out_dir)
+        elif command == "agent-detach":
+            self.harness_agent_detach(resolved_out_dir)
+        elif command == "agent-list":
+            self.harness_agent_list(resolved_out_dir)
+        elif command == "agent-status":
+            self.harness_agent_status(resolved_out_dir)
+        elif command == "play":
+            self.harness_play(resolved_out_dir)
+        elif command == "hotreload":
+            self.harness_hotreload(resolved_out_dir)
+        elif command == "perf":
+            self.harness_perf(resolved_out_dir)
         elif command == "single-room":
             self.options.autoplay = True
             self.options.autoplay_mode = "single_room"
@@ -1092,6 +1619,15 @@ fi
             start_requested = True
             status = self.wait_harness_status(logcat_capture)
             self.result["statusSnapshot"] = status
+            if (
+                self.options.agent_command == "attach"
+                and self.options.agent_spec
+                and status.get("observedState") == "READY"
+            ):
+                try:
+                    self.harness_agent_attach(resolved_out_dir)
+                except Exception as exc:
+                    self.result["artifacts"]["agentError"] = str(exc)
             try:
                 self.harness_screenshot(resolved_out_dir)
             except Exception as exc:

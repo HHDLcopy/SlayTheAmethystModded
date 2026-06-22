@@ -185,6 +185,17 @@ object ComponentInstaller {
         throwIfInterrupted()
         reportProgress(
             progressCallback,
+            18,
+            context.getString(R.string.startup_progress_installing_agent_connector)
+        )
+        replaceAssetTree(
+            resources,
+            "components/agent_connector",
+            RuntimePaths.agentConnectorDir(context)
+        )
+        throwIfInterrupted()
+        reportProgress(
+            progressCallback,
             25,
             context.getString(R.string.startup_progress_installing_lwjgl2_injector)
         )

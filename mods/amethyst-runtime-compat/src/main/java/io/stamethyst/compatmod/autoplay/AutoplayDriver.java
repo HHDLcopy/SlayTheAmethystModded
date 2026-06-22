@@ -15,6 +15,18 @@ package io.stamethyst.compatmod.autoplay;
  *   <li>Catches Throwable from each tick so a runtime mismatch (e.g. a mod renaming a field) never
  *       crashes the engine; we just log and try again next tick.</li>
  * </ul>
+ *
+ * <h3>Agent play-mode integration</h3>
+ * <p>When a {@code PlayMonitorAgent} is attached via agentmain, normal autoplay reads its
+ * {@code mode} field:
+ * <ul>
+ *   <li>{@code AUTONOMOUS} - autoplay runs normally; agent commands on the queue are
+ *       consumed as a side effect but do not replace autonomous decisions.</li>
+ *   <li>{@code COMMAND_DRIVEN} - autoplay only consumes the command queue and never
+ *       takes autonomous actions.</li>
+ * </ul>
+ * <p>If {@code -Damethyst.autoplay.wait_for_agent=true} is set, normal autoplay makes
+ * no autonomous decisions until the play monitor connects.
  */
 public final class AutoplayDriver {
     private static volatile boolean bannerLogged;
@@ -37,6 +49,17 @@ public final class AutoplayDriver {
                 AutoplaySingleRoomRunner.tick();
                 return;
             }
+
+            String playMode = getAgentPlayMode();
+            if (AutoplayConfig.isWaitForAgentEnabled() && playMode == null) {
+                return;
+            }
+            if (playMode != null) {
+                tryDispatchAgentCommand();
+            }
+            if (playMode != null && !"AUTONOMOUS".equals(playMode)) {
+                return;
+            }
             AutoplayMainMenuActions.tick();
             AutoplayEndScreenActions.tick();
             AutoplayDungeonActions.tick();
@@ -56,7 +79,40 @@ public final class AutoplayDriver {
                 + " saveMode=" + AutoplayConfig.getSaveMode()
                 + " singleRoomSpec=" + AutoplayConfig.getSingleRoomSpecPath()
                 + " debugLog=" + AutoplayConfig.isDebugLogEnabled()
+                + " waitForAgent=" + AutoplayConfig.isWaitForAgentEnabled()
         );
+    }
+
+    private static String getAgentPlayMode() {
+        try {
+            Class<?> playCls = Class.forName("io.stamethyst.agent.monitors.impl.PlayMonitorAgent");
+            Object inst = playCls.getField("INSTANCE").get(null);
+            if (inst == null) {
+                return null;
+            }
+            Object mode = playCls.getMethod("getMode").invoke(inst);
+            return mode != null ? mode.toString() : null;
+        } catch (ClassNotFoundException e) {
+            return null;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    private static boolean tryDispatchAgentCommand() {
+        try {
+            Class<?> playCls = Class.forName("io.stamethyst.agent.monitors.impl.PlayMonitorAgent");
+            Object inst = playCls.getField("INSTANCE").get(null);
+            if (inst == null) {
+                return false;
+            }
+            Object cmd = playCls.getMethod("pollAndExecute").invoke(inst);
+            return cmd != null;
+        } catch (ClassNotFoundException e) {
+            return false;
+        } catch (Throwable t) {
+            return false;
+        }
     }
 
     private static boolean shouldTickNow() {

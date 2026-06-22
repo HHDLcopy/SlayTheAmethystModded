@@ -682,6 +682,7 @@ object StsLaunchSpec {
                     "0"
                 }
         )
+        args.add("-Damethyst.autoplay.wait_for_agent=${if (effectiveAutoplay) "true" else "false"}")
         args.add("-Damethyst.bridge.events=${RuntimePaths.bootBridgeEventsLog(context).absolutePath}")
         if (isMtsLaunchMode(launchMode)) {
             args.add("-Damethyst.mts.mod_file_list=${RuntimePaths.mtsModFileList(context).absolutePath}")
@@ -696,6 +697,7 @@ object StsLaunchSpec {
         addCacioBootClasspath(args, RuntimePaths.cacioDir(context))
 
         args.add("-javaagent:${RuntimePaths.lwjgl2InjectorJar(context).absolutePath}")
+        args.add("-javaagent:${RuntimePaths.agentConnectorJar(context).absolutePath}=port=9099")
         args.add("-cp")
         if (isMtsLaunchMode(launchMode)) {
             val classpathEntries = arrayListOf(

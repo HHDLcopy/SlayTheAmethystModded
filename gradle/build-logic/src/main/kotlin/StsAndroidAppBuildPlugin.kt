@@ -322,6 +322,12 @@ private fun Project.registerRuntimeAssetTasks(
         into(generatedRuntimeAssetsDir.map { it.dir("components/boot_bridge") })
     }
 
+    val installAgentConnectorJar = tasks.register<Copy>("installAgentConnectorJar") {
+        dependsOn(":agent-connector:jar")
+        from(project(":agent-connector").layout.buildDirectory.file("libs/agent-connector.jar"))
+        into(generatedRuntimeAssetsDir.map { it.dir("components/agent_connector") })
+    }
+
     val generateAndroidCallbackBridgeSource = tasks.register<DefaultTask>("generateAndroidCallbackBridgeSource") {
         val templateFile = callbackBridgeTemplatesDir.file("android/CallbackBridge.java.tmpl")
         inputs.file(templateFile)
@@ -485,6 +491,7 @@ private fun Project.registerRuntimeAssetTasks(
     return listOf(
         generateAndroidCallbackBridgeSource,
         installBootBridgeJar,
+        installAgentConnectorJar,
         installLwjglBridgeAssets,
         installPatchJars,
         installBundledModJars,

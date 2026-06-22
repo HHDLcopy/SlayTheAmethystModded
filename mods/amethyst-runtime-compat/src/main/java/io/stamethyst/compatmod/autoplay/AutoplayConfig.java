@@ -16,6 +16,9 @@ public final class AutoplayConfig {
         "amethyst.debug.autoplay.tick_interval_ms";
     /** Optional verbose logging toggle. */
     public static final String AUTOPLAY_DEBUG_PROP = "amethyst.debug.autoplay.debug";
+    /** When true, normal autoplay waits until an agent PlayMonitorAgent connects. */
+    public static final String AUTOPLAY_WAIT_FOR_AGENT_PROP =
+        "amethyst.autoplay.wait_for_agent";
     /** Optional delay before autoplay resolves visible choice screens. */
     public static final String AUTOPLAY_CHOICE_DELAY_MS_PROP =
         "amethyst.debug.autoplay.choice_delay_ms";
@@ -42,6 +45,8 @@ public final class AutoplayConfig {
         readBoolean(AUTOPLAY_ENABLED_PROP, false);
     private static final boolean DEBUG_LOG_ENABLED =
         readBoolean(AUTOPLAY_DEBUG_PROP, false);
+    private static final boolean WAIT_FOR_AGENT =
+        readBoolean(AUTOPLAY_WAIT_FOR_AGENT_PROP, false);
     private static final String MODE =
         readMode(AUTOPLAY_MODE_PROP, MODE_NORMAL);
     private static final String SAVE_MODE =
@@ -64,6 +69,10 @@ public final class AutoplayConfig {
 
     public static boolean isDebugLogEnabled() {
         return DEBUG_LOG_ENABLED;
+    }
+
+    public static boolean isWaitForAgentEnabled() {
+        return WAIT_FOR_AGENT;
     }
 
     public static long getTickIntervalMs() {

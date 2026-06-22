@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 
 from .sts_harness import (
+    AGENT_COMMANDS,
     AUTOPLAY_MODES,
     AUTOPLAY_SAVE_MODES,
     COMMANDS,
@@ -103,6 +104,56 @@ def create_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("-EnableAllMods", "--enable-all-mods", dest="enable_all_mods", action="store_true")
     parser.add_argument("-DisableAllMods", "--disable-all-mods", dest="disable_all_mods", action="store_true")
+    parser.add_argument(
+        "-Target",
+        "--target",
+        dest="decompil_targets",
+        action="append",
+        default=[],
+        help=(
+            "Class name or Class#method to decompile. Repeatable. Example: "
+            "com.megacrit.cardcrawl.cards.AbstractCard or "
+            "com.megacrit.cardcrawl.cards.AbstractCard#applyPowers"
+        ),
+    )
+    parser.add_argument(
+        "-AgentCommand",
+        "--agent-command",
+        dest="agent_command",
+        choices=AGENT_COMMANDS,
+        default="",
+        help="Agent operation to run after smoke succeeds.",
+    )
+    parser.add_argument(
+        "-AgentSpec",
+        "--agent-spec",
+        dest="agent_spec",
+        default="",
+        help="Monitor spec (e.g. tracing@classes=com.megacrit.*).",
+    )
+    parser.add_argument(
+        "-AgentPort",
+        "--agent-port",
+        dest="agent_port",
+        type=int,
+        default=9090,
+        help="TCP port for agent-connector.",
+    )
+    parser.add_argument(
+        "-AgentDuration",
+        "--agent-duration",
+        dest="agent_duration",
+        type=float,
+        default=0,
+        help="Seconds to capture agent data before detach.",
+    )
+    parser.add_argument(
+        "-RedefineClass",
+        "--redefine-class",
+        dest="redefine_class_file",
+        default="",
+        help="For -Command hotreload, provide a .class file to redefine in the JVM.",
+    )
     return parser
 
 
@@ -137,5 +188,11 @@ def main(argv: list[str] | None = None) -> int:
         mod_list_file=args.mod_list_file,
         enable_all_mods=args.enable_all_mods,
         disable_all_mods=args.disable_all_mods,
+        decompil_targets=args.decompil_targets or [],
+        agent_command=args.agent_command,
+        agent_spec=args.agent_spec,
+        agent_port=args.agent_port,
+        agent_duration=args.agent_duration,
+        redefine_class_file=args.redefine_class_file,
     )
     return Harness(options).run()

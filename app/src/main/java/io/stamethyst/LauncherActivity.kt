@@ -29,8 +29,8 @@ import io.stamethyst.ui.main.MainScreenViewModel
 import io.stamethyst.ui.modimport.ModImportRequestBus
 import io.stamethyst.ui.preferences.LauncherPreferences
 import io.stamethyst.ui.resources.LauncherResourceGate
-import io.stamethyst.ui.settings.SettingsFileService
-import io.stamethyst.ui.settings.SettingsScreenViewModel
+import io.stamethyst.ui.settings.files.SettingsFileService
+import io.stamethyst.ui.settings.core.SettingsScreenViewModel
 import io.stamethyst.ui.theme.LauncherTheme
 import java.io.File
 import java.util.Locale

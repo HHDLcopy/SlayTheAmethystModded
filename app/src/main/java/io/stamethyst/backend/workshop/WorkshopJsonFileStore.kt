@@ -17,6 +17,10 @@ internal object WorkshopJsonFileStore {
     }
 
     fun <T> readJsonOrDefault(file: File, defaultValue: T, parse: (String) -> T): T {
+        return readTextOrDefault(file, defaultValue, parse)
+    }
+
+    fun <T> readTextOrDefault(file: File, defaultValue: T, parse: (String) -> T): T {
         if (!file.isFile) return defaultValue
         val primaryText = runCatching { file.readText(StandardCharsets.UTF_8) }.getOrElse { return defaultValue }
         runCatching { parse(primaryText) }.onSuccess { return it }
@@ -30,6 +34,29 @@ internal object WorkshopJsonFileStore {
                     writeAtomically(file, backupText, updateBackup = false)
                     return recovered
                 }
+            }
+        }
+
+        quarantineCorrupt(file)
+        return defaultValue
+    }
+
+    fun <T> readFileOrDefault(file: File, defaultValue: T, parse: (File) -> T): T {
+        if (!file.isFile) return defaultValue
+        runCatching { parse(file) }.onSuccess { return it }
+
+        val backupFile = backupFile(file)
+        if (backupFile.isFile) {
+            runCatching { parse(backupFile) }.onSuccess { recovered ->
+                quarantineCorrupt(file)
+                runCatching {
+                    Files.copy(
+                        backupFile.toPath(),
+                        file.toPath(),
+                        StandardCopyOption.REPLACE_EXISTING,
+                    )
+                }
+                return recovered
             }
         }
 

@@ -86,7 +86,7 @@ import io.stamethyst.ui.LauncherTransientNoticeDuration
 import io.stamethyst.ui.UiText
 import io.stamethyst.ui.UiBusyOperation
 import io.stamethyst.ui.preferences.LauncherPreferences
-import io.stamethyst.ui.settings.JvmLogShareService
+import io.stamethyst.ui.settings.files.JvmLogShareService
 import io.stamethyst.ui.workshop.WorkshopDownloadCenterStore
 import io.stamethyst.ui.workshop.WorkshopDownloadTaskUi
 import java.io.File
@@ -379,9 +379,9 @@ class MainScreenViewModel : ViewModel() {
 
     suspend fun refreshWorkshopDownloadCards(host: Activity): Boolean {
         val loadedTasks = withContext(Dispatchers.IO) {
-            WorkshopDownloadCenterStore.loadTasksWithRecovery(host)
+            WorkshopDownloadCenterStore.loadLauncherCardTasksWithRecovery(host)
         }
-        WorkshopDownloadCenterStore.replaceInMemory(loadedTasks)
+        WorkshopDownloadCenterStore.replaceLauncherCardTasksInMemory(loadedTasks)
 
         val visibleTasks = loadedTasks.filter { task -> task.status.shouldShowLightweightWorkshopTask() }
         val activeTasks = loadedTasks.filter { task -> task.status.isActiveDownload() }

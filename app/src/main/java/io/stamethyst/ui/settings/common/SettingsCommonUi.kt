@@ -1,0 +1,556 @@
+package io.stamethyst.ui.settings.common
+
+import io.stamethyst.ui.settings.baidu.*
+import io.stamethyst.ui.settings.core.*
+import io.stamethyst.ui.settings.files.*
+import io.stamethyst.ui.settings.first_run.*
+import io.stamethyst.ui.settings.importing.*
+import io.stamethyst.ui.settings.mobileglues.*
+import io.stamethyst.ui.settings.native_library.*
+import io.stamethyst.ui.settings.sections.*
+import io.stamethyst.ui.settings.services.*
+import io.stamethyst.ui.settings.steamcloud.*
+
+import android.view.HapticFeedbackConstants
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import io.stamethyst.R
+import io.stamethyst.ui.haptics.LauncherHaptics
+import io.stamethyst.ui.resolve
+
+
+internal data class SettingsSwitchSpec(
+    val checked: Boolean,
+    val enabled: Boolean,
+    val enabledText: String,
+    val disabledText: String,
+    val description: String,
+    val chipText: String? = null,
+    val onCheckedChange: (Boolean) -> Unit,
+)
+
+
+internal data class SettingsChoiceSpec<T>(
+    val title: String,
+    val valueText: String,
+    val enabled: Boolean,
+    val selectedValue: T,
+    val options: List<T>,
+    val optionLabel: @Composable (T) -> String,
+    val onOptionSelected: (T) -> Unit,
+    val description: String? = null,
+    val dialogTitle: String = title,
+    val dialogDescription: String? = description,
+    val optionEnabled: (T) -> Boolean = { true },
+    val optionDescription: (@Composable (T) -> String?)? = null,
+)
+
+
+@Composable
+internal fun SettingsBusyIndicator(
+    uiState: SettingsScreenViewModel.UiState
+) {
+    if (!uiState.busy || uiState.busyOperation.usesBlockingOverlay()) {
+        return
+    }
+    val progressFraction = uiState.busyProgressPercent
+        ?.coerceIn(0, 100)
+        ?.div(100f)
+    if (progressFraction != null) {
+        val animatedProgress by animateFloatAsState(
+            targetValue = progressFraction,
+            animationSpec = tween(durationMillis = 360),
+            label = "settings_busy_progress"
+        )
+        LinearProgressIndicator(
+            progress = { animatedProgress },
+            modifier = Modifier.fillMaxWidth()
+        )
+    } else {
+        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+    }
+    uiState.busyMessage?.let {
+        Text(text = it.resolve(), style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+
+@Composable
+internal fun SettingsSectionCard(
+    title: String,
+    content: @Composable () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(text = title, style = MaterialTheme.typography.titleMedium)
+            HorizontalDivider()
+            content()
+        }
+    }
+}
+
+
+@Composable
+internal fun SettingsSwitchItem(spec: SettingsSwitchSpec) {
+    SwitchSettingRow(
+        checked = spec.checked,
+        enabled = spec.enabled,
+        enabledText = spec.enabledText,
+        disabledText = spec.disabledText,
+        description = spec.description,
+        onCheckedChange = spec.onCheckedChange,
+        chipText = spec.chipText,
+    )
+}
+
+
+@Composable
+internal fun <T> SettingsChoiceDialogItem(spec: SettingsChoiceSpec<T>) {
+    var showDialog by rememberSaveable(spec.title) { mutableStateOf(false) }
+
+    SettingsActionListItem(
+        title = spec.title,
+        supportingText = spec.valueText,
+        enabled = spec.enabled,
+        onClick = { showDialog = true }
+    )
+    spec.description?.let { description ->
+        Text(
+            text = description,
+            style = MaterialTheme.typography.bodySmall
+        )
+    }
+
+    if (showDialog) {
+        AlertDialog(
+            onDismissRequest = { showDialog = false },
+            title = { Text(spec.dialogTitle) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    spec.options.forEach { option ->
+                        val optionIsEnabled = spec.enabled && spec.optionEnabled(option)
+                        SettingsRadioOptionRow(
+                            selected = spec.selectedValue == option,
+                            enabled = optionIsEnabled,
+                            text = spec.optionLabel(option),
+                            onSelect = {
+                                spec.onOptionSelected(option)
+                                showDialog = false
+                            }
+                        )
+                        spec.optionDescription?.invoke(option)?.let { description ->
+                            Text(
+                                text = description,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.padding(start = 48.dp)
+                            )
+                        }
+                    }
+                    spec.dialogDescription?.let { description ->
+                        Text(
+                            text = description,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                HapticTextButton(onClick = { showDialog = false }) {
+                    Text(stringResource(R.string.main_folder_dialog_confirm))
+                }
+            }
+        )
+    }
+}
+
+
+@Composable
+internal fun SwitchSettingRow(
+    checked: Boolean,
+    enabled: Boolean,
+    enabledText: String,
+    disabledText: String,
+    description: String,
+    onCheckedChange: (Boolean) -> Unit,
+    chipText: String? = null,
+) {
+    val view = LocalView.current
+    val title = if (checked) enabledText else disabledText
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Switch(
+            checked = checked,
+            enabled = enabled,
+            onCheckedChange = { changed ->
+                onCheckedChange(changed)
+                performTapHapticFeedback(view)
+            }
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+        if (chipText == null) {
+            Text(text = title)
+        } else {
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = title,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                SettingsMetadataChip(text = chipText)
+            }
+        }
+    }
+    Text(
+        text = description,
+        style = MaterialTheme.typography.bodySmall
+    )
+}
+
+
+@Composable
+internal fun SettingsMetadataChip(text: String) {
+    Surface(
+        shape = RoundedCornerShape(percent = 50),
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+        )
+    }
+}
+
+
+@Composable
+internal fun SettingsActionListItem(
+    title: String,
+    supportingText: String? = null,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    ListItem(
+        headlineContent = {
+            Text(text = title)
+        },
+        supportingContent = supportingText?.let { value ->
+            {
+                Text(
+                    text = value,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        },
+        trailingContent = {
+            Text(
+                text = ">",
+                style = MaterialTheme.typography.titleMedium
+            )
+        },
+        colors = ListItemDefaults.colors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .hapticClickable(
+                enabled = enabled,
+                onClick = onClick
+            )
+    )
+}
+
+
+@Composable
+internal fun SettingsDangerActionListItem(
+    title: String,
+    supportingText: String? = null,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    ListItem(
+        headlineContent = {
+            Text(
+                text = title,
+                color = MaterialTheme.colorScheme.error,
+            )
+        },
+        supportingContent = supportingText?.let { value ->
+            {
+                Text(
+                    text = value,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        },
+        trailingContent = {
+            Text(
+                text = ">",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.error,
+            )
+        },
+        colors = ListItemDefaults.colors(
+            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.22f)
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .hapticClickable(
+                enabled = enabled,
+                onClick = onClick
+            )
+    )
+}
+
+
+@Composable
+internal fun SettingsRadioOptionRow(
+    selected: Boolean,
+    enabled: Boolean,
+    text: String,
+    onSelect: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .hapticToggleable(
+                value = selected,
+                enabled = enabled,
+                onValueChange = { onSelect() }
+            )
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RadioButton(
+            selected = selected,
+            onClick = null,
+            enabled = enabled
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(text = text)
+    }
+}
+
+
+@Composable
+internal fun <T> SettingsDropdownField(
+    label: String,
+    valueText: String,
+    enabled: Boolean,
+    supportingText: String? = null,
+    supportingTextColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    options: List<T>,
+    optionEnabled: (T) -> Boolean = { true },
+    optionLabel: @Composable (T) -> String,
+    optionDescription: (@Composable (T) -> String?)? = null,
+    onOptionSelected: (T) -> Unit,
+) {
+    var expanded by remember(label, options, enabled) { mutableStateOf(false) }
+
+    Box(modifier = Modifier.fillMaxWidth()) {
+        ListItem(
+            headlineContent = {
+                Text(text = label)
+            },
+            supportingContent = {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = valueText,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    supportingText?.let {
+                        Text(
+                            text = it,
+                            color = supportingTextColor,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            },
+            trailingContent = {
+                Text(
+                    text = if (expanded) "▲" else "▼",
+                    style = MaterialTheme.typography.titleMedium
+                )
+            },
+            colors = ListItemDefaults.colors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .hapticClickable(enabled = enabled) { expanded = true }
+        )
+
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            options.forEach { option ->
+                val optionIsEnabled = optionEnabled(option)
+                DropdownMenuItem(
+                    enabled = optionIsEnabled,
+                    text = {
+                        Column {
+                            Text(text = optionLabel(option))
+                            optionDescription?.invoke(option)?.let { description ->
+                                Text(
+                                    text = description,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    },
+                    onClick = {
+                        expanded = false
+                        onOptionSelected(option)
+                    }
+                )
+            }
+        }
+    }
+}
+
+
+@Composable
+internal fun HapticIconButton(
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    content: @Composable () -> Unit,
+) {
+    val view = LocalView.current
+    IconButton(
+        onClick = {
+            performTapHapticFeedback(view)
+            onClick()
+        },
+        enabled = enabled,
+        content = content
+    )
+}
+
+
+@Composable
+internal fun HapticTextButton(
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    content: @Composable RowScope.() -> Unit,
+) {
+    val view = LocalView.current
+    TextButton(
+        onClick = {
+            performTapHapticFeedback(view)
+            onClick()
+        },
+        enabled = enabled,
+        content = content
+    )
+}
+
+
+internal fun Modifier.hapticClickable(
+    enabled: Boolean,
+    onClick: () -> Unit,
+): Modifier = composed {
+    val view = LocalView.current
+    clickable(
+        enabled = enabled,
+        onClick = {
+            performTapHapticFeedback(view)
+            onClick()
+        }
+    )
+}
+
+
+internal fun Modifier.hapticToggleable(
+    value: Boolean,
+    enabled: Boolean,
+    onValueChange: (Boolean) -> Unit,
+): Modifier = composed {
+    val view = LocalView.current
+    toggleable(
+        value = value,
+        enabled = enabled,
+        onValueChange = { changed ->
+            performTapHapticFeedback(view)
+            onValueChange(changed)
+        }
+    )
+}
+
+
+internal fun performTapHapticFeedback(view: android.view.View) {
+    performHapticFeedback(view, HapticFeedbackConstants.KEYBOARD_TAP)
+}
+
+
+internal fun performHapticFeedback(view: android.view.View, feedbackConstant: Int) {
+    LauncherHaptics.perform(view, feedbackConstant)
+}
+
+

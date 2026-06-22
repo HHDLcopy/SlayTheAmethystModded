@@ -13,6 +13,7 @@ import io.stamethyst.backend.workshop.WorkshopItemDetails
 import io.stamethyst.backend.workshop.WorkshopMetadataStore
 import io.stamethyst.backend.workshop.WorkshopModCardState
 import io.stamethyst.backend.workshop.isRunningDownload
+import io.stamethyst.backend.workshop.shouldShowOnLauncherCards
 
 internal object WorkshopDownloadCenterStore {
     private const val ACTIVE_DOWNLOAD_RECOVERY_GRACE_MS = 30_000L
@@ -23,6 +24,7 @@ internal object WorkshopDownloadCenterStore {
     private var store: WorkshopDownloadTaskStore? = null
     private var appContext: Context? = null
     private var recoveredInterruptedDownloads = false
+    private var recoveredLauncherVisibleInterruptedDownloads = false
 
     fun initialize(context: Context) {
         ensureStore(context)
@@ -32,6 +34,12 @@ internal object WorkshopDownloadCenterStore {
         ensureStore(context)
         recoverInterruptedDownloadsIfNeeded(context)
         return loadTasks()
+    }
+
+    fun loadLauncherCardTasksWithRecovery(context: Context): List<WorkshopDownloadTaskUi> {
+        ensureStore(context)
+        recoverLauncherVisibleInterruptedDownloadsIfNeeded(context)
+        return loadLauncherCardTasks()
     }
 
     fun refresh() {
@@ -44,11 +52,57 @@ internal object WorkshopDownloadCenterStore {
         return records.map { it.toUi(context) }
     }
 
+    fun loadLauncherCardTasks(): List<WorkshopDownloadTaskUi> {
+        val records = store?.listLauncherVisible().orEmpty()
+        val context = appContext
+        return records.map { it.toUi(context) }
+    }
+
     fun replaceInMemory(loadedTasks: List<WorkshopDownloadTaskUi>) {
-        replaceTaskStatuses(loadedTasks)
-        if (tasks == loadedTasks) return
+        replaceInMemory(loadedTasks, preserveExistingFinishedTasks = false)
+    }
+
+    fun replaceLauncherCardTasksInMemory(loadedTasks: List<WorkshopDownloadTaskUi>) {
+        replaceInMemory(loadedTasks, preserveExistingFinishedTasks = true)
+    }
+
+    private fun replaceInMemory(
+        loadedTasks: List<WorkshopDownloadTaskUi>,
+        preserveExistingFinishedTasks: Boolean,
+    ) {
+        val nextTasks = if (preserveExistingFinishedTasks) {
+            mergePreservingFinishedTasks(loadedTasks)
+        } else {
+            loadedTasks
+        }
+        replaceTaskStatuses(nextTasks)
+        if (tasks == nextTasks) return
         tasks.clear()
-        tasks.addAll(loadedTasks)
+        tasks.addAll(nextTasks)
+    }
+
+    private fun mergePreservingFinishedTasks(loadedTasks: List<WorkshopDownloadTaskUi>): List<WorkshopDownloadTaskUi> {
+        if (tasks.isEmpty()) return loadedTasks
+        val loadedIds = loadedTasks.mapTo(LinkedHashSet()) { task -> task.publishedFileId }
+        val preservedFinishedTasks = tasks.filter { task ->
+            task.publishedFileId !in loadedIds && !task.status.shouldShowOnLauncherCards()
+        }
+        if (preservedFinishedTasks.isEmpty()) return loadedTasks
+        return loadedTasks + preservedFinishedTasks
+    }
+
+    private fun replaceTaskStatuses(loadedTasks: List<WorkshopDownloadTaskUi>) {
+        val loadedStatuses = loadedTasks.associate { it.publishedFileId to it.status }
+        taskStatuses.keys.toList().forEach { publishedFileId ->
+            if (publishedFileId !in loadedStatuses) {
+                taskStatuses.remove(publishedFileId)
+            }
+        }
+        loadedStatuses.forEach { (publishedFileId, status) ->
+            if (taskStatuses[publishedFileId] != status) {
+                taskStatuses[publishedFileId] = status
+            }
+        }
     }
 
     fun upsert(task: WorkshopDownloadTaskUi) {
@@ -81,20 +135,6 @@ internal object WorkshopDownloadCenterStore {
     fun removeInMemory(publishedFileId: ULong) {
         taskStatuses.remove(publishedFileId)
         tasks.removeAll { it.publishedFileId == publishedFileId }
-    }
-
-    private fun replaceTaskStatuses(loadedTasks: List<WorkshopDownloadTaskUi>) {
-        val loadedStatuses = loadedTasks.associate { it.publishedFileId to it.status }
-        taskStatuses.keys.toList().forEach { publishedFileId ->
-            if (publishedFileId !in loadedStatuses) {
-                taskStatuses.remove(publishedFileId)
-            }
-        }
-        loadedStatuses.forEach { (publishedFileId, status) ->
-            if (taskStatuses[publishedFileId] != status) {
-                taskStatuses[publishedFileId] = status
-            }
-        }
     }
 
     fun update(publishedFileId: ULong, transform: (WorkshopDownloadTaskUi) -> WorkshopDownloadTaskUi) {
@@ -172,6 +212,65 @@ internal object WorkshopDownloadCenterStore {
         val recovered = store?.recoverInterruptedTasksWithResult { task ->
             task.shouldRecoverInterrupted(context, now)
         }.orEmpty()
+        if (recovered.isEmpty()) return
+        recovered.forEach { task ->
+            if (WorkshopInterruptedDownloadRecovery.recoverFinishedTransferIfPossible(
+                    context = context,
+                    metadataStore = metadataStore,
+                    taskStore = taskStore,
+                    task = task,
+                )
+            ) {
+                return@forEach
+            }
+            val summary = task.details.summary
+            metadataStore.updateState(
+                appId = summary.appId,
+                publishedFileId = summary.publishedFileId,
+                state = WorkshopModCardState.DownloadPaused,
+                statusText = task.message.ifBlank { context.getString(R.string.workshop_download_task_message_paused) },
+            )
+        }
+    }
+
+    private fun recoverLauncherVisibleInterruptedDownloadsIfNeeded(context: Context) {
+        val shouldRecover = synchronized(initLock) {
+            if (recoveredInterruptedDownloads || recoveredLauncherVisibleInterruptedDownloads) {
+                false
+            } else {
+                recoveredLauncherVisibleInterruptedDownloads = true
+                true
+            }
+        }
+        if (!shouldRecover) return
+        try {
+            recoverLauncherVisibleInterruptedDownloads(context)
+        } catch (error: Throwable) {
+            synchronized(initLock) {
+                recoveredLauncherVisibleInterruptedDownloads = false
+            }
+            throw error
+        }
+    }
+
+    private fun recoverLauncherVisibleInterruptedDownloads(context: Context) {
+        val taskStore = store ?: return
+        val metadataStore = WorkshopMetadataStore(context)
+        val now = System.currentTimeMillis()
+        val visibleTasks = taskStore.listLauncherVisible()
+        visibleTasks.forEach { task ->
+            if (task.shouldRecoverInterrupted(context, now)) {
+                WorkshopInterruptedDownloadRecovery.recoverFinishedTransferIfPossible(
+                    context = context,
+                    metadataStore = metadataStore,
+                    taskStore = taskStore,
+                    task = task,
+                )
+            }
+        }
+        val recovered = taskStore.recoverLauncherVisibleInterruptedTasksWithResult { task ->
+            task.shouldRecoverInterrupted(context, now)
+        }
         if (recovered.isEmpty()) return
         recovered.forEach { task ->
             if (WorkshopInterruptedDownloadRecovery.recoverFinishedTransferIfPossible(

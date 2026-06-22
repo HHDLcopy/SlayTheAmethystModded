@@ -1,6 +1,7 @@
 package io.stamethyst.backend.workshop
 
 import android.content.Context
+import android.util.JsonReader
 import java.io.File
 import java.nio.charset.StandardCharsets
 import java.text.SimpleDateFormat
@@ -50,6 +51,12 @@ class WorkshopDownloadTaskStore(context: Context) {
     private val file = File(context.applicationContext.filesDir, "workshop/download_tasks.json")
 
     fun list(): List<WorkshopDownloadTaskRecord> = withStoreLock { loadUnlocked() }
+
+    fun listLauncherVisible(): List<WorkshopDownloadTaskRecord> = withStoreLock {
+        loadLauncherVisibleUnlocked()
+    }
+
+    fun save(tasks: List<WorkshopDownloadTaskRecord>) = withStoreLock { saveUnlocked(tasks) }
 
     fun upsert(task: WorkshopDownloadTaskRecord) = withStoreLock {
         clearDeletedMarker(task.publishedFileId)
@@ -146,14 +153,77 @@ class WorkshopDownloadTaskStore(context: Context) {
         return@withStoreLock recovered
     }
 
-    private fun loadUnlocked(): List<WorkshopDownloadTaskRecord> {
+    fun recoverLauncherVisibleInterruptedTasksWithResult(
+        shouldRecover: (WorkshopDownloadTaskRecord) -> Boolean = { true },
+    ): List<WorkshopDownloadTaskRecord> = withStoreLock {
+        val recoverableVisibleTaskIds = loadLauncherVisibleUnlocked()
+            .filter { task ->
+                (task.status.isRunningDownload() || task.status.isStoppingDownload()) &&
+                    shouldRecover(task)
+            }
+            .mapTo(LinkedHashSet()) { task -> task.publishedFileId }
+        if (recoverableVisibleTaskIds.isEmpty()) {
+            return@withStoreLock emptyList()
+        }
+
+        val recovered = ArrayList<WorkshopDownloadTaskRecord>()
+        val tasks = loadUnlocked().map { task ->
+            if (task.publishedFileId in recoverableVisibleTaskIds &&
+                (task.status.isRunningDownload() || task.status.isStoppingDownload()) &&
+                shouldRecover(task)
+            ) {
+                task.copy(
+                    status = WorkshopDownloadTaskStatus.Paused,
+                    message = "下载已暂停，可继续",
+                    preservePartialDownload = true,
+                ).also(recovered::add)
+            } else {
+                task
+            }
+        }
+        if (recovered.isNotEmpty()) saveUnlocked(tasks)
+        return@withStoreLock recovered
+    }
+
+    private fun loadUnlocked(
+        shouldInclude: (WorkshopDownloadTaskRecord) -> Boolean = { true },
+    ): List<WorkshopDownloadTaskRecord> {
         return WorkshopJsonFileStore.readJsonOrDefault(file, emptyList()) { text ->
             val root = JSONObject(text)
             val array = root.optJSONArray("tasks") ?: return@readJsonOrDefault emptyList()
             buildList {
                 for (i in 0 until array.length()) {
                     val item = array.optJSONObject(i) ?: continue
-                    add(item.toTask())
+                    val status = item.taskStatus()
+                    val task = item.toTask(status)
+                    if (shouldInclude(task)) {
+                        add(task)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun loadLauncherVisibleUnlocked(): List<WorkshopDownloadTaskRecord> {
+        return WorkshopJsonFileStore.readFileOrDefault(file, emptyList()) { source ->
+            source.inputStream().buffered().reader(StandardCharsets.UTF_8).use { input ->
+                JsonReader(input).use { reader ->
+                    val tasks = ArrayList<WorkshopDownloadTaskRecord>()
+                    reader.beginObject()
+                    while (reader.hasNext()) {
+                        when (reader.nextName()) {
+                            "tasks" -> {
+                                reader.beginArray()
+                                while (reader.hasNext()) {
+                                    readLauncherVisibleTask(reader)?.let(tasks::add)
+                                }
+                                reader.endArray()
+                            }
+                            else -> reader.skipValue()
+                        }
+                    }
+                    reader.endObject()
+                    tasks
                 }
             }
         }
@@ -172,6 +242,83 @@ class WorkshopDownloadTaskStore(context: Context) {
     companion object {
         private val lock = Any()
     }
+}
+
+private fun readLauncherVisibleTask(reader: JsonReader): WorkshopDownloadTaskRecord? {
+    var item: JSONObject? = null
+    var status: WorkshopDownloadTaskStatus? = null
+    var include = true
+
+    reader.beginObject()
+    while (reader.hasNext()) {
+        val name = reader.nextName()
+        if (!include) {
+            reader.skipValue()
+            continue
+        }
+        when (name) {
+            "status" -> {
+                val statusText = reader.nextString()
+                status = runCatching { WorkshopDownloadTaskStatus.valueOf(statusText) }
+                    .getOrDefault(WorkshopDownloadTaskStatus.Paused)
+                if (!status.shouldShowOnLauncherCards()) {
+                    include = false
+                } else {
+                    item = (item ?: JSONObject()).put(name, statusText)
+                }
+            }
+            "downloadLog" -> reader.skipValue()
+            else -> {
+                val value = reader.readJsonValue()
+                item = (item ?: JSONObject()).put(name, value)
+            }
+        }
+    }
+    reader.endObject()
+
+    val taskStatus = status ?: WorkshopDownloadTaskStatus.Paused
+    if (!include || !taskStatus.shouldShowOnLauncherCards()) {
+        return null
+    }
+    return item?.toTask(taskStatus)
+}
+
+private fun JsonReader.readJsonValue(): Any? {
+    return when (peek()) {
+        android.util.JsonToken.NULL -> {
+            nextNull()
+            JSONObject.NULL
+        }
+        android.util.JsonToken.BOOLEAN -> nextBoolean()
+        android.util.JsonToken.NUMBER -> readJsonNumber(nextString())
+        android.util.JsonToken.STRING -> nextString()
+        android.util.JsonToken.BEGIN_ARRAY -> {
+            val array = JSONArray()
+            beginArray()
+            while (hasNext()) {
+                array.put(readJsonValue())
+            }
+            endArray()
+            array
+        }
+        android.util.JsonToken.BEGIN_OBJECT -> {
+            val obj = JSONObject()
+            beginObject()
+            while (hasNext()) {
+                obj.put(nextName(), readJsonValue())
+            }
+            endObject()
+            obj
+        }
+        else -> {
+            skipValue()
+            JSONObject.NULL
+        }
+    }
+}
+
+private fun readJsonNumber(value: String): Any {
+    return value.toLongOrNull() ?: value.toDoubleOrNull() ?: value
 }
 
 fun WorkshopDownloadTaskStatus.isRunningDownload(): Boolean = when (this) {
@@ -199,6 +346,18 @@ fun WorkshopDownloadTaskStatus.isActiveDownload(): Boolean = when (this) {
     WorkshopDownloadTaskStatus.Pausing,
     WorkshopDownloadTaskStatus.Cancelling -> true
     else -> false
+}
+
+fun WorkshopDownloadTaskStatus.shouldShowOnLauncherCards(): Boolean = when (this) {
+    WorkshopDownloadTaskStatus.Queued,
+    WorkshopDownloadTaskStatus.Resolving,
+    WorkshopDownloadTaskStatus.Downloading,
+    WorkshopDownloadTaskStatus.Pausing,
+    WorkshopDownloadTaskStatus.Cancelling,
+    WorkshopDownloadTaskStatus.Paused,
+    WorkshopDownloadTaskStatus.Failed -> true
+    WorkshopDownloadTaskStatus.Completed,
+    WorkshopDownloadTaskStatus.Cancelled -> false
 }
 
 private fun WorkshopDownloadTaskRecord.toJson(): JSONObject = JSONObject()
@@ -233,7 +392,9 @@ private fun WorkshopDownloadTaskRecord.toJson(): JSONObject = JSONObject()
     .put("fullDescriptionUnavailable", details.fullDescriptionUnavailable)
     .put("dependencies", details.dependencies.toJsonArray())
 
-private fun JSONObject.toTask(): WorkshopDownloadTaskRecord {
+private fun JSONObject.toTask(
+    status: WorkshopDownloadTaskStatus = taskStatus(),
+): WorkshopDownloadTaskRecord {
     val publishedFileId = optString("publishedFileId").toULongOrNull() ?: 0u
     val summary = WorkshopItemSummary(
         appId = optString("appId").toUIntOrNull() ?: 646570u,
@@ -258,7 +419,7 @@ private fun JSONObject.toTask(): WorkshopDownloadTaskRecord {
     return WorkshopDownloadTaskRecord(
         publishedFileId = publishedFileId,
         title = summary.title,
-        status = runCatching { WorkshopDownloadTaskStatus.valueOf(optString("status")) }.getOrDefault(WorkshopDownloadTaskStatus.Paused),
+        status = status,
         message = optString("message"),
         updatedAtMillis = optLong("updatedAtMillis"),
         details = details,
@@ -279,6 +440,11 @@ private fun JSONObject.toTask(): WorkshopDownloadTaskRecord {
         downloadLog = optString("downloadLog"),
         preservePartialDownload = optBoolean("preservePartialDownload", false),
     )
+}
+
+private fun JSONObject.taskStatus(): WorkshopDownloadTaskStatus {
+    return runCatching { WorkshopDownloadTaskStatus.valueOf(optString("status")) }
+        .getOrDefault(WorkshopDownloadTaskStatus.Paused)
 }
 
 private fun downloadLogTimestamp(): String = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US).format(Date())

@@ -61,7 +61,7 @@ import io.stamethyst.ui.Icons
 import io.stamethyst.ui.icon.Pause
 import io.stamethyst.ui.icon.PlayArrow
 import io.stamethyst.ui.resolve
-import io.stamethyst.ui.settings.SettingsScreenViewModel
+import io.stamethyst.ui.settings.core.SettingsScreenViewModel
 import java.util.Locale
 import kotlinx.coroutines.delay
 

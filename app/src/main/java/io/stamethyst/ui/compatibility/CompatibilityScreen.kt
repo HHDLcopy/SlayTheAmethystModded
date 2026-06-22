@@ -35,7 +35,7 @@ import io.stamethyst.backend.mods.RuntimeTextureAtlasDownscaleQuality
 import io.stamethyst.navigation.currentNavigator
 import io.stamethyst.ui.Icons
 import io.stamethyst.ui.icon.ArrowBack
-import io.stamethyst.ui.settings.SettingsDropdownField
+import io.stamethyst.ui.settings.common.SettingsDropdownField
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

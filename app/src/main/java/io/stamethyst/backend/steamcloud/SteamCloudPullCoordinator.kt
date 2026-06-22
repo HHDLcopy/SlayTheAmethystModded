@@ -3,7 +3,7 @@ package io.stamethyst.backend.steamcloud
 import android.content.Context
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
-import io.stamethyst.ui.settings.SettingsSaveBackupService
+import io.stamethyst.ui.settings.files.SettingsSaveBackupService
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream

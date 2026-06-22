@@ -22,7 +22,7 @@ import io.stamethyst.backend.feedback.FeedbackThreadEvent
 import io.stamethyst.backend.feedback.FeedbackThreadEventType
 import io.stamethyst.backend.feedback.buildFeedbackProxyAuthorIdentity
 import io.stamethyst.ui.LauncherTransientNoticeBus
-import io.stamethyst.ui.settings.SettingsFileService
+import io.stamethyst.ui.settings.files.SettingsFileService
 import java.io.File
 import java.io.IOException
 import java.time.Instant

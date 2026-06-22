@@ -26,6 +26,7 @@ import io.stamethyst.backend.workshop.WorkshopResolvedModState
 import io.stamethyst.backend.workshop.WorkshopResolvedModStateKind
 import io.stamethyst.backend.workshop.allLocalJarPaths
 import io.stamethyst.backend.workshop.isActiveDownload
+import io.stamethyst.backend.workshop.shouldShowOnLauncherCards
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.model.WorkshopModState
@@ -33,8 +34,8 @@ import io.stamethyst.model.WorkshopModUi
 import io.stamethyst.ui.LauncherTransientNoticeDuration
 import io.stamethyst.ui.UiText
 import io.stamethyst.ui.UiBusyOperation
-import io.stamethyst.ui.settings.ModImportFlowCoordinator
-import io.stamethyst.ui.settings.SettingsFileService
+import io.stamethyst.ui.settings.importing.ModImportFlowCoordinator
+import io.stamethyst.ui.settings.files.SettingsFileService
 import io.stamethyst.ui.workshop.WorkshopDownloadCenterStore
 import io.stamethyst.ui.workshop.toRecord
 import java.io.File
@@ -1749,6 +1750,7 @@ internal class MainModManagementController(
 
     private fun loadDownloadCenterTaskRecords(host: Activity): Map<ULong, WorkshopDownloadTaskRecord> {
         val visibleDownloadCenterTasks = WorkshopDownloadCenterStore.tasks
+            .filter { task -> task.status.shouldShowOnLauncherCards() }
             .map { task -> task.toRecord().normalizeActiveDownloadTask(host) }
         return visibleDownloadCenterTasks
             .groupBy { it.publishedFileId }

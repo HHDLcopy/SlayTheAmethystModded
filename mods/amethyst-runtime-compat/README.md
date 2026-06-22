@@ -2,6 +2,20 @@
 
 This mod carries runtime-side compatibility fixes that are safer to ship as ModTheSpire patches than as direct game-jar edits.
 
+## Source package layout
+
+The root package only contains the ModTheSpire initializer. Runtime fixes should live in the package that matches their ownership boundary:
+
+- `io.stamethyst.compatmod.core`: shared runtime configuration and state used by multiple fixes.
+- `io.stamethyst.compatmod.bridge`: launcher/JVM bridge helpers.
+- `io.stamethyst.compatmod.ui`: base-game UI, scaling, settings, and menu presentation compatibility.
+- `io.stamethyst.compatmod.touch`: native-touchscreen and touch-card-input behavior.
+- `io.stamethyst.compatmod.rescue`: save/room/render rescue fallbacks for corrupted or incomplete runtime state.
+- `io.stamethyst.compatmod.diagnostics`: diagnostic and memory-observation hooks.
+- `io.stamethyst.compatmod.lifecycle`: expected-exit and process-lifecycle markers.
+- `modCompatibility`: compatibility fixes scoped to a specific external mod.
+- `io.stamethyst.compatmod.autoplay`: harness-only autoplay and single-room automation.
+
 ## Included fixes
 
 1. `FontScaleCompatPatches`

@@ -24,7 +24,7 @@ import io.stamethyst.backend.feedback.FeedbackUploadResult
 import io.stamethyst.backend.feedback.GameIssueType
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.ui.LauncherTransientNoticeBus
-import io.stamethyst.ui.settings.SettingsFileService
+import io.stamethyst.ui.settings.files.SettingsFileService
 import java.io.File
 import java.io.IOException
 import java.util.Locale

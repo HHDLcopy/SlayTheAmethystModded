@@ -117,24 +117,24 @@ import io.stamethyst.ui.workshop.WorkshopViewModel
 import io.stamethyst.ui.quickstart.QuickStartScreen
 import io.stamethyst.ui.quickstart.QuickStartJarImportScreen
 import io.stamethyst.ui.quickstart.QuickStartSteamDownloadScreen
-import io.stamethyst.ui.settings.LauncherFirstRunSetupScreen
-import io.stamethyst.ui.settings.LauncherDeveloperSettingsScreen
-import io.stamethyst.ui.settings.LauncherBaiduTranslationCredentialsScreen
-import io.stamethyst.ui.settings.LauncherMobileGluesSettingsScreen
-import io.stamethyst.ui.settings.LauncherNativeLibraryMarketScreen
-import io.stamethyst.ui.settings.LauncherSettingsAboutScreen
-import io.stamethyst.ui.settings.LauncherSettingsFeedbackScreen
-import io.stamethyst.ui.settings.LauncherSettingsGameScreen
-import io.stamethyst.ui.settings.LauncherSettingsLauncherScreen
-import io.stamethyst.ui.settings.LauncherSettingsMarketCloudScreen
-import io.stamethyst.ui.settings.LauncherSettingsScreen
-import io.stamethyst.ui.settings.LauncherSettingsWorkshopAutoImportDefaultsScreen
-import io.stamethyst.ui.settings.LauncherSteamCloudGuardScreen
-import io.stamethyst.ui.settings.LauncherSteamCloudLoginScreen
-import io.stamethyst.ui.settings.LauncherSteamCloudSaveSettingsScreen
-import io.stamethyst.ui.settings.LauncherSteamCloudSyncBlacklistSettingsScreen
-import io.stamethyst.ui.settings.SettingsEffectsHandler
-import io.stamethyst.ui.settings.SettingsScreenViewModel
+import io.stamethyst.ui.settings.first_run.LauncherFirstRunSetupScreen
+import io.stamethyst.ui.settings.core.LauncherDeveloperSettingsScreen
+import io.stamethyst.ui.settings.baidu.LauncherBaiduTranslationCredentialsScreen
+import io.stamethyst.ui.settings.mobileglues.LauncherMobileGluesSettingsScreen
+import io.stamethyst.ui.settings.native_library.LauncherNativeLibraryMarketScreen
+import io.stamethyst.ui.settings.core.LauncherSettingsAboutScreen
+import io.stamethyst.ui.settings.core.LauncherSettingsFeedbackScreen
+import io.stamethyst.ui.settings.core.LauncherSettingsGameScreen
+import io.stamethyst.ui.settings.core.LauncherSettingsLauncherScreen
+import io.stamethyst.ui.settings.core.LauncherSettingsMarketCloudScreen
+import io.stamethyst.ui.settings.core.LauncherSettingsScreen
+import io.stamethyst.ui.settings.core.LauncherSettingsWorkshopAutoImportDefaultsScreen
+import io.stamethyst.ui.settings.steamcloud.LauncherSteamCloudGuardScreen
+import io.stamethyst.ui.settings.steamcloud.LauncherSteamCloudLoginScreen
+import io.stamethyst.ui.settings.steamcloud.LauncherSteamCloudSaveSettingsScreen
+import io.stamethyst.ui.settings.steamcloud.LauncherSteamCloudSyncBlacklistSettingsScreen
+import io.stamethyst.ui.settings.core.SettingsEffectsHandler
+import io.stamethyst.ui.settings.core.SettingsScreenViewModel
 import io.stamethyst.ui.preferences.LauncherPreferences
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -157,6 +157,7 @@ fun LauncherContent(
     mainViewModel: MainScreenViewModel,
     settingsViewModel: SettingsScreenViewModel,
     onMainScreenOpened: () -> Unit = {},
+    onCurrentDockRouteChanged: (Route?) -> Unit = {},
 ) {
     val activity = requireNotNull(LocalActivity.current)
     val navigator = rememberAppNavigator(initialRoute)
@@ -304,6 +305,7 @@ fun LauncherContent(
     }
 
     LaunchedEffect(currentRoute) {
+        onCurrentDockRouteChanged(currentRoute.launcherDockRoute())
         if (currentRoute != Route.Mods) {
             modsBatchSelectionMode = false
         }
@@ -372,9 +374,6 @@ fun LauncherContent(
         LaunchedEffect(activity, currentRoute) {
             if (currentRoute == Route.Main) {
                 onMainScreenOpened()
-            }
-            if (currentRoute == Route.Mods) {
-                mainViewModel.refreshIfStale(activity)
             }
         }
         LaunchedEffect(activity, transientNoticeHostState) {

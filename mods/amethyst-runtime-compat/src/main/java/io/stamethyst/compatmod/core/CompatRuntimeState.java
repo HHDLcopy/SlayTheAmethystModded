@@ -38,6 +38,8 @@ public final class CompatRuntimeState {
         "amethyst.runtime_compat.touchscreen_target_assist";
     private static final String TOUCHSCREEN_IDLE_CARD_HOVER_CLEANUP_PROP =
         "amethyst.runtime_compat.touchscreen_idle_card_hover_cleanup";
+    private static final String CAMPFIRE_DESKTOP_TOUCH_CONFIRM_PROP =
+        "amethyst.runtime_compat.campfire_desktop_touch_confirm";
     private static final String HAND_LAYOUT_ROOM_CONTEXT_RESCUE_PROP =
         "amethyst.runtime_compat.rescue.hand_layout_room_context";
     private static final String ROOM_TRANSITION_RESCUE_PROP =
@@ -88,6 +90,8 @@ public final class CompatRuntimeState {
         readBooleanSystemProperty(TOUCHSCREEN_TARGET_ASSIST_PROP, true);
     private static final boolean TOUCHSCREEN_IDLE_CARD_HOVER_CLEANUP_ENABLED =
         readBooleanSystemProperty(TOUCHSCREEN_IDLE_CARD_HOVER_CLEANUP_PROP, true);
+    private static final boolean CAMPFIRE_DESKTOP_TOUCH_CONFIRM_ENABLED =
+        readBooleanSystemProperty(CAMPFIRE_DESKTOP_TOUCH_CONFIRM_PROP, true);
     private static final boolean HAND_LAYOUT_ROOM_CONTEXT_RESCUE_ENABLED =
         readBooleanSystemProperty(HAND_LAYOUT_ROOM_CONTEXT_RESCUE_PROP, true);
     private static final boolean ROOM_TRANSITION_RESCUE_ENABLED =
@@ -171,6 +175,8 @@ public final class CompatRuntimeState {
                     + Boolean.toString(TOUCHSCREEN_TARGET_ASSIST_ENABLED)
                     + " touchIdleCardHoverCleanup="
                     + Boolean.toString(TOUCHSCREEN_IDLE_CARD_HOVER_CLEANUP_ENABLED)
+                    + " campfireDesktopTouchConfirm="
+                    + Boolean.toString(CAMPFIRE_DESKTOP_TOUCH_CONFIRM_ENABLED)
                     + " rescueHandLayoutRoom="
                     + Boolean.toString(HAND_LAYOUT_ROOM_CONTEXT_RESCUE_ENABLED)
                     + " rescueRoomTransition="
@@ -295,6 +301,10 @@ public final class CompatRuntimeState {
 
     public static boolean isTouchscreenIdleCardHoverCleanupEnabled() {
         return TOUCHSCREEN_CARD_PLAY_OPTIMIZATION_ENABLED && TOUCHSCREEN_IDLE_CARD_HOVER_CLEANUP_ENABLED;
+    }
+
+    public static boolean isCampfireDesktopTouchConfirmEnabled() {
+        return CAMPFIRE_DESKTOP_TOUCH_CONFIRM_ENABLED;
     }
 
     public static boolean isHandLayoutRoomContextRescueEnabled() {

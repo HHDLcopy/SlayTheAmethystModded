@@ -11,12 +11,10 @@ import com.megacrit.cardcrawl.characters.AbstractPlayer;
 import com.megacrit.cardcrawl.core.GameCursor;
 import com.megacrit.cardcrawl.core.Settings;
 import com.megacrit.cardcrawl.relics.AbstractRelic;
-import com.megacrit.cardcrawl.rooms.CampfireUI;
 import com.megacrit.cardcrawl.screens.CardRewardScreen;
 import com.megacrit.cardcrawl.shop.ShopScreen;
 import com.megacrit.cardcrawl.shop.StorePotion;
 import com.megacrit.cardcrawl.shop.StoreRelic;
-import com.megacrit.cardcrawl.ui.campfire.AbstractCampfireOption;
 
 import javassist.CannotCompileException;
 import javassist.expr.ExprEditor;
@@ -184,49 +182,6 @@ public final class NativeTouchscreenAllowlistPatches {
         method = "cardSelectUpdate"
     )
     public static class CardRewardScreenCardSelectUpdatePatch {
-        @SpireInstrumentPatch
-        public static ExprEditor Instrument() {
-            return createTouchscreenFieldEditor(
-                NativeTouchscreenAllowlistPatches.class.getName()
-                    + ".resolveVanillaAllowlistedTouchscreen($proceed())"
-            );
-        }
-    }
-
-    @SpirePatch2(
-        clz = CampfireUI.class,
-        method = "updateTouchscreen"
-    )
-    public static class CampfireUiUpdateTouchscreenPatch {
-        @SpireInstrumentPatch
-        public static ExprEditor Instrument() {
-            return createTouchscreenFieldEditor(
-                NativeTouchscreenAllowlistPatches.class.getName()
-                    + ".resolveVanillaAllowlistedTouchscreen($proceed())"
-            );
-        }
-    }
-
-    @SpirePatch2(
-        clz = CampfireUI.class,
-        method = "render",
-        paramtypez = {SpriteBatch.class}
-    )
-    public static class CampfireUiRenderPatch {
-        @SpireInstrumentPatch
-        public static ExprEditor Instrument() {
-            return createTouchscreenFieldEditor(
-                NativeTouchscreenAllowlistPatches.class.getName()
-                    + ".resolveVanillaAllowlistedTouchscreen($proceed())"
-            );
-        }
-    }
-
-    @SpirePatch2(
-        clz = AbstractCampfireOption.class,
-        method = "update"
-    )
-    public static class AbstractCampfireOptionUpdatePatch {
         @SpireInstrumentPatch
         public static ExprEditor Instrument() {
             return createTouchscreenFieldEditor(

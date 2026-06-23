@@ -218,10 +218,11 @@ async function buildServer(config = loadConfig()) {
   fastify.get('/api/presence/panel', async (_request, reply) => sendClientFile(reply, 'index.html', 'text/html; charset=utf-8'));
   fastify.get('/presence/app.js', async (_request, reply) => sendClientFile(reply, 'app.js', 'application/javascript; charset=utf-8'));
   fastify.get('/presence/styles.css', async (_request, reply) => sendClientFile(reply, 'styles.css', 'text/css; charset=utf-8'));
-  fastify.get('/presence/launcher-icon.png', async (_request, reply) => {
-    reply.header('Cache-Control', 'public, max-age=604800, immutable');
-    return sendClientFile(reply, 'launcher-icon.png', 'image/png');
-  });
+  fastify.get('/favicon.ico', async (_request, reply) => sendLauncherIcon(reply));
+  fastify.get('/apple-touch-icon.png', async (_request, reply) => sendLauncherIcon(reply));
+  fastify.get('/presence/favicon.ico', async (_request, reply) => sendLauncherIcon(reply));
+  fastify.get('/presence/apple-touch-icon.png', async (_request, reply) => sendLauncherIcon(reply));
+  fastify.get('/presence/launcher-icon.png', async (_request, reply) => sendLauncherIcon(reply));
   fastify.get('/presence/vue.global.prod.js', async (_request, reply) => {
     reply.header('Cache-Control', 'public, max-age=604800, immutable');
     return sendFile(reply, VUE_SCRIPT_PATH, 'application/javascript; charset=utf-8');
@@ -442,6 +443,11 @@ function resolvePresencePanelToken(config) {
 
 function sendClientFile(reply, fileName, contentType) {
   return sendFile(reply, path.join(CLIENT_DIR, fileName), contentType);
+}
+
+function sendLauncherIcon(reply) {
+  reply.header('Cache-Control', 'public, max-age=604800, immutable');
+  return sendClientFile(reply, 'launcher-icon.png', 'image/png');
 }
 
 function sendFile(reply, filePath, contentType) {

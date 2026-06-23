@@ -85,6 +85,10 @@ body {
   font-weight: 600;
 }
 
+.distribution-source-toggle {
+  flex: 0 0 auto;
+}
+
 .distribution-ring-legend span {
   display: inline-flex;
   align-items: center;
@@ -292,6 +296,15 @@ body {
 
   .distribution-chart {
     height: 380px;
+  }
+
+  .distribution-source-toggle {
+    width: 100%;
+  }
+
+  .distribution-source-toggle .v-btn {
+    flex: 1 1 0;
+    min-width: 0;
   }
 
   .metric-grid {

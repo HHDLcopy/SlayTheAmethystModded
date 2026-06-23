@@ -160,3 +160,8 @@ Panel messages use `type: "snapshot"` and `type: "stats"` with payloads matching
 the compatibility HTTP JSON responses. Send `type: "refresh_stats"` with
 `windowSeconds` to switch the trend window; supported panel choices are 24
 hours, 3 days, 7 days, 14 days, and 30 days.
+
+The panel pie chart can switch between current online sessions and historical
+unique devices. Historical distribution is aggregated from all rows in
+`presence_sessions`, while online distribution is calculated from active
+sessions in the latest panel snapshot.

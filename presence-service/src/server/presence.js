@@ -18,6 +18,7 @@ const HOUR_MS = 60 * 60 * 1000;
 const CURRENT_SNAPSHOT_MIN_UPDATE_INTERVAL_MS = 5 * 60 * 1000;
 const HEARTBEAT_WRITE_GRACE_SECONDS = 60;
 const MAX_CLIENT_ID_LENGTH = 128;
+const DISTRIBUTION_TOP_LIMIT = 5;
 
 class PresenceStore {
   constructor(database, config) {
@@ -158,8 +159,32 @@ class PresenceStore {
 
     return {
       ...summary,
+      historicalDistribution: await this.buildHistoricalDistribution(),
       sessions: rows.map((row) => serializeSession(row, runtimeOptions, nowMs))
     };
+  }
+
+  async buildHistoricalDistribution() {
+    const totalRow = await this.database.get('SELECT COUNT(*) AS count FROM presence_sessions');
+    return {
+      total: Number(totalRow && totalRow.count) || 0,
+      deviceModels: await this.buildDistributionForColumn('device_model'),
+      appVersions: await this.buildDistributionForColumn('app_version'),
+      androidVersions: await this.buildDistributionForColumn('android_version')
+    };
+  }
+
+  async buildDistributionForColumn(columnName) {
+    const normalizedColumn = normalizeDistributionColumn(columnName);
+    const rows = await this.database.all(`
+      SELECT
+        COALESCE(NULLIF(TRIM(${normalizedColumn}), ''), 'unknown') AS name,
+        COUNT(*) AS value
+      FROM presence_sessions
+      GROUP BY name
+      ORDER BY value DESC, name COLLATE NOCASE ASC
+    `);
+    return collapseDistributionRows(rows);
   }
 
   async buildStats(query, nowMs = Date.now()) {
@@ -418,6 +443,37 @@ function safeJsonObject(value) {
   } catch (_error) {
     return {};
   }
+}
+
+function normalizeDistributionColumn(columnName) {
+  if (columnName === 'device_model' || columnName === 'app_version' || columnName === 'android_version') {
+    return columnName;
+  }
+  throw new Error('Unsupported presence distribution column');
+}
+
+function collapseDistributionRows(rows) {
+  const normalizedRows = (Array.isArray(rows) ? rows : [])
+    .map((row) => ({
+      name: normalizeOptionalString(row && row.name) || 'unknown',
+      value: Math.max(0, Number(row && row.value) || 0)
+    }))
+    .filter((row) => row.value > 0);
+  if (normalizedRows.length <= DISTRIBUTION_TOP_LIMIT) {
+    return normalizedRows;
+  }
+
+  const topRows = normalizedRows.slice(0, DISTRIBUTION_TOP_LIMIT);
+  const otherValue = normalizedRows
+    .slice(DISTRIBUTION_TOP_LIMIT)
+    .reduce((total, row) => total + row.value, 0);
+  if (otherValue > 0) {
+    topRows.push({
+      name: 'Other',
+      value: otherValue
+    });
+  }
+  return topRows;
 }
 
 function normalizeClientId(value) {

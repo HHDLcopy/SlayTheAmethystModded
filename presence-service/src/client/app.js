@@ -26,6 +26,11 @@
     { title: '30天', value: 30 * 24 * HOUR_SECONDS }
   ];
   const DEFAULT_STATS_WINDOW_SECONDS = 7 * 24 * HOUR_SECONDS;
+  const DISTRIBUTION_SOURCE_ITEMS = [
+    { title: '在线数据', value: 'online' },
+    { title: '历史数据', value: 'history' }
+  ];
+  const DEFAULT_DISTRIBUTION_SOURCE = 'online';
   const DISTRIBUTION_TOP_LIMIT = 5;
   const DEVICE_MODEL_COLORS = [
     '#2563eb',
@@ -398,12 +403,14 @@
     };
   }
 
-  function buildDistributionChartOption(distribution) {
+  function buildDistributionChartOption(distribution, sourceMeta) {
     const palette = buildChartPalette();
-    const deviceModels = distribution.deviceModels;
-    const appVersions = distribution.appVersions;
-    const androidVersions = distribution.androidVersions;
-    const total = Number(distribution.total) || 0;
+    const normalizedDistribution = normalizeDistributionSummary(distribution);
+    const meta = sourceMeta || getDistributionSourceMeta(DEFAULT_DISTRIBUTION_SOURCE);
+    const deviceModels = normalizedDistribution.deviceModels;
+    const appVersions = normalizedDistribution.appVersions;
+    const androidVersions = normalizedDistribution.androidVersions;
+    const total = Number(normalizedDistribution.total) || 0;
     const hasAnyData = deviceModels.length > 0 || appVersions.length > 0 || androidVersions.length > 0;
 
     return {
@@ -439,7 +446,7 @@
           left: 'center',
           top: '52%',
           style: {
-            text: hasAnyData ? 'online' : 'no sessions',
+            text: hasAnyData ? meta.centerLabel : '暂无数据',
             fill: palette.secondaryText,
             fontSize: 12,
             textAlign: 'center'
@@ -504,6 +511,28 @@
     };
   }
 
+  function buildHistoricalDistribution(snapshot) {
+    return normalizeDistributionSummary(snapshot && snapshot.historicalDistribution);
+  }
+
+  function normalizeDistributionSummary(distribution) {
+    return {
+      total: Math.max(0, Number(distribution && distribution.total) || 0),
+      deviceModels: normalizeDistributionItems(distribution && distribution.deviceModels),
+      appVersions: normalizeDistributionItems(distribution && distribution.appVersions),
+      androidVersions: normalizeDistributionItems(distribution && distribution.androidVersions)
+    };
+  }
+
+  function normalizeDistributionItems(items) {
+    return (Array.isArray(items) ? items : [])
+      .map((item) => ({
+        name: normalizeDistributionLabel(item && item.name),
+        value: Math.max(0, Number(item && item.value) || 0)
+      }))
+      .filter((item) => item.value > 0);
+  }
+
   function countTopValues(items, key) {
     const counts = new Map();
     for (const item of items) {
@@ -534,6 +563,25 @@
   function normalizeDistributionLabel(value) {
     const normalized = String(value || '').trim();
     return normalized || 'unknown';
+  }
+
+  function normalizeDistributionSource(value) {
+    return value === 'history' ? 'history' : DEFAULT_DISTRIBUTION_SOURCE;
+  }
+
+  function getDistributionSourceMeta(value) {
+    if (normalizeDistributionSource(value) === 'history') {
+      return {
+        title: '历史分布',
+        subtitle: '全部历史唯一上报设备 · 内圈机型，中圈 App 版本，外圈 Android 版本',
+        centerLabel: '历史'
+      };
+    }
+    return {
+      title: '在线分布',
+      subtitle: '当前在线会话 · 内圈机型，中圈 App 版本，外圈 Android 版本',
+      centerLabel: '在线'
+    };
   }
 
   function normalizeSessionSortOrder(value) {
@@ -617,6 +665,7 @@
         config: null,
         snapshot: null,
         stats: null,
+        selectedDistributionSource: DEFAULT_DISTRIBUTION_SOURCE,
         selectedStatsWindowSeconds: DEFAULT_STATS_WINDOW_SECONDS,
         sessionSortBy: [
           {
@@ -640,6 +689,12 @@
         storageBackend: 'sqlite3',
         totalDevices: 0,
         totalOnlineUsers: 0,
+        historicalDistribution: {
+          total: 0,
+          deviceModels: [],
+          appVersions: [],
+          androidVersions: []
+        },
         sessions: []
       });
       const stats = computed(() => state.stats || {
@@ -655,7 +710,22 @@
       const sessions = computed(() => Array.isArray(snapshot.value.sessions)
         ? snapshot.value.sessions
         : []);
-      const sessionDistribution = computed(() => buildSessionDistribution(sessions.value));
+      const onlineDistribution = computed(() => buildSessionDistribution(sessions.value));
+      const historicalDistribution = computed(() => buildHistoricalDistribution(snapshot.value));
+      const selectedDistributionSource = computed({
+        get() {
+          return normalizeDistributionSource(state.selectedDistributionSource);
+        },
+        set(value) {
+          state.selectedDistributionSource = normalizeDistributionSource(value);
+        }
+      });
+      const selectedDistribution = computed(() => {
+        return selectedDistributionSource.value === 'history'
+          ? historicalDistribution.value
+          : onlineDistribution.value;
+      });
+      const selectedDistributionMeta = computed(() => getDistributionSourceMeta(selectedDistributionSource.value));
       const metricItems = computed(() => METRIC_ITEMS.map((item) => ({
         key: item.key,
         title: item.title,
@@ -899,7 +969,10 @@
             renderer: 'canvas'
           });
         }
-        distributionChart.setOption(buildDistributionChartOption(sessionDistribution.value));
+        distributionChart.setOption(
+          buildDistributionChartOption(selectedDistribution.value, selectedDistributionMeta.value),
+          true
+        );
       }
 
       function resizeChart() {
@@ -935,7 +1008,11 @@
         }
       }, { deep: true });
 
-      watch(sessionDistribution, () => {
+      watch(selectedDistribution, () => {
+        nextTick(ensureDistributionChart);
+      }, { deep: true });
+
+      watch(selectedDistributionMeta, () => {
         nextTick(ensureDistributionChart);
       }, { deep: true });
 
@@ -1004,7 +1081,8 @@
         snapshot,
         stats,
         sessions,
-        sessionDistribution,
+        selectedDistributionSource,
+        selectedDistributionMeta,
         metricItems,
         hasStatsSamples,
         selectedStatsWindowLabel,
@@ -1015,6 +1093,7 @@
         connectionColor,
         connectionIcon,
         STATS_WINDOW_ITEMS,
+        DISTRIBUTION_SOURCE_ITEMS,
         SESSION_HEADERS,
         SESSION_SORT_OPTIONS,
         login,
@@ -1095,10 +1174,28 @@
                 <v-card class="distribution-card" elevation="1">
                   <v-card-title class="panel-title">
                     <div>
-                      <div>在线分布</div>
-                      <div class="panel-subtitle">内圈机型，中圈 App 版本，外圈 Android 版本</div>
+                      <div>{{ selectedDistributionMeta.title }}</div>
+                      <div class="panel-subtitle">{{ selectedDistributionMeta.subtitle }}</div>
                     </div>
                     <v-spacer></v-spacer>
+                    <v-btn-toggle
+                      v-model="selectedDistributionSource"
+                      class="distribution-source-toggle"
+                      color="primary"
+                      density="comfortable"
+                      divided
+                      mandatory
+                      variant="outlined"
+                    >
+                      <v-btn
+                        v-for="item in DISTRIBUTION_SOURCE_ITEMS"
+                        :key="item.value"
+                        :value="item.value"
+                        size="small"
+                      >
+                        {{ item.title }}
+                      </v-btn>
+                    </v-btn-toggle>
                     <div class="distribution-ring-legend" aria-label="distribution ring legend">
                       <span><i class="legend-dot device"></i>机型</span>
                       <span><i class="legend-dot app"></i>App</span>

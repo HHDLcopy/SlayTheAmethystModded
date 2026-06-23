@@ -120,6 +120,54 @@ test('presence stats trend uses hourly snapshots instead of live online count', 
   assert.equal(currentBucket.online, 0);
 });
 
+test('presence snapshot includes historical distribution for panel pie chart switching', async (t) => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-presence-'));
+  const database = await openDatabase(path.join(tmpDir, 'presence.sqlite'));
+  const store = new PresenceStore(database, {
+    presenceHeartbeatIntervalSeconds: 30,
+    presenceOfflineTimeoutSeconds: 90
+  });
+  t.after(async () => {
+    await database.close();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  const baseMs = Date.UTC(2026, 0, 1, 10, 0, 0);
+  await store.recordHeartbeat({
+    client_id: 'client-offline-history',
+    state: 'game',
+    app_version: '1.2.0',
+    device_model: 'Samsung SM-S9280',
+    android_version: 'Android 14 (SDK 34)'
+  }, baseMs - (10 * 60 * 1000));
+  await store.recordHeartbeat({
+    client_id: 'client-online',
+    state: 'game',
+    app_version: '1.3.0',
+    device_model: 'Google Pixel 8',
+    android_version: 'Android 15 (SDK 35)'
+  }, baseMs);
+
+  const snapshot = await store.buildSnapshot(null, baseMs);
+
+  assert.equal(snapshot.online, 1);
+  assert.equal(snapshot.sessions.length, 1);
+  assert.equal(snapshot.sessions[0].clientId, 'client-online');
+  assert.equal(snapshot.historicalDistribution.total, 2);
+  assert.deepEqual(snapshot.historicalDistribution.deviceModels, [
+    { name: 'Google Pixel 8', value: 1 },
+    { name: 'Samsung SM-S9280', value: 1 }
+  ]);
+  assert.deepEqual(snapshot.historicalDistribution.appVersions, [
+    { name: '1.2.0', value: 1 },
+    { name: '1.3.0', value: 1 }
+  ]);
+  assert.deepEqual(snapshot.historicalDistribution.androidVersions, [
+    { name: 'Android 14 (SDK 34)', value: 1 },
+    { name: 'Android 15 (SDK 35)', value: 1 }
+  ]);
+});
+
 test('cloud-control exposes websocket heartbeat settings', async (t) => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-presence-'));
   const server = await buildServer({
@@ -204,9 +252,13 @@ test('presence panel serves local frontend vendor assets', async (t) => {
   await server.ready();
 
   const paths = [
+    ['/favicon.ico', 'image/png'],
+    ['/apple-touch-icon.png', 'image/png'],
     ['/presence', 'text/html'],
     ['/presence/app.js', 'application/javascript'],
     ['/presence/styles.css', 'text/css'],
+    ['/presence/favicon.ico', 'image/png'],
+    ['/presence/apple-touch-icon.png', 'image/png'],
     ['/presence/launcher-icon.png', 'image/png'],
     ['/presence/vue.global.prod.js', 'application/javascript'],
     ['/presence/vendor/vuetify.min.css', 'text/css'],

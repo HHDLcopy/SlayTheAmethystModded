@@ -218,6 +218,11 @@ object StsLaunchSpec {
         args.add("-Damethyst.in_game_file_picker_request=${RuntimePaths.inGameFilePickerRequestFile(context).absolutePath}")
         args.add("-Damethyst.in_game_file_picker_result=${RuntimePaths.inGameFilePickerResultFile(context).absolutePath}")
         args.add("-Damethyst.runtime_rescue_toast_request=${RuntimePaths.runtimeRescueToastRequestFile(context).absolutePath}")
+        args.add("-Damethyst.touchscreen_card_hold_state=${RuntimePaths.touchscreenCardHoldStateFile(context).absolutePath}")
+        args.add(
+            "-Damethyst.touchscreen_card_hold_right_click_guard=" +
+                if (LauncherConfig.readIgnoreLongPressRightClickWhilePlayingCard(context)) "true" else "false"
+        )
         val touchscreenInputMode = LauncherConfig.readTouchscreenInputMode(context)
         val cardPlayOptimizationMode = LauncherConfig.readCardPlayOptimizationMode(context)
         args.add(

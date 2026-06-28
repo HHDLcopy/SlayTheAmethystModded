@@ -246,6 +246,9 @@
     <string name="settings_touch_double_click_as_right_click_enabled">触摸长按视为右键：开启</string>
     <string name="settings_touch_double_click_as_right_click_disabled">触摸长按视为右键：关闭</string>
     <string name="settings_touch_double_click_as_right_click_desc">开启后，长按将被视为使用右键。</string>
+    <string name="settings_ignore_long_press_right_click_while_playing_card_enabled">出牌时忽略长按右键：开启</string>
+    <string name="settings_ignore_long_press_right_click_while_playing_card_disabled">出牌时忽略长按右键：关闭</string>
+    <string name="settings_ignore_long_press_right_click_while_playing_card_desc">开启后，按住已选中的战斗卡牌时不会触发长按右键，卡牌会继续跟随手指。</string>
     <string name="status_touch_mouse_interaction_format">鼠标悬浮窗交互模式：%1$s</string>
     <string name="settings_built_in_soft_keyboard_enabled">游戏内置软键盘：启用</string>
     <string name="settings_built_in_soft_keyboard_disabled">游戏内置软键盘：禁用</string>

@@ -246,6 +246,9 @@
     <string name="settings_touch_double_click_as_right_click_enabled">觸控長按視為右鍵：開啟</string>
     <string name="settings_touch_double_click_as_right_click_disabled">觸控長按視為右鍵：關閉</string>
     <string name="settings_touch_double_click_as_right_click_desc">開啟後，按住遊戲畫面 0.5 秒會送出一次右鍵點擊。0.5 秒前如果手指發生拖動，本次右鍵手勢會被取消。</string>
+    <string name="settings_ignore_long_press_right_click_while_playing_card_enabled">出牌時忽略長按右鍵：開啟</string>
+    <string name="settings_ignore_long_press_right_click_while_playing_card_disabled">出牌時忽略長按右鍵：關閉</string>
+    <string name="settings_ignore_long_press_right_click_while_playing_card_desc">開啟後，按住已選中的戰鬥卡牌時不會觸發長按右鍵，卡牌會繼續跟隨手指。</string>
     <string name="status_touch_mouse_interaction_format">滑鼠懸浮窗互動模式：%1$s</string>
     <string name="settings_built_in_soft_keyboard_enabled">遊戲內建軟鍵盤：啟用</string>
     <string name="settings_built_in_soft_keyboard_disabled">遊戲內建軟鍵盤：禁用</string>

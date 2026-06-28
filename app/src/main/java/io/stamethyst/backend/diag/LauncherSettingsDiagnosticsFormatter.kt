@@ -96,6 +96,9 @@ internal object LauncherSettingsDiagnosticsFormatter {
                         "autoSwitchLeftAfterRightClick" to formatBoolean(
                             LauncherConfig.readAutoSwitchLeftAfterRightClick(context)
                         ),
+                        "ignoreLongPressRightClickWhilePlayingCard" to formatBoolean(
+                            LauncherConfig.readIgnoreLongPressRightClickWhilePlayingCard(context)
+                        ),
                         "touchscreenInputMode" to touchscreenInputMode.persistedValue,
                         "touchscreenEnabled" to formatBoolean(touchscreenInputMode.touchscreenEnabled),
                         "nativeTouchscreenEnabled" to formatBoolean(

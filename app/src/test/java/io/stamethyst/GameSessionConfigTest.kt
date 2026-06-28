@@ -61,9 +61,10 @@ class GameSessionConfigTest {
             showGamePerformanceOverlay = false,
             mirrorJvmLogsToLogcat = false,
             touchMouseInteractionMode = TouchMouseInteractionMode.TOGGLE_BUTTON_ON_TAP,
+            touchDoubleClickAsRightClick = false,
+            ignoreLongPressRightClickWhilePlayingCard = true,
             builtInSoftKeyboardEnabled = true,
             autoSwitchLeftAfterRightClick = false,
-            touchDoubleClickAsRightClick = false,
             requestedRenderSurfaceBackend = RenderSurfaceBackend.SURFACE_VIEW,
             rendererDecision = RendererDecision(
                 selectionMode = RendererSelectionMode.AUTO,

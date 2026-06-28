@@ -54,6 +54,8 @@ object LauncherConfig {
     private const val PREF_KEY_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = "auto_switch_left_after_right_click"
     private const val PREF_KEY_TOUCH_DOUBLE_CLICK_AS_RIGHT_CLICK =
         "touch_double_click_as_right_click"
+    private const val PREF_KEY_IGNORE_LONG_PRESS_RIGHT_CLICK_WHILE_PLAYING_CARD =
+        "ignore_long_press_right_click_while_playing_card"
     private const val PREF_KEY_TOUCHSCREEN_ENABLED = "touchscreen_enabled"
     private const val PREF_KEY_CARD_PLAY_OPTIMIZATION_MODE = "card_play_optimization_mode"
     private const val PREF_KEY_TOUCH_INDICATOR_ENABLED = "touch_indicator_enabled"
@@ -280,6 +282,7 @@ object LauncherConfig {
     const val DEFAULT_HAPTIC_FEEDBACK_ENABLED = true
     const val DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = true
     const val DEFAULT_TOUCH_DOUBLE_CLICK_AS_RIGHT_CLICK = false
+    const val DEFAULT_IGNORE_LONG_PRESS_RIGHT_CLICK_WHILE_PLAYING_CARD = true
     const val DEFAULT_SHOW_MOD_FILE_NAME = false
     const val DEFAULT_MOBILE_HUD_ENABLED = false
     const val DEFAULT_COMPENDIUM_UPGRADE_TOUCH_FIX_ENABLED = true
@@ -695,6 +698,19 @@ object LauncherConfig {
     fun saveTouchDoubleClickAsRightClick(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_TOUCH_DOUBLE_CLICK_AS_RIGHT_CLICK, enabled)
+        }
+    }
+
+    fun readIgnoreLongPressRightClickWhilePlayingCard(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_IGNORE_LONG_PRESS_RIGHT_CLICK_WHILE_PLAYING_CARD,
+            DEFAULT_IGNORE_LONG_PRESS_RIGHT_CLICK_WHILE_PLAYING_CARD
+        )
+    }
+
+    fun saveIgnoreLongPressRightClickWhilePlayingCard(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_IGNORE_LONG_PRESS_RIGHT_CLICK_WHILE_PLAYING_CARD, enabled)
         }
     }
 

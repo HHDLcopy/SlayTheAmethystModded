@@ -93,6 +93,7 @@ internal object SettingsRepository {
         val showFloatingMouseWindow: Boolean,
         val touchMouseInteractionMode: TouchMouseInteractionMode,
         val touchDoubleClickAsRightClick: Boolean,
+        val ignoreLongPressRightClickWhilePlayingCard: Boolean,
         val builtInSoftKeyboardEnabled: Boolean,
         val hapticFeedbackEnabled: Boolean,
         val autoSwitchLeftAfterRightClick: Boolean,
@@ -234,6 +235,8 @@ internal object SettingsRepository {
                 showFloatingMouseWindow = LauncherPreferences.readShowFloatingMouseWindow(context),
                 touchMouseInteractionMode = LauncherPreferences.readTouchMouseInteractionMode(context),
                 touchDoubleClickAsRightClick = LauncherPreferences.readTouchDoubleClickAsRightClick(context),
+                ignoreLongPressRightClickWhilePlayingCard =
+                    LauncherPreferences.readIgnoreLongPressRightClickWhilePlayingCard(context),
                 builtInSoftKeyboardEnabled =
                     LauncherPreferences.isBuiltInSoftKeyboardEnabled(context),
                 hapticFeedbackEnabled = LauncherPreferences.isHapticFeedbackEnabled(context),
@@ -379,6 +382,10 @@ internal object SettingsRepository {
         LauncherPreferences.saveTouchDoubleClickAsRightClick(
             context,
             LauncherPreferences.DEFAULT_TOUCH_DOUBLE_CLICK_AS_RIGHT_CLICK
+        )
+        LauncherPreferences.saveIgnoreLongPressRightClickWhilePlayingCard(
+            context,
+            LauncherPreferences.DEFAULT_IGNORE_LONG_PRESS_RIGHT_CLICK_WHILE_PLAYING_CARD
         )
         LauncherPreferences.setBuiltInSoftKeyboardEnabled(
             context,

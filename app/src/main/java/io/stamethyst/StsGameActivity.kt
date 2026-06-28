@@ -361,6 +361,8 @@ class StsGameActivity : AppCompatActivity() {
             host = host,
             autoSwitchLeftAfterRightClick = sessionConfig.autoSwitchLeftAfterRightClick,
             touchDoubleClickAsRightClick = sessionConfig.touchDoubleClickAsRightClick,
+            ignoreLongPressRightClickWhilePlayingCard =
+                sessionConfig.ignoreLongPressRightClickWhilePlayingCard,
             touchMouseInteractionMode = sessionConfig.touchMouseInteractionMode,
             builtInSoftKeyboardEnabled = sessionConfig.builtInSoftKeyboardEnabled
         )

@@ -31,6 +31,7 @@ object RuntimePaths {
     private const val IN_GAME_FILE_PICKER_REQUEST_FILE_NAME = ".in_game_file_picker_request"
     private const val IN_GAME_FILE_PICKER_RESULT_FILE_NAME = ".in_game_file_picker_result"
     private const val IN_GAME_FILE_PICKER_SELECTION_FILE_NAME = ".in_game_file_picker_selection"
+    private const val TOUCHSCREEN_CARD_HOLD_STATE_FILE_NAME = ".touchscreen_card_hold_state"
     private const val GAME_PRESENCE_STATE_FILE_NAME = ".game_presence_state"
     private const val RUNTIME_RESCUE_TOAST_REQUEST_FILE_NAME = ".runtime_rescue_toast_request"
     private const val JVM_HISTOGRAM_DIR_NAME = "jvm_histograms"
@@ -203,6 +204,10 @@ object RuntimePaths {
     @JvmStatic
     fun inGameFilePickerSelectionFile(context: Context): File =
         File(stsRoot(context), IN_GAME_FILE_PICKER_SELECTION_FILE_NAME)
+
+    @JvmStatic
+    fun touchscreenCardHoldStateFile(context: Context): File =
+        File(stsRoot(context), TOUCHSCREEN_CARD_HOLD_STATE_FILE_NAME)
 
     @JvmStatic
     fun gamePresenceStateFile(context: Context): File =

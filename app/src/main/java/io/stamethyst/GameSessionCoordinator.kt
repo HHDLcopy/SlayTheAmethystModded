@@ -202,6 +202,7 @@ internal class GameSessionCoordinator(
         stopKeyboardRequestPolling()
         stopFilePickerRequestPolling()
         stopRescueToastRequestPolling()
+        RuntimePaths.touchscreenCardHoldStateFile(activity).delete()
         cancelForegroundAudioRestoreRetries()
         activityResumed = false
         pendingAudioDeviceRecovery = false
@@ -851,6 +852,7 @@ internal class GameSessionCoordinator(
         keyboardRequestPollStarted = true
         lastKeyboardRequestPayload = ""
         RuntimePaths.inGameKeyboardRequestFile(activity).delete()
+        RuntimePaths.touchscreenCardHoldStateFile(activity).delete()
         mainHandler.post(keyboardRequestPollRunnable)
     }
 

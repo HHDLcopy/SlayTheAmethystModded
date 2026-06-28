@@ -172,6 +172,9 @@ fun LauncherSettingsGameScreen(
         onTouchDoubleClickAsRightClickChanged = { enabled ->
             viewModel.onTouchDoubleClickAsRightClickChanged(activity, enabled)
         },
+        onIgnoreLongPressRightClickWhilePlayingCardChanged = { enabled ->
+            viewModel.onIgnoreLongPressRightClickWhilePlayingCardChanged(activity, enabled)
+        },
         onBuiltInSoftKeyboardChanged = { enabled ->
             viewModel.onBuiltInSoftKeyboardChanged(activity, enabled)
         },

@@ -107,6 +107,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK
     val DEFAULT_TOUCH_DOUBLE_CLICK_AS_RIGHT_CLICK: Boolean
         get() = LauncherConfig.DEFAULT_TOUCH_DOUBLE_CLICK_AS_RIGHT_CLICK
+    val DEFAULT_IGNORE_LONG_PRESS_RIGHT_CLICK_WHILE_PLAYING_CARD: Boolean
+        get() = LauncherConfig.DEFAULT_IGNORE_LONG_PRESS_RIGHT_CLICK_WHILE_PLAYING_CARD
     val DEFAULT_SHOW_MOD_FILE_NAME: Boolean
         get() = LauncherConfig.DEFAULT_SHOW_MOD_FILE_NAME
     val DEFAULT_MOBILE_HUD_ENABLED: Boolean
@@ -325,6 +327,14 @@ object LauncherPreferences {
 
     fun saveTouchDoubleClickAsRightClick(context: Context, enabled: Boolean) {
         LauncherConfig.saveTouchDoubleClickAsRightClick(context, enabled)
+    }
+
+    fun readIgnoreLongPressRightClickWhilePlayingCard(context: Context): Boolean {
+        return LauncherConfig.readIgnoreLongPressRightClickWhilePlayingCard(context)
+    }
+
+    fun saveIgnoreLongPressRightClickWhilePlayingCard(context: Context, enabled: Boolean) {
+        LauncherConfig.saveIgnoreLongPressRightClickWhilePlayingCard(context, enabled)
     }
 
     fun readRenderSurfaceBackend(context: Context): RenderSurfaceBackend {

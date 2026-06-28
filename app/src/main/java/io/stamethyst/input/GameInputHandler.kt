@@ -14,6 +14,7 @@ import io.stamethyst.FloatingMouseOverlayController
 import io.stamethyst.StsGameActivity
 import io.stamethyst.backend.bridge.AndroidGamepadGlfwMapper
 import io.stamethyst.backend.bridge.AndroidGlfwKeycode
+import io.stamethyst.config.RuntimePaths
 import io.stamethyst.config.TouchMouseInteractionMode
 import net.kdt.pojavlaunch.LwjglGlfwKeycode
 import org.lwjgl.glfw.CallbackBridge
@@ -35,6 +36,7 @@ class GameInputHandler(
     companion object {
         private const val TOUCH_RIGHT_CLICK_LONG_PRESS_TIMEOUT_MS = 500L
         private const val TOUCH_RIGHT_CLICK_RELEASE_DELAY_MS = 50L
+        private const val TOUCHSCREEN_CARD_HOLD_STATE_MAX_AGE_MS = 2000L
 
         internal fun isGamepadKeyEventSource(
             keyCode: Int,
@@ -100,6 +102,7 @@ class GameInputHandler(
 
     private var floatingMouseController: FloatingMouseOverlayController? = null
     private var touchDoubleClickAsRightClick = false
+    private var ignoreLongPressRightClickWhilePlayingCard = true
     private var pendingLongPressRightClick: Runnable? = null
     private var pendingRightClickRelease: Runnable? = null
     private var touchDownX = 0f
@@ -114,10 +117,12 @@ class GameInputHandler(
         host: FrameLayout,
         autoSwitchLeftAfterRightClick: Boolean,
         touchDoubleClickAsRightClick: Boolean,
+        ignoreLongPressRightClickWhilePlayingCard: Boolean,
         touchMouseInteractionMode: TouchMouseInteractionMode,
         builtInSoftKeyboardEnabled: Boolean
     ) {
         this.touchDoubleClickAsRightClick = touchDoubleClickAsRightClick
+        this.ignoreLongPressRightClickWhilePlayingCard = ignoreLongPressRightClickWhilePlayingCard
         floatingMouseController = FloatingMouseOverlayController(
             activity = activity,
             isNativeInputDispatchReady = isInputDispatchReady,
@@ -399,6 +404,9 @@ class GameInputHandler(
             if (!isInputDispatchReady() || touchMovedBeyondTapSlop || touchRightPressDispatched) {
                 return@Runnable
             }
+            if (ignoreLongPressRightClickWhilePlayingCard && isTouchscreenCardHoldActive()) {
+                return@Runnable
+            }
             cancelDispatchedLeftTouchPress()
             touchLeftClickCancelled = true
             touchGestureConsumed = true
@@ -408,6 +416,16 @@ class GameInputHandler(
         }
         pendingLongPressRightClick = runnable
         mainHandler.postDelayed(runnable, TOUCH_RIGHT_CLICK_LONG_PRESS_TIMEOUT_MS)
+    }
+
+    private fun isTouchscreenCardHoldActive(): Boolean {
+        return try {
+            val file = RuntimePaths.touchscreenCardHoldStateFile(activity)
+            file.isFile &&
+                System.currentTimeMillis() - file.lastModified() <= TOUCHSCREEN_CARD_HOLD_STATE_MAX_AGE_MS
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     private fun cancelPendingLongPressRightClick() {

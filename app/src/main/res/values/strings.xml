@@ -246,6 +246,9 @@
     <string name="settings_touch_double_click_as_right_click_enabled">Touch long-press as right click: Enabled</string>
     <string name="settings_touch_double_click_as_right_click_disabled">Touch long-press as right click: Disabled</string>
     <string name="settings_touch_double_click_as_right_click_desc">When enabled, holding the game surface for 0.5 seconds sends one right-click. Moving your finger before then cancels the right-click gesture.</string>
+    <string name="settings_ignore_long_press_right_click_while_playing_card_enabled">Ignore long-press right click while playing cards: Enabled</string>
+    <string name="settings_ignore_long_press_right_click_while_playing_card_disabled">Ignore long-press right click while playing cards: Disabled</string>
+    <string name="settings_ignore_long_press_right_click_while_playing_card_desc">When enabled, holding a selected combat card will keep following your finger instead of converting the hold into a right-click.</string>
     <string name="status_touch_mouse_interaction_format">Touch mouse interaction mode: %1$s</string>
     <string name="settings_built_in_soft_keyboard_enabled">Built-in in-game keyboard: Enabled</string>
     <string name="settings_built_in_soft_keyboard_disabled">Built-in in-game keyboard: Disabled</string>

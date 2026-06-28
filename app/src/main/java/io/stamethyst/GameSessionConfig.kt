@@ -38,6 +38,7 @@ internal data class GameSessionConfig(
     val mirrorJvmLogsToLogcat: Boolean,
     val touchMouseInteractionMode: TouchMouseInteractionMode,
     val touchDoubleClickAsRightClick: Boolean,
+    val ignoreLongPressRightClickWhilePlayingCard: Boolean,
     val builtInSoftKeyboardEnabled: Boolean,
     val autoSwitchLeftAfterRightClick: Boolean,
     val requestedRenderSurfaceBackend: RenderSurfaceBackend,
@@ -118,6 +119,8 @@ internal data class GameSessionConfig(
                 mirrorJvmLogsToLogcat = LauncherConfig.isJvmLogcatMirrorEnabled(context),
                 touchMouseInteractionMode = LauncherConfig.readTouchMouseInteractionMode(context),
                 touchDoubleClickAsRightClick = LauncherConfig.readTouchDoubleClickAsRightClick(context),
+                ignoreLongPressRightClickWhilePlayingCard =
+                    LauncherConfig.readIgnoreLongPressRightClickWhilePlayingCard(context),
                 builtInSoftKeyboardEnabled = LauncherConfig.isBuiltInSoftKeyboardEnabled(context),
                 autoSwitchLeftAfterRightClick = LauncherConfig.readAutoSwitchLeftAfterRightClick(context),
                 requestedRenderSurfaceBackend = requestedRenderSurfaceBackend,

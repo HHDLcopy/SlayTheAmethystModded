@@ -65,6 +65,7 @@ internal data class InputSettingsActions(
     val onSpecialKeyInputModeChanged: (SpecialKeyInputMode) -> Unit,
     val onTouchMouseInteractionModeChanged: (TouchMouseInteractionMode) -> Unit,
     val onTouchDoubleClickAsRightClickChanged: (Boolean) -> Unit,
+    val onIgnoreLongPressRightClickWhilePlayingCardChanged: (Boolean) -> Unit,
     val onBuiltInSoftKeyboardChanged: (Boolean) -> Unit,
     val onHapticFeedbackChanged: (Boolean) -> Unit,
     val onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit,
@@ -80,6 +81,7 @@ internal data class InputBasicsSettingsActions(
     val onCardPlayOptimizationModeChanged: (CardPlayOptimizationMode) -> Unit,
     val onTouchIndicatorEnabledChanged: (Boolean) -> Unit,
     val onTouchDoubleClickAsRightClickChanged: (Boolean) -> Unit,
+    val onIgnoreLongPressRightClickWhilePlayingCardChanged: (Boolean) -> Unit,
     val onHapticFeedbackChanged: (Boolean) -> Unit,
     val onKeepScreenOnTimeoutSelected: (Int) -> Unit,
     val onGamePerformanceOverlayChanged: (Boolean) -> Unit,
@@ -288,6 +290,8 @@ internal fun SettingsInputSection(
                 onCardPlayOptimizationModeChanged = actions.onCardPlayOptimizationModeChanged,
                 onTouchIndicatorEnabledChanged = actions.onTouchIndicatorEnabledChanged,
                 onTouchDoubleClickAsRightClickChanged = actions.onTouchDoubleClickAsRightClickChanged,
+                onIgnoreLongPressRightClickWhilePlayingCardChanged =
+                    actions.onIgnoreLongPressRightClickWhilePlayingCardChanged,
                 onHapticFeedbackChanged = actions.onHapticFeedbackChanged,
                 onKeepScreenOnTimeoutSelected = actions.onKeepScreenOnTimeoutSelected,
                 onGamePerformanceOverlayChanged = actions.onGamePerformanceOverlayChanged,
@@ -380,6 +384,19 @@ internal fun SettingsInputBasicsSection(
             onCheckedChange = actions.onTouchDoubleClickAsRightClickChanged
         )
     )
+
+    if (uiState.touchDoubleClickAsRightClick) {
+        SettingsSwitchItem(
+            SettingsSwitchSpec(
+                checked = uiState.ignoreLongPressRightClickWhilePlayingCard,
+                enabled = !uiState.busy,
+                enabledText = stringResource(R.string.settings_ignore_long_press_right_click_while_playing_card_enabled),
+                disabledText = stringResource(R.string.settings_ignore_long_press_right_click_while_playing_card_disabled),
+                description = stringResource(R.string.settings_ignore_long_press_right_click_while_playing_card_desc),
+                onCheckedChange = actions.onIgnoreLongPressRightClickWhilePlayingCardChanged
+            )
+        )
+    }
 
     SettingsSwitchItem(
         SettingsSwitchSpec(

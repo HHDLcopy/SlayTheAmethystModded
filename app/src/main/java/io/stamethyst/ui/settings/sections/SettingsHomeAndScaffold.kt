@@ -295,6 +295,7 @@ internal fun LauncherSettingsGameScreenContent(
     onSpecialKeyInputModeChanged: (SpecialKeyInputMode) -> Unit = {},
     onTouchMouseInteractionModeChanged: (TouchMouseInteractionMode) -> Unit = {},
     onTouchDoubleClickAsRightClickChanged: (Boolean) -> Unit = {},
+    onIgnoreLongPressRightClickWhilePlayingCardChanged: (Boolean) -> Unit = {},
     onBuiltInSoftKeyboardChanged: (Boolean) -> Unit = {},
     onHapticFeedbackChanged: (Boolean) -> Unit = {},
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit = {},
@@ -336,6 +337,8 @@ internal fun LauncherSettingsGameScreenContent(
                         onSpecialKeyInputModeChanged = onSpecialKeyInputModeChanged,
                         onTouchMouseInteractionModeChanged = onTouchMouseInteractionModeChanged,
                         onTouchDoubleClickAsRightClickChanged = onTouchDoubleClickAsRightClickChanged,
+                        onIgnoreLongPressRightClickWhilePlayingCardChanged =
+                            onIgnoreLongPressRightClickWhilePlayingCardChanged,
                         onBuiltInSoftKeyboardChanged = onBuiltInSoftKeyboardChanged,
                         onHapticFeedbackChanged = onHapticFeedbackChanged,
                         onAutoSwitchLeftAfterRightClickChanged = onAutoSwitchLeftAfterRightClickChanged,

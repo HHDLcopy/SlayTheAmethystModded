@@ -13,11 +13,18 @@ import com.megacrit.cardcrawl.helpers.input.InputHelper;
 import com.megacrit.cardcrawl.monsters.AbstractMonster;
 import com.megacrit.cardcrawl.rooms.AbstractRoom;
 
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.lang.reflect.Field;
 import java.util.IdentityHashMap;
 import java.util.Map;
 
 public final class TouchscreenCardInputRuntime {
+    private static final String CARD_HOLD_STATE_PROP = "amethyst.touchscreen_card_hold_state";
+    private static final String CARD_HOLD_RIGHT_CLICK_GUARD_PROP =
+        "amethyst.touchscreen_card_hold_right_click_guard";
+    private static final long CARD_HOLD_STATE_REFRESH_MS = 500L;
     private static final float TOUCH_SLOP = 30.0f;
     private static final float PLAY_GESTURE_MIN_UPWARD_DRAG = 90.0f;
     private static final float TARGET_ASSIST_PADDING = 80.0f;
@@ -40,6 +47,12 @@ public final class TouchscreenCardInputRuntime {
     private static boolean tapInspectLogged;
     private static boolean targetAssistHoverLogged;
     private static boolean reflectionFailureLogged;
+    private static File cardHoldStateFile;
+    private static boolean cardHoldStateFileResolved;
+    private static boolean cardHoldStateMarked;
+    private static long lastCardHoldStateWriteMs;
+    private static boolean cardHoldRightClickGuardEnabledResolved;
+    private static boolean cardHoldRightClickGuardEnabled;
     private static Field touchscreenInspectCountField;
     private static boolean touchscreenInspectCountFieldResolved;
 
@@ -79,6 +92,7 @@ public final class TouchscreenCardInputRuntime {
             clampTouchscreenInspectCountForRelease(player);
         }
         updateGestureIfCurrent(player);
+        refreshCardHoldStateIfCurrent(player);
     }
 
     public static void afterClickAndDragCards(AbstractPlayer player) {
@@ -94,7 +108,9 @@ public final class TouchscreenCardInputRuntime {
         }
         if (!InputHelper.isMouseDown && (player == null || !player.isDraggingCard)) {
             clearGesture();
+            return;
         }
+        refreshCardHoldStateIfCurrent(player);
     }
 
     public static void beforeTouchscreenTapInspect(AbstractPlayer player) {
@@ -167,6 +183,7 @@ public final class TouchscreenCardInputRuntime {
     }
 
     public static void beforeReleaseCard(AbstractPlayer player) {
+        clearCardHoldState();
         clearTouchInspect();
         if (player == null || tapInspectPlayer == player) {
             clearTapInspectCandidate();
@@ -174,6 +191,7 @@ public final class TouchscreenCardInputRuntime {
     }
 
     public static void beforePlayCard(AbstractPlayer player) {
+        clearCardHoldState();
         clearTouchInspect();
         if (player == null || tapInspectPlayer == player) {
             clearTapInspectCandidate();
@@ -259,6 +277,14 @@ public final class TouchscreenCardInputRuntime {
             player.releaseCard();
         }
         clearGesture();
+    }
+
+    public static void refreshSelectedCardHoldStateForAndroidBridge(AbstractPlayer player) {
+        if (!isCardHoldRightClickGuardEnabled() || !isCardGestureTrackingActive()) {
+            clearCardHoldState();
+            return;
+        }
+        refreshCardHoldStateIfCurrent(player);
     }
 
     public static void clearIdleCardHoverBeforeUpdate(AbstractPlayer player) {
@@ -396,6 +422,7 @@ public final class TouchscreenCardInputRuntime {
         gestureStartX = InputHelper.mX;
         gestureStartY = InputHelper.mY;
         gestureMaxY = InputHelper.mY;
+        markCardHoldState(card);
     }
 
     private static void updateGestureIfCurrent(AbstractPlayer player) {
@@ -587,11 +614,106 @@ public final class TouchscreenCardInputRuntime {
     }
 
     private static void clearGesture() {
+        clearCardHoldState();
         gesturePlayer = null;
         gestureCard = null;
         gestureStartX = 0;
         gestureStartY = 0;
         gestureMaxY = 0;
+    }
+
+    private static void refreshCardHoldStateIfCurrent(AbstractPlayer player) {
+        AbstractCard heldCard = getHeldHandCard(player);
+        if (heldCard != null) {
+            markCardHoldState(heldCard);
+        } else {
+            clearCardHoldState();
+        }
+    }
+
+    private static AbstractCard getHeldHandCard(AbstractPlayer player) {
+        if (player == null || player.hoveredCard == null || InputHelper.justReleasedClickLeft) {
+            return null;
+        }
+        if (!isCardInPlayerHand(player, player.hoveredCard)) {
+            return null;
+        }
+        if (player.isDraggingCard || player.inSingleTargetMode || InputHelper.isMouseDown) {
+            return player.hoveredCard;
+        }
+        return null;
+    }
+
+    private static void markCardHoldState(AbstractCard card) {
+        if (!isCardHoldRightClickGuardEnabled()) {
+            clearCardHoldState();
+            return;
+        }
+        File file = getCardHoldStateFile();
+        if (file == null) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (cardHoldStateMarked && now - lastCardHoldStateWriteMs < CARD_HOLD_STATE_REFRESH_MS) {
+            return;
+        }
+        File parent = file.getParentFile();
+        if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
+            return;
+        }
+        FileWriter writer = null;
+        try {
+            writer = new FileWriter(file, false);
+            writer.write(Long.toString(now));
+            writer.write('\n');
+            writer.write(card == null || card.cardID == null ? "" : card.cardID);
+            writer.write('\n');
+            cardHoldStateMarked = true;
+            lastCardHoldStateWriteMs = now;
+        } catch (IOException ignored) {
+        } finally {
+            if (writer != null) {
+                try {
+                    writer.close();
+                } catch (IOException ignored) {
+                }
+            }
+        }
+    }
+
+    private static void clearCardHoldState() {
+        File file = getCardHoldStateFile();
+        if (file == null) {
+            return;
+        }
+        try {
+            if (file.isFile()) {
+                file.delete();
+            }
+        } catch (SecurityException ignored) {
+        }
+        cardHoldStateMarked = false;
+        lastCardHoldStateWriteMs = 0L;
+    }
+
+    private static File getCardHoldStateFile() {
+        if (!cardHoldStateFileResolved) {
+            cardHoldStateFileResolved = true;
+            String path = System.getProperty(CARD_HOLD_STATE_PROP, "").trim();
+            if (path.length() > 0) {
+                cardHoldStateFile = new File(path);
+            }
+        }
+        return cardHoldStateFile;
+    }
+
+    private static boolean isCardHoldRightClickGuardEnabled() {
+        if (!cardHoldRightClickGuardEnabledResolved) {
+            cardHoldRightClickGuardEnabledResolved = true;
+            cardHoldRightClickGuardEnabled =
+                Boolean.parseBoolean(System.getProperty(CARD_HOLD_RIGHT_CLICK_GUARD_PROP, "true"));
+        }
+        return cardHoldRightClickGuardEnabled;
     }
 
     private static boolean isInputInsideHitbox(Hitbox hb, float padding) {

@@ -329,6 +329,8 @@ class SettingsScreenViewModel : ViewModel() {
             LauncherPreferences.DEFAULT_TOUCH_MOUSE_INTERACTION_MODE,
         val touchDoubleClickAsRightClick: Boolean =
             LauncherPreferences.DEFAULT_TOUCH_DOUBLE_CLICK_AS_RIGHT_CLICK,
+        val ignoreLongPressRightClickWhilePlayingCard: Boolean =
+            LauncherPreferences.DEFAULT_IGNORE_LONG_PRESS_RIGHT_CLICK_WHILE_PLAYING_CARD,
         val builtInSoftKeyboardEnabled: Boolean =
             LauncherPreferences.DEFAULT_BUILT_IN_SOFT_KEYBOARD_ENABLED,
         val hapticFeedbackEnabled: Boolean = LauncherPreferences.DEFAULT_HAPTIC_FEEDBACK_ENABLED,
@@ -2779,6 +2781,15 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(host)
     }
 
+    fun onIgnoreLongPressRightClickWhilePlayingCardChanged(host: Activity, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        uiState = uiState.copy(ignoreLongPressRightClickWhilePlayingCard = enabled)
+        saveIgnoreLongPressRightClickWhilePlayingCardSelection(host, enabled)
+        refreshStatus(host)
+    }
+
     fun onBuiltInSoftKeyboardChanged(host: Activity, enabled: Boolean) {
         if (uiState.busy) {
             return
@@ -3541,6 +3552,7 @@ class SettingsScreenViewModel : ViewModel() {
             showFloatingMouseWindow = input.showFloatingMouseWindow,
             touchMouseInteractionMode = input.touchMouseInteractionMode,
             touchDoubleClickAsRightClick = input.touchDoubleClickAsRightClick,
+            ignoreLongPressRightClickWhilePlayingCard = input.ignoreLongPressRightClickWhilePlayingCard,
             builtInSoftKeyboardEnabled = input.builtInSoftKeyboardEnabled,
             hapticFeedbackEnabled = input.hapticFeedbackEnabled,
             autoSwitchLeftAfterRightClick = input.autoSwitchLeftAfterRightClick,
@@ -4714,6 +4726,13 @@ class SettingsScreenViewModel : ViewModel() {
 
     private fun saveTouchDoubleClickAsRightClickSelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.saveTouchDoubleClickAsRightClick(host, enabled)
+    }
+
+    private fun saveIgnoreLongPressRightClickWhilePlayingCardSelection(
+        host: Activity,
+        enabled: Boolean
+    ) {
+        LauncherPreferences.saveIgnoreLongPressRightClickWhilePlayingCard(host, enabled)
     }
 
     private fun saveBuiltInSoftKeyboardSelection(host: Activity, enabled: Boolean) {

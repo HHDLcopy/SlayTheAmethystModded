@@ -76,7 +76,13 @@ class JvmLaunchController(
             "amethyst.gdx.gpu_resource_summary",
             "amethyst.gdx.gpu_resource_diag",
             "amethyst.bridge.heap_snapshot",
-            "amethyst.bridge.gc_histogram_dir"
+            "amethyst.bridge.gc_histogram_dir",
+            "amethyst.mts.patch_cache.enabled",
+            "amethyst.mts.patch_cache.current",
+            "amethyst.mts.patch_cache.jar",
+            "amethyst.mts.patch_cache.marker",
+            "amethyst.mts.patch_cache.package_dir",
+            "amethyst.mts.patch_cache.expected"
         )
     }
 

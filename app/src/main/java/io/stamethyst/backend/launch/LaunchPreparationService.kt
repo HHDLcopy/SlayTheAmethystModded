@@ -89,28 +89,9 @@ object LaunchPreparationService {
             OptionalModStorageCoordinator.prepareMtsModFileList(context)
 
             throwIfInterrupted()
-            if (MtsClasspathWarmupCoordinator.isCacheCurrent(context)) {
-                reportProgress(
-                    progressCallback,
-                    95,
-                    context.progressText(R.string.startup_progress_using_prepared_mts_classpath_cache)
-                )
-            } else {
-                reportProgress(
-                    progressCallback,
-                    95,
-                    context.progressText(R.string.startup_progress_preparing_mts_classpath)
-                )
-                ModJarSupport.prepareMtsClasspath(
-                    context,
-                    mapProgressRange(progressCallback, 95, 99)
-                )
-                MtsClasspathWarmupCoordinator.markPrepared(context)
-            }
-            throwIfInterrupted()
             reportProgress(
                 progressCallback,
-                99,
+                96,
                 context.progressText(R.string.startup_progress_resolving_enabled_mod_launch_list)
             )
             val launchModIds = ModManager.resolveLaunchModIds(context)

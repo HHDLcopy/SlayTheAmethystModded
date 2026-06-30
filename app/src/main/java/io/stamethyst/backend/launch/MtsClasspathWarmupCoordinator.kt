@@ -19,6 +19,29 @@ object MtsClasspathWarmupCoordinator {
     @JvmStatic
     @Throws(IOException::class)
     fun prewarmIfReady(context: Context, progressCallback: StartupProgressCallback? = null): Boolean {
+        return prepareIfReady(
+            context = context,
+            progressCallback = progressCallback,
+            skipWhenCacheCurrent = false
+        )
+    }
+
+    @JvmStatic
+    @Throws(IOException::class)
+    fun prepareForLaunch(context: Context, progressCallback: StartupProgressCallback? = null): Boolean {
+        return prepareIfReady(
+            context = context,
+            progressCallback = progressCallback,
+            skipWhenCacheCurrent = true
+        )
+    }
+
+    @Throws(IOException::class)
+    private fun prepareIfReady(
+        context: Context,
+        progressCallback: StartupProgressCallback?,
+        skipWhenCacheCurrent: Boolean
+    ): Boolean {
         if (!RuntimePaths.importedStsJar(context).isFile) {
             return false
         }
@@ -41,19 +64,32 @@ object MtsClasspathWarmupCoordinator {
         reportProgress(
             progressCallback,
             45,
-            context.progressText(R.string.startup_progress_preparing_mts_classpath_cache)
+            context.progressText(R.string.startup_progress_resolving_enabled_mod_launch_list)
         )
         OptionalModStorageCoordinator.prepareMtsModFileList(context)
+        ModManager.resolveLaunchModIds(context)
+        if (skipWhenCacheCurrent && isCacheCurrent(context)) {
+            reportProgress(
+                progressCallback,
+                100,
+                context.progressText(R.string.startup_progress_using_prepared_mts_classpath_cache)
+            )
+            return true
+        }
+        reportProgress(
+            progressCallback,
+            50,
+            context.progressText(R.string.startup_progress_preparing_mts_classpath_cache)
+        )
         ModJarSupport.prepareMtsClasspath(
             context,
-            mapProgressRange(progressCallback, 45, 94)
+            mapProgressRange(progressCallback, 50, 96)
         )
         reportProgress(
             progressCallback,
-            96,
-            context.progressText(R.string.startup_progress_resolving_enabled_mod_launch_list)
+            98,
+            context.progressText(R.string.startup_progress_mts_classpath_cache_ready)
         )
-        ModManager.resolveLaunchModIds(context)
         writeCacheMarker(context)
         reportProgress(
             progressCallback,
@@ -99,13 +135,6 @@ object MtsClasspathWarmupCoordinator {
     fun invalidateCache(context: Context) {
         runCatching {
             RuntimePaths.mtsClasspathCacheMarker(context).delete()
-        }
-    }
-
-    @JvmStatic
-    fun markPrepared(context: Context) {
-        runCatching {
-            writeCacheMarker(context)
         }
     }
 

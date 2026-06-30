@@ -45,6 +45,9 @@ object RuntimePaths {
     private const val LAUNCHER_CRASH_REPORT_PREFIX = "sts-launcher-crash-"
     private const val BOOT_OVERLAY_IMAGE_DIR_NAME = "boot_overlay_images"
     private const val MTS_CLASSPATH_CACHE_MARKER_FILE_NAME = ".mts_classpath_cache"
+    private const val MTS_PATCH_CACHE_MARKER_FILE_NAME = ".mts_patch_cache"
+    private const val MTS_PATCH_CACHE_JAR_FILE_NAME = "desktop-1.0-modded.jar"
+    private const val MTS_PATCH_CACHE_PACKAGE_DIR_NAME = "package"
     private const val OPTIONAL_MOD_LIBRARY_MIGRATION_MARKER_FILE_NAME = ".optional_mod_library_migrated"
     private const val ANDROID_EXTERNAL_STORAGE_ROOT = "storage"
     private const val ANDROID_EMULATED_SEGMENT = "emulated"
@@ -345,6 +348,18 @@ object RuntimePaths {
     @JvmStatic
     fun mtsClasspathCacheMarker(context: Context): File =
         File(stsRoot(context), MTS_CLASSPATH_CACHE_MARKER_FILE_NAME)
+
+    @JvmStatic
+    fun mtsPatchCacheMarker(context: Context): File =
+        File(stsRoot(context), MTS_PATCH_CACHE_MARKER_FILE_NAME)
+
+    @JvmStatic
+    fun mtsPatchCacheJar(context: Context): File =
+        File(stsRoot(context), MTS_PATCH_CACHE_JAR_FILE_NAME)
+
+    @JvmStatic
+    fun mtsPatchCachePackageDir(context: Context): File =
+        File(stsRoot(context), MTS_PATCH_CACHE_PACKAGE_DIR_NAME)
 
     @JvmStatic
     fun displayConfigFile(context: Context): File = File(stsRoot(context), "info.displayconfig")

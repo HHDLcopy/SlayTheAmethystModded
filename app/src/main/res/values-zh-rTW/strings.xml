@@ -349,7 +349,6 @@
     <string name="startup_progress_validating_desktop_jar">正在校驗 desktop-1.0.jar…</string>
     <string name="startup_progress_validating_required_mod_jars">正在校驗必需模組 jar…</string>
     <string name="startup_progress_using_prepared_mts_classpath_cache">正在使用已準備好的 MTS classpath 快取…</string>
-    <string name="startup_progress_preparing_mts_classpath">正在準備 MTS classpath…</string>
     <string name="startup_progress_resolving_enabled_mod_launch_list">正在解析啟用模組啟動列表…</string>
     <string name="startup_progress_launch_preparation_complete">啟動前準備完成</string>
     <string name="startup_progress_preparing_mts_startup_cache">正在準備 MTS 啟動快取…</string>

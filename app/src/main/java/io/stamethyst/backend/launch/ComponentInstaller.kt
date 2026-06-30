@@ -280,7 +280,10 @@ object ComponentInstaller {
             percent = 78,
             message = context.getString(R.string.startup_progress_installing_bundled_mods)
         ) {
-            MtsLoaderCrashPatcher.ensurePatchedMtsJar(RuntimePaths.importedMtsJar(context))
+            val changed = MtsLoaderCrashPatcher.ensurePatchedMtsJar(RuntimePaths.importedMtsJar(context))
+            if (changed) {
+                MtsStartupCacheCoordinator.invalidate(context)
+            }
         }
         logDiagnostic(
             context = context,

@@ -78,6 +78,7 @@ import io.stamethyst.backend.render.RendererSelectionMode
 import io.stamethyst.backend.render.VirtualResolutionMode
 import io.stamethyst.backend.launch.JvmLogRotationManager
 import io.stamethyst.backend.launch.MtsClasspathWarmupCoordinator
+import io.stamethyst.backend.launch.MtsStartupCacheCoordinator
 import io.stamethyst.backend.mods.AtlasOfflineDownscaleStrategy
 import io.stamethyst.backend.mods.ImportDownscaleMaterialPolicy
 import io.stamethyst.backend.mods.ModJarSupport
@@ -3196,7 +3197,7 @@ class SettingsScreenViewModel : ViewModel() {
         showSuccessToast: Boolean = true,
         onCompleted: ((Boolean) -> Unit)? = null
     ) {
-        if (uri == null) {
+        if (uri == null || uiState.busy) {
             return
         }
         setBusy(
@@ -3212,7 +3213,7 @@ class SettingsScreenViewModel : ViewModel() {
                     targetFile = RuntimePaths.importedStsJar(host),
                     validator = StsJarValidator::validate
                 )
-                MtsClasspathWarmupCoordinator.invalidateCache(host)
+                MtsStartupCacheCoordinator.invalidate(host)
                 val warmupWarning = prewarmMtsClasspathAfterImport(host)
                 host.runOnUiThread {
                     setBusy(false, null)
@@ -3350,7 +3351,7 @@ class SettingsScreenViewModel : ViewModel() {
                 targetFile = RuntimePaths.importedStsJar(host),
                 validator = StsJarValidator::validate
             )
-            MtsClasspathWarmupCoordinator.invalidateCache(host)
+            MtsStartupCacheCoordinator.invalidate(host)
             val warmupWarning = prewarmMtsClasspathAfterImport(host)
             val pullResult = pullSteamCloudIntoEmptySlotAfterQuickStartImport(host)
             host.runOnUiThread {

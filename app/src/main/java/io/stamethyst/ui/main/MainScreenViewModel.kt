@@ -39,7 +39,7 @@ import io.stamethyst.backend.launch.GameLaunchReturnTracker
 import io.stamethyst.backend.launch.LauncherReturnAction
 import io.stamethyst.backend.launch.LauncherReturnActionResolver
 import io.stamethyst.backend.launch.LauncherReturnSnapshot
-import io.stamethyst.backend.launch.MainProcessGameBodyPatchCoordinator
+import io.stamethyst.backend.launch.MainProcessMtsLaunchPreparationCoordinator
 import io.stamethyst.backend.launch.StartupProgressCallback
 import io.stamethyst.backend.launch.AutoplayMode
 import io.stamethyst.backend.launch.AutoplaySaveMode
@@ -2427,7 +2427,7 @@ class MainScreenViewModel : ViewModel() {
         forceRuntimeCrash: Boolean,
     ) {
         if (StsLaunchSpec.isMtsLaunchMode(launchMode)) {
-            prepareGameBodyPatchAndLaunch(
+            prepareMtsLaunchAndLaunch(
                 host = host,
                 launchMode = launchMode,
                 backBehavior = backBehavior,
@@ -2447,7 +2447,7 @@ class MainScreenViewModel : ViewModel() {
         )
     }
 
-    private fun prepareGameBodyPatchAndLaunch(
+    private fun prepareMtsLaunchAndLaunch(
         host: Activity,
         launchMode: String,
         backBehavior: BackBehavior,
@@ -2455,10 +2455,10 @@ class MainScreenViewModel : ViewModel() {
         forceJvmCrash: Boolean,
         forceRuntimeCrash: Boolean,
     ) {
-        val progressPublisher = DelayedGameBodyPatchProgressPublisher(host)
+        val progressPublisher = DelayedLaunchPreparationProgressPublisher(host)
         launchExecutor.execute {
             try {
-                MainProcessGameBodyPatchCoordinator.prepareBeforeLaunch(
+                MainProcessMtsLaunchPreparationCoordinator.prepareBeforeLaunch(
                     context = host.applicationContext,
                     launchMode = launchMode,
                     progressCallback = StartupProgressCallback { percent, message ->
@@ -2482,10 +2482,10 @@ class MainScreenViewModel : ViewModel() {
                     )
                 }
             } catch (error: Throwable) {
-                Log.e(LOGCAT_TAG, "Game body patch failed before launch", error)
+                Log.e(LOGCAT_TAG, "MTS launch preparation failed before launch", error)
                 writePreGameLaunchFailureEvent(
                     host = host,
-                    message = "Game body patch failed before launch: " +
+                    message = "MTS launch preparation failed before launch: " +
                         (error.message ?: error.javaClass.simpleName)
                 )
                 host.runOnUiThread {
@@ -2510,7 +2510,7 @@ class MainScreenViewModel : ViewModel() {
         }
     }
 
-    private inner class DelayedGameBodyPatchProgressPublisher(
+    private inner class DelayedLaunchPreparationProgressPublisher(
         private val host: Activity
     ) {
         private val handler = Handler(Looper.getMainLooper())
@@ -2541,7 +2541,7 @@ class MainScreenViewModel : ViewModel() {
                     showScheduled = true
                     handler.postDelayed(
                         showRunnable,
-                        GAME_BODY_PATCH_BUSY_OVERLAY_DELAY_MS
+                        MTS_LAUNCH_PREPARATION_BUSY_OVERLAY_DELAY_MS
                     )
                 }
             }
@@ -2572,7 +2572,7 @@ class MainScreenViewModel : ViewModel() {
             setBusy(
                 busy = true,
                 message = UiText.DynamicString(latestMessage),
-                operation = UiBusyOperation.GAME_BODY_PATCH,
+                operation = UiBusyOperation.GAME_STARTUP_WARMUP,
                 progressPercent = latestProgressPercent
             )
         }
@@ -3855,7 +3855,7 @@ class MainScreenViewModel : ViewModel() {
         private const val LOGCAT_TAG = "STS-MainScreenVM"
         private const val PASSIVE_REFRESH_DEBOUNCE_MS = 750L
         private const val STEAM_CLOUD_STATUS_REFRESH_INTERVAL_MS = 60_000L
-        private const val GAME_BODY_PATCH_BUSY_OVERLAY_DELAY_MS = 500L
+        private const val MTS_LAUNCH_PREPARATION_BUSY_OVERLAY_DELAY_MS = 500L
         private const val BYTES_PER_MIB = 1024L * 1024L
         private const val ENABLED_MOD_SIZE_WARNING_THRESHOLD_BYTES = 1024L * BYTES_PER_MIB
         private val DEFAULT_UNASSIGNED_FOLDER_NAME: String = if (Locale.getDefault().language.startsWith("zh")) {

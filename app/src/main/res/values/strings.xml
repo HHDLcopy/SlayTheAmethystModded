@@ -349,7 +349,6 @@
     <string name="startup_progress_validating_desktop_jar">Validating desktop-1.0.jar...</string>
     <string name="startup_progress_validating_required_mod_jars">Validating required mod jars...</string>
     <string name="startup_progress_using_prepared_mts_classpath_cache">Using prepared MTS classpath cache...</string>
-    <string name="startup_progress_preparing_mts_classpath">Preparing MTS classpath...</string>
     <string name="startup_progress_resolving_enabled_mod_launch_list">Resolving enabled mod launch list...</string>
     <string name="startup_progress_launch_preparation_complete">Launch preparation complete</string>
     <string name="startup_progress_preparing_mts_startup_cache">Preparing MTS startup cache...</string>

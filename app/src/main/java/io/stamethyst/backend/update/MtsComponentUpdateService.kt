@@ -3,6 +3,7 @@ package io.stamethyst.backend.update
 import android.content.Context
 import io.stamethyst.backend.github.GithubAcceleratedHttp
 import io.stamethyst.backend.launch.ComponentInstaller
+import io.stamethyst.backend.launch.MtsStartupCacheCoordinator
 import io.stamethyst.backend.mods.MtsLoaderCrashPatcher
 import io.stamethyst.backend.network.NetworkAccelerationPolicy
 import io.stamethyst.config.RuntimePaths
@@ -88,6 +89,7 @@ object MtsComponentUpdateService {
                 MtsLoaderCrashPatcher.ensurePatchedMtsJar(tempFile)
                 validateMtsJar(tempFile)
                 replaceFile(tempFile, targetFile)
+                MtsStartupCacheCoordinator.invalidate(context)
                 MtsComponentUpdateResult(source = source)
             } finally {
                 if (tempFile.exists() && !tempFile.delete()) {

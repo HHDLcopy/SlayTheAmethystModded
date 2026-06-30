@@ -76,7 +76,7 @@ object MainProcessGameBodyPatchCoordinator {
                 mapProgressRange(progressCallback, DESKTOP_PATCH_START_PERCENT, 100)
             )
         )
-        MtsClasspathWarmupCoordinator.invalidateCache(appContext)
+        MtsStartupCacheCoordinator.invalidate(appContext)
         MemoryDiagnosticsLogger.logEvent(
             context = appContext,
             event = "main_process_game_body_patch_completed",

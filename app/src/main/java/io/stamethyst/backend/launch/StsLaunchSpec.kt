@@ -691,6 +691,11 @@ object StsLaunchSpec {
         args.add("-Damethyst.bridge.events=${RuntimePaths.bootBridgeEventsLog(context).absolutePath}")
         if (isMtsLaunchMode(launchMode)) {
             args.add("-Damethyst.mts.mod_file_list=${RuntimePaths.mtsModFileList(context).absolutePath}")
+            MtsPatchCacheCoordinator.appendRuntimeProperties(
+                context = context,
+                args = args,
+                enabled = true
+            )
         }
         if (showPerformanceOverlay) {
             args.add("-Damethyst.bridge.heap_snapshot=${RuntimePaths.jvmHeapSnapshot(context).absolutePath}")

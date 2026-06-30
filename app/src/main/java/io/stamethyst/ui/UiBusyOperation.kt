@@ -7,7 +7,7 @@ enum class UiBusyOperation {
     NATIVE_LIBRARY_INSTALL,
     MTS_COMPONENT_UPDATE,
     GAME_PROCESS_CLEANUP,
-    GAME_BODY_PATCH,
+    GAME_STARTUP_WARMUP,
     STEAM_CLOUD_SYNC,
     OTHER_BUSY
 
@@ -20,7 +20,7 @@ enum class UiBusyOperation {
             NATIVE_LIBRARY_INSTALL,
             MTS_COMPONENT_UPDATE,
             GAME_PROCESS_CLEANUP,
-            GAME_BODY_PATCH,
+            GAME_STARTUP_WARMUP,
             STEAM_CLOUD_SYNC -> true
             NONE,
             OTHER_BUSY -> false

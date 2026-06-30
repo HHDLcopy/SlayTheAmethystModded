@@ -22,17 +22,23 @@ object MtsClasspathWarmupCoordinator {
         return prepareIfReady(
             context = context,
             progressCallback = progressCallback,
-            skipWhenCacheCurrent = false
+            skipWhenCacheCurrent = false,
+            assumeCommonPreparationDone = false
         )
     }
 
     @JvmStatic
     @Throws(IOException::class)
-    fun prepareForLaunch(context: Context, progressCallback: StartupProgressCallback? = null): Boolean {
+    fun prepareForLaunch(
+        context: Context,
+        progressCallback: StartupProgressCallback? = null,
+        assumeCommonPreparationDone: Boolean = false
+    ): Boolean {
         return prepareIfReady(
             context = context,
             progressCallback = progressCallback,
-            skipWhenCacheCurrent = true
+            skipWhenCacheCurrent = true,
+            assumeCommonPreparationDone = assumeCommonPreparationDone
         )
     }
 
@@ -40,27 +46,36 @@ object MtsClasspathWarmupCoordinator {
     private fun prepareIfReady(
         context: Context,
         progressCallback: StartupProgressCallback?,
-        skipWhenCacheCurrent: Boolean
+        skipWhenCacheCurrent: Boolean,
+        assumeCommonPreparationDone: Boolean
     ): Boolean {
         if (!RuntimePaths.importedStsJar(context).isFile) {
             return false
         }
 
-        reportProgress(
-            progressCallback,
-            0,
-            context.progressText(R.string.startup_progress_preparing_mts_startup_cache)
-        )
-        ComponentInstaller.ensureInstalled(
-            context,
-            mapProgressRange(progressCallback, 1, 40)
-        )
-        reportProgress(
-            progressCallback,
-            42,
-            context.progressText(R.string.startup_progress_validating_desktop_jar)
-        )
-        StsJarValidator.validate(RuntimePaths.importedStsJar(context))
+        if (assumeCommonPreparationDone) {
+            reportProgress(
+                progressCallback,
+                0,
+                context.progressText(R.string.startup_progress_preparing_mts_startup_cache)
+            )
+        } else {
+            reportProgress(
+                progressCallback,
+                0,
+                context.progressText(R.string.startup_progress_preparing_mts_startup_cache)
+            )
+            ComponentInstaller.ensureInstalled(
+                context,
+                mapProgressRange(progressCallback, 1, 40)
+            )
+            reportProgress(
+                progressCallback,
+                42,
+                context.progressText(R.string.startup_progress_validating_desktop_jar)
+            )
+            StsJarValidator.validate(RuntimePaths.importedStsJar(context))
+        }
         reportProgress(
             progressCallback,
             45,

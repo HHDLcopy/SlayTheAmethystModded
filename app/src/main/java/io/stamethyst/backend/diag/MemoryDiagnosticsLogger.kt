@@ -345,8 +345,7 @@ internal object MemoryDiagnosticsLogger {
         val processName = resolveProcessName(context)
         val packageName = context.packageName
         return processName == packageName ||
-            processName == "$packageName:game" ||
-            processName == "$packageName:prep"
+            processName == "$packageName:game"
     }
 
     private fun shouldRecordDiagnostics(context: Context): Boolean {

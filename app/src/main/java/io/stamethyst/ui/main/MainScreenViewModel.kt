@@ -24,9 +24,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
-import io.stamethyst.LauncherActivity
 import io.stamethyst.R
 import io.stamethyst.StsGameActivity
+import io.stamethyst.LauncherActivity
 import io.stamethyst.backend.crash.LatestLogCrashDetector
 import io.stamethyst.backend.crash.ProcessExitInfoCapture
 import io.stamethyst.backend.crash.ProcessExitSummary
@@ -39,7 +39,7 @@ import io.stamethyst.backend.launch.GameLaunchReturnTracker
 import io.stamethyst.backend.launch.LauncherReturnAction
 import io.stamethyst.backend.launch.LauncherReturnActionResolver
 import io.stamethyst.backend.launch.LauncherReturnSnapshot
-import io.stamethyst.backend.launch.MainProcessMtsLaunchPreparationCoordinator
+import io.stamethyst.backend.launch.MainProcessLaunchPreparationCoordinator
 import io.stamethyst.backend.launch.StartupProgressCallback
 import io.stamethyst.backend.launch.AutoplayMode
 import io.stamethyst.backend.launch.AutoplaySaveMode
@@ -155,8 +155,7 @@ class MainScreenViewModel : ViewModel() {
         val isSignal: Boolean,
         val summaryText: String,
         val reportText: String,
-        val isOutOfMemory: Boolean,
-        val isLaunchPreparationProcessDisconnected: Boolean
+        val isOutOfMemory: Boolean
     )
 
     enum class SteamCloudIndicatorState {
@@ -1942,6 +1941,7 @@ class MainScreenViewModel : ViewModel() {
             }
 
             LauncherReturnAction.ExpectedCleanShutdown -> {
+                GameLaunchReturnTracker.terminateTrackedGameProcess(host, includeCached = true)
                 BackExitNotice.consumeExpectedBackExitIfRecent(host)
                 ExpectedGameExitNotice.consumeExpectedGameExitIfRecent(host, launchStartedAtMs)
                 if (intent != null) {
@@ -2426,18 +2426,7 @@ class MainScreenViewModel : ViewModel() {
         forceJvmCrash: Boolean,
         forceRuntimeCrash: Boolean,
     ) {
-        if (StsLaunchSpec.isMtsLaunchMode(launchMode)) {
-            prepareMtsLaunchAndLaunch(
-                host = host,
-                launchMode = launchMode,
-                backBehavior = backBehavior,
-                manualDismissBootOverlay = manualDismissBootOverlay,
-                forceJvmCrash = forceJvmCrash,
-                forceRuntimeCrash = forceRuntimeCrash,
-            )
-            return
-        }
-        launchGameActivityInternal(
+        prepareLaunchAndLaunch(
             host = host,
             launchMode = launchMode,
             backBehavior = backBehavior,
@@ -2447,7 +2436,7 @@ class MainScreenViewModel : ViewModel() {
         )
     }
 
-    private fun prepareMtsLaunchAndLaunch(
+    private fun prepareLaunchAndLaunch(
         host: Activity,
         launchMode: String,
         backBehavior: BackBehavior,
@@ -2458,7 +2447,7 @@ class MainScreenViewModel : ViewModel() {
         val progressPublisher = DelayedLaunchPreparationProgressPublisher(host)
         launchExecutor.execute {
             try {
-                MainProcessMtsLaunchPreparationCoordinator.prepareBeforeLaunch(
+                MainProcessLaunchPreparationCoordinator.prepareBeforeLaunch(
                     context = host.applicationContext,
                     launchMode = launchMode,
                     progressCallback = StartupProgressCallback { percent, message ->
@@ -2482,10 +2471,10 @@ class MainScreenViewModel : ViewModel() {
                     )
                 }
             } catch (error: Throwable) {
-                Log.e(LOGCAT_TAG, "MTS launch preparation failed before launch", error)
+                Log.e(LOGCAT_TAG, "Game launch preparation failed before launch", error)
                 writePreGameLaunchFailureEvent(
                     host = host,
-                    message = "MTS launch preparation failed before launch: " +
+                    message = "Game launch preparation failed before launch: " +
                         (error.message ?: error.javaClass.simpleName)
                 )
                 host.runOnUiThread {
@@ -2627,6 +2616,7 @@ class MainScreenViewModel : ViewModel() {
         pendingAutoplayChoiceDelayMs = 0L
         pendingCardObtainEffectOwnershipCompatEnabled = true
         try {
+            (host as? LauncherActivity)?.markBackgroundForGameLaunch()
             StsGameActivity.launch(
                 host,
                 launchMode,
@@ -2643,6 +2633,7 @@ class MainScreenViewModel : ViewModel() {
             )
             clearNewlyImportedHighlights(host)
         } catch (error: Throwable) {
+            (host as? LauncherActivity)?.clearBackgroundForGameLaunch()
             LogcatCaptureProcessClient.stopCapture(host)
             GameLaunchReturnTracker.clearPendingGameLaunch(host)
             _effects.tryEmit(
@@ -3284,9 +3275,7 @@ class MainScreenViewModel : ViewModel() {
                 isSignal = isSignal,
                 summaryText = report.summaryText,
                 reportText = report.reportText,
-                isOutOfMemory = isOutOfMemoryCrash(code, detail),
-                isLaunchPreparationProcessDisconnected =
-                    report.isLaunchPreparationProcessDisconnected
+                isOutOfMemory = isOutOfMemoryCrash(code, detail)
             )
         )
     }

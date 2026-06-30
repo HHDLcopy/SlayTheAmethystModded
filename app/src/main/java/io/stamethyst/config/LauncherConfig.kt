@@ -100,6 +100,7 @@ object LauncherConfig {
     private const val PREF_KEY_AVOID_DISPLAY_CUTOUT = "avoid_display_cutout"
     private const val PREF_KEY_CROP_SCREEN_BOTTOM = "crop_screen_bottom"
     private const val PREF_KEY_RAM_SAVER_ENABLED = "ram_saver_enabled"
+    private const val PREF_KEY_MTS_PATCH_CACHE_ENABLED = "mts_patch_cache_enabled"
     private const val PREF_KEY_SHOW_GAME_PERFORMANCE_OVERLAY = "show_game_performance_overlay"
     private const val PREF_KEY_SUSTAINED_PERFORMANCE_MODE_ENABLED =
         "sustained_performance_mode_enabled"
@@ -291,6 +292,7 @@ object LauncherConfig {
     const val DEFAULT_AVOID_DISPLAY_CUTOUT = false
     const val DEFAULT_CROP_SCREEN_BOTTOM = false
     const val DEFAULT_RAM_SAVER_ENABLED = true
+    const val DEFAULT_MTS_PATCH_CACHE_ENABLED = false
     const val DEFAULT_SHOW_GAME_PERFORMANCE_OVERLAY = false
     const val DEFAULT_SUSTAINED_PERFORMANCE_MODE_ENABLED = true
     const val DEFAULT_LWJGL_DEBUG = false
@@ -1025,6 +1027,19 @@ object LauncherConfig {
     fun setRamSaverEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_RAM_SAVER_ENABLED, enabled)
+        }
+    }
+
+    fun isMtsPatchCacheEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_MTS_PATCH_CACHE_ENABLED,
+            DEFAULT_MTS_PATCH_CACHE_ENABLED
+        )
+    }
+
+    fun setMtsPatchCacheEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_MTS_PATCH_CACHE_ENABLED, enabled)
         }
     }
 

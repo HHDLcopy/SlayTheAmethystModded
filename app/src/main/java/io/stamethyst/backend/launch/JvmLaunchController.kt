@@ -196,20 +196,6 @@ class JvmLaunchController(
         val launchThread = Thread({
             try {
                 throwIfCancelled()
-                LaunchPreparationProcessClient.prepare(
-                    context = activity,
-                    launchMode = launchMode,
-                    progressCallback = StartupProgressCallback { percent, message ->
-                        onProgressUpdate(
-                            bootOverlayController?.mapBootOverlayPreparationProgress(percent)
-                                ?: percent,
-                            message
-                        )
-                    },
-                    throwIfCancelled = { throwIfCancelled() }
-                )
-
-                throwIfCancelled()
                 val runtimeRoot = RuntimePaths.runtimeRoot(activity)
                 val resolvedJavaHome = RuntimePackInstaller.locateJavaHome(runtimeRoot)
                     ?: javaHome.takeIf { it.exists() }
@@ -397,13 +383,11 @@ class JvmLaunchController(
 
     fun interrupt() {
         cancelRequested = true
-        LaunchPreparationProcessClient.cancel(activity)
         jvmLaunchThread?.interrupt()
     }
 
     fun cleanup() {
         cancelRequested = true
-        LaunchPreparationProcessClient.cancel(activity)
         val launchThread = jvmLaunchThread
         jvmLaunchThread = null
         launchThread?.interrupt()

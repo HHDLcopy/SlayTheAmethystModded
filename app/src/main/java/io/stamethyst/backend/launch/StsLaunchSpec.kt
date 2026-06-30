@@ -694,7 +694,7 @@ object StsLaunchSpec {
             MtsPatchCacheCoordinator.appendRuntimeProperties(
                 context = context,
                 args = args,
-                enabled = true
+                enabled = LauncherConfig.isMtsPatchCacheEnabled(context)
             )
         }
         if (showPerformanceOverlay) {

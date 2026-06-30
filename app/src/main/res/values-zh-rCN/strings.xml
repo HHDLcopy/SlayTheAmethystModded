@@ -77,7 +77,6 @@
     <string name="sts_crash_page_capture_title">已捕获崩溃</string>
     <string name="sts_crash_page_guidance_default">建议先自行排查问题，可以将日志交给 AI 分析，确认是启动器本身的问题还是模组的问题。如果能够确定是启动器的问题，可以在反馈页面向开发者提供反馈。</string>
     <string name="sts_crash_page_guidance_oom">这次运行很可能已经耗尽了 JVM 堆内存。重试前建议先打开设置，提高 JVM 堆上限；</string>
-    <string name="sts_crash_page_guidance_launch_preparation_process_disconnected">请勿在 patch 过程中退出到后台、切换到其他应用，或让系统清理本应用。请保持启动器停留在前台。</string>
     <string name="sts_crash_page_actions_title">快速操作</string>
     <string name="sts_crash_page_actions_desc">你可以立即重试，也可以先进入恢复设置再重新启动。下方崩溃文本支持选择和复制，也更方便做长截图。</string>
     <string name="sts_crash_page_action_recovery">打开设置</string>
@@ -423,7 +422,6 @@
     <string name="startup_failure_delegate_crashed_with_detail">游戏启动入口崩溃：%1$s</string>
     <string name="startup_failure_delegate_start_failed_with_detail">启动游戏入口失败：%1$s</string>
     <string name="startup_failure_launch_failed_with_detail">启动 JVM 失败：%1$s</string>
-    <string name="startup_failure_launch_preparation_process_disconnected">启动器在继续启动前与准备进程失去了连接。</string>
     <string name="startup_failure_legacy_patched_desktop_jar_requires_reimport">检测到当前导入的 desktop-1.0.jar 已被旧版启动器改写过，不能直接升级到新的兼容补丁方案。\n\n请打开“设置”并重新导入原版、未修改的 desktop-1.0.jar 后再启动。\n如果手头只有当前这份文件，请重新从游戏安装目录获取一份原始 jar。</string>
     <string name="startup_failure_context_last_phase_with_percent">最后阶段 %1$d%%：%2$s</string>
     <string name="startup_failure_context_last_phase">最后阶段：%1$s</string>
@@ -1906,6 +1904,8 @@
     <string name="settings_ram_saver_title">启用内存优化</string>
     <string name="settings_ram_saver_desc">启用后，可以大幅降低内存，但是会小幅增加功耗，建议打开，如果遇到卡顿、发热严重等问题，可以关闭。</string>
     <string name="settings_ram_saver_experimental_chip">实验性</string>
+    <string name="settings_mts_patch_cache_title">启用模组缓存</string>
+    <string name="settings_mts_patch_cache_desc">启用后，每次启动游戏会建立缓存，只要不改变模组，即可大幅提升启动游戏的时间。</string>
     <string name="settings_performance_overlay_enabled">性能叠层：开启</string>
     <string name="settings_performance_overlay_disabled">性能叠层：关闭</string>
     <string name="settings_performance_overlay_desc">控制是否在游戏中显示实时 FPS / 内存信息。</string>

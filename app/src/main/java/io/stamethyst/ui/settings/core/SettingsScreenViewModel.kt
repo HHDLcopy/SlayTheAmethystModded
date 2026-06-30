@@ -78,6 +78,7 @@ import io.stamethyst.backend.render.RendererSelectionMode
 import io.stamethyst.backend.render.VirtualResolutionMode
 import io.stamethyst.backend.launch.JvmLogRotationManager
 import io.stamethyst.backend.launch.MtsClasspathWarmupCoordinator
+import io.stamethyst.backend.launch.MtsPatchCacheCoordinator
 import io.stamethyst.backend.launch.MtsStartupCacheCoordinator
 import io.stamethyst.backend.mods.AtlasOfflineDownscaleStrategy
 import io.stamethyst.backend.mods.ImportDownscaleMaterialPolicy
@@ -128,7 +129,6 @@ import io.stamethyst.ui.main.ModManifestNameMigration
 import io.stamethyst.ui.main.ModManifestNameMigrationProgress
 import io.stamethyst.ui.main.ModManifestNameMigrationSpaceCheck
 import io.stamethyst.ui.main.ModManifestNameMigrationStorageException
-import io.stamethyst.ui.resolve
 import io.stamethyst.ui.UiBusyOperation
 import io.stamethyst.ui.preferences.LauncherPreferences
 import java.io.BufferedInputStream
@@ -343,6 +343,7 @@ class SettingsScreenViewModel : ViewModel() {
         val avoidDisplayCutout: Boolean = LauncherPreferences.DEFAULT_AVOID_DISPLAY_CUTOUT,
         val cropScreenBottom: Boolean = LauncherPreferences.DEFAULT_CROP_SCREEN_BOTTOM,
         val ramSaverEnabled: Boolean = LauncherPreferences.DEFAULT_RAM_SAVER_ENABLED,
+        val mtsPatchCacheEnabled: Boolean = LauncherPreferences.DEFAULT_MTS_PATCH_CACHE_ENABLED,
         val keepScreenOnTimeoutMinutes: Int =
             LauncherPreferences.DEFAULT_KEEP_SCREEN_ON_TIMEOUT_MINUTES,
         val showGamePerformanceOverlay: Boolean = LauncherPreferences.DEFAULT_SHOW_GAME_PERFORMANCE_OVERLAY,
@@ -3037,6 +3038,15 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(host)
     }
 
+    fun onMtsPatchCacheEnabledChanged(host: Activity, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        uiState = uiState.copy(mtsPatchCacheEnabled = enabled)
+        saveMtsPatchCacheEnabledSelection(host, enabled)
+        refreshStatus(host)
+    }
+
     fun onKeepScreenOnTimeoutSelected(host: Activity, timeoutMinutes: Int) {
         if (uiState.busy) {
             return
@@ -3563,6 +3573,7 @@ class SettingsScreenViewModel : ViewModel() {
             avoidDisplayCutout = input.avoidDisplayCutout,
             cropScreenBottom = input.cropScreenBottom,
             ramSaverEnabled = input.ramSaverEnabled,
+            mtsPatchCacheEnabled = input.mtsPatchCacheEnabled,
             keepScreenOnTimeoutMinutes = input.keepScreenOnTimeoutMinutes,
             showGamePerformanceOverlay = diagnostics.showGamePerformanceOverlay,
             sustainedPerformanceModeEnabled = diagnostics.sustainedPerformanceModeEnabled,
@@ -4770,6 +4781,13 @@ class SettingsScreenViewModel : ViewModel() {
 
     private fun saveRamSaverEnabledSelection(host: Activity, enabled: Boolean) {
         LauncherPreferences.setRamSaverEnabled(host, enabled)
+    }
+
+    private fun saveMtsPatchCacheEnabledSelection(host: Activity, enabled: Boolean) {
+        LauncherPreferences.setMtsPatchCacheEnabled(host, enabled)
+        if (!enabled) {
+            MtsPatchCacheCoordinator.clear(host)
+        }
     }
 
     private fun saveLwjglDebugSelection(host: Activity, enabled: Boolean) {

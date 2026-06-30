@@ -4,6 +4,7 @@ final class BootBridgeGameStateWatcher {
     private static final long WATCHER_POLL_MS = 120L;
     private static final int READY_CONFIRM_TICKS = 3;
     private static final int CONSOLE_FALLBACK_FAIL_TICKS = 90;
+    private static final int CONSOLE_FALLBACK_WITHOUT_SPLASH_TICKS = 200;
     private static final float SPLASH_VISIBLE_ALPHA_THRESHOLD = 0.06f;
 
     private final BootBridgeReporter reporter;
@@ -26,7 +27,8 @@ final class BootBridgeGameStateWatcher {
     private void runLoop() {
         int readyTicks = 0;
         int reflectionFailureTicks = 0;
-        boolean splashSignaled = false;
+        boolean splashSignaledInCurrentSplash = false;
+        boolean startupVisualSignalSeen = false;
         String lastMainMenuScreen = "";
 
         while (!reporter.isReadySent() && !reporter.isFailSent()) {
@@ -35,13 +37,23 @@ final class BootBridgeGameStateWatcher {
                 reflectionFailureTicks = 0;
                 if (snapshot == null) {
                     readyTicks = 0;
-                    splashSignaled = false;
+                    splashSignaledInCurrentSplash = false;
                     lastMainMenuScreen = "";
                     sleepQuietly(WATCHER_POLL_MS);
                     continue;
                 }
 
-                if (isReadyGameState(snapshot)) {
+                if ("SPLASH".equals(snapshot.modeName)) {
+                    if (!splashSignaledInCurrentSplash && isSplashLogoVisible(snapshot)) {
+                        reporter.splash(BootBridgeStartupMessage.key("game_splash"));
+                        splashSignaledInCurrentSplash = true;
+                        startupVisualSignalSeen = true;
+                    }
+                } else {
+                    splashSignaledInCurrentSplash = false;
+                }
+
+                if (isReadyGameState(snapshot, startupVisualSignalSeen)) {
                     readyTicks += 1;
                     if (readyTicks >= READY_CONFIRM_TICKS) {
                         reporter.ready(BootBridgeStartupMessage.key("game_ready"));
@@ -49,15 +61,6 @@ final class BootBridgeGameStateWatcher {
                     }
                 } else {
                     readyTicks = 0;
-                }
-
-                if ("SPLASH".equals(snapshot.modeName)) {
-                    if (!splashSignaled && isSplashLogoVisible(snapshot)) {
-                        reporter.splash(BootBridgeStartupMessage.key("game_splash"));
-                        splashSignaled = true;
-                    }
-                } else {
-                    splashSignaled = false;
                 }
 
                 if ("CHAR_SELECT".equals(snapshot.modeName) && snapshot.hasMainMenuScreen) {
@@ -72,7 +75,16 @@ final class BootBridgeGameStateWatcher {
             } catch (Throwable ignored) {
                 readyTicks = 0;
                 reflectionFailureTicks += 1;
-                if (reporter.hasConsoleReadyHint() && reflectionFailureTicks >= CONSOLE_FALLBACK_FAIL_TICKS) {
+                if (!reporter.hasConsoleReadyHint()) {
+                    sleepQuietly(WATCHER_POLL_MS);
+                    continue;
+                }
+                if (startupVisualSignalSeen && reflectionFailureTicks >= CONSOLE_FALLBACK_FAIL_TICKS) {
+                    reporter.ready(BootBridgeStartupMessage.key("game_ready"));
+                    return;
+                }
+                if (reflectionFailureTicks >= CONSOLE_FALLBACK_WITHOUT_SPLASH_TICKS) {
+                    reporter.splash(BootBridgeStartupMessage.key("game_splash"));
                     reporter.ready(BootBridgeStartupMessage.key("game_ready"));
                     return;
                 }
@@ -81,12 +93,18 @@ final class BootBridgeGameStateWatcher {
         }
     }
 
-    private static boolean isReadyGameState(BootBridgeGameStateProbe.Snapshot snapshot) {
+    static boolean isReadyGameState(
+            BootBridgeGameStateProbe.Snapshot snapshot,
+            boolean startupVisualSignalSeen
+    ) {
         if (snapshot == null) {
             return false;
         }
         if ("GAMEPLAY".equals(snapshot.modeName) || "DUNGEON_TRANSITION".equals(snapshot.modeName)) {
             return true;
+        }
+        if (!startupVisualSignalSeen) {
+            return false;
         }
         if (!"CHAR_SELECT".equals(snapshot.modeName)) {
             return false;

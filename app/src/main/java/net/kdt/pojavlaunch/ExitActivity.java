@@ -59,10 +59,11 @@ public class ExitActivity extends AppCompatActivity {
         }
         if (code == 0 && logCrash == null) {
             ExpectedGameExitNotice.markExpectedGameExit(context, "native_exit_zero");
+            startLauncherReturnNowOrScheduleFallback(context);
             return;
         }
         if (logCrash == null && ExpectedGameExitNotice.isExpectedGameExitRecent(context, 0L)) {
-            ExpectedGameExitNotice.consumeExpectedGameExitIfRecent(context, 0L);
+            startLauncherReturnNowOrScheduleFallback(context);
             return;
         }
         Intent intent = new Intent(context, ExitActivity.class);
@@ -73,6 +74,26 @@ public class ExitActivity extends AppCompatActivity {
         }
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
         context.startActivity(intent);
+    }
+
+    private static void startLauncherReturnNowOrScheduleFallback(Context context) {
+        if (startLauncherReturnNow(context)) {
+            return;
+        }
+        LauncherReturnCoordinator.scheduleLauncherRestart(
+                context,
+                LAUNCHER_RESTART_DELAY_MS,
+                false
+        );
+    }
+
+    private static boolean startLauncherReturnNow(Context context) {
+        try {
+            context.startActivity(LauncherReturnCoordinator.createReturnIntent(context));
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     @Nullable

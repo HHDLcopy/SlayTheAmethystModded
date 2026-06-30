@@ -56,7 +56,8 @@ class LogcatCaptureServiceTest {
     fun isTrackedProcessName_matchesBaseAndChildProcesses() {
         assertTrue(LogcatCaptureService.isTrackedProcessName("io.stamethyst", "io.stamethyst"))
         assertTrue(LogcatCaptureService.isTrackedProcessName("io.stamethyst:game", "io.stamethyst"))
-        assertTrue(LogcatCaptureService.isTrackedProcessName("io.stamethyst:prep", "io.stamethyst"))
+        assertTrue(LogcatCaptureService.isTrackedProcessName("io.stamethyst:diag", "io.stamethyst"))
+        assertTrue(LogcatCaptureService.isTrackedProcessName("io.stamethyst:logcat", "io.stamethyst"))
         assertFalse(LogcatCaptureService.isTrackedProcessName("other.process", "io.stamethyst"))
         assertFalse(LogcatCaptureService.isTrackedProcessName("io.stamethystx", "io.stamethyst"))
     }

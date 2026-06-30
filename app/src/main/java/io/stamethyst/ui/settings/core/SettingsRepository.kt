@@ -17,6 +17,7 @@ import io.stamethyst.R
 import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.mods.ImportDownscaleMaterialPolicy
 import io.stamethyst.backend.mods.RuntimeDownscaleMaterialPolicy
+import io.stamethyst.backend.launch.MtsPatchCacheCoordinator
 import io.stamethyst.backend.render.AndroidGameModeSnapshot
 import io.stamethyst.backend.render.AndroidGameModeSupport
 import io.stamethyst.backend.render.MobileGluesConfigFile
@@ -103,6 +104,7 @@ internal object SettingsRepository {
         val avoidDisplayCutout: Boolean,
         val cropScreenBottom: Boolean,
         val ramSaverEnabled: Boolean,
+        val mtsPatchCacheEnabled: Boolean,
         val keepScreenOnTimeoutMinutes: Int,
         val touchscreenEnabled: Boolean,
         val cardPlayOptimizationMode: CardPlayOptimizationMode,
@@ -248,6 +250,7 @@ internal object SettingsRepository {
                 avoidDisplayCutout = LauncherPreferences.isDisplayCutoutAvoidanceEnabled(context),
                 cropScreenBottom = LauncherPreferences.isScreenBottomCropEnabled(context),
                 ramSaverEnabled = LauncherPreferences.isRamSaverEnabled(context),
+                mtsPatchCacheEnabled = LauncherPreferences.isMtsPatchCacheEnabled(context),
                 keepScreenOnTimeoutMinutes = LauncherPreferences.readKeepScreenOnTimeoutMinutes(context),
                 touchscreenEnabled = GameplaySettingsService.readTouchscreenEnabled(context),
                 cardPlayOptimizationMode =
@@ -423,6 +426,13 @@ internal object SettingsRepository {
             context,
             LauncherPreferences.DEFAULT_RAM_SAVER_ENABLED
         )
+        LauncherPreferences.setMtsPatchCacheEnabled(
+            context,
+            LauncherPreferences.DEFAULT_MTS_PATCH_CACHE_ENABLED
+        )
+        if (!LauncherPreferences.DEFAULT_MTS_PATCH_CACHE_ENABLED) {
+            MtsPatchCacheCoordinator.clear(context)
+        }
         LauncherPreferences.saveKeepScreenOnTimeoutMinutes(
             context,
             LauncherPreferences.DEFAULT_KEEP_SCREEN_ON_TIMEOUT_MINUTES

@@ -17,7 +17,8 @@ object MainProcessGameBodyPatchCoordinator {
     fun prepareBeforeLaunch(
         context: Context,
         launchMode: String,
-        progressCallback: StartupProgressCallback? = null
+        progressCallback: StartupProgressCallback? = null,
+        assumeComponentInstallComplete: Boolean = false
     ) {
         if (!StsLaunchSpec.isMtsLaunchMode(launchMode)) {
             return
@@ -38,14 +39,16 @@ object MainProcessGameBodyPatchCoordinator {
             progressCallback
         }
 
-        ComponentInstaller.ensureInstalled(
-            context = appContext,
-            progressCallback = mapProgressRange(
-                visibleProgressCallback,
-                0,
-                COMPONENT_PREPARE_END_PERCENT
+        if (!assumeComponentInstallComplete) {
+            ComponentInstaller.ensureInstalled(
+                context = appContext,
+                progressCallback = mapProgressRange(
+                    visibleProgressCallback,
+                    0,
+                    COMPONENT_PREPARE_END_PERCENT
+                )
             )
-        )
+        }
 
         val alreadyPatched = StsDesktopJarPatcher.isPatchedWithCurrentPatch(stsJar, patchJar)
         MemoryDiagnosticsLogger.logEvent(

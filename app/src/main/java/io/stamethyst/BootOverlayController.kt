@@ -74,6 +74,57 @@ import java.io.RandomAccessFile
 import java.nio.charset.StandardCharsets
 import kotlin.math.roundToInt
 
+internal class BootOverlayFrameDismissGate(
+    private val readyDelayMs: Long,
+    private val requiredPostSignalFrames: Int
+) {
+    private var requested = false
+    private var requestFrameTimestampNs = 0L
+    private var requestedAtMs = 0L
+    private var lastAcceptedFrameTimestampNs = 0L
+    private var postSignalFrameCount = 0
+
+    val pending: Boolean get() = requested
+
+    fun request(frameTimestampNs: Long, nowMs: Long) {
+        requested = true
+        requestFrameTimestampNs = frameTimestampNs
+        requestedAtMs = nowMs
+        lastAcceptedFrameTimestampNs = frameTimestampNs
+        postSignalFrameCount = 0
+    }
+
+    fun reset() {
+        requested = false
+        requestFrameTimestampNs = 0L
+        requestedAtMs = 0L
+        lastAcceptedFrameTimestampNs = 0L
+        postSignalFrameCount = 0
+    }
+
+    fun shouldDismissOnFrame(frameTimestampNs: Long, nowMs: Long): Boolean {
+        if (!requested || frameTimestampNs <= requestFrameTimestampNs) {
+            return false
+        }
+        if (frameTimestampNs == lastAcceptedFrameTimestampNs) {
+            return false
+        }
+
+        lastAcceptedFrameTimestampNs = frameTimestampNs
+        postSignalFrameCount += 1
+
+        if (nowMs - requestedAtMs < readyDelayMs) {
+            return false
+        }
+        if (postSignalFrameCount < requiredPostSignalFrames) {
+            return false
+        }
+
+        reset()
+        return true
+    }
+}
+
 
 /**
  * Manages the boot overlay UI: progress bar, status text, and dismiss button.
@@ -94,6 +145,7 @@ class BootOverlayController(
         private const val JVM_LOG_MAX_LINES = 100
         private const val JVM_LOG_STAGE_SCAN_MAX_BYTES = 64 * 1024
         private const val MAX_STATUS_LINE_LENGTH = 180
+        private const val TEXTURE_VIEW_READY_POST_SIGNAL_FRAMES = 2
     }
 
     private enum class BootLogStage(
@@ -173,6 +225,10 @@ class BootOverlayController(
     private var parsedJvmLogRemainder = ""
     private var bootLogStage = BootLogStage.NONE
     private var surfaceViewLateDismissScheduled = false
+    private val textureViewDismissGate = BootOverlayFrameDismissGate(
+        readyDelayMs = BOOT_OVERLAY_READY_DELAY_MS,
+        requiredPostSignalFrames = TEXTURE_VIEW_READY_POST_SIGNAL_FRAMES
+    )
     @Volatile
     private var manualEnterGameReady = false
     private val surfaceViewLateDismissRunnable = Runnable {
@@ -276,6 +332,9 @@ class BootOverlayController(
         bootLogStage = BootLogStage.NONE
         surfaceViewLateDismissScheduled = false
         manualEnterGameReady = false
+        textureViewDismissGate.reset()
+        earlyOverlayDismissOnNextFrame = false
+        earlyOverlayDismissRequestFrameTimestampNs = 0L
         overlayUiState = overlayUiState.copy(
             enterGameReady = false,
             jvmLogText = "",
@@ -298,6 +357,8 @@ class BootOverlayController(
         bootOverlay?.disposeComposition()
         bootOverlay = null
         earlyOverlayDismissOnNextFrame = false
+        earlyOverlayDismissRequestFrameTimestampNs = 0L
+        textureViewDismissGate.reset()
         activity.setBootOverlayKeepScreenOn(false)
     }
 
@@ -390,6 +451,7 @@ class BootOverlayController(
         bootOverlay?.removeCallbacks(surfaceViewLateDismissRunnable)
         earlyOverlayDismissOnNextFrame = false
         earlyOverlayDismissRequestFrameTimestampNs = 0L
+        textureViewDismissGate.reset()
 
         bootOverlay?.visibility = View.GONE
         activity.setBootOverlayKeepScreenOn(false)
@@ -399,24 +461,33 @@ class BootOverlayController(
 
     fun setEarlyDismissRequestTimestamp(timestampNs: Long) {
         earlyOverlayDismissRequestFrameTimestampNs = timestampNs
+        textureViewDismissGate.request(timestampNs, SystemClock.uptimeMillis())
         earlyOverlayDismissOnNextFrame = true
     }
 
     fun onTextureFrameUpdate(currentTimestampNs: Long) {
-        if (earlyOverlayDismissOnNextFrame &&
-            currentTimestampNs > earlyOverlayDismissRequestFrameTimestampNs
+        if (!earlyOverlayDismissOnNextFrame) {
+            return
+        }
+        if (!textureViewDismissGate.shouldDismissOnFrame(
+                frameTimestampNs = currentTimestampNs,
+                nowMs = SystemClock.uptimeMillis()
+            )
         ) {
-            earlyOverlayDismissOnNextFrame = false
-            activity.runOnUiThread {
-                updateProgress(
-                    bootOverlayProgress.coerceAtLeast(99),
-                    text(R.string.boot_overlay_status_game_frame_ready)
-                )
-                if (manualDismissBootOverlay) {
-                    markManualEnterGameReady()
-                } else {
-                    dismiss()
-                }
+            return
+        }
+
+        earlyOverlayDismissOnNextFrame = false
+        earlyOverlayDismissRequestFrameTimestampNs = 0L
+        activity.runOnUiThread {
+            updateProgress(
+                bootOverlayProgress.coerceAtLeast(99),
+                text(R.string.boot_overlay_status_game_frame_ready)
+            )
+            if (manualDismissBootOverlay) {
+                markManualEnterGameReady()
+            } else {
+                dismiss()
             }
         }
     }

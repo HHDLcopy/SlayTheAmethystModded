@@ -793,7 +793,6 @@ fi
         package_needles = (
             package_name,
             f"{package_name}:game",
-            f"{package_name}:prep",
             f"{package_name}:diag",
             f"Process: {package_name}",
             f">>> {package_name}",
@@ -875,7 +874,6 @@ fi
         package_name = self.application_id or ""
         launcher_pid = self.process_pid_text(package_name)
         game_pid = self.process_pid_text(f"{package_name}:game")
-        prep_pid = self.process_pid_text(f"{package_name}:prep")
         diag_pid = self.process_pid_text(f"{package_name}:diag")
         logcat_pid = self.process_pid_text(f"{package_name}:logcat")
 
@@ -923,7 +921,6 @@ fi
             "processes": {
                 "launcher": launcher_pid,
                 "game": game_pid,
-                "prep": prep_pid,
                 "diag": diag_pid,
                 "logcat": logcat_pid,
             },

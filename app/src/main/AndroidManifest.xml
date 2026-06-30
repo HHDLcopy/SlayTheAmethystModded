@@ -69,11 +69,6 @@
             android:theme="@style/Base.Theme.AppCompat" />
 
         <service
-            android:name="io.stamethyst.backend.launch.LaunchPreparationProcessService"
-            android:exported="false"
-            android:process=":prep" />
-
-        <service
             android:name="io.stamethyst.backend.diag.DiagnosticsProcessService"
             android:exported="false"
             android:process=":diag" />
@@ -107,6 +102,7 @@
             android:name="io.stamethyst.LauncherActivity"
             android:exported="true"
             android:enableOnBackInvokedCallback="false"
+            android:launchMode="singleTop"
             android:screenOrientation="fullUser"
             tools:targetApi="33">
             <intent-filter>

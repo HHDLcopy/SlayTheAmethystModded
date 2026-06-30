@@ -240,6 +240,36 @@ class MtsPatchCacheCoordinatorTest {
         )
     }
 
+    @Test
+    fun cacheRuntimePropertiesStayDisabledWhenFeatureIsOff() {
+        val args = arrayListOf<String>()
+        val cachedJar = File("desktop-1.0-modded.jar")
+        val markerFile = File(".mts_patch_cache")
+        val packageDir = File("package")
+
+        MtsPatchCacheCoordinator.appendRuntimeProperties(
+            args = args,
+            enabled = false,
+            cacheCurrent = false,
+            cachedJar = cachedJar,
+            markerFile = markerFile,
+            packageDir = packageDir,
+            expectedMarker = ""
+        )
+
+        assertEquals(
+            listOf(
+                "-Damethyst.mts.patch_cache.enabled=false",
+                "-Damethyst.mts.patch_cache.current=false",
+                "-Damethyst.mts.patch_cache.jar=${cachedJar.absolutePath}",
+                "-Damethyst.mts.patch_cache.marker=${markerFile.absolutePath}",
+                "-Damethyst.mts.patch_cache.package_dir=${packageDir.absolutePath}",
+                "-Damethyst.mts.patch_cache.expected="
+            ),
+            args
+        )
+    }
+
     private fun writeFile(root: File, name: String, text: String): File {
         val file = File(root, name)
         file.parentFile?.mkdirs()

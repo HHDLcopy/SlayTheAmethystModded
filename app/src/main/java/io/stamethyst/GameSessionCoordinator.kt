@@ -11,6 +11,8 @@ import io.stamethyst.backend.diag.MemoryDiagnosticsLogger
 import io.stamethyst.backend.launch.progressText
 import io.stamethyst.backend.crash.LatestLogCrashDetector
 import io.stamethyst.backend.launch.BackExitNotice
+import io.stamethyst.backend.launch.ExpectedGameExitNotice
+import io.stamethyst.backend.launch.ExpectedGameExitReturnPolicy
 import io.stamethyst.backend.render.AndroidGameModeSupport
 import io.stamethyst.backend.render.DisplayConfigSync
 import io.stamethyst.backend.launch.JvmLaunchController
@@ -41,6 +43,8 @@ internal class GameSessionCoordinator(
         private const val KEYBOARD_REQUEST_POLL_MS = 120L
         private const val FILE_PICKER_REQUEST_POLL_MS = 120L
         private const val RESCUE_TOAST_REQUEST_POLL_MS = 120L
+        private const val EXPECTED_GAME_EXIT_PROCESS_KILL_DELAY_MS = 1500L
+        private const val EXPECTED_GAME_EXIT_LAUNCHER_RESTART_DELAY_MS = 180L
         private val FOREGROUND_AUDIO_RESTORE_DELAYS_MS = longArrayOf(150L, 400L, 1000L, 2200L)
     }
 
@@ -57,9 +61,13 @@ internal class GameSessionCoordinator(
     private var crashReturnTriggered = false
 
     @Volatile
+    private var expectedGameExitReturnTriggered = false
+
+    @Volatile
     private var activityResumed = false
 
     private var waitingLandscapeSinceMs = -1L
+    private var jvmLaunchStartedWallTimeMs = 0L
     private var startCheckPosted = false
     private var lastKeyboardRequestPayload = ""
     private var lastFilePickerRequestPayload = ""
@@ -71,6 +79,7 @@ internal class GameSessionCoordinator(
     @Volatile
     private var destroyed = false
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val expectedGameExitReturnPolicy = ExpectedGameExitReturnPolicy()
     private var pendingAudioDeviceRecovery = false
     private val foregroundAudioRestoreRunnables = mutableListOf<Runnable>()
     private val foregroundAudioPolicy = ForegroundAudioPolicy()
@@ -81,6 +90,11 @@ internal class GameSessionCoordinator(
     private val backExitForceRestartRunnable = Runnable {
         if (backExitRequested) {
             forceRestartLauncherAndTerminateProcess()
+        }
+    }
+    private val expectedGameExitReturnWatchdogRunnable = object : Runnable {
+        override fun run() {
+            pollExpectedGameExitReturn()
         }
     }
     private val keyboardRequestPollRunnable = object : Runnable {
@@ -152,6 +166,7 @@ internal class GameSessionCoordinator(
         onRuntimeCrashDetected = { detail -> handleRuntimeCrashDetected(detail) },
         onRuntimeReady = {
             activity.runOnUiThread {
+                startExpectedGameExitReturnWatchdog()
                 applyForegroundWindowState()
                 updateFloatingMouseVisibility()
                 startKeyboardRequestPolling()
@@ -199,6 +214,7 @@ internal class GameSessionCoordinator(
         destroyed = true
         cancelStartCheck()
         cancelBackExitForceRestart()
+        cancelExpectedGameExitReturnWatchdog()
         stopKeyboardRequestPolling()
         stopFilePickerRequestPolling()
         stopRescueToastRequestPolling()
@@ -355,6 +371,8 @@ internal class GameSessionCoordinator(
         )
 
         syncRuntimeForegroundState(true)
+        ExpectedGameExitNotice.clearExpectedGameExit(activity)
+        jvmLaunchStartedWallTimeMs = System.currentTimeMillis()
         jvmLaunchController.start(
             javaHome = javaHome,
             bootOverlayController = bootOverlayController
@@ -378,8 +396,9 @@ internal class GameSessionCoordinator(
     }
 
     private fun handleJvmExit(exitCode: Int) {
+        cancelExpectedGameExitReturnWatchdog()
         onJvmLaunchFinished()
-        if (crashReturnTriggered) {
+        if (crashReturnTriggered || expectedGameExitReturnTriggered) {
             return
         }
         val heapPressureNotice = if (exitCode == 0) {
@@ -448,6 +467,8 @@ internal class GameSessionCoordinator(
                     activity.startActivity(
                         LauncherReturnCoordinator.createHeapPressureIntent(activity, heapPressureNotice)
                     )
+                } else {
+                    activity.startActivity(LauncherReturnCoordinator.createReturnIntent(activity))
                 }
                 activity.finish()
             } else {
@@ -462,6 +483,7 @@ internal class GameSessionCoordinator(
     }
 
     private fun handleJvmLaunchFailed(throwable: Throwable) {
+        cancelExpectedGameExitReturnWatchdog()
         onJvmLaunchFinished()
         if (crashReturnTriggered) {
             return
@@ -498,6 +520,7 @@ internal class GameSessionCoordinator(
     }
 
     private fun signalLaunchFailure(detail: String) {
+        cancelExpectedGameExitReturnWatchdog()
         if (crashReturnTriggered) {
             return
         }
@@ -525,6 +548,7 @@ internal class GameSessionCoordinator(
     }
 
     private fun handleRuntimeCrashDetected(detail: String) {
+        cancelExpectedGameExitReturnWatchdog()
         if (backExitRequested || !tryMarkCrashReturnTriggered()) {
             return
         }
@@ -550,6 +574,7 @@ internal class GameSessionCoordinator(
         if (backExitRequested) {
             return
         }
+        cancelExpectedGameExitReturnWatchdog()
         MemoryDiagnosticsLogger.logEvent(
             activity,
             "game_session_back_exit_requested",
@@ -642,6 +667,92 @@ internal class GameSessionCoordinator(
         }
         activity.finishAffinity()
         android.os.Process.killProcess(android.os.Process.myPid())
+    }
+
+    private fun startExpectedGameExitReturnWatchdog() {
+        cancelExpectedGameExitReturnWatchdog()
+        expectedGameExitReturnTriggered = false
+        expectedGameExitReturnPolicy.reset()
+        mainHandler.postDelayed(
+            expectedGameExitReturnWatchdogRunnable,
+            ExpectedGameExitReturnPolicy.DEFAULT_POLL_INTERVAL_MS
+        )
+    }
+
+    private fun cancelExpectedGameExitReturnWatchdog() {
+        try {
+            mainHandler.removeCallbacks(expectedGameExitReturnWatchdogRunnable)
+        } catch (_: Throwable) {
+        }
+        expectedGameExitReturnPolicy.reset()
+    }
+
+    private fun pollExpectedGameExitReturn() {
+        val launchStartedAtMs = jvmLaunchStartedWallTimeMs
+        val markerRecent = launchStartedAtMs > 0L &&
+            ExpectedGameExitNotice.isExpectedGameExitRecent(activity, launchStartedAtMs)
+        val active = !destroyed &&
+            !activity.isFinishing &&
+            !activity.isDestroyed &&
+            !backExitRequested &&
+            !crashReturnTriggered &&
+            !expectedGameExitReturnTriggered &&
+            jvmLaunchController.runtimeLifecycleReady
+        when (
+            expectedGameExitReturnPolicy.evaluate(
+                nowElapsedMs = SystemClock.uptimeMillis(),
+                expectedExitMarkerRecent = markerRecent,
+                active = active
+            )
+        ) {
+            ExpectedGameExitReturnPolicy.Decision.ContinuePolling -> {
+                mainHandler.postDelayed(
+                    expectedGameExitReturnWatchdogRunnable,
+                    ExpectedGameExitReturnPolicy.DEFAULT_POLL_INTERVAL_MS
+                )
+            }
+
+            ExpectedGameExitReturnPolicy.Decision.StopPolling -> Unit
+            ExpectedGameExitReturnPolicy.Decision.ReturnToLauncher -> {
+                returnToLauncherAfterExpectedGameExitMarker()
+            }
+        }
+    }
+
+    private fun returnToLauncherAfterExpectedGameExitMarker() {
+        if (expectedGameExitReturnTriggered || backExitRequested || crashReturnTriggered || destroyed) {
+            return
+        }
+        expectedGameExitReturnTriggered = true
+        onJvmLaunchFinished()
+        updateSystemGameState()
+        BackExitNotice.markLauncherReturnHandledInProcess()
+        MemoryDiagnosticsLogger.logEvent(
+            activity,
+            "game_session_expected_exit_watchdog_return",
+            mapOf(
+                "launchMode" to config.launchMode,
+                "launchStartedAtMs" to jvmLaunchStartedWallTimeMs,
+                "runtimeLifecycleReady" to jvmLaunchController.runtimeLifecycleReady
+            )
+        )
+        val launchedImmediately = try {
+            activity.startActivity(LauncherReturnCoordinator.createReturnIntent(activity))
+            true
+        } catch (_: Throwable) {
+            false
+        }
+        if (!launchedImmediately) {
+            LauncherReturnCoordinator.scheduleLauncherRestart(
+                context = activity,
+                delayMs = EXPECTED_GAME_EXIT_LAUNCHER_RESTART_DELAY_MS,
+                markExpectedBackExitRestart = false
+            )
+        }
+        activity.finish()
+        mainHandler.postDelayed({
+            android.os.Process.killProcess(android.os.Process.myPid())
+        }, EXPECTED_GAME_EXIT_PROCESS_KILL_DELAY_MS)
     }
 
     private fun reportCrashAndReturn(

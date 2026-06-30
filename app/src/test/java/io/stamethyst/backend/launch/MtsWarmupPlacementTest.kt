@@ -17,17 +17,49 @@ class MtsWarmupPlacementTest {
     }
 
     @Test
-    fun launcherFlowRunsMtsWarmupBeforeStartingGameActivityProcess() {
+    fun launcherFlowRunsLaunchPreparationBeforeStartingGameActivityProcess() {
         val source = readSource(
             "app/src/main/java/io/stamethyst/ui/main/MainScreenViewModel.kt"
         )
         val preparationIndex =
-            source.indexOf("MainProcessMtsLaunchPreparationCoordinator.prepareBeforeLaunch")
+            source.indexOf("MainProcessLaunchPreparationCoordinator.prepareBeforeLaunch")
         val launchIndex = source.indexOf("            StsGameActivity.launch(")
 
         assertTrue(preparationIndex >= 0)
         assertTrue(launchIndex >= 0)
         assertTrue(preparationIndex < launchIndex)
+    }
+
+    @Test
+    fun jvmLaunchControllerDoesNotUsePrepProcessClient() {
+        val source = readSource(
+            "app/src/main/java/io/stamethyst/backend/launch/JvmLaunchController.kt"
+        )
+
+        assertFalse(source.contains("LaunchPreparationProcessClient"))
+    }
+
+    @Test
+    fun failedGameActivityLaunchClearsLauncherBackgroundFlag() {
+        val source = readSource(
+            "app/src/main/java/io/stamethyst/ui/main/MainScreenViewModel.kt"
+        )
+
+        assertTrue(source.contains("markBackgroundForGameLaunch()"))
+        assertTrue(source.contains("clearBackgroundForGameLaunch()"))
+    }
+
+    @Test
+    fun expectedExitWatchdogStartsAfterRuntimeReadyInsteadOfAtLaunchBegin() {
+        val source = readSource(
+            "app/src/main/java/io/stamethyst/GameSessionCoordinator.kt"
+        )
+
+        val runtimeReadySnippet = "onRuntimeReady = {\n            activity.runOnUiThread {\n                startExpectedGameExitReturnWatchdog()"
+        val launchBeginSnippet = "jvmLaunchStartedWallTimeMs = System.currentTimeMillis()\n        startExpectedGameExitReturnWatchdog()"
+
+        assertTrue(source.contains(runtimeReadySnippet))
+        assertFalse(source.contains(launchBeginSnippet))
     }
 
     private fun readSource(path: String): String {

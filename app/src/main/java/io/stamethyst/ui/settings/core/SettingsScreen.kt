@@ -143,6 +143,9 @@ fun LauncherSettingsGameScreen(
         onRamSaverEnabledChanged = { enabled ->
             viewModel.onRamSaverEnabledChanged(activity, enabled)
         },
+        onMtsPatchCacheEnabledChanged = { enabled ->
+            viewModel.onMtsPatchCacheEnabledChanged(activity, enabled)
+        },
         onKeepScreenOnTimeoutSelected = { timeoutMinutes ->
             viewModel.onKeepScreenOnTimeoutSelected(activity, timeoutMinutes)
         },

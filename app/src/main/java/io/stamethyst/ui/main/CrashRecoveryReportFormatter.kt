@@ -4,16 +4,13 @@ import io.stamethyst.backend.launch.LaunchPreparationFailureMessageResolver
 
 internal data class CrashRecoveryReport(
     val summaryText: String,
-    val reportText: String,
-    val isLaunchPreparationProcessDisconnected: Boolean
+    val reportText: String
 )
 
 internal object CrashRecoveryReportFormatter {
     private val skippedSummaryLines = setOf("game crashed.", "cause:")
 
     fun format(detail: String?, fallbackMessage: String): CrashRecoveryReport {
-        val isLaunchPreparationProcessDisconnected =
-            LaunchPreparationFailureMessageResolver.hasPrepProcessFailureDetailMarker(detail)
         val normalizedFallback = LaunchPreparationFailureMessageResolver
             .stripInternalDetailMarkers(fallbackMessage)
             ?: fallbackMessage.trim()
@@ -31,8 +28,7 @@ internal object CrashRecoveryReportFormatter {
             ?: normalizedFallback
         return CrashRecoveryReport(
             summaryText = summaryText,
-            reportText = normalizedReport,
-            isLaunchPreparationProcessDisconnected = isLaunchPreparationProcessDisconnected
+            reportText = normalizedReport
         )
     }
 }

@@ -27,7 +27,7 @@ object LauncherReturnCoordinator {
     @JvmStatic
     fun createReturnIntent(context: Context): Intent {
         return Intent(context, LauncherActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
         }
     }
 

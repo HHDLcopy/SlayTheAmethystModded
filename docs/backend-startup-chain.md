@@ -7,7 +7,7 @@ Verified against implementation on 2026-03-08:
 - `StsGameActivity`
 - `GameSessionCoordinator`
 - `DiagnosticsProcessService`
-- `LaunchPreparationProcessService`
+- `MainProcessLaunchPreparationCoordinator`
 - `JvmLaunchController`
 - `LaunchPreparationService`
 - `StsLaunchSpec`
@@ -42,23 +42,26 @@ Verified against implementation on 2026-03-08:
 2. User action -> backend launch
 - `MainScreenViewModel.onLaunch(...)` calls `prepareAndLaunch(...)`
 - Default launch mode from main screen is `mts_basemod`
-- Flow starts `StsGameActivity` directly
+- Flow first runs launch preparation in the default app process, then starts `StsGameActivity`
 
 3. Surface ready gate
 - `StsGameActivity` owns the render surface and input dispatch
 - `GameSessionCoordinator` waits for valid render surface size/orientation
 - Calls `startJvmOnce()` only after readiness checks pass
 
-4. Preflight in short-lived prep process
-- `JvmLaunchController` starts `LaunchPreparationProcessService` in `:prep`
-- The service runs `LaunchPreparationService.prepare(...)` and streams progress back to `:game`
-- Once preparation completes, the `:prep` process exits and `:game` continues JVM bootstrap
-- Internally runs:
+4. Preflight in the launcher main process
+- `MainScreenViewModel` calls `MainProcessLaunchPreparationCoordinator.prepareBeforeLaunch(...)`
+- For every launch mode, the coordinator first runs `LaunchPreparationService.prepare(...)`
+- For MTS launches, the coordinator then continues with:
+  - `MainProcessGameBodyPatchCoordinator.prepareBeforeLaunch(...)`
+  - `MtsClasspathWarmupCoordinator.prepareForLaunch(...)`
+- Preparation progress stays in the launcher process/UI. Only after preparation succeeds does the flow start `StsGameActivity` in `:game`
+- Internally this chain runs:
   - `ComponentInstaller.ensureInstalled(...)`
   - `RuntimePackInstaller.ensureInstalled(...)`
   - `RuntimePaths.ensureBaseDirs(...)`
   - `StsJarValidator.validate(...)`
-  - MTS mode: `ModJarSupport.validate*` + `ModJarSupport.prepareMtsClasspath(...)` + `ModManager.resolveLaunchModIds(...)`
+  - MTS mode: `ModJarSupport.validate*` + `ModJarSupport.prepareMtsClasspath(...)` + `ModManager.resolveLaunchModIds(...)` + desktop jar/body patch cache warmup
 
 5. Runtime bootstrap
 - Resolve `javaHome` under `files/runtimes/Internal`
@@ -107,9 +110,10 @@ Verified against implementation on 2026-03-08:
 - `app/src/main/java/io/stamethyst/backend/diag/DiagnosticsProcessService.kt`
 - `app/src/main/java/io/stamethyst/backend/diag/DiagnosticsProcessClient.kt`
 - `app/src/main/java/io/stamethyst/backend/launch/JvmLaunchController.kt`
-- `app/src/main/java/io/stamethyst/backend/launch/LaunchPreparationProcessService.kt`
-- `app/src/main/java/io/stamethyst/backend/launch/LaunchPreparationProcessClient.kt`
+- `app/src/main/java/io/stamethyst/backend/launch/MainProcessLaunchPreparationCoordinator.kt`
 - `app/src/main/java/io/stamethyst/backend/launch/LaunchPreparationService.kt`
+- `app/src/main/java/io/stamethyst/backend/launch/MainProcessGameBodyPatchCoordinator.kt`
+- `app/src/main/java/io/stamethyst/backend/launch/MtsClasspathWarmupCoordinator.kt`
 - `app/src/main/java/io/stamethyst/backend/launch/StsLaunchSpec.kt`
 - `app/src/main/java/io/stamethyst/backend/launch/ComponentInstaller.kt`
 - `app/src/main/java/io/stamethyst/backend/runtime/RuntimePackInstaller.kt`
@@ -154,8 +158,8 @@ Verified against implementation on 2026-03-08:
 2. Split startup progress channels
 - Startup state is distributed across preparation progress callbacks, `latest.log` parsing, and boot bridge events
 
-3. Cross-process launcher/prep/diag/runtime boundary
-- Launcher UI, short-lived preparation work, diagnostics packaging, and game runtime are now split across the default process, `:prep`, `:diag`, and `:game`, so shared state must continue to flow through intents, `ResultReceiver`, preferences, or files instead of in-memory singletons
+3. Cross-process launcher/diag/runtime boundary
+- Launcher UI and preparation work now stay in the default process, while diagnostics packaging and game runtime remain split into `:diag` and `:game`. Shared state still has to flow through intents, `ResultReceiver`, preferences, or files instead of in-memory singletons
 
 4. Log export behavior drift risk
 - Gradle `stsPullLogs` bundle and Settings "Share Logs" bundle are intentionally close but currently not identical

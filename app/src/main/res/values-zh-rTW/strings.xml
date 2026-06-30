@@ -77,7 +77,6 @@
     <string name="sts_crash_page_capture_title">已捕獲崩潰</string>
     <string name="sts_crash_page_guidance_default">建議先自行排查問題，可以將日誌交給 AI 分析，確認是啟動器本身的問題還是模組的問題。如果能夠確定是啟動器的問題，可以在反饋頁面向開發者提供反饋。</string>
     <string name="sts_crash_page_guidance_oom">這次執行很可能已經耗盡了 JVM 堆記憶體。重試前建議先開啟設定，提高 JVM 堆上限；</string>
-    <string name="sts_crash_page_guidance_launch_preparation_process_disconnected">請勿在 patch 過程中退出到後臺、切換到其他應用，或讓系統清理本應用。請保持啟動器停留在前臺。</string>
     <string name="sts_crash_page_actions_title">快速操作</string>
     <string name="sts_crash_page_actions_desc">你可以立即重試，也可以先進入恢復設定再重新啟動。下方崩潰文字支援選擇和複製，也更方便做長截圖。</string>
     <string name="sts_crash_page_action_recovery">開啟設定</string>
@@ -424,7 +423,6 @@
     <string name="startup_failure_delegate_crashed_with_detail">遊戲啟動入口崩潰：%1$s</string>
     <string name="startup_failure_delegate_start_failed_with_detail">啟動遊戲入口失敗：%1$s</string>
     <string name="startup_failure_launch_failed_with_detail">啟動 JVM 失敗：%1$s</string>
-    <string name="startup_failure_launch_preparation_process_disconnected">啟動器在繼續啟動前與準備程序失去了連線。</string>
     <string name="startup_failure_legacy_patched_desktop_jar_requires_reimport">檢測到當前匯入的 desktop-1.0.jar 已被舊版啟動器改寫過，不能直接升級到新的相容補丁方案。\n\n請開啟“設定”並重新匯入原版、未修改的 desktop-1.0.jar 後再啟動。\n如果手頭只有當前這份檔案，請重新從遊戲安裝目錄獲取一份原始 jar。</string>
     <string name="startup_failure_context_last_phase_with_percent">最後階段 %1$d%%：%2$s</string>
     <string name="startup_failure_context_last_phase">最後階段：%1$s</string>
@@ -1905,6 +1903,8 @@
     <string name="settings_ram_saver_title">啟用記憶體最佳化</string>
     <string name="settings_ram_saver_desc">啟用後，可以大幅降低記憶體，但是會小幅增加功耗，建議打開，如果遇到卡頓、發熱嚴重等問題，可以關閉。</string>
     <string name="settings_ram_saver_experimental_chip">實驗性</string>
+    <string name="settings_mts_patch_cache_title">啟用模組快取</string>
+    <string name="settings_mts_patch_cache_desc">啟用後，每次啟動遊戲會建立快取，只要不改變模組，即可大幅提升啟動遊戲的時間。</string>
     <string name="settings_performance_overlay_enabled">效能疊層：開啟</string>
     <string name="settings_performance_overlay_disabled">效能疊層：關閉</string>
     <string name="settings_performance_overlay_desc">控制是否在遊戲中顯示即時 FPS / 記憶體疊層。影格、swap、GC 和 GPU 資源深度 profiler 只會在同時開啟 GPU 資源診斷時執行。</string>

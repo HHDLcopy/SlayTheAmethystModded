@@ -28,6 +28,8 @@ internal object MtsLoaderCrashPatcher {
         "com/evacipated/cardcrawl/modthespire/PackageJar\$PrepackagedLauncher.class"
     private const val RUN_MODS_METHOD_NAME = "runMods"
     private const val RUN_MODS_METHOD_DESC = "([Ljava/io/File;)V"
+    private const val CLOSE_WINDOW_METHOD_NAME = "closeWindow"
+    private const val CLOSE_WINDOW_METHOD_DESC = "()V"
     private const val MAIN_METHOD_NAME = "main"
     private const val MAIN_METHOD_DESC = "([Ljava/lang/String;)V"
     private const val BUST_ENUMS_METHOD_NAME = "bustEnums"
@@ -74,10 +76,15 @@ internal object MtsLoaderCrashPatcher {
     private const val AMETHYST_PREPACKAGED_PATCH_MARKER_METHOD_NAME = "amethyst\$prepackagedLauncherPatchV1"
     private const val AMETHYST_PREPACKAGED_PATCH_MARKER_METHOD_DESC = "()I"
     private const val LOADER_OWNER = "com/evacipated/cardcrawl/modthespire/Loader"
+    private const val MOD_SELECT_WINDOW_DESC =
+        "Lcom/evacipated/cardcrawl/modthespire/ui/ModSelectWindow;"
     private const val PREPACKAGED_LAUNCHER_OWNER =
         "com/evacipated/cardcrawl/modthespire/PackageJar\$PrepackagedLauncher"
     private const val PACKAGE_FIELD_NAME = "PACKAGE"
     private const val PACKAGE_FIELD_DESC = "Z"
+    private const val LOADER_WINDOW_FIELD_NAME = "ex"
+
+    private const val AMETHYST_PATCH_MARKER_METHOD_NAME_V3 = "amethyst\$loaderPatchV3"
 
     private val SWALLOWED_FAILURE_TYPES = setOf(
         "com/evacipated/cardcrawl/modthespire/MissingDependencyException",
@@ -203,6 +210,7 @@ internal object MtsLoaderCrashPatcher {
             hasPatchCacheLaunchHook(runModsMethod) &&
             hasOutJarPrimingHook(runModsMethod) &&
             hasPatchCacheStoreHook(runModsMethod) &&
+            hasCloseWindowNullGuard(classNode) &&
             hasCurrentPatchMarker(classNode)
     }
 
@@ -219,6 +227,10 @@ internal object MtsLoaderCrashPatcher {
     internal fun hasOutJarPrimingHook(loaderBytes: ByteArray): Boolean {
         val runModsMethod = readRunModsMethod(loaderBytes) ?: return false
         return hasOutJarPrimingHook(runModsMethod)
+    }
+
+    internal fun hasCloseWindowNullGuard(loaderBytes: ByteArray): Boolean {
+        return hasCloseWindowNullGuard(readClassNode(loaderBytes))
     }
 
     internal fun isPatchedPackageJarClass(packageJarBytes: ByteArray): Boolean {
@@ -240,6 +252,9 @@ internal object MtsLoaderCrashPatcher {
         val runModsMethod = classNode.methods.firstOrNull { method ->
             method.name == RUN_MODS_METHOD_NAME && method.desc == RUN_MODS_METHOD_DESC
         } ?: throw IOException("Unsupported ModTheSpire.jar: Loader.runMods(File[]) not found")
+        val closeWindowMethod = classNode.methods.firstOrNull { method ->
+            method.name == CLOSE_WINDOW_METHOD_NAME && method.desc == CLOSE_WINDOW_METHOD_DESC
+        } ?: throw IOException("Unsupported ModTheSpire.jar: Loader.closeWindow() not found")
 
         val originalCatchCount = runModsMethod.tryCatchBlocks.size
         runModsMethod.tryCatchBlocks.removeAll { tryCatch ->
@@ -262,6 +277,10 @@ internal object MtsLoaderCrashPatcher {
         if (!alreadyHasPatchCacheStoreHook) {
             insertPatchCacheStoreHook(runModsMethod)
         }
+        val alreadyHasCloseWindowNullGuard = hasCloseWindowNullGuard(classNode)
+        if (!alreadyHasCloseWindowNullGuard) {
+            insertCloseWindowNullGuard(closeWindowMethod)
+        }
         val alreadyHasCurrentPatchMarker = hasCurrentPatchMarker(classNode)
         if (!alreadyHasCurrentPatchMarker) {
             insertCurrentPatchMarker(classNode)
@@ -271,6 +290,7 @@ internal object MtsLoaderCrashPatcher {
             alreadyHasPatchCacheLaunchHook &&
             alreadyHasOutJarPrimingHook &&
             alreadyHasPatchCacheStoreHook &&
+            alreadyHasCloseWindowNullGuard &&
             alreadyHasCurrentPatchMarker
         ) {
             return loaderBytes
@@ -429,21 +449,40 @@ internal object MtsLoaderCrashPatcher {
 
     private fun insertCurrentPatchMarker(classNode: ClassNode) {
         classNode.methods.removeAll { method ->
-            method.name == AMETHYST_PATCH_MARKER_METHOD_NAME &&
+            (method.name == AMETHYST_PATCH_MARKER_METHOD_NAME ||
+                method.name == AMETHYST_PATCH_MARKER_METHOD_NAME_V3) &&
                 method.desc == AMETHYST_PATCH_MARKER_METHOD_DESC
         }
         val marker = MethodNode(
             Opcodes.ACC_PRIVATE or Opcodes.ACC_STATIC or Opcodes.ACC_SYNTHETIC,
-            AMETHYST_PATCH_MARKER_METHOD_NAME,
+            AMETHYST_PATCH_MARKER_METHOD_NAME_V3,
             AMETHYST_PATCH_MARKER_METHOD_DESC,
             null,
             null
         )
-        marker.instructions.add(InsnNode(Opcodes.ICONST_2))
+        marker.instructions.add(InsnNode(Opcodes.ICONST_3))
         marker.instructions.add(InsnNode(Opcodes.IRETURN))
         marker.maxStack = 1
         marker.maxLocals = 0
         classNode.methods.add(marker)
+    }
+
+    private fun insertCloseWindowNullGuard(closeWindowMethod: MethodNode) {
+        val continueLabel = LabelNode()
+        val instructions = InsnList()
+        instructions.add(
+            FieldInsnNode(
+                Opcodes.GETSTATIC,
+                LOADER_OWNER,
+                LOADER_WINDOW_FIELD_NAME,
+                MOD_SELECT_WINDOW_DESC
+            )
+        )
+        instructions.add(JumpInsnNode(Opcodes.IFNONNULL, continueLabel))
+        instructions.add(InsnNode(Opcodes.RETURN))
+        instructions.add(continueLabel)
+        closeWindowMethod.instructions.insert(instructions)
+        closeWindowMethod.maxStack = maxOf(closeWindowMethod.maxStack, 1)
     }
 
     private fun insertPackagePatchMarker(classNode: ClassNode) {
@@ -560,9 +599,31 @@ internal object MtsLoaderCrashPatcher {
 
     private fun hasCurrentPatchMarker(classNode: ClassNode): Boolean {
         return classNode.methods.any { method ->
-            method.name == AMETHYST_PATCH_MARKER_METHOD_NAME &&
+            method.name == AMETHYST_PATCH_MARKER_METHOD_NAME_V3 &&
                 method.desc == AMETHYST_PATCH_MARKER_METHOD_DESC
         }
+    }
+
+    private fun hasCloseWindowNullGuard(classNode: ClassNode): Boolean {
+        val closeWindowMethod = classNode.methods.firstOrNull { method ->
+            method.name == CLOSE_WINDOW_METHOD_NAME && method.desc == CLOSE_WINDOW_METHOD_DESC
+        } ?: return false
+        val meaningfulInstructions = closeWindowMethod.instructions.iterator().asSequence()
+            .filter { instruction -> instruction.opcode >= 0 }
+            .take(4)
+            .toList()
+        if (meaningfulInstructions.size < 3) {
+            return false
+        }
+        val first = meaningfulInstructions[0] as? FieldInsnNode ?: return false
+        val second = meaningfulInstructions[1] as? JumpInsnNode ?: return false
+        val third = meaningfulInstructions[2] as? InsnNode ?: return false
+        return first.opcode == Opcodes.GETSTATIC &&
+            first.owner == LOADER_OWNER &&
+            first.name == LOADER_WINDOW_FIELD_NAME &&
+            first.desc == MOD_SELECT_WINDOW_DESC &&
+            second.opcode == Opcodes.IFNONNULL &&
+            third.opcode == Opcodes.RETURN
     }
 
     private fun hasPackagePatchMarker(classNode: ClassNode): Boolean {

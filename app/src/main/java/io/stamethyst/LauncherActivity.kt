@@ -101,6 +101,7 @@ class LauncherActivity : AppCompatActivity() {
     private var pendingGameReturnAnalysis: Runnable? = null
     private var launchedWithoutImportedStsJar = false
     private var startupAfterResourcesCompleted = false
+    private var backgroundForGameLaunch = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val startupBackground = StartupWindowBackground.launcherColor(this)
@@ -187,6 +188,9 @@ class LauncherActivity : AppCompatActivity() {
     override fun onPause() {
         cancelPendingGameReturnAnalysis()
         super.onPause()
+        if (backgroundForGameLaunch && !isFinishing && !isDestroyed) {
+            finish()
+        }
     }
 
     override fun onDestroy() {
@@ -203,6 +207,14 @@ class LauncherActivity : AppCompatActivity() {
 
     private fun handleIncomingLauncherIntent(incomingIntent: Intent?) {
         mainViewModel.handleIncomingIntent(this, incomingIntent)
+    }
+
+    fun markBackgroundForGameLaunch() {
+        backgroundForGameLaunch = true
+    }
+
+    fun clearBackgroundForGameLaunch() {
+        backgroundForGameLaunch = false
     }
 
     private fun onStartupResourcesReady(

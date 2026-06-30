@@ -51,6 +51,7 @@ internal data class PerformanceSettingsActions(
     val onDisplayCutoutAvoidanceChanged: (Boolean) -> Unit,
     val onScreenBottomCropChanged: (Boolean) -> Unit,
     val onRamSaverEnabledChanged: (Boolean) -> Unit,
+    val onMtsPatchCacheEnabledChanged: (Boolean) -> Unit,
     val onGameplayFontScaleChanged: (Float) -> Unit,
     val onGameplayLargerUiChanged: (Boolean) -> Unit,
 )
@@ -123,6 +124,18 @@ internal fun SettingsPerformanceSection(
             disabledText = stringResource(R.string.settings_ram_saver_title),
             description = stringResource(R.string.settings_ram_saver_desc),
             onCheckedChange = actions.onRamSaverEnabledChanged,
+            chipText = stringResource(R.string.settings_ram_saver_experimental_chip),
+        )
+    )
+
+    SettingsSwitchItem(
+        SettingsSwitchSpec(
+            checked = uiState.mtsPatchCacheEnabled,
+            enabled = !uiState.busy,
+            enabledText = stringResource(R.string.settings_mts_patch_cache_title),
+            disabledText = stringResource(R.string.settings_mts_patch_cache_title),
+            description = stringResource(R.string.settings_mts_patch_cache_desc),
+            onCheckedChange = actions.onMtsPatchCacheEnabledChanged,
             chipText = stringResource(R.string.settings_ram_saver_experimental_chip),
         )
     )

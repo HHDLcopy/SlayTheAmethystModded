@@ -3,7 +3,7 @@ package io.stamethyst.backend.steamcloud
 import java.io.Serializable as JavaSerializable
 import kotlinx.serialization.Serializable
 
-internal const val STEAM_CLOUD_APP_ID: Int = 646570
+const val STEAM_CLOUD_APP_ID: Int = 646570
 
 @Serializable
 enum class SteamCloudRootKind(val directoryName: String) {

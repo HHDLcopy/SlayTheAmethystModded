@@ -42,6 +42,25 @@ internal object MtsPatchCacheCoordinator {
         RuntimePaths.mtsPatchCacheMarker(context).delete()
     }
 
+    @JvmStatic
+    fun clear(context: Context) {
+        val cachedJar = RuntimePaths.mtsPatchCacheJar(context)
+        val markerFile = RuntimePaths.mtsPatchCacheMarker(context)
+        val packageDir = RuntimePaths.mtsPatchCachePackageDir(context)
+        runCatching { markerFile.delete() }
+        runCatching { cachedJar.delete() }
+        runCatching {
+            packageDir.listFiles()?.forEach { file ->
+                if (file.isFile && file.name.endsWith(".jar", ignoreCase = true)) {
+                    file.delete()
+                }
+            }
+        }
+        runCatching {
+            File(cachedJar.parentFile ?: File("."), "mts_patch_cache_debug.log").delete()
+        }
+    }
+
     @Throws(IOException::class)
     fun appendRuntimeProperties(context: Context, args: MutableList<String>, enabled: Boolean) {
         val expectedMarker = if (enabled) expectedMarker(context) else ""

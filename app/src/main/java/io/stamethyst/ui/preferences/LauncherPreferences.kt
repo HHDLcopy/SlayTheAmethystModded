@@ -123,6 +123,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_CROP_SCREEN_BOTTOM
     val DEFAULT_RAM_SAVER_ENABLED: Boolean
         get() = LauncherConfig.DEFAULT_RAM_SAVER_ENABLED
+    val DEFAULT_MTS_PATCH_CACHE_ENABLED: Boolean
+        get() = LauncherConfig.DEFAULT_MTS_PATCH_CACHE_ENABLED
     val DEFAULT_SHOW_GAME_PERFORMANCE_OVERLAY: Boolean
         get() = LauncherConfig.DEFAULT_SHOW_GAME_PERFORMANCE_OVERLAY
     val DEFAULT_SUSTAINED_PERFORMANCE_MODE_ENABLED: Boolean
@@ -467,6 +469,14 @@ object LauncherPreferences {
 
     fun setRamSaverEnabled(context: Context, enabled: Boolean) {
         LauncherConfig.setRamSaverEnabled(context, enabled)
+    }
+
+    fun isMtsPatchCacheEnabled(context: Context): Boolean {
+        return LauncherConfig.isMtsPatchCacheEnabled(context)
+    }
+
+    fun setMtsPatchCacheEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setMtsPatchCacheEnabled(context, enabled)
     }
 
     fun isGamePerformanceOverlayEnabled(context: Context): Boolean {

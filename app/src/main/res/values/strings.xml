@@ -77,7 +77,6 @@
     <string name="sts_crash_page_capture_title">Crash captured</string>
     <string name="sts_crash_page_guidance_default">It is recommended to troubleshoot the issue first. You can hand the logs to AI analysis to confirm whether the problem comes from the launcher itself or from a mod. If you can confirm that the launcher is the problem, you can use the feedback page to report it to the developer.</string>
     <string name="sts_crash_page_guidance_oom">This run likely exhausted JVM heap memory. Before retrying, open Settings and raise the JVM heap max;</string>
-    <string name="sts_crash_page_guidance_launch_preparation_process_disconnected">Do not leave the app, switch to another app, or let the system clean up this app during the patch process. Keep the launcher in the foreground.</string>
     <string name="sts_crash_page_actions_title">Quick actions</string>
     <string name="sts_crash_page_actions_desc">You can retry immediately, or open recovery settings first before starting again. The crash text below supports selection and copying, and is also more convenient for long screenshots.</string>
     <string name="sts_crash_page_action_recovery">Open settings</string>
@@ -424,7 +423,6 @@
     <string name="startup_failure_delegate_crashed_with_detail">Game launcher crashed: %1$s</string>
     <string name="startup_failure_delegate_start_failed_with_detail">Failed to start game launcher: %1$s</string>
     <string name="startup_failure_launch_failed_with_detail">Failed to launch JVM: %1$s</string>
-    <string name="startup_failure_launch_preparation_process_disconnected">The launcher lost contact with the startup preparation process before launch could continue.</string>
     <string name="startup_failure_legacy_patched_desktop_jar_requires_reimport">This imported desktop-1.0.jar was already rewritten by an older launcher build and can\'t be upgraded in place to the newer compatibility patch flow.\n\nOpen Settings and re-import the original, unmodified desktop-1.0.jar before launching again.\nIf you only have the current file, copy a fresh jar from your game install.</string>
     <string name="startup_failure_context_last_phase_with_percent">last phase %1$d%%: %2$s</string>
     <string name="startup_failure_context_last_phase">last phase: %1$s</string>
@@ -1618,6 +1616,8 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_ram_saver_title">启用内存优化</string>
     <string name="settings_ram_saver_desc">启用后，可以大幅降低内存，但是会小幅增加功耗，建议打开，如果遇到卡顿、发热严重等问题，可以关闭。</string>
     <string name="settings_ram_saver_experimental_chip">实验性</string>
+    <string name="settings_mts_patch_cache_title">启用模组缓存</string>
+    <string name="settings_mts_patch_cache_desc">启用后，每次启动游戏会建立缓存，只要不改变模组，即可大幅提升启动游戏的时间。</string>
     <string name="settings_performance_overlay_enabled">Performance overlay: Enabled</string>
     <string name="settings_performance_overlay_disabled">Performance overlay: Disabled</string>
     <string name="settings_performance_overlay_desc">Shows the real-time FPS / memory overlay in game. Deep frame, swap, GC, and GPU resource profilers only run when GPU resource diagnostics is also enabled.</string>

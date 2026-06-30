@@ -51,6 +51,7 @@ class MtsLoaderCrashPatcherTest {
             assertTrue(MtsLoaderCrashPatcher.hasPatchCacheLaunchHook(patchedLoaderBytes))
             assertTrue(MtsLoaderCrashPatcher.hasPatchCacheStoreHook(patchedLoaderBytes))
             assertTrue(MtsLoaderCrashPatcher.hasOutJarPrimingHook(patchedLoaderBytes))
+            assertTrue(MtsLoaderCrashPatcher.hasCloseWindowNullGuard(patchedLoaderBytes))
             assertTrue(MtsLoaderCrashPatcher.hasPrepackagedPrepareHook(patchedPrepackagedLauncherBytes))
             assertFalse(MtsLoaderCrashPatcher.hasPrepackagedCallInitializersCall(patchedPrepackagedLauncherBytes))
 
@@ -96,6 +97,7 @@ class MtsLoaderCrashPatcherTest {
             requireNotNull(patchedPrepackagedLauncherBytes)
             assertTrue(MtsLoaderCrashPatcher.isPatchedLoaderClass(patchedLoaderBytes))
             assertTrue(MtsLoaderCrashPatcher.hasOutJarPrimingHook(patchedLoaderBytes))
+            assertTrue(MtsLoaderCrashPatcher.hasCloseWindowNullGuard(patchedLoaderBytes))
             assertTrue(MtsLoaderCrashPatcher.isPatchedPrepackagedLauncherClass(patchedPrepackagedLauncherBytes))
             assertFalse(MtsLoaderCrashPatcher.hasPrepackagedCallInitializersCall(patchedPrepackagedLauncherBytes))
         } finally {
@@ -137,6 +139,25 @@ class MtsLoaderCrashPatcherTest {
 
         val patchedLoaderBytes = MtsLoaderCrashPatcher.patchLoaderBytes(originalLoaderBytes)
         assertTrue(MtsLoaderCrashPatcher.hasOutJarPrimingHook(patchedLoaderBytes))
+    }
+
+    @Test
+    fun patchLoaderBytes_guardsCloseWindowWhenLoaderWindowIsMissing() {
+        val sourceJar = sequenceOf(
+            File("src/main/assets/components/mods/ModTheSpire.jar"),
+            File("app/src/main/assets/components/mods/ModTheSpire.jar")
+        ).firstOrNull { it.isFile }
+            ?: error("Missing test fixture jar: ModTheSpire.jar")
+
+        val originalLoaderBytes = JarFileIoUtils.readJarEntryBytes(
+            sourceJar,
+            "com/evacipated/cardcrawl/modthespire/Loader.class"
+        )
+        requireNotNull(originalLoaderBytes)
+        assertFalse(MtsLoaderCrashPatcher.hasCloseWindowNullGuard(originalLoaderBytes))
+
+        val patchedLoaderBytes = MtsLoaderCrashPatcher.patchLoaderBytes(originalLoaderBytes)
+        assertTrue(MtsLoaderCrashPatcher.hasCloseWindowNullGuard(patchedLoaderBytes))
     }
 
     @Test

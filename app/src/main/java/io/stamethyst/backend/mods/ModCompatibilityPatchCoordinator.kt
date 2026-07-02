@@ -9,6 +9,7 @@ import java.io.IOException
 import java.util.ArrayList
 import java.util.HashMap
 import java.util.HashSet
+import java.util.LinkedHashMap
 import java.util.LinkedHashSet
 import java.util.Locale
 import java.util.zip.ZipEntry
@@ -29,7 +30,15 @@ internal object ModCompatibilityPatchCoordinator {
 
     @Throws(IOException::class)
     fun applyCompatPatchRules(context: Context) {
-        val installedModsById = findInstalledModsById(context)
+        applyCompatPatchRules(context, null)
+    }
+
+    @Throws(IOException::class)
+    fun applyCompatPatchRules(
+        context: Context,
+        launchSnapshot: ModManager.LaunchModSnapshot?
+    ) {
+        val installedModsById = findInstalledModsById(context, launchSnapshot)
         for (rule in COMPAT_PATCH_RULES) {
             if (rule.applyWhenInstalled) {
                 val targetJar = installedModsById[rule.modId]
@@ -53,11 +62,22 @@ internal object ModCompatibilityPatchCoordinator {
                 applyCompatRuleToJar(context, rule, targetJar)
             }
         }
-        applyGlobalAtlasFilterCompat(context, installedModsById)
+        applyGlobalAtlasFilterCompat(context, installedModsById, launchSnapshot)
     }
 
     @Throws(IOException::class)
     fun findInstalledModsById(context: Context): Map<String, File> {
+        return findInstalledModsById(context, null)
+    }
+
+    @Throws(IOException::class)
+    fun findInstalledModsById(
+        context: Context,
+        launchSnapshot: ModManager.LaunchModSnapshot?
+    ): Map<String, File> {
+        if (launchSnapshot != null) {
+            return LinkedHashMap(launchSnapshot.launchModFilesByModId)
+        }
         val modsById: MutableMap<String, File> = HashMap()
         val modFiles = ModManager.listMtsLaunchModFiles(context)
         for (modFile in modFiles) {
@@ -79,7 +99,11 @@ internal object ModCompatibilityPatchCoordinator {
         return modsById
     }
 
-    private fun applyGlobalAtlasFilterCompat(context: Context, installedModsById: Map<String, File>) {
+    private fun applyGlobalAtlasFilterCompat(
+        context: Context,
+        installedModsById: Map<String, File>,
+        launchSnapshot: ModManager.LaunchModSnapshot?
+    ) {
         if (!CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(context)) {
             ModCompatibilityDiagnostics.appendCompatLog(
                 context,
@@ -94,7 +118,7 @@ internal object ModCompatibilityPatchCoordinator {
             )
             return
         }
-        val launchScopedModsById = filterToLaunchScopedMods(context, installedModsById)
+        val launchScopedModsById = filterToLaunchScopedMods(context, installedModsById, launchSnapshot)
         if (launchScopedModsById.isEmpty()) {
             ModCompatibilityDiagnostics.appendCompatLog(
                 context,
@@ -175,12 +199,15 @@ internal object ModCompatibilityPatchCoordinator {
 
     private fun filterToLaunchScopedMods(
         context: Context,
-        installedModsById: Map<String, File>
+        installedModsById: Map<String, File>,
+        launchSnapshot: ModManager.LaunchModSnapshot?
     ): Map<String, File> {
         val launchScopedIds: MutableSet<String> = LinkedHashSet()
         launchScopedIds.add(ModManager.MOD_ID_BASEMOD)
         launchScopedIds.add(ModManager.MOD_ID_STSLIB)
-        for (modId in ModManager.listEnabledOptionalModIds(context)) {
+        val enabledOptionalModIds = launchSnapshot?.enabledOptionalModIds
+            ?: ModManager.listEnabledOptionalModIds(context)
+        for (modId in enabledOptionalModIds) {
             val normalized = ModManager.normalizeModId(modId)
             if (normalized.isNotEmpty()) {
                 launchScopedIds.add(normalized)

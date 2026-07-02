@@ -52,13 +52,18 @@ internal object MtsLoaderCrashPatcher {
     private const val PATCH_CACHE_BOOTSTRAP_CLASS = "io/stamethyst/bridge/MtsPatchCacheBootstrap"
     private const val PATCH_CACHE_BOOTSTRAP_METHOD_NAME = "launchIfCurrent"
     private const val PATCH_CACHE_BOOTSTRAP_METHOD_DESC = "()Z"
+    private const val PATCH_CACHE_PREPARE_PACKAGE_URLS_METHOD_NAME = "preparePrepackagedPackageUrls"
+    private const val PATCH_CACHE_PREPARE_PACKAGE_URLS_METHOD_DESC = "()V"
     private const val PATCH_CACHE_PREPARE_METHOD_NAME = "preparePrepackagedLaunch"
     private const val PATCH_CACHE_PREPARE_METHOD_DESC = "()V"
+    private const val PATCH_CACHE_BUST_ENUMS_FROM_CACHE_METHOD_NAME = "bustPrepackagedEnumsFromCache"
+    private const val PATCH_CACHE_BUST_ENUMS_FROM_CACHE_METHOD_DESC = "()Z"
     private const val CALL_INITIALIZERS_METHOD_NAME = "callInitializers"
     private const val CALL_INITIALIZERS_METHOD_DESC = "()V"
     private const val PATCH_CACHE_STORE_CLASS = "io/stamethyst/bridge/MtsPatchCacheStore"
     private const val PATCH_CACHE_STORE_METHOD_NAME = "store"
-    private const val PATCH_CACHE_STORE_METHOD_DESC = "(Ljava/lang/Object;)V"
+    private const val LEGACY_PATCH_CACHE_STORE_METHOD_DESC = "(Ljava/lang/Object;)V"
+    private const val PATCH_CACHE_STORE_METHOD_DESC = "(Ljava/lang/Object;Ljava/lang/Object;)V"
     private const val PATCH_CACHE_BEGIN_COMPILE_CAPTURE_METHOD_NAME = "beginCompileCapture"
     private const val PATCH_CACHE_BEGIN_COMPILE_CAPTURE_METHOD_DESC = "()V"
     private const val PATCH_CACHE_FINISH_COMPILE_CAPTURE_METHOD_NAME = "finishCompileCapture"
@@ -73,18 +78,22 @@ internal object MtsLoaderCrashPatcher {
     private const val AMETHYST_PATCH_MARKER_METHOD_DESC = "()I"
     private const val AMETHYST_PACKAGE_PATCH_MARKER_METHOD_NAME = "amethyst\$packagePatchV2"
     private const val AMETHYST_PACKAGE_PATCH_MARKER_METHOD_DESC = "()I"
-    private const val AMETHYST_PREPACKAGED_PATCH_MARKER_METHOD_NAME = "amethyst\$prepackagedLauncherPatchV1"
+    private const val AMETHYST_PREPACKAGED_PATCH_MARKER_METHOD_NAME_V2 = "amethyst\$prepackagedLauncherPatchV2"
+    private const val AMETHYST_PREPACKAGED_PATCH_MARKER_METHOD_NAME_V3 = "amethyst\$prepackagedLauncherPatchV3"
+    private const val AMETHYST_PREPACKAGED_PATCH_MARKER_METHOD_NAME = "amethyst\$prepackagedLauncherPatchV4"
     private const val AMETHYST_PREPACKAGED_PATCH_MARKER_METHOD_DESC = "()I"
     private const val LOADER_OWNER = "com/evacipated/cardcrawl/modthespire/Loader"
     private const val MOD_SELECT_WINDOW_DESC =
         "Lcom/evacipated/cardcrawl/modthespire/ui/ModSelectWindow;"
     private const val PREPACKAGED_LAUNCHER_OWNER =
         "com/evacipated/cardcrawl/modthespire/PackageJar\$PrepackagedLauncher"
+    private const val DESKTOP_LAUNCHER_OWNER = "com/megacrit/cardcrawl/desktop/DesktopLauncher"
     private const val PACKAGE_FIELD_NAME = "PACKAGE"
     private const val PACKAGE_FIELD_DESC = "Z"
     private const val LOADER_WINDOW_FIELD_NAME = "ex"
 
     private const val AMETHYST_PATCH_MARKER_METHOD_NAME_V3 = "amethyst\$loaderPatchV3"
+    private const val AMETHYST_PATCH_MARKER_METHOD_NAME_V4 = "amethyst\$loaderPatchV4"
 
     private val SWALLOWED_FAILURE_TYPES = setOf(
         "com/evacipated/cardcrawl/modthespire/MissingDependencyException",
@@ -224,6 +233,28 @@ internal object MtsLoaderCrashPatcher {
         return hasPatchCacheStoreHook(runModsMethod)
     }
 
+    internal fun hasPatchCacheStoreHookWithCompiledClassPathArg(loaderBytes: ByteArray): Boolean {
+        val runModsMethod = readRunModsMethod(loaderBytes) ?: return false
+        val iterator = runModsMethod.instructions.iterator()
+        while (iterator.hasNext()) {
+            val instruction = iterator.next()
+            if (instruction is MethodInsnNode &&
+                instruction.opcode == Opcodes.INVOKESTATIC &&
+                instruction.owner == PATCH_CACHE_STORE_CLASS &&
+                instruction.name == PATCH_CACHE_STORE_METHOD_NAME &&
+                instruction.desc == PATCH_CACHE_STORE_METHOD_DESC
+            ) {
+                val compiledClassPathArg = instruction.previous as? VarInsnNode ?: return false
+                val classPoolArg = compiledClassPathArg.previous as? VarInsnNode ?: return false
+                return classPoolArg.opcode == Opcodes.ALOAD &&
+                    classPoolArg.`var` == 3 &&
+                    compiledClassPathArg.opcode == Opcodes.ALOAD &&
+                    compiledClassPathArg.`var` == 4
+            }
+        }
+        return false
+    }
+
     internal fun hasOutJarPrimingHook(loaderBytes: ByteArray): Boolean {
         val runModsMethod = readRunModsMethod(loaderBytes) ?: return false
         return hasOutJarPrimingHook(runModsMethod)
@@ -242,8 +273,10 @@ internal object MtsLoaderCrashPatcher {
         val mainMethod = classNode.methods.firstOrNull { method ->
             method.name == MAIN_METHOD_NAME && method.desc == MAIN_METHOD_DESC
         } ?: return false
-        return hasPrepackagedPrepareHook(mainMethod) &&
-            !hasCallInitializersCall(mainMethod) &&
+        return hasPrepackagedPackageUrlsHook(mainMethod) &&
+            hasPrepackagedPrepareHook(mainMethod) &&
+            hasPrepackagedEnumCacheHook(mainMethod) &&
+            hasCallInitializersCall(mainMethod) &&
             hasPrepackagedPatchMarker(classNode)
     }
 
@@ -273,6 +306,8 @@ internal object MtsLoaderCrashPatcher {
         if (!alreadyHasOutJarPrimingHook) {
             insertOutJarPrimingHook(runModsMethod)
         }
+        val removedLegacyPatchCacheStoreHook =
+            removePatchCacheStoreHooks(runModsMethod, LEGACY_PATCH_CACHE_STORE_METHOD_DESC)
         val alreadyHasPatchCacheStoreHook = hasPatchCacheStoreHook(runModsMethod)
         if (!alreadyHasPatchCacheStoreHook) {
             insertPatchCacheStoreHook(runModsMethod)
@@ -289,6 +324,7 @@ internal object MtsLoaderCrashPatcher {
             alreadyOverridesFileList &&
             alreadyHasPatchCacheLaunchHook &&
             alreadyHasOutJarPrimingHook &&
+            !removedLegacyPatchCacheStoreHook &&
             alreadyHasPatchCacheStoreHook &&
             alreadyHasCloseWindowNullGuard &&
             alreadyHasCurrentPatchMarker
@@ -334,16 +370,38 @@ internal object MtsLoaderCrashPatcher {
             method.name == MAIN_METHOD_NAME && method.desc == MAIN_METHOD_DESC
         } ?: throw IOException("Unsupported ModTheSpire.jar: PackageJar.PrepackagedLauncher.main not found")
 
+        val alreadyHasCurrentPatchMarker = hasPrepackagedPatchMarker(classNode)
+        val removedLegacyHooks = if (alreadyHasCurrentPatchMarker) {
+            false
+        } else {
+            removePrepackagedBootstrapHooks(mainMethod)
+        }
+        val alreadyHasPackageUrlsHook = hasPrepackagedPackageUrlsHook(mainMethod)
+        if (!alreadyHasPackageUrlsHook) {
+            insertPrepackagedPackageUrlsHook(mainMethod)
+        }
         val alreadyHasPrepareHook = hasPrepackagedPrepareHook(mainMethod)
         if (!alreadyHasPrepareHook) {
             insertPrepackagedPrepareHook(mainMethod)
         }
-        val removedCallInitializers = removeCallInitializersCall(mainMethod)
-        val alreadyHasPatchMarker = hasPrepackagedPatchMarker(classNode)
-        if (!alreadyHasPatchMarker) {
+        val alreadyHasEnumCacheHook = hasPrepackagedEnumCacheHook(mainMethod)
+        if (!alreadyHasEnumCacheHook) {
+            insertPrepackagedEnumCacheHook(mainMethod)
+        }
+        val alreadyHasCallInitializers = hasCallInitializersCall(mainMethod)
+        if (!alreadyHasCallInitializers) {
+            insertCallInitializersCall(mainMethod)
+        }
+        if (!alreadyHasCurrentPatchMarker) {
             insertPrepackagedPatchMarker(classNode)
         }
-        if (alreadyHasPrepareHook && alreadyHasPatchMarker && !removedCallInitializers) {
+        if (!removedLegacyHooks &&
+            alreadyHasPackageUrlsHook &&
+            alreadyHasPrepareHook &&
+            alreadyHasEnumCacheHook &&
+            alreadyHasCallInitializers &&
+            alreadyHasCurrentPatchMarker
+        ) {
             return prepackagedLauncherBytes
         }
 
@@ -399,6 +457,7 @@ internal object MtsLoaderCrashPatcher {
 
         val instructions = InsnList()
         instructions.add(VarInsnNode(Opcodes.ALOAD, 3))
+        instructions.add(VarInsnNode(Opcodes.ALOAD, 4))
         instructions.add(
             MethodInsnNode(
                 Opcodes.INVOKESTATIC,
@@ -409,7 +468,29 @@ internal object MtsLoaderCrashPatcher {
             )
         )
         runModsMethod.instructions.insertBefore(packageCheck, instructions)
-        runModsMethod.maxStack = maxOf(runModsMethod.maxStack, 1)
+        runModsMethod.maxStack = maxOf(runModsMethod.maxStack, 2)
+    }
+
+    private fun removePatchCacheStoreHooks(runModsMethod: MethodNode, desc: String): Boolean {
+        val toRemove = mutableListOf<org.objectweb.asm.tree.AbstractInsnNode>()
+        val iterator = runModsMethod.instructions.iterator()
+        while (iterator.hasNext()) {
+            val instruction = iterator.next()
+            if (instruction is MethodInsnNode &&
+                instruction.opcode == Opcodes.INVOKESTATIC &&
+                instruction.owner == PATCH_CACHE_STORE_CLASS &&
+                instruction.name == PATCH_CACHE_STORE_METHOD_NAME &&
+                instruction.desc == desc
+            ) {
+                val previous = instruction.previous
+                if (previous is VarInsnNode && previous.opcode == Opcodes.ALOAD) {
+                    toRemove += previous
+                }
+                toRemove += instruction
+            }
+        }
+        toRemove.forEach { runModsMethod.instructions.remove(it) }
+        return toRemove.isNotEmpty()
     }
 
     private fun insertOutJarPrimingHook(runModsMethod: MethodNode) {
@@ -450,17 +531,18 @@ internal object MtsLoaderCrashPatcher {
     private fun insertCurrentPatchMarker(classNode: ClassNode) {
         classNode.methods.removeAll { method ->
             (method.name == AMETHYST_PATCH_MARKER_METHOD_NAME ||
-                method.name == AMETHYST_PATCH_MARKER_METHOD_NAME_V3) &&
+                method.name == AMETHYST_PATCH_MARKER_METHOD_NAME_V3 ||
+                method.name == AMETHYST_PATCH_MARKER_METHOD_NAME_V4) &&
                 method.desc == AMETHYST_PATCH_MARKER_METHOD_DESC
         }
         val marker = MethodNode(
             Opcodes.ACC_PRIVATE or Opcodes.ACC_STATIC or Opcodes.ACC_SYNTHETIC,
-            AMETHYST_PATCH_MARKER_METHOD_NAME_V3,
+            AMETHYST_PATCH_MARKER_METHOD_NAME_V4,
             AMETHYST_PATCH_MARKER_METHOD_DESC,
             null,
             null
         )
-        marker.instructions.add(InsnNode(Opcodes.ICONST_3))
+        marker.instructions.add(InsnNode(Opcodes.ICONST_4))
         marker.instructions.add(InsnNode(Opcodes.IRETURN))
         marker.maxStack = 1
         marker.maxLocals = 0
@@ -506,7 +588,9 @@ internal object MtsLoaderCrashPatcher {
 
     private fun insertPrepackagedPatchMarker(classNode: ClassNode) {
         classNode.methods.removeAll { method ->
-            method.name == AMETHYST_PREPACKAGED_PATCH_MARKER_METHOD_NAME &&
+            (method.name == AMETHYST_PREPACKAGED_PATCH_MARKER_METHOD_NAME ||
+                method.name == AMETHYST_PREPACKAGED_PATCH_MARKER_METHOD_NAME_V2 ||
+                method.name == AMETHYST_PREPACKAGED_PATCH_MARKER_METHOD_NAME_V3) &&
                 method.desc == AMETHYST_PREPACKAGED_PATCH_MARKER_METHOD_DESC
         }
         val marker = MethodNode(
@@ -521,6 +605,94 @@ internal object MtsLoaderCrashPatcher {
         marker.maxStack = 1
         marker.maxLocals = 0
         classNode.methods.add(marker)
+    }
+
+    private fun insertPrepackagedPackageUrlsHook(mainMethod: MethodNode) {
+        val iterator = mainMethod.instructions.iterator()
+        while (iterator.hasNext()) {
+            val instruction = iterator.next()
+            if (instruction is MethodInsnNode &&
+                instruction.opcode == Opcodes.INVOKESTATIC &&
+                instruction.owner == PREPACKAGED_LAUNCHER_OWNER &&
+                instruction.name == BUST_ENUMS_METHOD_NAME &&
+                instruction.desc == BUST_ENUMS_METHOD_DESC
+            ) {
+                val instructions = InsnList()
+                instructions.add(
+                    MethodInsnNode(
+                        Opcodes.INVOKESTATIC,
+                        PATCH_CACHE_BOOTSTRAP_CLASS,
+                        PATCH_CACHE_PREPARE_PACKAGE_URLS_METHOD_NAME,
+                        PATCH_CACHE_PREPARE_PACKAGE_URLS_METHOD_DESC,
+                        false
+                    )
+                )
+                mainMethod.instructions.insertBefore(instruction, instructions)
+                return
+            }
+        }
+        throw IOException("Unsupported ModTheSpire.jar: PrepackagedLauncher.bustEnums call not found")
+    }
+
+    private fun insertPrepackagedEnumCacheHook(mainMethod: MethodNode) {
+        val iterator = mainMethod.instructions.iterator()
+        while (iterator.hasNext()) {
+            val instruction = iterator.next()
+            if (instruction is MethodInsnNode &&
+                instruction.opcode == Opcodes.INVOKESTATIC &&
+                instruction.owner == PREPACKAGED_LAUNCHER_OWNER &&
+                instruction.name == BUST_ENUMS_METHOD_NAME &&
+                instruction.desc == BUST_ENUMS_METHOD_DESC
+            ) {
+                val continueWithOriginalScan = LabelNode()
+                val afterOriginalScan = LabelNode()
+                val instructions = InsnList()
+                instructions.add(
+                    MethodInsnNode(
+                        Opcodes.INVOKESTATIC,
+                        PATCH_CACHE_BOOTSTRAP_CLASS,
+                        PATCH_CACHE_BUST_ENUMS_FROM_CACHE_METHOD_NAME,
+                        PATCH_CACHE_BUST_ENUMS_FROM_CACHE_METHOD_DESC,
+                        false
+                    )
+                )
+                instructions.add(JumpInsnNode(Opcodes.IFEQ, continueWithOriginalScan))
+                instructions.add(JumpInsnNode(Opcodes.GOTO, afterOriginalScan))
+                instructions.add(continueWithOriginalScan)
+                mainMethod.instructions.insertBefore(instruction, instructions)
+                mainMethod.instructions.insert(instruction, afterOriginalScan)
+                mainMethod.maxStack = maxOf(mainMethod.maxStack, 1)
+                return
+            }
+        }
+        throw IOException("Unsupported ModTheSpire.jar: PrepackagedLauncher.bustEnums call not found")
+    }
+
+    private fun insertCallInitializersCall(mainMethod: MethodNode) {
+        val iterator = mainMethod.instructions.iterator()
+        while (iterator.hasNext()) {
+            val instruction = iterator.next()
+            if (instruction is MethodInsnNode &&
+                instruction.opcode == Opcodes.INVOKESTATIC &&
+                instruction.owner == DESKTOP_LAUNCHER_OWNER &&
+                instruction.name == MAIN_METHOD_NAME &&
+                instruction.desc == MAIN_METHOD_DESC
+            ) {
+                val instructions = InsnList()
+                instructions.add(
+                    MethodInsnNode(
+                        Opcodes.INVOKESTATIC,
+                        PREPACKAGED_LAUNCHER_OWNER,
+                        CALL_INITIALIZERS_METHOD_NAME,
+                        CALL_INITIALIZERS_METHOD_DESC,
+                        false
+                    )
+                )
+                mainMethod.instructions.insertBefore(instruction, instructions)
+                return
+            }
+        }
+        throw IOException("Unsupported ModTheSpire.jar: PrepackagedLauncher DesktopLauncher.main call not found")
     }
 
     private fun insertPrepackagedPrepareHook(mainMethod: MethodNode) {
@@ -543,11 +715,32 @@ internal object MtsLoaderCrashPatcher {
                         false
                     )
                 )
-                mainMethod.instructions.insert(instruction, instructions)
+                mainMethod.instructions.insertBefore(instruction, instructions)
                 return
             }
         }
         throw IOException("Unsupported ModTheSpire.jar: PrepackagedLauncher.bustEnums call not found")
+    }
+
+    private fun removePrepackagedBootstrapHooks(mainMethod: MethodNode): Boolean {
+        val toRemove = mutableListOf<org.objectweb.asm.tree.AbstractInsnNode>()
+        val iterator = mainMethod.instructions.iterator()
+        while (iterator.hasNext()) {
+            val instruction = iterator.next()
+            if (instruction is MethodInsnNode &&
+                instruction.opcode == Opcodes.INVOKESTATIC &&
+                instruction.owner == PATCH_CACHE_BOOTSTRAP_CLASS &&
+                (
+                    instruction.name == PATCH_CACHE_PREPARE_PACKAGE_URLS_METHOD_NAME ||
+                        instruction.name == PATCH_CACHE_PREPARE_METHOD_NAME ||
+                        instruction.name == PATCH_CACHE_BUST_ENUMS_FROM_CACHE_METHOD_NAME
+                    )
+            ) {
+                toRemove.add(instruction)
+            }
+        }
+        toRemove.forEach(mainMethod.instructions::remove)
+        return toRemove.isNotEmpty()
     }
 
     private fun insertNullSetFallbackAfterGetOutJarClasses(method: MethodNode) {
@@ -599,7 +792,7 @@ internal object MtsLoaderCrashPatcher {
 
     private fun hasCurrentPatchMarker(classNode: ClassNode): Boolean {
         return classNode.methods.any { method ->
-            method.name == AMETHYST_PATCH_MARKER_METHOD_NAME_V3 &&
+            method.name == AMETHYST_PATCH_MARKER_METHOD_NAME_V4 &&
                 method.desc == AMETHYST_PATCH_MARKER_METHOD_DESC
         }
     }
@@ -706,6 +899,14 @@ internal object MtsLoaderCrashPatcher {
         return hasPrepackagedPrepareHook(mainMethod)
     }
 
+    internal fun hasPrepackagedPackageUrlsHook(prepackagedLauncherBytes: ByteArray): Boolean {
+        val classNode = readClassNode(prepackagedLauncherBytes)
+        val mainMethod = classNode.methods.firstOrNull { method ->
+            method.name == MAIN_METHOD_NAME && method.desc == MAIN_METHOD_DESC
+        } ?: return false
+        return hasPrepackagedPackageUrlsHook(mainMethod)
+    }
+
     internal fun hasPrepackagedCallInitializersCall(prepackagedLauncherBytes: ByteArray): Boolean {
         val classNode = readClassNode(prepackagedLauncherBytes)
         val mainMethod = classNode.methods.firstOrNull { method ->
@@ -714,12 +915,38 @@ internal object MtsLoaderCrashPatcher {
         return hasCallInitializersCall(mainMethod)
     }
 
+    internal fun hasPrepackagedEnumCacheHook(prepackagedLauncherBytes: ByteArray): Boolean {
+        val classNode = readClassNode(prepackagedLauncherBytes)
+        val mainMethod = classNode.methods.firstOrNull { method ->
+            method.name == MAIN_METHOD_NAME && method.desc == MAIN_METHOD_DESC
+        } ?: return false
+        return hasPrepackagedEnumCacheHook(mainMethod)
+    }
+
     private fun hasPrepackagedPrepareHook(mainMethod: MethodNode): Boolean {
         return hasStaticCall(
             runModsMethod = mainMethod,
             owner = PATCH_CACHE_BOOTSTRAP_CLASS,
             name = PATCH_CACHE_PREPARE_METHOD_NAME,
             desc = PATCH_CACHE_PREPARE_METHOD_DESC
+        )
+    }
+
+    private fun hasPrepackagedPackageUrlsHook(mainMethod: MethodNode): Boolean {
+        return hasStaticCall(
+            runModsMethod = mainMethod,
+            owner = PATCH_CACHE_BOOTSTRAP_CLASS,
+            name = PATCH_CACHE_PREPARE_PACKAGE_URLS_METHOD_NAME,
+            desc = PATCH_CACHE_PREPARE_PACKAGE_URLS_METHOD_DESC
+        )
+    }
+
+    private fun hasPrepackagedEnumCacheHook(mainMethod: MethodNode): Boolean {
+        return hasStaticCall(
+            runModsMethod = mainMethod,
+            owner = PATCH_CACHE_BOOTSTRAP_CLASS,
+            name = PATCH_CACHE_BUST_ENUMS_FROM_CACHE_METHOD_NAME,
+            desc = PATCH_CACHE_BUST_ENUMS_FROM_CACHE_METHOD_DESC
         )
     }
 
@@ -737,24 +964,6 @@ internal object MtsLoaderCrashPatcher {
             }
         }
         return false
-    }
-
-    private fun removeCallInitializersCall(mainMethod: MethodNode): Boolean {
-        var removed = false
-        val iterator = mainMethod.instructions.iterator()
-        while (iterator.hasNext()) {
-            val instruction = iterator.next()
-            if (instruction is MethodInsnNode &&
-                instruction.opcode == Opcodes.INVOKESTATIC &&
-                instruction.owner == PREPACKAGED_LAUNCHER_OWNER &&
-                instruction.name == CALL_INITIALIZERS_METHOD_NAME &&
-                instruction.desc == CALL_INITIALIZERS_METHOD_DESC
-            ) {
-                mainMethod.instructions.remove(instruction)
-                removed = true
-            }
-        }
-        return removed
     }
 
     private fun hasStaticCall(

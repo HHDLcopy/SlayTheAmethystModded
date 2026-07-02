@@ -12,8 +12,10 @@ public final class BootBridgeLauncher {
     }
 
     public static void main(String[] args) throws Throwable {
+        long startedAtNs = System.nanoTime();
         BootBridgeReporter reporter = new BootBridgeReporter(BootBridgeEventSink.fromSystemProperty());
         BootBridgeConsoleBridge.install(reporter);
+        log("BootBridge launcher entered");
         reporter.phase(26, BootBridgeStartupMessage.key("boot_bridge_started"));
         installUncaughtExceptionBridge(reporter);
         BootBridgeJvmMemoryWatcher.start(reporter);
@@ -24,6 +26,7 @@ public final class BootBridgeLauncher {
         triggerForcedCrashIfRequested(reporter);
 
         String delegateClass = System.getProperty(PROP_DELEGATE, DEFAULT_DELEGATE);
+        logElapsed("BootBridge launcher prepared", startedAtNs);
         reporter.phase(29, mapDelegateLaunchMessage(delegateClass));
         invokeDelegate(delegateClass, args, reporter);
     }
@@ -64,8 +67,13 @@ public final class BootBridgeLauncher {
 
     private static void invokeDelegate(String delegateClass, String[] args, BootBridgeReporter reporter) throws Throwable {
         try {
+            long classLoadStartNs = System.nanoTime();
             Class<?> delegate = Class.forName(delegateClass);
+            logElapsed("Loaded BootBridge delegate " + delegateClass, classLoadStartNs);
+            long methodLookupStartNs = System.nanoTime();
             Method mainMethod = delegate.getMethod("main", String[].class);
+            logElapsed("Resolved BootBridge delegate main", methodLookupStartNs);
+            log("Invoking BootBridge delegate " + delegateClass);
             mainMethod.invoke(null, (Object) args);
         } catch (InvocationTargetException error) {
             Throwable cause = error.getCause() == null ? error : error.getCause();
@@ -85,5 +93,14 @@ public final class BootBridgeLauncher {
             );
             throw error;
         }
+    }
+
+    private static void log(String message) {
+        System.out.println("[Amethyst] " + message);
+    }
+
+    private static void logElapsed(String message, long startedAtNs) {
+        long elapsedMs = (System.nanoTime() - startedAtNs) / 1000000L;
+        log(message + " took " + elapsedMs + "ms");
     }
 }

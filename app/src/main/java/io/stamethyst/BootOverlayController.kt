@@ -1,6 +1,7 @@
 package io.stamethyst
 
 import android.os.SystemClock
+import android.util.Log
 import android.view.View
 import androidx.annotation.StringRes
 import androidx.compose.animation.core.CubicBezierEasing
@@ -146,6 +147,7 @@ class BootOverlayController(
         private const val JVM_LOG_STAGE_SCAN_MAX_BYTES = 64 * 1024
         private const val MAX_STATUS_LINE_LENGTH = 180
         private const val TEXTURE_VIEW_READY_POST_SIGNAL_FRAMES = 2
+        private const val LOGCAT_TAG = "STS-BootOverlay"
     }
 
     private enum class BootLogStage(
@@ -455,6 +457,12 @@ class BootOverlayController(
 
         bootOverlay?.visibility = View.GONE
         activity.setBootOverlayKeepScreenOn(false)
+        Log.i(
+            LOGCAT_TAG,
+            "BOOT_OVERLAY_DISMISSED uptimeMs=${SystemClock.uptimeMillis()} " +
+                "progress=$bootOverlayProgress " +
+                "surface=${if (useTextureViewSurface) "textureView" else "surfaceView"}"
+        )
 
         onDismissed()
     }

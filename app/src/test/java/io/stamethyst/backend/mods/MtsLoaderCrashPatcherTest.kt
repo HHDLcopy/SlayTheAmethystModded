@@ -50,10 +50,13 @@ class MtsLoaderCrashPatcherTest {
             assertTrue(MtsLoaderCrashPatcher.isPatchedPrepackagedLauncherClass(patchedPrepackagedLauncherBytes))
             assertTrue(MtsLoaderCrashPatcher.hasPatchCacheLaunchHook(patchedLoaderBytes))
             assertTrue(MtsLoaderCrashPatcher.hasPatchCacheStoreHook(patchedLoaderBytes))
+            assertTrue(MtsLoaderCrashPatcher.hasPatchCacheStoreHookWithCompiledClassPathArg(patchedLoaderBytes))
             assertTrue(MtsLoaderCrashPatcher.hasOutJarPrimingHook(patchedLoaderBytes))
             assertTrue(MtsLoaderCrashPatcher.hasCloseWindowNullGuard(patchedLoaderBytes))
+            assertTrue(MtsLoaderCrashPatcher.hasPrepackagedPackageUrlsHook(patchedPrepackagedLauncherBytes))
             assertTrue(MtsLoaderCrashPatcher.hasPrepackagedPrepareHook(patchedPrepackagedLauncherBytes))
-            assertFalse(MtsLoaderCrashPatcher.hasPrepackagedCallInitializersCall(patchedPrepackagedLauncherBytes))
+            assertTrue(MtsLoaderCrashPatcher.hasPrepackagedEnumCacheHook(patchedPrepackagedLauncherBytes))
+            assertTrue(MtsLoaderCrashPatcher.hasPrepackagedCallInitializersCall(patchedPrepackagedLauncherBytes))
 
             val patchedAgainBytes = MtsLoaderCrashPatcher.patchLoaderBytes(patchedLoaderBytes)
             assertTrue(patchedAgainBytes.contentEquals(patchedLoaderBytes))
@@ -97,9 +100,12 @@ class MtsLoaderCrashPatcherTest {
             requireNotNull(patchedPrepackagedLauncherBytes)
             assertTrue(MtsLoaderCrashPatcher.isPatchedLoaderClass(patchedLoaderBytes))
             assertTrue(MtsLoaderCrashPatcher.hasOutJarPrimingHook(patchedLoaderBytes))
+            assertTrue(MtsLoaderCrashPatcher.hasPatchCacheStoreHookWithCompiledClassPathArg(patchedLoaderBytes))
             assertTrue(MtsLoaderCrashPatcher.hasCloseWindowNullGuard(patchedLoaderBytes))
             assertTrue(MtsLoaderCrashPatcher.isPatchedPrepackagedLauncherClass(patchedPrepackagedLauncherBytes))
-            assertFalse(MtsLoaderCrashPatcher.hasPrepackagedCallInitializersCall(patchedPrepackagedLauncherBytes))
+            assertTrue(MtsLoaderCrashPatcher.hasPrepackagedPackageUrlsHook(patchedPrepackagedLauncherBytes))
+            assertTrue(MtsLoaderCrashPatcher.hasPrepackagedEnumCacheHook(patchedPrepackagedLauncherBytes))
+            assertTrue(MtsLoaderCrashPatcher.hasPrepackagedCallInitializersCall(patchedPrepackagedLauncherBytes))
         } finally {
             tempJar.delete()
         }

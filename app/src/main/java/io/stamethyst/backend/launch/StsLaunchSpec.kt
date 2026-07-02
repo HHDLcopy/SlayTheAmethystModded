@@ -707,7 +707,16 @@ object StsLaunchSpec {
         addCacioBootClasspath(args, RuntimePaths.cacioDir(context))
 
         args.add("-javaagent:${RuntimePaths.lwjgl2InjectorJar(context).absolutePath}")
-        args.add("-javaagent:${RuntimePaths.agentConnectorJar(context).absolutePath}=port=9099")
+        if (shouldEnableAgentConnector(
+                launchMode = launchMode,
+                autoplay = autoplay,
+                forceJvmCrash = forceJvmCrash,
+                forceRuntimeCrash = forceRuntimeCrash,
+                performanceDeepDiagnostics = performanceDeepDiagnostics
+            )
+        ) {
+            args.add("-javaagent:${RuntimePaths.agentConnectorJar(context).absolutePath}=port=9099")
+        }
         args.add("-cp")
         if (isMtsLaunchMode(launchMode)) {
             val classpathEntries = arrayListOf(
@@ -771,6 +780,17 @@ object StsLaunchSpec {
             builder.append(value)
         }
         return builder.toString()
+    }
+
+    internal fun shouldEnableAgentConnector(
+        launchMode: String,
+        autoplay: Boolean,
+        forceJvmCrash: Boolean,
+        forceRuntimeCrash: Boolean,
+        performanceDeepDiagnostics: Boolean
+    ): Boolean {
+        return isMtsLaunchMode(launchMode) &&
+            (autoplay || forceJvmCrash || forceRuntimeCrash || performanceDeepDiagnostics)
     }
 
     internal fun resolveTexturePressureDownscaleEnabled(

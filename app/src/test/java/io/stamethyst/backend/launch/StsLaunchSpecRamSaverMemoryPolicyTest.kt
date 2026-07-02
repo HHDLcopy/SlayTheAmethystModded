@@ -121,6 +121,72 @@ class StsLaunchSpecRamSaverMemoryPolicyTest {
     }
 
     @Test
+    fun shouldEnableAgentConnector_disablesForNormalMtsLaunch() {
+        assertFalse(
+            StsLaunchSpec.shouldEnableAgentConnector(
+                launchMode = StsLaunchSpec.LAUNCH_MODE_MTS,
+                autoplay = false,
+                forceJvmCrash = false,
+                forceRuntimeCrash = false,
+                performanceDeepDiagnostics = false
+            )
+        )
+    }
+
+    @Test
+    fun shouldEnableAgentConnector_keepsDebugAndAutomationMtsLaunchesEnabled() {
+        assertTrue(
+            StsLaunchSpec.shouldEnableAgentConnector(
+                launchMode = StsLaunchSpec.LAUNCH_MODE_MTS,
+                autoplay = true,
+                forceJvmCrash = false,
+                forceRuntimeCrash = false,
+                performanceDeepDiagnostics = false
+            )
+        )
+        assertTrue(
+            StsLaunchSpec.shouldEnableAgentConnector(
+                launchMode = StsLaunchSpec.LAUNCH_MODE_MTS,
+                autoplay = false,
+                forceJvmCrash = true,
+                forceRuntimeCrash = false,
+                performanceDeepDiagnostics = false
+            )
+        )
+        assertTrue(
+            StsLaunchSpec.shouldEnableAgentConnector(
+                launchMode = StsLaunchSpec.LAUNCH_MODE_MTS,
+                autoplay = false,
+                forceJvmCrash = false,
+                forceRuntimeCrash = true,
+                performanceDeepDiagnostics = false
+            )
+        )
+        assertTrue(
+            StsLaunchSpec.shouldEnableAgentConnector(
+                launchMode = StsLaunchSpec.LAUNCH_MODE_MTS,
+                autoplay = false,
+                forceJvmCrash = false,
+                forceRuntimeCrash = false,
+                performanceDeepDiagnostics = true
+            )
+        )
+    }
+
+    @Test
+    fun shouldEnableAgentConnector_disablesForVanillaEvenWhenDebugFlagsAreSet() {
+        assertFalse(
+            StsLaunchSpec.shouldEnableAgentConnector(
+                launchMode = StsLaunchSpec.LAUNCH_MODE_VANILLA,
+                autoplay = true,
+                forceJvmCrash = true,
+                forceRuntimeCrash = true,
+                performanceDeepDiagnostics = true
+            )
+        )
+    }
+
+    @Test
     fun resolveGamePerformanceDeepDiagnosticsEnabled_requiresOverlayAndGpuDiagnostics() {
         assertFalse(
             LauncherConfig.resolveGamePerformanceDeepDiagnosticsEnabled(

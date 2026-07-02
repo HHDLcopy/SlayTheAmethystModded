@@ -133,8 +133,13 @@ internal class WorkshopMetadataStore(context: Context) {
 
     fun list(): List<WorkshopInstalledModRecord> = load()
 
+    fun countUpdateAvailable(): Int = withStoreLock {
+        loadUnlocked().count { record -> record.cardState == WorkshopModCardState.UpdateAvailable }
+    }
+
     private fun loadUnlocked(): List<WorkshopInstalledModRecord> {
-        return WorkshopJsonFileStore.readJsonOrDefault(file, emptyList<WorkshopInstalledModRecord>()) { text ->
+        cachedRecords(file)?.let { return it }
+        val records = WorkshopJsonFileStore.readJsonOrDefault(file, emptyList<WorkshopInstalledModRecord>()) { text ->
             val root = JSONObject(text)
             val array = root.optJSONArray("items") ?: return@readJsonOrDefault emptyList()
             buildList {
@@ -144,6 +149,8 @@ internal class WorkshopMetadataStore(context: Context) {
                 }
             }
         }
+        updateCache(file, records)
+        return records
     }
 
     private fun saveUnlocked(records: List<WorkshopInstalledModRecord>) {
@@ -153,14 +160,39 @@ internal class WorkshopMetadataStore(context: Context) {
             array.put(WorkshopMetadataCodec.toJson(record))
         }
         WorkshopJsonFileStore.writeAtomically(file, root.toString(2))
+        updateCache(file, records.sortedByDescending(WorkshopInstalledModRecord::updatedAtMillis))
     }
 
     private fun <T> withStoreLock(block: () -> T): T = WorkshopJsonFileStore.withFileLock(file, lock, block)
 
     companion object {
         private val lock = Any()
+        private var cachedRecords: CachedWorkshopMetadata? = null
+
+        private fun cachedRecords(file: File): List<WorkshopInstalledModRecord>? {
+            val signature = file.cacheSignature() ?: run {
+                cachedRecords = null
+                return null
+            }
+            return cachedRecords
+                ?.takeIf { it.signature == signature }
+                ?.records
+        }
+
+        private fun updateCache(file: File, records: List<WorkshopInstalledModRecord>) {
+            val signature = file.cacheSignature() ?: run {
+                cachedRecords = null
+                return
+            }
+            cachedRecords = CachedWorkshopMetadata(signature, records)
+        }
     }
 }
+
+private data class CachedWorkshopMetadata(
+    val signature: WorkshopFileCacheSignature,
+    val records: List<WorkshopInstalledModRecord>,
+)
 
 private fun WorkshopInstalledModRecord.preserveLocalPreviewImage(existing: WorkshopInstalledModRecord): WorkshopInstalledModRecord {
     if (localPreviewImagePath.isNotBlank()) return this

@@ -22,6 +22,7 @@ import androidx.appcompat.app.AppCompatActivity
 import io.stamethyst.backend.audio.GameAudioController
 import io.stamethyst.backend.diag.MemoryDiagnosticsLogger
 import io.stamethyst.backend.launch.GameProcessLaunchGuard
+import io.stamethyst.backend.launch.StartupTraceEvents
 import io.stamethyst.backend.presence.GamePresenceStateMarker
 import io.stamethyst.backend.render.DisplayPerformanceController
 import io.stamethyst.backend.launch.AutoplayMode
@@ -123,6 +124,11 @@ class StsGameActivity : AppCompatActivity() {
         val startupBackground = StartupWindowBackground.gameColor(this)
         StartupWindowBackground.applyToWindow(window, startupBackground)
         super.onCreate(savedInstanceState)
+        StartupTraceEvents.append(
+            this,
+            "game_activity_on_create",
+            mapOf("launchMode" to intent.getStringExtra(EXTRA_LAUNCH_MODE).orEmpty())
+        )
         StartupWindowBackground.applyToDecorView(window, startupBackground)
         launchGuardAcquired = GameProcessLaunchGuard.tryAcquire(launchGuardToken)
         if (!launchGuardAcquired) {
@@ -179,6 +185,17 @@ class StsGameActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        StartupTraceEvents.append(
+            this,
+            "game_activity_on_resume",
+            mapOf(
+                "launchMode" to if (::sessionConfig.isInitialized) {
+                    sessionConfig.launchMode
+                } else {
+                    intent.getStringExtra(EXTRA_LAUNCH_MODE).orEmpty()
+                }
+            )
+        )
         MemoryDiagnosticsLogger.logEvent(
             this,
             "game_activity_resumed",

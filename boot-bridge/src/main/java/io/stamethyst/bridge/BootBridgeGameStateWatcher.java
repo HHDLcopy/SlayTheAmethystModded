@@ -5,7 +5,10 @@ final class BootBridgeGameStateWatcher {
     private static final int READY_CONFIRM_TICKS = 3;
     private static final int CONSOLE_FALLBACK_FAIL_TICKS = 90;
     private static final int CONSOLE_FALLBACK_WITHOUT_SPLASH_TICKS = 200;
+    private static final int CACHE_SPLASH_VISIBLE_CONFIRM_TICKS = 4;
     private static final float SPLASH_VISIBLE_ALPHA_THRESHOLD = 0.06f;
+    private static final float CACHE_SPLASH_VISIBLE_ALPHA_THRESHOLD = 0.85f;
+    private static final String PROPERTY_PATCH_CACHE_CURRENT = "amethyst.mts.patch_cache.current";
 
     private final BootBridgeReporter reporter;
     private final BootBridgeGameStateProbe probe = new BootBridgeGameStateProbe();
@@ -27,8 +30,10 @@ final class BootBridgeGameStateWatcher {
     private void runLoop() {
         int readyTicks = 0;
         int reflectionFailureTicks = 0;
+        int splashVisibleTicks = 0;
         boolean splashSignaledInCurrentSplash = false;
         boolean startupVisualSignalSeen = false;
+        boolean patchCacheCurrentLaunch = isPatchCacheCurrentLaunch();
         String lastMainMenuScreen = "";
 
         while (!reporter.isReadySent() && !reporter.isFailSent()) {
@@ -37,6 +42,7 @@ final class BootBridgeGameStateWatcher {
                 reflectionFailureTicks = 0;
                 if (snapshot == null) {
                     readyTicks = 0;
+                    splashVisibleTicks = 0;
                     splashSignaledInCurrentSplash = false;
                     lastMainMenuScreen = "";
                     sleepQuietly(WATCHER_POLL_MS);
@@ -44,12 +50,19 @@ final class BootBridgeGameStateWatcher {
                 }
 
                 if ("SPLASH".equals(snapshot.modeName)) {
-                    if (!splashSignaledInCurrentSplash && isSplashLogoVisible(snapshot)) {
+                    if (isSplashLogoVisible(snapshot, patchCacheCurrentLaunch)) {
+                        splashVisibleTicks += 1;
+                    } else {
+                        splashVisibleTicks = 0;
+                    }
+                    if (!splashSignaledInCurrentSplash &&
+                            shouldSignalSplash(snapshot, patchCacheCurrentLaunch, splashVisibleTicks)) {
                         reporter.splash(BootBridgeStartupMessage.key("game_splash"));
                         splashSignaledInCurrentSplash = true;
                         startupVisualSignalSeen = true;
                     }
                 } else {
+                    splashVisibleTicks = 0;
                     splashSignaledInCurrentSplash = false;
                 }
 
@@ -74,6 +87,7 @@ final class BootBridgeGameStateWatcher {
                 }
             } catch (Throwable ignored) {
                 readyTicks = 0;
+                splashVisibleTicks = 0;
                 reflectionFailureTicks += 1;
                 if (!reporter.hasConsoleReadyHint()) {
                     sleepQuietly(WATCHER_POLL_MS);
@@ -91,6 +105,20 @@ final class BootBridgeGameStateWatcher {
             }
             sleepQuietly(WATCHER_POLL_MS);
         }
+    }
+
+    static boolean shouldSignalSplash(
+            BootBridgeGameStateProbe.Snapshot snapshot,
+            boolean patchCacheCurrentLaunch,
+            int visibleTicks
+    ) {
+        if (!isSplashLogoVisible(snapshot, patchCacheCurrentLaunch)) {
+            return false;
+        }
+        if (!patchCacheCurrentLaunch) {
+            return true;
+        }
+        return visibleTicks >= CACHE_SPLASH_VISIBLE_CONFIRM_TICKS;
     }
 
     static boolean isReadyGameState(
@@ -118,7 +146,10 @@ final class BootBridgeGameStateWatcher {
         return !"NONE".equals(snapshot.menuScreenName);
     }
 
-    private static boolean isSplashLogoVisible(BootBridgeGameStateProbe.Snapshot snapshot) {
+    static boolean isSplashLogoVisible(
+            BootBridgeGameStateProbe.Snapshot snapshot,
+            boolean patchCacheCurrentLaunch
+    ) {
         if (snapshot == null || !"SPLASH".equals(snapshot.modeName)) {
             return false;
         }
@@ -130,7 +161,14 @@ final class BootBridgeGameStateWatcher {
             // If alpha introspection is unavailable, use phase-only detection.
             return true;
         }
-        return snapshot.splashLogoAlpha >= SPLASH_VISIBLE_ALPHA_THRESHOLD;
+        float threshold = patchCacheCurrentLaunch ?
+                CACHE_SPLASH_VISIBLE_ALPHA_THRESHOLD :
+                SPLASH_VISIBLE_ALPHA_THRESHOLD;
+        return snapshot.splashLogoAlpha >= threshold;
+    }
+
+    private static boolean isPatchCacheCurrentLaunch() {
+        return Boolean.parseBoolean(System.getProperty(PROPERTY_PATCH_CACHE_CURRENT, "false"));
     }
 
     private static void sleepQuietly(long ms) {

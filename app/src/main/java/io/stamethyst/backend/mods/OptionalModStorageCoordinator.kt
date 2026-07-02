@@ -52,6 +52,15 @@ internal object OptionalModStorageCoordinator {
     @JvmStatic
     @Throws(IOException::class)
     fun prepareMtsModFileList(context: Context) {
+        prepareMtsModFileList(context, null)
+    }
+
+    @JvmStatic
+    @Throws(IOException::class)
+    fun prepareMtsModFileList(
+        context: Context,
+        launchSnapshot: ModManager.LaunchModSnapshot?
+    ): ModManager.LaunchModSnapshot {
         ensureOptionalModLibraryReady(context)
         val runtimeModsDir = RuntimePaths.modsDir(context)
         salvageLegacyOptionalModsForRuntimeCleanup(
@@ -63,8 +72,9 @@ internal object OptionalModStorageCoordinator {
                 RuntimePaths.normalizeLegacyStsPath(context, raw)
             }
         )
-        val enabledLibraryFiles = ModManager.listEnabledOptionalModFiles(context)
-        val launchModFiles = ModManager.listMtsLaunchModFiles(context)
+        val snapshot = launchSnapshot ?: ModManager.buildLaunchModSnapshot(context)
+        val enabledLibraryFiles = snapshot.enabledLibraryFiles
+        val launchModFiles = snapshot.launchModFiles
         MemoryDiagnosticsLogger.logModSnapshot(
             context = context,
             event = "mts_mod_file_list_prepare_started",
@@ -81,6 +91,7 @@ internal object OptionalModStorageCoordinator {
             enabledLibraryFiles = enabledLibraryFiles,
             runtimeModFiles = launchModFiles
         )
+        return snapshot
     }
 
     @Throws(IOException::class)

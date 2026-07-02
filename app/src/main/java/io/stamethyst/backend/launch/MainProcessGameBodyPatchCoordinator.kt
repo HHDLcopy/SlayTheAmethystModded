@@ -30,7 +30,8 @@ object MainProcessGameBodyPatchCoordinator {
 
         val stsJar = RuntimePaths.importedStsJar(appContext)
         val patchJar = RuntimePaths.gdxPatchJar(appContext)
-        val packagedComponentsCurrent = ComponentInstaller.arePackagedComponentsCurrent(appContext)
+        val packagedComponentsCurrent = assumeComponentInstallComplete ||
+            ComponentInstaller.arePackagedComponentsCurrent(appContext)
         val alreadyPatchedBeforeInstall = packagedComponentsCurrent &&
             StsDesktopJarPatcher.isPatchedWithCurrentPatch(stsJar, patchJar)
         val visibleProgressCallback = if (alreadyPatchedBeforeInstall) {
@@ -50,7 +51,11 @@ object MainProcessGameBodyPatchCoordinator {
             )
         }
 
-        val alreadyPatched = StsDesktopJarPatcher.isPatchedWithCurrentPatch(stsJar, patchJar)
+        val alreadyPatched = if (packagedComponentsCurrent) {
+            alreadyPatchedBeforeInstall
+        } else {
+            StsDesktopJarPatcher.isPatchedWithCurrentPatch(stsJar, patchJar)
+        }
         MemoryDiagnosticsLogger.logEvent(
             context = appContext,
             event = "main_process_game_body_patch_started",

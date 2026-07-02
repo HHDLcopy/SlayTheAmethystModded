@@ -12,9 +12,13 @@ internal object MtsPatchCacheCoordinator {
     private const val PROPERTY_ENABLED = "amethyst.mts.patch_cache.enabled"
     private const val PROPERTY_CURRENT = "amethyst.mts.patch_cache.current"
     private const val PROPERTY_JAR = "amethyst.mts.patch_cache.jar"
+    private const val PROPERTY_BASE_JAR = "amethyst.mts.patch_cache.base_jar"
     private const val PROPERTY_MARKER = "amethyst.mts.patch_cache.marker"
     private const val PROPERTY_PACKAGE_DIR = "amethyst.mts.patch_cache.package_dir"
     private const val PROPERTY_EXPECTED = "amethyst.mts.patch_cache.expected"
+    private const val PROPERTY_GAME_DIR = "amethyst.mts.patch_cache.game_dir"
+    private const val PROPERTY_LOADOUT_SCAN_CACHE_ENABLED = "amethyst.runtime_compat.loadout_class_scan_cache"
+    private const val PROPERTY_LOADOUT_SCAN_CACHE_DIR = "amethyst.loadout.scan_cache_dir"
 
     @JvmStatic
     fun expectedMarker(context: Context): String = buildCacheMarkerValue(
@@ -44,21 +48,10 @@ internal object MtsPatchCacheCoordinator {
 
     @JvmStatic
     fun clear(context: Context) {
-        val cachedJar = RuntimePaths.mtsPatchCacheJar(context)
-        val markerFile = RuntimePaths.mtsPatchCacheMarker(context)
-        val packageDir = RuntimePaths.mtsPatchCachePackageDir(context)
-        runCatching { markerFile.delete() }
-        runCatching { cachedJar.delete() }
-        runCatching {
-            packageDir.listFiles()?.forEach { file ->
-                if (file.isFile && file.name.endsWith(".jar", ignoreCase = true)) {
-                    file.delete()
-                }
-            }
-        }
-        runCatching {
-            File(cachedJar.parentFile ?: File("."), "mts_patch_cache_debug.log").delete()
-        }
+        deleteCacheFiles(
+            listOf(RuntimePaths.mtsPatchCacheDir(context)) +
+                RuntimePaths.legacyExternalMtsPatchCacheFiles(context)
+        )
     }
 
     @Throws(IOException::class)
@@ -74,9 +67,12 @@ internal object MtsPatchCacheCoordinator {
                 expectedMarker = expectedMarker
             ),
             cachedJar = RuntimePaths.mtsPatchCacheJar(context),
+            baseJar = RuntimePaths.importedStsJar(context),
             markerFile = RuntimePaths.mtsPatchCacheMarker(context),
             packageDir = RuntimePaths.mtsPatchCachePackageDir(context),
-            expectedMarker = expectedMarker
+            expectedMarker = expectedMarker,
+            gameDir = RuntimePaths.stsRoot(context),
+            loadoutScanCacheDir = RuntimePaths.mtsPatchCacheLoadoutScanCacheDir(context)
         )
     }
 
@@ -85,16 +81,23 @@ internal object MtsPatchCacheCoordinator {
         enabled: Boolean,
         cacheCurrent: Boolean,
         cachedJar: File,
+        baseJar: File,
         markerFile: File,
         packageDir: File,
-        expectedMarker: String
+        expectedMarker: String,
+        gameDir: File,
+        loadoutScanCacheDir: File
     ) {
         args.add("-D$PROPERTY_ENABLED=$enabled")
         args.add("-D$PROPERTY_CURRENT=$cacheCurrent")
         args.add("-D$PROPERTY_JAR=${cachedJar.absolutePath}")
+        args.add("-D$PROPERTY_BASE_JAR=${baseJar.absolutePath}")
         args.add("-D$PROPERTY_MARKER=${markerFile.absolutePath}")
         args.add("-D$PROPERTY_PACKAGE_DIR=${packageDir.absolutePath}")
         args.add("-D$PROPERTY_EXPECTED=$expectedMarker")
+        args.add("-D$PROPERTY_GAME_DIR=${gameDir.absolutePath}")
+        args.add("-D$PROPERTY_LOADOUT_SCAN_CACHE_ENABLED=$enabled")
+        args.add("-D$PROPERTY_LOADOUT_SCAN_CACHE_DIR=${loadoutScanCacheDir.absolutePath}")
     }
 
     internal fun isCacheCurrent(
@@ -127,6 +130,18 @@ internal object MtsPatchCacheCoordinator {
         }
     }
 
+    private fun deleteCacheFiles(files: List<File>) {
+        files.forEach { file ->
+            runCatching {
+                if (file.isDirectory) {
+                    file.deleteRecursively()
+                } else {
+                    file.delete()
+                }
+            }
+        }
+    }
+
     internal fun buildCacheMarkerValue(
         desktopJar: File,
         mtsJar: File,
@@ -137,7 +152,7 @@ internal object MtsPatchCacheCoordinator {
         modFileList: File
     ): String {
         val rawMarker = buildString {
-            append("schema|3").append('\n')
+            append("schema|5").append('\n')
             append(fileFingerprint("desktop", desktopJar)).append('\n')
             append(fileFingerprint("modthespire", mtsJar)).append('\n')
             append(fileFingerprint("basemod", baseModJar)).append('\n')

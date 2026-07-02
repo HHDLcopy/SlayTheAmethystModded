@@ -92,6 +92,22 @@ internal object OptionalModMetadataIndex {
         val needsRewrite: Boolean
     )
 
+    private data class OptionalJarSignature(
+        val storagePath: String,
+        val lastModified: Long,
+        val length: Long
+    )
+
+    private data class OptionalLibrarySignature(
+        val libraryPath: String,
+        val jars: List<OptionalJarSignature>
+    )
+
+    private data class RuntimeCache(
+        val signature: OptionalLibrarySignature,
+        val entries: List<OptionalModMetadata>
+    )
+
     private const val SCHEMA_VERSION = 1
     private const val JSON_KEY_SCHEMA_VERSION = "schemaVersion"
     private const val JSON_KEY_ENTRIES = "entries"
@@ -109,17 +125,24 @@ internal object OptionalModMetadataIndex {
     private const val JSON_KEY_LAUNCH_VALIDATION_ERROR = "launchValidationError"
 
     private val lock = Any()
+    private var runtimeCache: RuntimeCache? = null
 
     fun listOptionalMods(context: Context): List<OptionalModMetadata> {
         synchronized(lock) {
             OptionalModStorageCoordinator.ensureOptionalModLibraryReady(context)
+            val jarFiles = listCurrentOptionalJarFiles(context)
+            val signature = buildLibrarySignature(context, jarFiles)
+            runtimeCache
+                ?.takeIf { it.signature == signature }
+                ?.let { return copyRuntimeEntries(it.entries) }
+
             val readState = readEntries(context)
             val staleEntries = readState.entriesByPath
             val refreshedEntries = ArrayList<CachedEntry>()
             val result = ArrayList<OptionalModMetadata>()
             var changed = readState.needsRewrite
 
-            listCurrentOptionalJarFiles(context).forEach { file ->
+            jarFiles.forEach { file ->
                 val storagePath = normalizeStoragePath(context, file.absolutePath) ?: file.absolutePath
                 val cached = staleEntries.remove(storagePath)
                 val entry = if (cached != null && cached.matches(file)) {
@@ -138,6 +161,7 @@ internal object OptionalModMetadataIndex {
             if (changed) {
                 writeEntries(context, refreshedEntries)
             }
+            runtimeCache = RuntimeCache(signature, copyRuntimeEntries(result))
             return result
         }
     }
@@ -334,6 +358,31 @@ internal object OptionalModMetadataIndex {
             .filterNot { isReservedJarName(it.name) }
             .sortedWith(compareBy<File>({ it.name.lowercase(Locale.ROOT) }, { it.name }, { it.absolutePath }))
             .toList()
+    }
+
+    private fun buildLibrarySignature(
+        context: Context,
+        jarFiles: List<File>
+    ): OptionalLibrarySignature {
+        return OptionalLibrarySignature(
+            libraryPath = RuntimePaths.optionalModsLibraryDir(context).absolutePath,
+            jars = jarFiles.map { file ->
+                OptionalJarSignature(
+                    storagePath = normalizeStoragePath(context, file.absolutePath) ?: file.absolutePath,
+                    lastModified = file.lastModified(),
+                    length = file.length()
+                )
+            }
+        )
+    }
+
+    private fun copyRuntimeEntries(entries: List<OptionalModMetadata>): List<OptionalModMetadata> {
+        return entries.map { entry ->
+            entry.copy(
+                jarFile = File(entry.jarFile.absolutePath),
+                dependencies = ArrayList(entry.dependencies)
+            )
+        }
     }
 
     private fun normalizeStoragePath(context: Context, rawPath: String?): String? {

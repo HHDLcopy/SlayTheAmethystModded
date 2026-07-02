@@ -45,9 +45,11 @@ object RuntimePaths {
     private const val LAUNCHER_CRASH_REPORT_PREFIX = "sts-launcher-crash-"
     private const val BOOT_OVERLAY_IMAGE_DIR_NAME = "boot_overlay_images"
     private const val MTS_CLASSPATH_CACHE_MARKER_FILE_NAME = ".mts_classpath_cache"
+    private const val MTS_PATCH_CACHE_DIR_NAME = "mts_patch_cache"
     private const val MTS_PATCH_CACHE_MARKER_FILE_NAME = ".mts_patch_cache"
     private const val MTS_PATCH_CACHE_JAR_FILE_NAME = "desktop-1.0-modded.jar"
     private const val MTS_PATCH_CACHE_PACKAGE_DIR_NAME = "package"
+    private const val MTS_PATCH_CACHE_LOADOUT_SCAN_CACHE_DIR_NAME = "loadout-scan-cache"
     private const val OPTIONAL_MOD_LIBRARY_MIGRATION_MARKER_FILE_NAME = ".optional_mod_library_migrated"
     private const val ANDROID_EXTERNAL_STORAGE_ROOT = "storage"
     private const val ANDROID_EMULATED_SEGMENT = "emulated"
@@ -241,6 +243,8 @@ object RuntimePaths {
     fun performanceLaunchAuditLog(context: Context): File =
         File(jvmLogsDir(context), PERFORMANCE_LAUNCH_AUDIT_LOG_FILE_NAME)
 
+    fun startupTraceLog(context: Context): File = File(jvmLogsDir(context), "startup_trace.log")
+
     @JvmStatic
     fun jvmGcLog(context: Context): File = File(stsRoot(context), JVM_GC_LOG_FILE_NAME)
 
@@ -350,16 +354,36 @@ object RuntimePaths {
         File(stsRoot(context), MTS_CLASSPATH_CACHE_MARKER_FILE_NAME)
 
     @JvmStatic
+    fun mtsPatchCacheDir(context: Context): File =
+        File(componentRoot(context), MTS_PATCH_CACHE_DIR_NAME)
+
+    @JvmStatic
     fun mtsPatchCacheMarker(context: Context): File =
-        File(stsRoot(context), MTS_PATCH_CACHE_MARKER_FILE_NAME)
+        File(mtsPatchCacheDir(context), MTS_PATCH_CACHE_MARKER_FILE_NAME)
 
     @JvmStatic
     fun mtsPatchCacheJar(context: Context): File =
-        File(stsRoot(context), MTS_PATCH_CACHE_JAR_FILE_NAME)
+        File(mtsPatchCacheDir(context), MTS_PATCH_CACHE_JAR_FILE_NAME)
 
     @JvmStatic
     fun mtsPatchCachePackageDir(context: Context): File =
-        File(stsRoot(context), MTS_PATCH_CACHE_PACKAGE_DIR_NAME)
+        File(mtsPatchCacheDir(context), MTS_PATCH_CACHE_PACKAGE_DIR_NAME)
+
+    @JvmStatic
+    fun mtsPatchCacheLoadoutScanCacheDir(context: Context): File =
+        File(mtsPatchCacheDir(context), MTS_PATCH_CACHE_LOADOUT_SCAN_CACHE_DIR_NAME)
+
+    @JvmStatic
+    fun legacyExternalMtsPatchCacheFiles(context: Context): List<File> {
+        val externalStsRoot = externalAppStsRoot(context) ?: return emptyList()
+        return listOf(
+            File(externalStsRoot, MTS_PATCH_CACHE_MARKER_FILE_NAME),
+            File(externalStsRoot, MTS_PATCH_CACHE_JAR_FILE_NAME),
+            File(externalStsRoot, MTS_PATCH_CACHE_PACKAGE_DIR_NAME),
+            File(File(externalStsRoot, MTS_PATCH_CACHE_DIR_NAME), MTS_PATCH_CACHE_LOADOUT_SCAN_CACHE_DIR_NAME),
+            File(externalStsRoot, "mts_patch_cache_debug.log")
+        )
+    }
 
     @JvmStatic
     fun displayConfigFile(context: Context): File = File(stsRoot(context), "info.displayconfig")
@@ -648,6 +672,7 @@ object RuntimePaths {
         logcatDir(context).mkdirs()
         launcherCrashReportsDir(context).mkdirs()
         bootOverlayImagesDir(context).mkdirs()
+        mtsPatchCacheDir(context).mkdirs()
         mtsLocalJreBinDir(context).mkdirs()
         lwjglDir(context).mkdirs()
         lwjgl2InjectorDir(context).mkdirs()

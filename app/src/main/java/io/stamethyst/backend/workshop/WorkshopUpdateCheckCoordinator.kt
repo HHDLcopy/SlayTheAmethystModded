@@ -33,6 +33,8 @@ internal data class WorkshopUpdateCheckCompletion(
 
 internal object WorkshopUpdateCheckCoordinator {
     private const val CHECK_INTERVAL_MS = 10L * 60L * 1000L
+    private const val APP_START_CHECK_DELAY_MS = 60_000L
+    private const val APP_START_STORED_COUNT_DELAY_MS = 60_000L
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val lock = Any()
@@ -44,6 +46,8 @@ internal object WorkshopUpdateCheckCoordinator {
     @Volatile
     private var periodicJob: Job? = null
     @Volatile
+    private var storedCountJob: Job? = null
+    @Volatile
     private var notifyNextCompletion = false
 
     val uiState: StateFlow<WorkshopUpdateCheckUiState> = _uiState.asStateFlow()
@@ -53,19 +57,27 @@ internal object WorkshopUpdateCheckCoordinator {
         val appContext = context.applicationContext
         _uiState.value = _uiState.value.copy(
             lastCheckedAtMs = LauncherPreferences.readLastWorkshopUpdateCheckAtMs(appContext),
-            updateCount = countStoredUpdates(appContext),
         )
+        refreshStoredUpdateCountLater(appContext)
     }
 
     fun checkOnAppStartIfDue(context: Context) {
         val appContext = context.applicationContext
-        requestCheck(context = appContext, force = false)
-        startPeriodicChecks(appContext)
+        bind(appContext)
+        val initialDelayMs = workshopUpdateCheckInitialDelayMs(
+            lastCheckedAtMs = LauncherPreferences.readLastWorkshopUpdateCheckAtMs(appContext),
+            nowMs = System.currentTimeMillis(),
+            checkIntervalMs = CHECK_INTERVAL_MS,
+            appStartDelayMs = APP_START_CHECK_DELAY_MS,
+        )
+        startPeriodicChecks(appContext, initialDelayMs)
     }
 
     fun requestCheck(context: Context, force: Boolean = false, notifyResult: Boolean = false) {
         val appContext = context.applicationContext
-        bind(appContext)
+        _uiState.value = _uiState.value.copy(
+            lastCheckedAtMs = LauncherPreferences.readLastWorkshopUpdateCheckAtMs(appContext),
+        )
         if (!force && !isCheckDue(appContext)) {
             return
         }
@@ -146,16 +158,22 @@ internal object WorkshopUpdateCheckCoordinator {
 
     private fun isCheckDue(context: Context): Boolean {
         val lastCheckedAtMs = LauncherPreferences.readLastWorkshopUpdateCheckAtMs(context)
-        val now = System.currentTimeMillis()
-        return lastCheckedAtMs <= 0L || now < lastCheckedAtMs || now - lastCheckedAtMs >= CHECK_INTERVAL_MS
+        return isWorkshopUpdateCheckDue(
+            lastCheckedAtMs = lastCheckedAtMs,
+            nowMs = System.currentTimeMillis(),
+            checkIntervalMs = CHECK_INTERVAL_MS,
+        )
     }
 
-    private fun startPeriodicChecks(context: Context) {
+    private fun startPeriodicChecks(context: Context, initialDelayMs: Long) {
         synchronized(lock) {
             if (periodicJob?.isActive == true) {
                 return
             }
             periodicJob = scope.launch {
+                if (initialDelayMs > 0L) {
+                    delay(initialDelayMs)
+                }
                 while (true) {
                     val delayMs = millisUntilNextCheck(context)
                     if (delayMs > 0L) {
@@ -179,11 +197,22 @@ internal object WorkshopUpdateCheckCoordinator {
         return (CHECK_INTERVAL_MS - (now - lastCheckedAtMs)).coerceAtLeast(0L)
     }
 
+    private fun refreshStoredUpdateCountLater(context: Context) {
+        synchronized(lock) {
+            if (storedCountJob?.isActive == true) {
+                return
+            }
+            storedCountJob = scope.launch {
+                delay(APP_START_STORED_COUNT_DELAY_MS)
+                val updateCount = countStoredUpdates(context)
+                _uiState.value = _uiState.value.copy(updateCount = updateCount)
+            }
+        }
+    }
+
     private fun countStoredUpdates(context: Context): Int {
         return runCatching {
-            WorkshopMetadataStore(context).list().count { record ->
-                record.cardState == WorkshopModCardState.UpdateAvailable
-            }
+            WorkshopMetadataStore(context).countUpdateAvailable()
         }.getOrDefault(0)
     }
 }

@@ -23,6 +23,7 @@ object MtsClasspathWarmupCoordinator {
             context = context,
             progressCallback = progressCallback,
             skipWhenCacheCurrent = false,
+            launchSnapshot = null,
             assumeCommonPreparationDone = false
         )
     }
@@ -32,12 +33,14 @@ object MtsClasspathWarmupCoordinator {
     fun prepareForLaunch(
         context: Context,
         progressCallback: StartupProgressCallback? = null,
+        launchSnapshot: ModManager.LaunchModSnapshot? = null,
         assumeCommonPreparationDone: Boolean = false
     ): Boolean {
         return prepareIfReady(
             context = context,
             progressCallback = progressCallback,
             skipWhenCacheCurrent = true,
+            launchSnapshot = launchSnapshot,
             assumeCommonPreparationDone = assumeCommonPreparationDone
         )
     }
@@ -47,6 +50,7 @@ object MtsClasspathWarmupCoordinator {
         context: Context,
         progressCallback: StartupProgressCallback?,
         skipWhenCacheCurrent: Boolean,
+        launchSnapshot: ModManager.LaunchModSnapshot?,
         assumeCommonPreparationDone: Boolean
     ): Boolean {
         if (!RuntimePaths.importedStsJar(context).isFile) {
@@ -81,8 +85,15 @@ object MtsClasspathWarmupCoordinator {
             45,
             context.progressText(R.string.startup_progress_resolving_enabled_mod_launch_list)
         )
-        OptionalModStorageCoordinator.prepareMtsModFileList(context)
-        ModManager.resolveLaunchModIds(context)
+        if (skipWhenCacheCurrent && launchSnapshot != null && isCacheCurrent(context)) {
+            reportProgress(
+                progressCallback,
+                100,
+                context.progressText(R.string.startup_progress_using_prepared_mts_classpath_cache)
+            )
+            return true
+        }
+        val snapshot = OptionalModStorageCoordinator.prepareMtsModFileList(context, launchSnapshot)
         if (skipWhenCacheCurrent && isCacheCurrent(context)) {
             reportProgress(
                 progressCallback,
@@ -98,7 +109,8 @@ object MtsClasspathWarmupCoordinator {
         )
         ModJarSupport.prepareMtsClasspath(
             context,
-            mapProgressRange(progressCallback, 50, 96)
+            mapProgressRange(progressCallback, 50, 96),
+            snapshot
         )
         reportProgress(
             progressCallback,

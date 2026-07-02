@@ -13,6 +13,7 @@ import io.stamethyst.backend.workshop.WorkshopItemDetails
 import io.stamethyst.backend.workshop.WorkshopMetadataStore
 import io.stamethyst.backend.workshop.WorkshopModCardState
 import io.stamethyst.backend.workshop.isRunningDownload
+import io.stamethyst.backend.workshop.shouldRecoverInterruptedDownload
 import io.stamethyst.backend.workshop.shouldShowOnLauncherCards
 
 internal object WorkshopDownloadCenterStore {
@@ -293,9 +294,11 @@ internal object WorkshopDownloadCenterStore {
     }
 
     private fun WorkshopDownloadTaskRecord.shouldRecoverInterrupted(context: Context, now: Long): Boolean {
-        if (WorkshopDownloadProcessService.isActiveDownload(context, publishedFileId)) return false
-        if (status.isRunningDownload() && now - updatedAtMillis < ACTIVE_DOWNLOAD_RECOVERY_GRACE_MS) return false
-        return true
+        return shouldRecoverInterruptedDownload(
+            nowMillis = now,
+            isActiveDownload = WorkshopDownloadProcessService.isActiveDownload(context, publishedFileId),
+            activeDownloadRecoveryGraceMs = ACTIVE_DOWNLOAD_RECOVERY_GRACE_MS,
+        )
     }
 }
 

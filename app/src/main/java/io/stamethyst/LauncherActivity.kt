@@ -17,7 +17,13 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import io.stamethyst.backend.diag.LauncherLogcatCaptureProcessClient
 import io.stamethyst.backend.diag.LogcatCaptureProcessClient
+import io.stamethyst.backend.launch.AutoplayMode
+import io.stamethyst.backend.launch.AutoplaySaveMode
+import io.stamethyst.backend.launch.ExpectedGameExitNotice
 import io.stamethyst.backend.launch.GameLaunchReturnTracker
+import io.stamethyst.backend.launch.MainProcessLaunchPreparationCoordinator
+import io.stamethyst.backend.launch.StartupTraceEvents
+import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.backend.workshop.WorkshopUpdateCheckCoordinator
 import io.stamethyst.config.LegacyStsStorageMigration
 import io.stamethyst.config.RuntimePaths
@@ -33,6 +39,7 @@ import io.stamethyst.ui.settings.files.SettingsFileService
 import io.stamethyst.ui.settings.core.SettingsScreenViewModel
 import io.stamethyst.ui.theme.LauncherTheme
 import java.io.File
+import java.io.FileOutputStream
 import java.util.Locale
 
 class LauncherActivity : AppCompatActivity() {
@@ -91,6 +98,18 @@ class LauncherActivity : AppCompatActivity() {
         object Unsupported : ExternalImportRequest
     }
 
+    private data class DebugLaunchRequest(
+        val launchMode: String,
+        val forceJvmCrash: Boolean,
+        val forceRuntimeCrash: Boolean,
+        val autoplay: Boolean,
+        val autoplaySaveMode: AutoplaySaveMode,
+        val autoplayMode: AutoplayMode,
+        val autoplaySingleRoomSpecPath: String,
+        val autoplayChoiceDelayMs: Long,
+        val cardObtainEffectOwnershipCompatEnabled: Boolean
+    )
+
     private val mainViewModel: MainScreenViewModel by viewModels()
     private val settingsViewModel: SettingsScreenViewModel by viewModels()
     private var pendingImportDialog: AlertDialog? = null
@@ -107,6 +126,14 @@ class LauncherActivity : AppCompatActivity() {
         val startupBackground = StartupWindowBackground.launcherColor(this)
         StartupWindowBackground.applyToWindow(window, startupBackground)
         super.onCreate(savedInstanceState)
+        StartupTraceEvents.append(
+            this,
+            "launcher_activity_on_create",
+            mapOf("debugLaunch" to intent.hasExtra(EXTRA_DEBUG_LAUNCH_MODE))
+        )
+        if (startDirectDebugLaunchIfRequested(intent)) {
+            return
+        }
         StartupWindowBackground.applyToDecorView(window, startupBackground)
         LauncherOrientationPolicy.applyTo(this)
         syncLauncherLogcatCapture()
@@ -217,6 +244,143 @@ class LauncherActivity : AppCompatActivity() {
         backgroundForGameLaunch = false
     }
 
+    private fun startDirectDebugLaunchIfRequested(startupIntent: Intent?): Boolean {
+        val request = buildDebugLaunchRequest(startupIntent) ?: return false
+        StartupTraceEvents.append(
+            this,
+            "direct_debug_launch_start",
+            mapOf("launchMode" to request.launchMode)
+        )
+        Thread({
+            try {
+                LegacyStsStorageMigration.migrateIfNeeded(this)
+                val settingsSynced = runCatching {
+                    LauncherPreferences.syncLauncherPrefsToDisk(this)
+                }.getOrDefault(false)
+                if (!settingsSynced) {
+                    throw IllegalStateException("Launcher settings sync failed")
+                }
+                if (GameLaunchReturnTracker.isGameProcessRunning(this, includeCached = true)) {
+                    StartupTraceEvents.append(
+                        this,
+                        "direct_debug_launch_cleanup_game_process",
+                        mapOf("launchMode" to request.launchMode)
+                    )
+                    GameLaunchReturnTracker.terminateTrackedGameProcessAndWait(this)
+                    GameLaunchReturnTracker.clearPendingGameLaunch(this)
+                }
+                MainProcessLaunchPreparationCoordinator.prepareBeforeLaunch(
+                    context = applicationContext,
+                    launchMode = request.launchMode,
+                    progressCallback = null
+                )
+                val backBehavior = LauncherPreferences.readBackBehavior(this)
+                val manualDismissBootOverlay =
+                    LauncherPreferences.readManualDismissBootOverlay(this)
+                val launchStartedAtMs = GameLaunchReturnTracker.markGameLaunchStarted(this)
+                ExpectedGameExitNotice.clearExpectedGameExit(this)
+                if (LauncherPreferences.isLogcatCaptureEnabled(this)) {
+                    LogcatCaptureProcessClient.startCapture(this, launchStartedAtMs)
+                } else {
+                    LogcatCaptureProcessClient.stopAndClearCapture(this)
+                }
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) {
+                        return@runOnUiThread
+                    }
+                    markBackgroundForGameLaunch()
+                    StartupTraceEvents.append(
+                        this,
+                        "direct_debug_launch_game_activity",
+                        mapOf("launchMode" to request.launchMode)
+                    )
+                    StsGameActivity.launch(
+                        context = this,
+                        launchMode = request.launchMode,
+                        backBehavior = backBehavior,
+                        manualDismissBootOverlay = manualDismissBootOverlay,
+                        forceJvmCrash = request.forceJvmCrash,
+                        forceRuntimeCrash = request.forceRuntimeCrash,
+                        autoplay = request.autoplay,
+                        autoplaySaveMode = request.autoplaySaveMode,
+                        autoplayMode = request.autoplayMode,
+                        autoplaySingleRoomSpecPath = request.autoplaySingleRoomSpecPath,
+                        autoplayChoiceDelayMs = request.autoplayChoiceDelayMs,
+                        cardObtainEffectOwnershipCompatEnabled =
+                            request.cardObtainEffectOwnershipCompatEnabled
+                    )
+                }
+            } catch (error: Throwable) {
+                StartupTraceEvents.append(
+                    this,
+                    "direct_debug_launch_failed",
+                    mapOf(
+                        "launchMode" to request.launchMode,
+                        "error" to (error.message ?: error.javaClass.simpleName)
+                    )
+                )
+                writeDirectDebugLaunchFailureEvent(
+                    "Direct debug launch preparation failed: " +
+                        (error.message ?: error.javaClass.simpleName)
+                )
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) {
+                        clearBackgroundForGameLaunch()
+                        finish()
+                    }
+                }
+            }
+        }, "STS-DirectDebugLaunch").start()
+        return true
+    }
+
+    private fun buildDebugLaunchRequest(startupIntent: Intent?): DebugLaunchRequest? {
+        val launchMode = startupIntent?.getStringExtra(EXTRA_DEBUG_LAUNCH_MODE) ?: return null
+        if (launchMode != StsLaunchSpec.LAUNCH_MODE_VANILLA &&
+            !StsLaunchSpec.isMtsLaunchMode(launchMode)
+        ) {
+            return null
+        }
+        return DebugLaunchRequest(
+            launchMode = launchMode,
+            forceJvmCrash = startupIntent.getBooleanExtra(EXTRA_DEBUG_FORCE_JVM_CRASH, false),
+            forceRuntimeCrash = startupIntent.getBooleanExtra(EXTRA_DEBUG_FORCE_RUNTIME_CRASH, false),
+            autoplay = startupIntent.getBooleanExtra(EXTRA_DEBUG_AUTOPLAY, false),
+            autoplaySaveMode = AutoplaySaveMode.fromPersistedValue(
+                startupIntent.getStringExtra(EXTRA_DEBUG_AUTOPLAY_SAVE_MODE)
+            ),
+            autoplayMode = AutoplayMode.fromPersistedValue(
+                startupIntent.getStringExtra(EXTRA_DEBUG_AUTOPLAY_MODE)
+            ),
+            autoplaySingleRoomSpecPath =
+                startupIntent.getStringExtra(EXTRA_DEBUG_AUTOPLAY_SINGLE_ROOM_SPEC).orEmpty(),
+            autoplayChoiceDelayMs = startupIntent.getLongExtra(
+                EXTRA_DEBUG_AUTOPLAY_CHOICE_DELAY_MS,
+                0L
+            ).coerceAtLeast(0L),
+            cardObtainEffectOwnershipCompatEnabled = !startupIntent.getBooleanExtra(
+                EXTRA_DEBUG_DISABLE_CARD_OBTAIN_EFFECT_OWNERSHIP_COMPAT,
+                false
+            )
+        )
+    }
+
+    private fun writeDirectDebugLaunchFailureEvent(message: String) {
+        try {
+            val eventsFile = RuntimePaths.bootBridgeEventsLog(this)
+            eventsFile.parentFile?.mkdirs()
+            val safeMessage = message
+                .replace('\t', ' ')
+                .replace('\r', ' ')
+                .replace('\n', ' ')
+            FileOutputStream(eventsFile, true).use { output ->
+                output.write("FAIL\t-1\t$safeMessage\n".toByteArray(Charsets.UTF_8))
+                output.flush()
+            }
+        } catch (_: Throwable) {
+        }
+    }
+
     private fun onStartupResourcesReady(
         storageMigrationResult: LegacyStsStorageMigration.Result?,
         startupIntent: Intent?
@@ -224,6 +388,11 @@ class LauncherActivity : AppCompatActivity() {
         if (startupAfterResourcesCompleted || isFinishing || isDestroyed) {
             return
         }
+        StartupTraceEvents.append(
+            this,
+            "launcher_resources_ready",
+            mapOf("debugLaunch" to (startupIntent?.hasExtra(EXTRA_DEBUG_LAUNCH_MODE) == true))
+        )
         startupAfterResourcesCompleted = true
         handleIncomingLauncherIntent(startupIntent)
         if (storageMigrationResult != null) {
@@ -272,6 +441,15 @@ class LauncherActivity : AppCompatActivity() {
                             return
                         }
                 if (GameLaunchReturnTracker.isGameProcessRunning(this@LauncherActivity)) {
+                    if (
+                        !killRequested &&
+                        GameLaunchReturnTracker.isWithinFreshLaunchHandoffWindow(
+                            currentLaunchStartedAt
+                        )
+                    ) {
+                        decorView.postDelayed(this, GAME_RETURN_ANALYSIS_DELAY_MS)
+                        return
+                    }
                     if (!killRequested) {
                         GameLaunchReturnTracker.terminateTrackedGameProcess(this@LauncherActivity)
                         LogcatCaptureProcessClient.stopCapture(this@LauncherActivity)

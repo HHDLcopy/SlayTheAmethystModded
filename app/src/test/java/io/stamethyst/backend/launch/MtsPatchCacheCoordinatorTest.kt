@@ -214,17 +214,23 @@ class MtsPatchCacheCoordinatorTest {
     fun cacheRuntimePropertiesAreAppendedWhenCurrent() {
         val args = arrayListOf<String>()
         val cachedJar = File("desktop-1.0-modded.jar")
+        val baseJar = File("desktop-1.0.jar")
         val markerFile = File(".mts_patch_cache")
         val packageDir = File("package")
+        val gameDir = File("sts")
+        val loadoutScanCacheDir = File("loadout-scan-cache")
 
         MtsPatchCacheCoordinator.appendRuntimeProperties(
             args = args,
             enabled = true,
             cacheCurrent = true,
             cachedJar = cachedJar,
+            baseJar = baseJar,
             markerFile = markerFile,
             packageDir = packageDir,
-            expectedMarker = "marker"
+            expectedMarker = "marker",
+            gameDir = gameDir,
+            loadoutScanCacheDir = loadoutScanCacheDir
         )
 
         assertEquals(
@@ -232,9 +238,13 @@ class MtsPatchCacheCoordinatorTest {
                 "-Damethyst.mts.patch_cache.enabled=true",
                 "-Damethyst.mts.patch_cache.current=true",
                 "-Damethyst.mts.patch_cache.jar=${cachedJar.absolutePath}",
+                "-Damethyst.mts.patch_cache.base_jar=${baseJar.absolutePath}",
                 "-Damethyst.mts.patch_cache.marker=${markerFile.absolutePath}",
                 "-Damethyst.mts.patch_cache.package_dir=${packageDir.absolutePath}",
-                "-Damethyst.mts.patch_cache.expected=marker"
+                "-Damethyst.mts.patch_cache.expected=marker",
+                "-Damethyst.mts.patch_cache.game_dir=${gameDir.absolutePath}",
+                "-Damethyst.runtime_compat.loadout_class_scan_cache=true",
+                "-Damethyst.loadout.scan_cache_dir=${loadoutScanCacheDir.absolutePath}"
             ),
             args
         )
@@ -244,17 +254,23 @@ class MtsPatchCacheCoordinatorTest {
     fun cacheRuntimePropertiesStayDisabledWhenFeatureIsOff() {
         val args = arrayListOf<String>()
         val cachedJar = File("desktop-1.0-modded.jar")
+        val baseJar = File("desktop-1.0.jar")
         val markerFile = File(".mts_patch_cache")
         val packageDir = File("package")
+        val gameDir = File("sts")
+        val loadoutScanCacheDir = File("loadout-scan-cache")
 
         MtsPatchCacheCoordinator.appendRuntimeProperties(
             args = args,
             enabled = false,
             cacheCurrent = false,
             cachedJar = cachedJar,
+            baseJar = baseJar,
             markerFile = markerFile,
             packageDir = packageDir,
-            expectedMarker = ""
+            expectedMarker = "",
+            gameDir = gameDir,
+            loadoutScanCacheDir = loadoutScanCacheDir
         )
 
         assertEquals(
@@ -262,9 +278,13 @@ class MtsPatchCacheCoordinatorTest {
                 "-Damethyst.mts.patch_cache.enabled=false",
                 "-Damethyst.mts.patch_cache.current=false",
                 "-Damethyst.mts.patch_cache.jar=${cachedJar.absolutePath}",
+                "-Damethyst.mts.patch_cache.base_jar=${baseJar.absolutePath}",
                 "-Damethyst.mts.patch_cache.marker=${markerFile.absolutePath}",
                 "-Damethyst.mts.patch_cache.package_dir=${packageDir.absolutePath}",
-                "-Damethyst.mts.patch_cache.expected="
+                "-Damethyst.mts.patch_cache.expected=",
+                "-Damethyst.mts.patch_cache.game_dir=${gameDir.absolutePath}",
+                "-Damethyst.runtime_compat.loadout_class_scan_cache=false",
+                "-Damethyst.loadout.scan_cache_dir=${loadoutScanCacheDir.absolutePath}"
             ),
             args
         )

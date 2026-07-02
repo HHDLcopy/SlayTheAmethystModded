@@ -63,4 +63,34 @@ class GameLaunchReturnTrackerTest {
             )
         )
     }
+
+    @Test
+    fun isWithinFreshLaunchHandoffWindow_returnsTrue_only_forRecentLaunches() {
+        val startedAtMs = 1_000_000L
+
+        assertTrue(
+            GameLaunchReturnTracker.isWithinFreshLaunchHandoffWindow(
+                startedAtMs = startedAtMs,
+                nowMs = startedAtMs + 9_999L
+            )
+        )
+        assertFalse(
+            GameLaunchReturnTracker.isWithinFreshLaunchHandoffWindow(
+                startedAtMs = startedAtMs,
+                nowMs = startedAtMs + 10_000L
+            )
+        )
+        assertFalse(
+            GameLaunchReturnTracker.isWithinFreshLaunchHandoffWindow(
+                startedAtMs = startedAtMs,
+                nowMs = startedAtMs - 1L
+            )
+        )
+        assertFalse(
+            GameLaunchReturnTracker.isWithinFreshLaunchHandoffWindow(
+                startedAtMs = 0L,
+                nowMs = startedAtMs
+            )
+        )
+    }
 }

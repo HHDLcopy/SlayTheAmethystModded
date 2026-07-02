@@ -5,16 +5,25 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.net.URL;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.Collection;
+import java.util.Map;
+import java.util.Set;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+import java.util.zip.ZipOutputStream;
 
 public final class MtsPatchCacheStore {
     private static final long MIN_CACHE_JAR_BYTES = 1024L * 1024L;
     private static final String PROPERTY_ENABLED = "amethyst.mts.patch_cache.enabled";
     private static final String PROPERTY_JAR = "amethyst.mts.patch_cache.jar";
+    private static final String PROPERTY_BASE_JAR = "amethyst.mts.patch_cache.base_jar";
     private static final String PROPERTY_MARKER = "amethyst.mts.patch_cache.marker";
     private static final String PROPERTY_PACKAGE_DIR = "amethyst.mts.patch_cache.package_dir";
     private static final String PROPERTY_EXPECTED = "amethyst.mts.patch_cache.expected";
@@ -66,13 +75,19 @@ public final class MtsPatchCacheStore {
     }
 
     public static void store(Object classPool) {
+        store(classPool, null);
+    }
+
+    public static void store(Object classPool, Object compiledClassPath) {
         if (!Boolean.parseBoolean(System.getProperty(PROPERTY_ENABLED, "false"))) {
             return;
         }
         String expectedMarker = System.getProperty(PROPERTY_EXPECTED, "").trim();
         File cachedJar = new File(System.getProperty(PROPERTY_JAR, ""));
+        File baseJar = new File(System.getProperty(PROPERTY_BASE_JAR, ""));
         File markerFile = new File(System.getProperty(PROPERTY_MARKER, ""));
         File packageDir = resolvePackageDir(cachedJar);
+        File generatedPackageDir = resolveGeneratedPackageDir();
         File diagnosticFile = resolveDiagnosticFile(cachedJar);
         if (expectedMarker.length() == 0 || classPool == null) {
             return;
@@ -81,8 +96,15 @@ public final class MtsPatchCacheStore {
         try {
             deleteIfExists(markerFile);
             deleteIfExists(diagnosticFile);
-            deletePackageJars(packageDir);
             File parent = cachedJar.getParentFile();
+            if (parent != null) {
+                MtsPatchAnnotationDbCache.delete(parent);
+                MtsPatchMainJarSpireEnumCache.delete(parent);
+            }
+            deletePackageJars(packageDir);
+            if (!sameFile(packageDir, generatedPackageDir)) {
+                deletePackageJars(generatedPackageDir);
+            }
             if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
                 throw new IllegalStateException("Failed to create cache dir: " + parent.getAbsolutePath());
             }
@@ -105,12 +127,17 @@ public final class MtsPatchCacheStore {
                             " packageDir=" + packageDir.getAbsolutePath()
             );
             primeOutJarClasses(classPool, diagnosticFile);
-            packageJar.invoke(null, classPool, cachedJar.getAbsolutePath());
+            invokePackageJarInCacheRoot(packageJar, classPool, cachedJar);
+            int mergedCompiledClasses = mergeCompiledClasses(cachedJar, baseJar, compiledClassPath, diagnosticFile);
             writeDiagnostic(
                     diagnosticFile,
                     "after packageJar cacheBytes=" + (cachedJar.isFile() ? cachedJar.length() : 0L) +
-                            " packageJars=" + countPackageJars(packageDir)
+                            " packageJars=" + countPackageJars(packageDir) +
+                            " mergedCompiledClasses=" + mergedCompiledClasses
             );
+            if (countPackageJars(packageDir) == 0 && !sameFile(packageDir, generatedPackageDir)) {
+                migratePackageJars(generatedPackageDir, packageDir, diagnosticFile);
+            }
             createJsonEscapedPackageAliases(packageDir);
             if (!cachedJar.isFile() || cachedJar.length() < MIN_CACHE_JAR_BYTES) {
                 throw new IllegalStateException(
@@ -124,16 +151,223 @@ public final class MtsPatchCacheStore {
             if (packageJarCount == 0) {
                 throw new IllegalStateException("Cache package jars were not created: " + packageDir.getAbsolutePath());
             }
+            if (parent != null) {
+                MtsPatchAnnotationDbCache.writeFromPatcher(loader, parent, packageDir);
+                MtsPatchMainJarSpireEnumCache.writeFromPatchedJar(loader, parent, cachedJar);
+            }
             writeMarker(markerFile, expectedMarker);
             log("MTS patch cache is ready: packageJars=" + packageJarCount);
             deleteIfExists(diagnosticFile);
         } catch (Throwable error) {
             deleteIfExists(markerFile);
             deleteIfExists(cachedJar);
+            File parent = cachedJar.getParentFile();
+            if (parent != null) {
+                MtsPatchAnnotationDbCache.delete(parent);
+                MtsPatchMainJarSpireEnumCache.delete(parent);
+            }
             deletePackageJars(packageDir);
+            if (!sameFile(packageDir, generatedPackageDir)) {
+                deletePackageJars(generatedPackageDir);
+            }
             writeFailureDiagnostic(diagnosticFile, error);
             log("Failed to write MTS patch cache: " + error);
             error.printStackTrace(System.out);
+        }
+    }
+
+    private static int mergeCompiledClasses(
+            File cachedJar,
+            File baseJar,
+            Object compiledClassPath,
+            File diagnosticFile
+    ) throws Exception {
+        Map<String, byte[]> classes = collectCompiledClasses(baseJar, compiledClassPath, diagnosticFile);
+        if (classes.isEmpty()) {
+            return 0;
+        }
+
+        File tempJar = new File(cachedJar.getAbsolutePath() + ".merge.tmp");
+        Set<String> written = new HashSet<String>();
+        ZipInputStream input = new ZipInputStream(new FileInputStream(cachedJar));
+        try {
+            ZipOutputStream output = new ZipOutputStream(new FileOutputStream(tempJar, false));
+            try {
+                byte[] buffer = new byte[8192];
+                ZipEntry entry;
+                while ((entry = input.getNextEntry()) != null) {
+                    String name = entry.getName();
+                    if (classes.containsKey(name) || !written.add(name)) {
+                        input.closeEntry();
+                        continue;
+                    }
+                    ZipEntry replacement = new ZipEntry(name);
+                    if (entry.getTime() >= 0L) {
+                        replacement.setTime(entry.getTime());
+                    }
+                    output.putNextEntry(replacement);
+                    if (!entry.isDirectory()) {
+                        int count;
+                        while ((count = input.read(buffer)) != -1) {
+                            output.write(buffer, 0, count);
+                        }
+                    }
+                    output.closeEntry();
+                    input.closeEntry();
+                }
+                for (Map.Entry<String, byte[]> override : classes.entrySet()) {
+                    if (!written.add(override.getKey())) {
+                        continue;
+                    }
+                    output.putNextEntry(new ZipEntry(override.getKey()));
+                    output.write(override.getValue());
+                    output.closeEntry();
+                }
+            } finally {
+                output.close();
+            }
+        } finally {
+            input.close();
+        }
+
+        if (!cachedJar.delete()) {
+            deleteIfExists(tempJar);
+            throw new IllegalStateException("Failed to replace cache jar: " + cachedJar.getAbsolutePath());
+        }
+        if (!tempJar.renameTo(cachedJar)) {
+            copyFile(tempJar, cachedJar);
+            deleteIfExists(tempJar);
+        }
+        return classes.size();
+    }
+
+    private static Map<String, byte[]> collectCompiledClasses(
+            File baseJar,
+            Object compiledClassPath,
+            File diagnosticFile
+    ) {
+        Map<String, byte[]> result = new LinkedHashMap<String, byte[]>();
+        if (compiledClassPath == null) {
+            writeDiagnostic(diagnosticFile, "no compiled classpath available for cache merge");
+            return result;
+        }
+
+        try {
+            Field classesField = findField(compiledClassPath.getClass(), "classes");
+            if (classesField == null) {
+                writeDiagnostic(diagnosticFile, "compiled classpath has no classes field: " + compiledClassPath.getClass().getName());
+                return result;
+            }
+            classesField.setAccessible(true);
+            Object rawClasses = classesField.get(compiledClassPath);
+            if (!(rawClasses instanceof Map)) {
+                writeDiagnostic(diagnosticFile, "compiled classpath classes field is not a map");
+                return result;
+            }
+
+            Map<?, ?> classes = (Map<?, ?>) rawClasses;
+            for (Map.Entry<?, ?> entry : classes.entrySet()) {
+                if (!(entry.getKey() instanceof String) || entry.getValue() == null) {
+                    continue;
+                }
+                String className = (String) entry.getKey();
+                Object info = entry.getValue();
+                Field classFileField = findField(info.getClass(), "classfile");
+                if (classFileField == null) {
+                    continue;
+                }
+                classFileField.setAccessible(true);
+                Object rawBytes = classFileField.get(info);
+                if (!(rawBytes instanceof byte[])) {
+                    continue;
+                }
+                URL origin = readOriginUrl(info);
+                if (!shouldMergeCompiledClass(className, origin, baseJar)) {
+                    continue;
+                }
+                result.put(className.replace('.', '/') + ".class", (byte[]) rawBytes);
+            }
+            writeDiagnostic(
+                    diagnosticFile,
+                    "compiled classpath merge candidates=" + result.size() +
+                            " compiledCount=" + classes.size()
+            );
+        } catch (Throwable error) {
+            writeDiagnostic(diagnosticFile, "failed to collect compiled classes: " + error);
+        }
+        return result;
+    }
+
+    private static URL readOriginUrl(Object info) {
+        try {
+            Field urlField = findField(info.getClass(), "url");
+            if (urlField == null) {
+                return null;
+            }
+            urlField.setAccessible(true);
+            Object rawUrl = urlField.get(info);
+            return rawUrl instanceof URL ? (URL) rawUrl : null;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static boolean shouldMergeCompiledClass(String className, URL origin, File baseJar) {
+        if (className.startsWith("com.megacrit.")) {
+            return true;
+        }
+        return baseJar.isFile() && origin != null && sameFile(resolveOriginJar(origin), baseJar);
+    }
+
+    private static File resolveOriginJar(URL origin) {
+        try {
+            String spec = origin.toString();
+            if (spec.startsWith("jar:")) {
+                spec = spec.substring(4);
+            }
+            int bang = spec.indexOf('!');
+            if (bang >= 0) {
+                spec = spec.substring(0, bang);
+            }
+            if (spec.startsWith("file:")) {
+                return new File(new URL(spec).toURI());
+            }
+            return new File(origin.toURI());
+        } catch (Throwable ignored) {
+            return new File(origin.getPath());
+        }
+    }
+
+    private static Field findField(Class<?> type, String name) {
+        Class<?> current = type;
+        while (current != null) {
+            try {
+                return current.getDeclaredField(name);
+            } catch (NoSuchFieldException ignored) {
+                current = current.getSuperclass();
+            }
+        }
+        return null;
+    }
+
+    private static void invokePackageJarInCacheRoot(Method packageJar, Object classPool, File cachedJar)
+            throws Throwable {
+        String previousUserDir = System.getProperty("user.dir");
+        File cacheRoot = cachedJar.getParentFile();
+        try {
+            if (cacheRoot != null) {
+                System.setProperty("user.dir", cacheRoot.getAbsolutePath());
+            }
+            packageJar.invoke(null, classPool, cachedJar.getAbsolutePath());
+        } catch (InvocationTargetException error) {
+            Throwable cause = error.getCause();
+            throw cause == null ? error : cause;
+        } finally {
+            if (previousUserDir == null) {
+                System.clearProperty("user.dir");
+            } else {
+                System.setProperty("user.dir", previousUserDir);
+            }
         }
     }
 
@@ -144,6 +378,14 @@ public final class MtsPatchCacheStore {
         }
         File parent = cachedJar.getParentFile();
         return new File(parent == null ? new File(".") : parent, "package");
+    }
+
+    private static File resolveGeneratedPackageDir() {
+        String launchUserDir = System.getProperty("user.dir", "").trim();
+        if (launchUserDir.length() == 0) {
+            return new File("package");
+        }
+        return new File(launchUserDir, "package");
     }
 
     private static File resolveDiagnosticFile(File cachedJar) {
@@ -229,6 +471,38 @@ public final class MtsPatchCacheStore {
         return count;
     }
 
+    private static void migratePackageJars(File sourceDir, File targetDir, File diagnosticFile) throws Exception {
+        File[] files = sourceDir.isDirectory() ? sourceDir.listFiles() : null;
+        if (files == null) {
+            writeDiagnostic(diagnosticFile, "no generated package dir to migrate: " + sourceDir.getAbsolutePath());
+            return;
+        }
+        if (!targetDir.isDirectory() && !targetDir.mkdirs()) {
+            throw new IllegalStateException("Failed to create cache package dir: " + targetDir.getAbsolutePath());
+        }
+        int migrated = 0;
+        for (File source : files) {
+            if (!isJar(source)) {
+                continue;
+            }
+            File target = new File(targetDir, source.getName());
+            deleteIfExists(target);
+            if (!source.renameTo(target)) {
+                copyFile(source, target);
+                if (!source.delete()) {
+                    source.deleteOnExit();
+                }
+            }
+            migrated++;
+        }
+        writeDiagnostic(
+                diagnosticFile,
+                "migrated packageJars=" + migrated +
+                        " from=" + sourceDir.getAbsolutePath() +
+                        " to=" + targetDir.getAbsolutePath()
+        );
+    }
+
     private static void deletePackageJars(File packageDir) {
         File[] files = packageDir.isDirectory() ? packageDir.listFiles() : null;
         if (files == null) {
@@ -296,6 +570,14 @@ public final class MtsPatchCacheStore {
     private static void deleteIfExists(File file) {
         if (file.exists()) {
             file.delete();
+        }
+    }
+
+    private static boolean sameFile(File left, File right) {
+        try {
+            return left.getCanonicalFile().equals(right.getCanonicalFile());
+        } catch (Throwable ignored) {
+            return left.getAbsoluteFile().equals(right.getAbsoluteFile());
         }
     }
 

@@ -174,6 +174,16 @@ object ModJarSupport {
     @JvmStatic
     @Throws(IOException::class)
     fun prepareMtsClasspath(context: Context, progressCallback: StartupProgressCallback?) {
+        prepareMtsClasspath(context, progressCallback, null)
+    }
+
+    @JvmStatic
+    @Throws(IOException::class)
+    fun prepareMtsClasspath(
+        context: Context,
+        progressCallback: StartupProgressCallback?,
+        launchSnapshot: ModManager.LaunchModSnapshot?
+    ) {
         val stsJar = RuntimePaths.importedStsJar(context)
         val patchJar = RuntimePaths.gdxPatchJar(context)
         val baseModJar = RuntimePaths.importedBaseModJar(context)
@@ -189,7 +199,7 @@ object ModJarSupport {
             18,
             context.progressText(R.string.startup_progress_applying_compatibility_patches)
         )
-        ModCompatibilityPatchCoordinator.applyCompatPatchRules(context)
+        ModCompatibilityPatchCoordinator.applyCompatPatchRules(context, launchSnapshot)
         ModClasspathJarBuilder.ensureGdxApiJar(
             context = context,
             stsJar = stsJar,

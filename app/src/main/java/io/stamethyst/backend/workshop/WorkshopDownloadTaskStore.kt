@@ -185,6 +185,22 @@ class WorkshopDownloadTaskStore(context: Context) {
         return@withStoreLock recovered
     }
 
+    private fun loadUnlocked(): List<WorkshopDownloadTaskRecord> {
+        cachedTasks(file)?.let { return it }
+        val tasks = WorkshopJsonFileStore.readJsonOrDefault(file, emptyList<WorkshopDownloadTaskRecord>()) { text ->
+            val root = JSONObject(text)
+            val array = root.optJSONArray("tasks") ?: return@readJsonOrDefault emptyList()
+            buildList {
+                for (i in 0 until array.length()) {
+                    val item = array.optJSONObject(i) ?: continue
+                    add(item.toTask(item.taskStatus()))
+                }
+            }
+        }
+        updateTaskCache(file, tasks)
+        return tasks
+    }
+
     private fun loadUnlocked(
         shouldInclude: (WorkshopDownloadTaskRecord) -> Boolean = { true },
     ): List<WorkshopDownloadTaskRecord> {
@@ -205,7 +221,8 @@ class WorkshopDownloadTaskStore(context: Context) {
     }
 
     private fun loadLauncherVisibleUnlocked(): List<WorkshopDownloadTaskRecord> {
-        return WorkshopJsonFileStore.readFileOrDefault(file, emptyList()) { source ->
+        cachedLauncherVisibleTasks(file)?.let { return it }
+        val tasks = WorkshopJsonFileStore.readFileOrDefault(file, emptyList()) { source ->
             source.inputStream().buffered().reader(StandardCharsets.UTF_8).use { input ->
                 JsonReader(input).use { reader ->
                     val tasks = ArrayList<WorkshopDownloadTaskRecord>()
@@ -227,12 +244,16 @@ class WorkshopDownloadTaskStore(context: Context) {
                 }
             }
         }
+        updateLauncherVisibleTaskCache(file, tasks)
+        return tasks
     }
 
     private fun saveUnlocked(tasks: List<WorkshopDownloadTaskRecord>) {
         val array = JSONArray()
         tasks.forEach { array.put(it.toJson()) }
         WorkshopJsonFileStore.writeAtomically(file, JSONObject().put("tasks", array).toString(2))
+        updateTaskCache(file, tasks)
+        cachedLauncherVisibleTasks = null
     }
 
     private fun <T> withStoreLock(block: () -> T): T = WorkshopJsonFileStore.withFileLock(file, lock, block)
@@ -241,8 +262,51 @@ class WorkshopDownloadTaskStore(context: Context) {
 
     companion object {
         private val lock = Any()
+        private var cachedTasks: CachedWorkshopDownloadTasks? = null
+        private var cachedLauncherVisibleTasks: CachedWorkshopDownloadTasks? = null
+
+        private fun cachedTasks(file: File): List<WorkshopDownloadTaskRecord>? {
+            val signature = file.cacheSignature() ?: run {
+                cachedTasks = null
+                return null
+            }
+            return cachedTasks
+                ?.takeIf { it.signature == signature }
+                ?.tasks
+        }
+
+        private fun cachedLauncherVisibleTasks(file: File): List<WorkshopDownloadTaskRecord>? {
+            val signature = file.cacheSignature() ?: run {
+                cachedLauncherVisibleTasks = null
+                return null
+            }
+            return cachedLauncherVisibleTasks
+                ?.takeIf { it.signature == signature }
+                ?.tasks
+        }
+
+        private fun updateTaskCache(file: File, tasks: List<WorkshopDownloadTaskRecord>) {
+            val signature = file.cacheSignature() ?: run {
+                cachedTasks = null
+                return
+            }
+            cachedTasks = CachedWorkshopDownloadTasks(signature, tasks)
+        }
+
+        private fun updateLauncherVisibleTaskCache(file: File, tasks: List<WorkshopDownloadTaskRecord>) {
+            val signature = file.cacheSignature() ?: run {
+                cachedLauncherVisibleTasks = null
+                return
+            }
+            cachedLauncherVisibleTasks = CachedWorkshopDownloadTasks(signature, tasks)
+        }
     }
 }
+
+private data class CachedWorkshopDownloadTasks(
+    val signature: WorkshopFileCacheSignature,
+    val tasks: List<WorkshopDownloadTaskRecord>,
+)
 
 private fun readLauncherVisibleTask(reader: JsonReader): WorkshopDownloadTaskRecord? {
     var item: JSONObject? = null

@@ -30,7 +30,11 @@ object LaunchPreparationService {
 
     @JvmStatic
     @Throws(IOException::class)
-    fun prepare(context: Context, launchMode: String, progressCallback: StartupProgressCallback?) {
+    fun prepare(
+        context: Context,
+        launchMode: String,
+        progressCallback: StartupProgressCallback?
+    ): ModManager.LaunchModSnapshot? {
         MemoryDiagnosticsLogger.logEvent(
             context,
             "launch_preparation_started",
@@ -86,7 +90,6 @@ object LaunchPreparationService {
             ModJarSupport.validateMtsJar(RuntimePaths.importedMtsJar(context))
             ModJarSupport.validateBaseModJar(RuntimePaths.importedBaseModJar(context))
             ModJarSupport.validateStsLibJar(RuntimePaths.importedStsLibJar(context))
-            OptionalModStorageCoordinator.prepareMtsModFileList(context)
 
             throwIfInterrupted()
             reportProgress(
@@ -94,18 +97,29 @@ object LaunchPreparationService {
                 96,
                 context.progressText(R.string.startup_progress_resolving_enabled_mod_launch_list)
             )
-            val launchModIds = ModManager.resolveLaunchModIds(context)
-            val launchModFiles = ModManager.listMtsLaunchModFiles(context)
+            val launchSnapshot = ModManager.buildLaunchModSnapshot(context)
+            OptionalModStorageCoordinator.prepareMtsModFileList(context, launchSnapshot)
             MemoryDiagnosticsLogger.logModSnapshot(
                 context = context,
                 event = "launch_preparation_resolved_launch_mods",
                 launchMode = launchMode,
-                enabledLibraryFiles = ModManager.listEnabledOptionalModFiles(context),
-                runtimeModFiles = launchModFiles,
-                launchModIds = launchModIds
+                enabledLibraryFiles = launchSnapshot.enabledLibraryFiles,
+                runtimeModFiles = launchSnapshot.launchModFiles,
+                launchModIds = launchSnapshot.launchModIds
             )
+            finishPreparation(context, launchMode, progressCallback)
+            return launchSnapshot
         }
 
+        finishPreparation(context, launchMode, progressCallback)
+        return null
+    }
+
+    private fun finishPreparation(
+        context: Context,
+        launchMode: String,
+        progressCallback: StartupProgressCallback?
+    ) {
         throwIfInterrupted()
         reportProgress(
             progressCallback,

@@ -12,6 +12,7 @@ internal object GameLaunchReturnTracker {
     private const val GAME_PROCESS_SUFFIX = ":game"
     private const val PROCESS_EXIT_WAIT_TIMEOUT_MS = 2_500L
     private const val PROCESS_EXIT_POLL_INTERVAL_MS = 80L
+    private const val FRESH_LAUNCH_HANDOFF_GRACE_MS = 10_000L
 
     fun markGameLaunchStarted(context: Context, startedAtMs: Long = System.currentTimeMillis()): Long {
         writeMarker(pendingGameLaunchMarker(context), startedAtMs)
@@ -32,6 +33,17 @@ internal object GameLaunchReturnTracker {
 
     fun clearPendingGameLaunch(context: Context) {
         clearMarker(pendingGameLaunchMarker(context))
+    }
+
+    internal fun isWithinFreshLaunchHandoffWindow(
+        startedAtMs: Long,
+        nowMs: Long = System.currentTimeMillis()
+    ): Boolean {
+        if (startedAtMs <= 0L) {
+            return false
+        }
+        val elapsedMs = nowMs - startedAtMs
+        return elapsedMs in 0 until FRESH_LAUNCH_HANDOFF_GRACE_MS
     }
 
     fun isGameProcessRunning(context: Context, includeCached: Boolean = false): Boolean {

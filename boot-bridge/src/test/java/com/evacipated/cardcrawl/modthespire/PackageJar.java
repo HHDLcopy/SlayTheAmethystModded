@@ -13,6 +13,8 @@ public final class PackageJar {
     public static boolean observedOutJarWasNull = false;
     public static int observedOutJarSize = -1;
     public static boolean observedPackageFlag = false;
+    public static String observedUserDir = null;
+    public static String forcedPackageDir = null;
 
     private PackageJar() {
     }
@@ -21,6 +23,8 @@ public final class PackageJar {
         observedOutJarWasNull = false;
         observedOutJarSize = -1;
         observedPackageFlag = false;
+        observedUserDir = null;
+        forcedPackageDir = null;
     }
 
     public static void packageJar(MTSClassPool classPool, String outputPath) throws Exception {
@@ -28,6 +32,7 @@ public final class PackageJar {
         observedOutJarWasNull = outJarClasses == null;
         observedOutJarSize = outJarClasses == null ? -1 : outJarClasses.size();
         observedPackageFlag = Loader.PACKAGE;
+        observedUserDir = System.getProperty("user.dir");
         JarOutputStream output = new JarOutputStream(new FileOutputStream(outputPath));
         try {
             output.putNextEntry(new JarEntry("com/example/Patched.class"));
@@ -44,7 +49,9 @@ public final class PackageJar {
         }
 
         if (writePackageJarFiles) {
-            File packageDir = new File(System.getProperty("amethyst.mts.patch_cache.package_dir"));
+            File packageDir = forcedPackageDir == null
+                    ? new File(System.getProperty("amethyst.mts.patch_cache.package_dir"))
+                    : new File(forcedPackageDir);
             if (!packageDir.isDirectory() && !packageDir.mkdirs()) {
                 throw new IllegalStateException("Failed to create package dir");
             }

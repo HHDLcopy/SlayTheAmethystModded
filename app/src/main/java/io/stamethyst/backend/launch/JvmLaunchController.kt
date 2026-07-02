@@ -82,7 +82,9 @@ class JvmLaunchController(
             "amethyst.mts.patch_cache.jar",
             "amethyst.mts.patch_cache.marker",
             "amethyst.mts.patch_cache.package_dir",
-            "amethyst.mts.patch_cache.expected"
+            "amethyst.mts.patch_cache.expected",
+            "amethyst.runtime_compat.loadout_class_scan_cache",
+            "amethyst.loadout.scan_cache_dir"
         )
     }
 
@@ -161,6 +163,7 @@ class JvmLaunchController(
     private var latestLogLogcatMirrorRemainder = ""
     private var bootBridgeEventOffset = 0L
     private var bootBridgeEventRemainder = ""
+    private val startupStepTimings = linkedMapOf<String, Long>()
 
     fun start(
         javaHome: File,
@@ -178,6 +181,7 @@ class JvmLaunchController(
         lastBootPhaseMessage = activity.progressText(R.string.boot_overlay_status_starting_jvm)
         lastLatestLogLine = ""
         lastLoggedHeapPressureBucket = -1
+        startupStepTimings.clear()
 
         latestLogRuntimeCrashDetected = false
         onProgressUpdate(8, activity.progressText(R.string.boot_overlay_status_starting_jvm))
@@ -192,70 +196,92 @@ class JvmLaunchController(
                 "mirrorJvmLogsToLogcat" to mirrorJvmLogsToLogcat
             )
         )
+        StartupTraceEvents.append(
+            activity,
+            "jvm_launch_controller_start",
+            mapOf("launchMode" to launchMode)
+        )
 
         val launchThread = Thread({
+            val threadStartedAtMs = SystemClock.elapsedRealtime()
             try {
                 throwIfCancelled()
                 val runtimeRoot = RuntimePaths.runtimeRoot(activity)
-                val resolvedJavaHome = RuntimePackInstaller.locateJavaHome(runtimeRoot)
-                    ?: javaHome.takeIf { it.exists() }
-                    ?: throw IllegalStateException("No Java home found in ${runtimeRoot.absolutePath}")
+                val resolvedJavaHome = measureStartupStep("resolve_java_home") {
+                    RuntimePackInstaller.locateJavaHome(runtimeRoot)
+                        ?: javaHome.takeIf { it.exists() }
+                        ?: throw IllegalStateException("No Java home found in ${runtimeRoot.absolutePath}")
+                }
 
                 throwIfCancelled()
-                RuntimePaths.ensureBaseDirs(activity)
-                try {
-                    JvmLogRotationManager.prepareForNewSession(activity)
-                } catch (_: Throwable) {
+                measureStartupStep("ensure_base_dirs") {
+                    RuntimePaths.ensureBaseDirs(activity)
                 }
-                try {
-                    val jvmGcLogFile = RuntimePaths.jvmGcLog(activity)
-                    if (jvmGcLogFile.exists()) {
-                        jvmGcLogFile.delete()
+                measureStartupStep("prepare_jvm_logs") {
+                    try {
+                        JvmLogRotationManager.prepareForNewSession(activity)
+                    } catch (_: Throwable) {
                     }
-                } catch (_: Throwable) {
-                }
-                try {
-                    val jvmHeapSnapshotFile = RuntimePaths.jvmHeapSnapshot(activity)
-                    if (jvmHeapSnapshotFile.exists()) {
-                        jvmHeapSnapshotFile.delete()
+                    try {
+                        val jvmGcLogFile = RuntimePaths.jvmGcLog(activity)
+                        if (jvmGcLogFile.exists()) {
+                            jvmGcLogFile.delete()
+                        }
+                    } catch (_: Throwable) {
                     }
-                } catch (_: Throwable) {
-                }
-                try {
-                    val signalDumpFile = RuntimePaths.jvmSignalDump(activity)
-                    if (signalDumpFile.exists()) {
-                        signalDumpFile.delete()
+                    try {
+                        val jvmHeapSnapshotFile = RuntimePaths.jvmHeapSnapshot(activity)
+                        if (jvmHeapSnapshotFile.exists()) {
+                            jvmHeapSnapshotFile.delete()
+                        }
+                    } catch (_: Throwable) {
                     }
-                } catch (_: Throwable) {
+                    try {
+                        val signalDumpFile = RuntimePaths.jvmSignalDump(activity)
+                        if (signalDumpFile.exists()) {
+                            signalDumpFile.delete()
+                        }
+                    } catch (_: Throwable) {
+                    }
                 }
                 val latestLogFile = RuntimePaths.latestLog(activity)
-                try {
-                    JREUtils.redirectStdioToFile(latestLogFile.absolutePath, false)
-                } catch (_: Throwable) {
+                measureStartupStep("redirect_stdio") {
+                    try {
+                        JREUtils.redirectStdioToFile(latestLogFile.absolutePath, false)
+                    } catch (_: Throwable) {
+                    }
                 }
-                startLatestLogLogcatMirror(latestLogFile)
-                startLatestLogCapMonitor(latestLogFile)
-                startRuntimeHeapSnapshotMonitor(RuntimePaths.jvmHeapSnapshot(activity))
-                startBootBridgeEventMonitor(
-                    RuntimePaths.bootBridgeEventsLog(activity),
-                    bootOverlayController
-                )
+                measureStartupStep("start_monitors") {
+                    startLatestLogLogcatMirror(latestLogFile)
+                    startLatestLogCapMonitor(latestLogFile)
+                    startRuntimeHeapSnapshotMonitor(RuntimePaths.jvmHeapSnapshot(activity))
+                    startBootBridgeEventMonitor(
+                        RuntimePaths.bootBridgeEventsLog(activity),
+                        bootOverlayController
+                    )
+                }
 
                 if (StsLaunchSpec.isMtsLaunchMode(launchMode)) {
-                    ModJarSupport.appendCompatDiagnosticSnapshot(activity, "game_pre_jvm")
+                    measureStartupStep("compat_diagnostic_snapshot") {
+                        ModJarSupport.appendCompatDiagnosticSnapshot(activity, "game_pre_jvm")
+                    }
                 }
 
                 throwIfCancelled()
-                AutoplayConfigFile.syncForLaunch(
-                    context = activity,
-                    enabled = autoplay && StsLaunchSpec.isMtsLaunchMode(launchMode),
-                    saveMode = autoplaySaveMode,
-                    mode = autoplayMode,
-                    singleRoomSpecPath = autoplaySingleRoomSpecPath
-                )
+                measureStartupStep("sync_autoplay_config") {
+                    AutoplayConfigFile.syncForLaunch(
+                        context = activity,
+                        enabled = autoplay && StsLaunchSpec.isMtsLaunchMode(launchMode),
+                        saveMode = autoplaySaveMode,
+                        mode = autoplayMode,
+                        singleRoomSpecPath = autoplaySingleRoomSpecPath
+                    )
+                }
 
                 throwIfCancelled()
-                onSurfaceSizeSync()
+                measureStartupStep("surface_size_sync") {
+                    onSurfaceSizeSync()
+                }
                 Log.i(
                     LOGCAT_TAG,
                     "Launch surface sync resolved " +
@@ -267,64 +293,87 @@ class JvmLaunchController(
                 )
 
                 throwIfCancelled()
-                val extraNativeLibraryDirs = NativeLibraryPathResolver
-                    .collectAdditionalSearchDirectories(activity)
-                    .map(File::getAbsolutePath)
-                    .toTypedArray()
-                JREUtils.relocateLibPath(
-                    activity.applicationInfo.nativeLibraryDir,
-                    resolvedJavaHome.absolutePath,
-                    extraNativeLibraryDirs
-                )
+                val extraNativeLibraryDirs = measureStartupStep("collect_native_library_dirs") {
+                    NativeLibraryPathResolver
+                        .collectAdditionalSearchDirectories(activity)
+                        .map(File::getAbsolutePath)
+                        .toTypedArray()
+                }
+                measureStartupStep("relocate_lib_path") {
+                    JREUtils.relocateLibPath(
+                        activity.applicationInfo.nativeLibraryDir,
+                        resolvedJavaHome.absolutePath,
+                        extraNativeLibraryDirs
+                    )
+                }
                 if (rendererDecision.effectiveBackend == RendererBackend.OPENGL_ES_MOBILEGLUES) {
-                    try {
-                        MobileGluesConfigFile.syncFromLauncherPreferences(activity)
-                    } catch (error: IOException) {
-                        Log.w(LOGCAT_TAG, "Failed to sync MobileGlues config", error)
+                    measureStartupStep("sync_mobile_glues_config") {
+                        try {
+                            MobileGluesConfigFile.syncFromLauncherPreferences(activity)
+                        } catch (error: IOException) {
+                            Log.w(LOGCAT_TAG, "Failed to sync MobileGlues config", error)
+                        }
                     }
                 }
-                JREUtils.setJavaEnvironment(
-                    activity,
-                    resolvedJavaHome.absolutePath,
-                    getWindowWidth().coerceAtLeast(1),
-                    getWindowHeight().coerceAtLeast(1),
-                    rendererDecision
-                )
+                measureStartupStep("set_java_environment") {
+                    JREUtils.setJavaEnvironment(
+                        activity,
+                        resolvedJavaHome.absolutePath,
+                        getWindowWidth().coerceAtLeast(1),
+                        getWindowHeight().coerceAtLeast(1),
+                        rendererDecision
+                    )
+                }
                 throwIfCancelled()
-                AdditionalNativeLibraryPreloader.preload(activity)
+                measureStartupStep("preload_native_libraries") {
+                    AdditionalNativeLibraryPreloader.preload(activity)
+                }
                 throwIfCancelled()
-                JREUtils.initJavaRuntime(activity.applicationContext, resolvedJavaHome.absolutePath)
+                measureStartupStep("init_java_runtime") {
+                    JREUtils.initJavaRuntime(activity.applicationContext, resolvedJavaHome.absolutePath)
+                }
                 throwIfCancelled()
-                JREUtils.setupExitMethod(activity.applicationContext)
-                JREUtils.initializeHooks()
-                JREUtils.chdir(RuntimePaths.stsRoot(activity).absolutePath)
+                measureStartupStep("setup_exit_and_hooks") {
+                    JREUtils.setupExitMethod(activity.applicationContext)
+                    JREUtils.initializeHooks()
+                }
+                measureStartupStep("chdir_sts_root") {
+                    JREUtils.chdir(RuntimePaths.stsRoot(activity).absolutePath)
+                }
 
                 throwIfCancelled()
-                CallbackBridge.nativeSetUseInputStackQueue(true)
-                CallbackBridge.nativeSetInputReady(true)
+                measureStartupStep("input_bridge_ready") {
+                    CallbackBridge.nativeSetUseInputStackQueue(true)
+                    CallbackBridge.nativeSetInputReady(true)
+                }
 
                 runtimeLifecycleReady = true
-                onRuntimeReady()
+                measureStartupStep("runtime_ready_callback") {
+                    onRuntimeReady()
+                }
 
-                val launchArgs = ArrayList<String>()
-                launchArgs.add("java")
-                launchArgs.addAll(
-                    StsLaunchSpec.buildArgs(
-                        activity,
-                        resolvedJavaHome,
-                        launchMode,
-                        rendererDecision,
-                        renderScale,
-                        forceJvmCrash,
-                        forceRuntimeCrash,
-                        autoplay,
-                        autoplaySaveMode,
-                        autoplayMode,
-                        autoplaySingleRoomSpecPath,
-                        autoplayChoiceDelayMs,
-                        cardObtainEffectOwnershipCompatEnabled
+                val launchArgs = measureStartupStep("build_launch_args") {
+                    val args = ArrayList<String>()
+                    args.add("java")
+                    args.addAll(
+                        StsLaunchSpec.buildArgs(
+                            activity,
+                            resolvedJavaHome,
+                            launchMode,
+                            rendererDecision,
+                            renderScale,
+                            forceJvmCrash,
+                            forceRuntimeCrash,
+                            autoplay,
+                            autoplaySaveMode,
+                            autoplayMode,
+                            autoplaySingleRoomSpecPath,
+                            autoplayChoiceDelayMs,
+                            cardObtainEffectOwnershipCompatEnabled
+                        )
                     )
-                )
+                    args
+                }
                 MemoryDiagnosticsLogger.logEvent(
                     activity,
                     "jvm_launch_args_ready",
@@ -336,7 +385,6 @@ class JvmLaunchController(
                         "rendererFallback" to rendererDecision.fallbackSummary()
                     )
                 )
-                logPerformanceLaunchAudit(launchArgs)
                 Log.i(
                     LOGCAT_TAG,
                     "Renderer selection mode=${rendererDecision.selectionMode.persistedValue}, " +
@@ -344,6 +392,22 @@ class JvmLaunchController(
                         "auto=${rendererDecision.automaticBackend.rendererId()}, " +
                         "surface=${rendererDecision.effectiveSurfaceBackend.persistedValue}, " +
                         "fallback=${rendererDecision.fallbackSummary() ?: "none"}"
+                )
+                startupStepTimings["handoff_total"] =
+                    SystemClock.elapsedRealtime() - threadStartedAtMs
+                Log.i(
+                    LOGCAT_TAG,
+                    "JVM startup handoff launchMode=$launchMode tookMs=" +
+                        startupStepTimings["handoff_total"]
+                )
+                logPerformanceLaunchAudit(launchArgs)
+                StartupTraceEvents.append(
+                    activity,
+                    "jvm_handoff_to_vm_launcher",
+                    mapOf(
+                        "launchMode" to launchMode,
+                        "tookMs" to startupStepTimings["handoff_total"]
+                    )
                 )
 
                 if (StsLaunchSpec.isMtsLaunchMode(launchMode)) {
@@ -379,6 +443,20 @@ class JvmLaunchController(
 
         jvmLaunchThread = launchThread
         launchThread.start()
+    }
+
+    private inline fun <T> measureStartupStep(label: String, block: () -> T): T {
+        val startedAtMs = SystemClock.elapsedRealtime()
+        try {
+            return block()
+        } finally {
+            Log.i(
+                LOGCAT_TAG,
+                "JVM startup step=$label tookMs=" +
+                    (SystemClock.elapsedRealtime() - startedAtMs)
+            )
+            startupStepTimings[label] = SystemClock.elapsedRealtime() - startedAtMs
+        }
     }
 
     fun interrupt() {
@@ -957,6 +1035,9 @@ class JvmLaunchController(
             CompatibilitySettings.isEglSwapIntervalPacingCompatEnabled(activity).toString()
         extras["javaEnvNativePreSwapPacingExpected"] =
             CompatibilitySettings.isNativePreSwapPacingCompatEnabled(activity).toString()
+        startupStepTimings.forEach { (label, tookMs) ->
+            extras["jvmStartup.$label"] = tookMs.toString()
+        }
         for (key in PERFORMANCE_AUDIT_JVM_PROPERTIES) {
             extras[key] = readEffectiveJvmProperty(launchArgs, key) ?: "<unset>"
         }

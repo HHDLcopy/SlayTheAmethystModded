@@ -1126,15 +1126,18 @@ internal fun LauncherMainRoute(
             viewModel.refresh(hostActivity)
             viewModel.syncModSuggestionsIfNeeded(hostActivity)
             viewModel.syncSteamCloudIndicatorIfNeeded(hostActivity, force = true)
-            viewModel.refreshWorkshopDownloadCards(hostActivity)
+            if (pollWorkshopDownloads && !viewModel.uiState.launchInFlight) {
+                viewModel.refreshWorkshopDownloadCards(hostActivity)
+            }
         }
     }
 
     LaunchedEffect(hostActivity, hasActiveWorkshopDownloads, pollWorkshopDownloads) {
         val activity = hostActivity ?: return@LaunchedEffect
-        if (!pollWorkshopDownloads || !hasActiveWorkshopDownloads) return@LaunchedEffect
+        if (!pollWorkshopDownloads || !hasActiveWorkshopDownloads || viewModel.uiState.launchInFlight) return@LaunchedEffect
         while (true) {
             delay(1000L)
+            if (viewModel.uiState.launchInFlight) return@LaunchedEffect
             val stillActive = viewModel.refreshWorkshopDownloadCards(activity)
             if (!stillActive) {
                 viewModel.refresh(activity)

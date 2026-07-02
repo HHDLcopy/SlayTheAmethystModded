@@ -2,7 +2,10 @@ package com.evacipated.cardcrawl.modthespire;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 import java.util.jar.JarEntry;
@@ -17,6 +20,17 @@ public final class PackageJar {
     public static String forcedPackageDir = null;
 
     private PackageJar() {
+    }
+
+    private static String createClassPath() {
+        return "desktop-1.0.jar";
+    }
+
+    private static String createModdedJarName(String fileName) {
+        int dot = fileName.toLowerCase(java.util.Locale.ROOT).endsWith(".jar")
+                ? fileName.length() - ".jar".length()
+                : fileName.length();
+        return fileName.substring(0, dot) + "-modded.jar";
     }
 
     public static void resetTracking() {
@@ -66,5 +80,52 @@ public final class PackageJar {
                 packageOutput.close();
             }
         }
+    }
+
+    public static final class Entries {
+        private final Map<String, Entry> entries = new LinkedHashMap<String, Entry>();
+
+        public boolean add(Entry entry) {
+            if (entries.containsKey(entry.path)) {
+                return false;
+            }
+            entries.put(entry.path, entry);
+            return true;
+        }
+    }
+
+    public static final class Entry {
+        String path;
+        String modID;
+        Type type;
+        byte[] b;
+        URL locationURL;
+
+        public Entry(String path, Type type) {
+            this.path = path;
+            this.type = type;
+        }
+
+        public Entry(String path, String modId) {
+            this.path = path;
+            this.modID = modId;
+            this.type = modId == null ? Type.BASEGAME : Type.MOD;
+        }
+
+        public Entry(String path, byte[] bytes, URL locationUrl) {
+            this.path = path;
+            this.b = bytes;
+            this.locationURL = locationUrl;
+            this.type = Type.OUTJAR;
+        }
+    }
+
+    public enum Type {
+        BASEGAME,
+        MOD,
+        OUTJAR,
+        MTS,
+        COREPATCH,
+        KOTLIN
     }
 }

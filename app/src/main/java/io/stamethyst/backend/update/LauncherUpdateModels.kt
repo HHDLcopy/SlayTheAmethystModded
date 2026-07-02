@@ -231,7 +231,7 @@ sealed interface UpdateCheckExecutionResult {
 
 object LauncherUpdateVersioning {
     private val releaseVersionPattern =
-        Regex("""^(\d+)\.(\d+)\.(\d+)(?:-hotfix(\d+))?$""")
+        Regex("""^(\d+)\.(\d+)\.(\d+)(?:(?:-dev(\d+))|(?:-hotfix(\d+)))?$""")
     private val publishedAtFormatter =
         DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm", Locale.US)
 
@@ -288,7 +288,8 @@ object LauncherUpdateVersioning {
         val major: Int,
         val minor: Int,
         val patch: Int,
-        val hotfix: Int,
+        val stage: Int,
+        val stageNumber: Int,
     ) : Comparable<ParsedReleaseVersion> {
         override fun compareTo(other: ParsedReleaseVersion): Int {
             return compareValuesBy(
@@ -297,18 +298,26 @@ object LauncherUpdateVersioning {
                 ParsedReleaseVersion::major,
                 ParsedReleaseVersion::minor,
                 ParsedReleaseVersion::patch,
-                ParsedReleaseVersion::hotfix
+                ParsedReleaseVersion::stage,
+                ParsedReleaseVersion::stageNumber
             )
         }
     }
 
     private fun parseReleaseVersion(value: String): ParsedReleaseVersion? {
         val match = releaseVersionPattern.matchEntire(value) ?: return null
+        val devNumber = match.groupValues[4].toIntOrNull()
+        val hotfixNumber = match.groupValues[5].toIntOrNull()
         return ParsedReleaseVersion(
             major = match.groupValues[1].toInt(),
             minor = match.groupValues[2].toInt(),
             patch = match.groupValues[3].toInt(),
-            hotfix = match.groupValues[4].toIntOrNull() ?: 0
+            stage = when {
+                devNumber != null -> -1
+                hotfixNumber != null -> 1
+                else -> 0
+            },
+            stageNumber = devNumber ?: hotfixNumber ?: 0
         )
     }
 }

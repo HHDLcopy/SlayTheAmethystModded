@@ -39,5 +39,24 @@ class DecompilCliTest(unittest.TestCase):
         self.assertEqual(args.decompil_targets, [])
 
 
+class StartupCacheProfileCliTest(unittest.TestCase):
+    def test_startup_cache_profile_command_in_choices(self):
+        parser = create_parser()
+        command_actions = [action for action in parser._actions if action.dest == "command"]
+        self.assertEqual(len(command_actions), 1)
+        self.assertIn("startup-cache-profile", command_actions[0].choices)
+
+    def test_startup_cache_profile_options(self):
+        parser = create_parser()
+        args = parser.parse_args([
+            "-Command", "startup-cache-profile",
+            "-CacheHitRuns", "3",
+            "-NoClearStartupCache",
+        ])
+        self.assertEqual(args.command, "startup-cache-profile")
+        self.assertEqual(args.cache_hit_runs, 3)
+        self.assertTrue(args.no_clear_startup_cache)
+
+
 if __name__ == "__main__":
     unittest.main()

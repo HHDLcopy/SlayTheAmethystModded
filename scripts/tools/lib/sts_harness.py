@@ -37,6 +37,7 @@ COMMANDS = (
     "perf",
     "hotreload",
     "single-room",
+    "startup-cache-profile",
 )
 LAUNCH_MODES = ("mts_basemod", "mts", "vanilla")
 AGENT_COMMANDS = ("attach", "detach", "list", "status")
@@ -44,6 +45,26 @@ AUTOPLAY_SAVE_MODES = ("fresh", "continue")
 AUTOPLAY_MODES = ("normal", "single_room")
 SINGLE_ROOM_DEFAULT_REMOTE_SPEC = "autoplay-single-room.properties"
 SINGLE_ROOM_RESULT_PREFIX = "[amethyst-autoplay] single_room result "
+STARTUP_CACHE_EVIDENCE_PATTERNS = (
+    "Launching cached MTS patch jar",
+    "Patch cache miss:",
+    "Writing MTS patch cache jar",
+    "MTS patch cache is ready",
+    "Wrote cached MTS annotation DB",
+    "Wrote cached MTS main jar SpireEnum",
+    "Restored cached MTS annotation DB",
+    "Prepared cached MTS prepackaged launch",
+    "Applied cached MTS SpireEnum entries",
+    "Loaded cached MTS main jar SpireEnum entries",
+    "Finished cached autoAddCardMods",
+    "Finished cached autoAddStuffs",
+    "MTS patch cache step",
+    "ClassFinder scan cache",
+    "BaseMod.publishEditCards subscriber",
+    "BaseMod.postInitialize subscriber",
+    "LazyCustomCardImage",
+    "LazyStartupCardDescription",
+)
 
 
 def repo_root() -> Path:
@@ -201,6 +222,8 @@ class HarnessOptions:
     agent_port: int = 9090
     agent_duration: float = 0.0
     redefine_class_file: str = ""
+    cache_hit_runs: int = 1
+    no_clear_startup_cache: bool = False
 
 
 class Harness:
@@ -641,6 +664,149 @@ fi
             "mtimeEpochSeconds": mtime_epoch_seconds,
         }
 
+    @staticmethod
+    def parse_remote_path_state_output(relative_path: str, text: str | None) -> dict[str, Any]:
+        exists = False
+        item_type = None
+        bytes_value = None
+        mtime_epoch_seconds = None
+        child_count = None
+        jar_count = None
+        for line in (text or "").splitlines():
+            trimmed_line = line.strip()
+            if trimmed_line == "exists=1":
+                exists = True
+            elif trimmed_line.startswith("type="):
+                item_type = trimmed_line[len("type=") :]
+            elif trimmed_line.startswith("bytes="):
+                try:
+                    bytes_value = int(trimmed_line[len("bytes=") :])
+                except ValueError:
+                    pass
+            elif trimmed_line.startswith("mtimeEpochSeconds="):
+                try:
+                    mtime_epoch_seconds = int(trimmed_line[len("mtimeEpochSeconds=") :])
+                except ValueError:
+                    pass
+            elif trimmed_line.startswith("childCount="):
+                try:
+                    child_count = int(trimmed_line[len("childCount=") :])
+                except ValueError:
+                    pass
+            elif trimmed_line.startswith("jarCount="):
+                try:
+                    jar_count = int(trimmed_line[len("jarCount=") :])
+                except ValueError:
+                    pass
+        return {
+            "relativePath": relative_path,
+            "exists": exists,
+            "type": item_type,
+            "bytes": bytes_value,
+            "mtimeEpochSeconds": mtime_epoch_seconds,
+            "childCount": child_count,
+            "jarCount": jar_count,
+        }
+
+    def remote_app_path_state(self, relative_path: str) -> dict[str, Any]:
+        package_name = self.application_id or ""
+        trimmed = relative_path.strip().lstrip("/")
+        if not trimmed:
+            raise ValueError("relative app path must not be empty")
+        quoted = quote_android_shell(trimmed)
+        state_script = f"""if [ -e {quoted} ]; then
+  echo exists=1
+  if [ -f {quoted} ]; then
+    echo type=file
+    size=$(wc -c < {quoted} 2>/dev/null | tr -d '[:space:]')
+    echo bytes=$size
+  elif [ -d {quoted} ]; then
+    echo type=directory
+    echo bytes=0
+    child_count=$(find {quoted} -mindepth 1 -maxdepth 1 2>/dev/null | wc -l | tr -d '[:space:]')
+    jar_count=$(find {quoted} -type f -name '*.jar' 2>/dev/null | wc -l | tr -d '[:space:]')
+    echo childCount=$child_count
+    echo jarCount=$jar_count
+  else
+    echo type=other
+    echo bytes=0
+  fi
+  mtime=$(stat -c %Y {quoted} 2>/dev/null || echo '')
+  echo mtimeEpochSeconds=$mtime
+else
+  echo exists=0
+fi
+"""
+        result = self.adb(
+            ["exec-out", "run-as", package_name, "sh", "-c", state_script],
+            timeout_seconds=10,
+            allow_failure=True,
+        )
+        if result.exit_code != 0:
+            state = self.parse_remote_path_state_output(relative_path, "")
+            state["error"] = limit_text(result.output, 2000)
+            return state
+        return self.parse_remote_path_state_output(relative_path, result.output)
+
+    def clear_startup_caches(self) -> dict[str, Any]:
+        sts_root = self.resolve_device_sts_root()
+        quoted_sts_root = quote_android_shell(str(sts_root["root"]))
+        external_script = f"""
+cd {quoted_sts_root} || exit 1
+rm -f .mts_classpath_cache .mts_patch_cache desktop-1.0-modded.jar mts_patch_cache_debug.log
+rm -rf package mts_patch_cache
+"""
+        external_result = self.remote_sts_root_script(
+            sts_root,
+            external_script,
+            timeout_seconds=20,
+            allow_failure=True,
+        )
+        private_script = """
+rm -rf files/mts_patch_cache
+rm -f files/sts/.mts_classpath_cache files/sts/.mts_patch_cache files/sts/desktop-1.0-modded.jar files/sts/mts_patch_cache_debug.log
+rm -rf files/sts/package files/sts/mts_patch_cache
+"""
+        private_result = self.adb(
+            ["exec-out", "run-as", self.application_id or "", "sh", "-c", private_script],
+            timeout_seconds=20,
+            allow_failure=True,
+        )
+        summary = {
+            "storage": sts_root,
+            "externalExitCode": external_result.exit_code,
+            "externalOutputTail": limit_text(external_result.output, 2000),
+            "privateExitCode": private_result.exit_code,
+            "privateOutputTail": limit_text(private_result.output, 2000),
+        }
+        self.operations.append(
+            {
+                "command": "clear-startup-caches",
+                "exitCode": 0 if external_result.exit_code == 0 and private_result.exit_code == 0 else 1,
+                "startedAt": utc_timestamp(),
+                "endedAt": utc_timestamp(),
+                "durationMs": 0,
+                "timedOut": False,
+                "outputTail": json.dumps(summary, ensure_ascii=False),
+            }
+        )
+        return summary
+
+    def startup_cache_state(self) -> dict[str, Any]:
+        sts_root = self.resolve_device_sts_root()
+        return {
+            "storage": sts_root,
+            "classpathMarker": self.remote_sts_path_state(sts_root, ".mts_classpath_cache"),
+            "legacyExternalPatchMarker": self.remote_sts_path_state(sts_root, ".mts_patch_cache"),
+            "legacyExternalPatchJar": self.remote_sts_path_state(sts_root, "desktop-1.0-modded.jar"),
+            "legacyExternalPackageDir": self.remote_sts_path_state(sts_root, "package"),
+            "privatePatchDir": self.remote_app_path_state("files/mts_patch_cache"),
+            "privatePatchMarker": self.remote_app_path_state("files/mts_patch_cache/.mts_patch_cache"),
+            "privatePatchJar": self.remote_app_path_state("files/mts_patch_cache/desktop-1.0-modded.jar"),
+            "privatePackageDir": self.remote_app_path_state("files/mts_patch_cache/package"),
+            "loadoutScanCacheDir": self.remote_app_path_state("files/mts_patch_cache/loadout-scan-cache"),
+        }
+
     def build_single_room_spec_text(self) -> str:
         spec_file = self.options.single_room_spec.strip()
         if spec_file:
@@ -844,6 +1010,64 @@ fi
             if trimmed:
                 last = trimmed
         return last
+
+    @staticmethod
+    def extract_startup_cache_log_evidence(text: str | None, max_lines: int = 80) -> dict[str, Any]:
+        evidence_lines: list[str] = []
+        timing_lines: list[dict[str, Any]] = []
+        saw_cache_hit = False
+        saw_cache_build = False
+        saw_cache_miss = False
+        for raw_line in re.split(r"\r?\n", text or ""):
+            line = raw_line.strip()
+            if not line:
+                continue
+            matched = any(pattern in line for pattern in STARTUP_CACHE_EVIDENCE_PATTERNS)
+            if matched:
+                evidence_lines.append(line)
+                if "Launching cached MTS patch jar" in line:
+                    saw_cache_hit = True
+                if "Writing MTS patch cache jar" in line or "MTS patch cache is ready" in line:
+                    saw_cache_build = True
+                if "Patch cache miss:" in line:
+                    saw_cache_miss = True
+            if matched or "took=" in line or " elapsedMs=" in line or " took " in line:
+                timing_match = re.search(
+                    r"(?P<label>.*?)(?:\s+took=|\s+took\s+|\s+elapsedMs=|Time Elapsed:\s*)"
+                    r"(?P<ms>\d+(?:\.\d+)?)ms",
+                    line,
+                )
+                if timing_match:
+                    label = timing_match.group("label").strip()
+                    try:
+                        elapsed_ms: float | int = float(timing_match.group("ms"))
+                        if elapsed_ms.is_integer():
+                            elapsed_ms = int(elapsed_ms)
+                    except ValueError:
+                        elapsed_ms = timing_match.group("ms")
+                    timing_lines.append(
+                        {
+                            "label": limit_text(label, 180),
+                            "elapsedMs": elapsed_ms,
+                            "line": line,
+                        }
+                    )
+        if saw_cache_hit:
+            mode = "cache-hit"
+        elif saw_cache_build:
+            mode = "cache-build"
+        elif saw_cache_miss:
+            mode = "cache-miss"
+        else:
+            mode = "unknown"
+        return {
+            "mode": mode,
+            "sawCacheHit": saw_cache_hit,
+            "sawCacheBuild": saw_cache_build,
+            "sawCacheMiss": saw_cache_miss,
+            "evidenceLines": evidence_lines[-max_lines:],
+            "timings": timing_lines[-max_lines:],
+        }
 
     def process_pid_text(self, process_name: str) -> str:
         result = self.adb_shell_script(f"pidof {quote_android_shell(process_name)} 2>/dev/null || true", allow_failure=True)
@@ -1508,6 +1732,200 @@ fi
             conn.close()
             conn.remove_forward()
 
+    def run_startup_cache_profile_iteration(
+        self,
+        phase_dir: Path,
+        phase: str,
+        index: int,
+        *,
+        clear_cache_before_run: bool,
+    ) -> dict[str, Any]:
+        phase_dir.mkdir(parents=True, exist_ok=True)
+        phase_started = datetime.now(timezone.utc)
+        phase_started_monotonic = time.monotonic()
+        operation_start_index = len(self.operations)
+        phase_timings: dict[str, int] = {}
+        status: dict[str, Any] | None = None
+        logcat_capture: LogcatCapture | None = None
+        logcat_since = ""
+        start_requested = False
+        clear_summary = None
+        if clear_cache_before_run:
+            step_start = time.monotonic()
+            clear_summary = self.clear_startup_caches()
+            phase_timings["clearStartupCachesMs"] = int((time.monotonic() - step_start) * 1000)
+        step_start = time.monotonic()
+        cache_before = self.startup_cache_state()
+        phase_timings["cacheStateBeforeMs"] = int((time.monotonic() - step_start) * 1000)
+        startup_request_monotonic: float | None = None
+        try:
+            step_start = time.monotonic()
+            self.clear_runtime_signals()
+            phase_timings["clearRuntimeSignalsMs"] = int((time.monotonic() - step_start) * 1000)
+            step_start = time.monotonic()
+            logcat_since = self.device_logcat_timestamp()
+            phase_timings["logcatTimestampMs"] = int((time.monotonic() - step_start) * 1000)
+            try:
+                step_start = time.monotonic()
+                logcat_capture = self.start_logcat_capture(phase_dir, logcat_since)
+                phase_timings["startLogcatCaptureMs"] = int((time.monotonic() - step_start) * 1000)
+            except Exception as exc:
+                self.result["artifacts"][f"{phase}HarnessLogcatError"] = str(exc)
+            startup_request_monotonic = time.monotonic()
+            step_start = startup_request_monotonic
+            self.harness_start()
+            phase_timings["startCommandMs"] = int((time.monotonic() - step_start) * 1000)
+            start_requested = True
+            step_start = time.monotonic()
+            status = self.wait_harness_status(logcat_capture)
+            phase_timings["waitReadyMs"] = int((time.monotonic() - step_start) * 1000)
+            if startup_request_monotonic is not None:
+                phase_timings["startupToReadyMs"] = int((time.monotonic() - startup_request_monotonic) * 1000)
+            try:
+                step_start = time.monotonic()
+                self.harness_logs(phase_dir)
+                phase_timings["logsExportMs"] = int((time.monotonic() - step_start) * 1000)
+            except Exception as exc:
+                self.result["artifacts"][f"{phase}LogsError"] = str(exc)
+        finally:
+            should_stop = start_requested and (
+                phase != "cache-hit-final" or not self.options.no_stop_after_smoke
+            )
+            if should_stop:
+                try:
+                    step_start = time.monotonic()
+                    self.harness_stop()
+                    phase_timings["stopMs"] = int((time.monotonic() - step_start) * 1000)
+                except Exception as exc:
+                    self.result["artifacts"][f"{phase}StopError"] = str(exc)
+            if logcat_capture is not None:
+                step_start = time.monotonic()
+                self.stop_logcat_capture(logcat_capture)
+                phase_timings["stopLogcatCaptureMs"] = int((time.monotonic() - step_start) * 1000)
+                if status is not None:
+                    self.update_status_harness_logcat(status, logcat_capture.log_path)
+            elif logcat_since.strip():
+                try:
+                    logcat_path = self.harness_logcat_dump(phase_dir, logcat_since)
+                    if status is not None:
+                        self.update_status_harness_logcat(status, logcat_path)
+                except Exception as exc:
+                    self.result["artifacts"].setdefault(f"{phase}HarnessLogcatError", str(exc))
+
+        step_start = time.monotonic()
+        cache_after = self.startup_cache_state()
+        phase_timings["cacheStateAfterMs"] = int((time.monotonic() - step_start) * 1000)
+        step_start = time.monotonic()
+        latest_log = self.read_remote_sts_text(cache_after["storage"], "latest.log", timeout_seconds=10)
+        evidence = self.extract_startup_cache_log_evidence(latest_log)
+        phase_timings["evidenceReadMs"] = int((time.monotonic() - step_start) * 1000)
+        phase_ended = datetime.now(timezone.utc)
+        phase_result = {
+            "phase": phase,
+            "index": index,
+            "startedAt": utc_timestamp(phase_started),
+            "endedAt": utc_timestamp(phase_ended),
+            "wallMs": int((time.monotonic() - phase_started_monotonic) * 1000),
+            "clearCacheBeforeRun": clear_cache_before_run,
+            "clearCache": clear_summary,
+            "success": bool(status and status.get("observedState") == "READY"),
+            "timings": phase_timings,
+            "status": status,
+            "cacheBefore": cache_before,
+            "cacheAfter": cache_after,
+            "logEvidence": evidence,
+            "operations": self.operations[operation_start_index:],
+        }
+        phase_result_path = phase_dir / "result.json"
+        phase_result_path.write_text(
+            json.dumps(phase_result, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        phase_result["resultJson"] = str(phase_result_path)
+        return phase_result
+
+    def harness_startup_cache_profile(self, resolved_out_dir: Path) -> int:
+        if self.options.launch_mode == "vanilla":
+            raise RuntimeError("startup-cache-profile requires -LaunchMode mts or mts_basemod.")
+        hit_runs = max(0, int(self.options.cache_hit_runs))
+        if not self.options.skip_install:
+            self.harness_install()
+
+        phases: list[tuple[str, bool]] = []
+        phases.append(("cache-build", not self.options.no_clear_startup_cache))
+        for run_index in range(hit_runs):
+            phase_name = "cache-hit-final" if run_index == hit_runs - 1 else f"cache-hit-{run_index + 1}"
+            phases.append((phase_name, False))
+
+        runs: list[dict[str, Any]] = []
+        for index, (phase, clear_cache_before_run) in enumerate(phases, start=1):
+            phase_dir = resolved_out_dir / f"{index:02d}-{phase}"
+            runs.append(
+                self.run_startup_cache_profile_iteration(
+                    phase_dir,
+                    phase,
+                    index,
+                    clear_cache_before_run=clear_cache_before_run,
+                )
+            )
+
+        successful_runs = [run for run in runs if run.get("success")]
+        build_run = runs[0] if runs else None
+        hit_run_values = runs[1:]
+        wall_summary = {
+            "cacheBuildWallMs": build_run.get("wallMs") if build_run else None,
+            "cacheHitWallMs": [run.get("wallMs") for run in hit_run_values],
+            "bestCacheHitWallMs": min((run.get("wallMs") for run in hit_run_values), default=None),
+            "cacheBuildStartupToReadyMs": (
+                build_run.get("timings", {}).get("startupToReadyMs") if build_run else None
+            ),
+            "cacheHitStartupToReadyMs": [
+                run.get("timings", {}).get("startupToReadyMs") for run in hit_run_values
+            ],
+            "bestCacheHitStartupToReadyMs": min(
+                (
+                    run.get("timings", {}).get("startupToReadyMs")
+                    for run in hit_run_values
+                    if run.get("timings", {}).get("startupToReadyMs") is not None
+                ),
+                default=None,
+            ),
+            "cacheBuildLogsExportMs": (
+                build_run.get("timings", {}).get("logsExportMs") if build_run else None
+            ),
+            "cacheHitLogsExportMs": [
+                run.get("timings", {}).get("logsExportMs") for run in hit_run_values
+            ],
+        }
+        cache_modes = [run.get("logEvidence", {}).get("mode") for run in runs]
+        profile = {
+            "hitRuns": hit_runs,
+            "clearedBeforeBuild": not self.options.no_clear_startup_cache,
+            "wallSummary": wall_summary,
+            "cacheModes": cache_modes,
+            "runs": runs,
+        }
+        summary_path = resolved_out_dir / "startup-cache-profile-summary.json"
+        summary_path.write_text(json.dumps(profile, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        self.result["startupCacheProfile"] = profile
+        self.result["artifacts"]["startupCacheProfileSummary"] = str(summary_path)
+
+        success = len(successful_runs) == len(runs) and bool(runs)
+        if success:
+            message = (
+                f"Startup cache profile completed: build={wall_summary['cacheBuildWallMs']}ms, "
+                f"hits={wall_summary['cacheHitWallMs']}"
+            )
+            self.set_result_success(True, "STARTUP_CACHE_PROFILE_COMPLETE", message)
+            return 0
+        failed = [run.get("phase") for run in runs if not run.get("success")]
+        self.set_result_success(
+            False,
+            "STARTUP_CACHE_PROFILE_FAILED",
+            f"Startup cache profile failed phases: {', '.join(str(item) for item in failed)}",
+        )
+        return 1
+
     def complete_result(self) -> None:
         ended_at = datetime.now(timezone.utc)
         self.result["endedAt"] = utc_timestamp(ended_at)
@@ -1596,6 +2014,8 @@ fi
             self.options.autoplay = True
             self.options.autoplay_mode = "single_room"
             return self.run_smoke(resolved_out_dir)
+        elif command == "startup-cache-profile":
+            return self.harness_startup_cache_profile(resolved_out_dir)
         return 0
 
     def run_smoke(self, resolved_out_dir: Path) -> int:
@@ -1733,6 +2153,10 @@ fi
                 "cards": split_csv_tokens(self.options.single_room_cards),
                 "spec": self.options.single_room_spec,
                 "deviceSpec": self.options.single_room_device_spec,
+            },
+            "startupCacheProfileOptions": {
+                "cacheHitRuns": self.options.cache_hit_runs,
+                "clearBeforeBuild": not self.options.no_clear_startup_cache,
             },
             "timeoutSeconds": self.options.timeout_seconds,
             "artifacts": {"outDir": str(resolved_out_dir), "resultJson": str(result_path)},

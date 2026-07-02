@@ -749,6 +749,8 @@ private fun Project.registerHarnessTasks() {
     val disableCardObtainEffectOwnershipCompat =
         readGradleProperty("disableCardObtainEffectOwnershipCompat", "false")
     val noStopAfterSmoke = readGradleProperty("noStopAfterSmoke", "false")
+    val startupCacheHitRuns = readGradleProperty("startupCacheHitRuns", "1")
+    val startupCacheNoClear = readGradleProperty("startupCacheNoClear", "false")
 
     fun registerHarnessExecTask(
         taskName: String,
@@ -762,6 +764,8 @@ private fun Project.registerHarnessTasks() {
             val taskAutoplay = forceAutoplay || autoplay.toBooleanStrictOrNull() == true
             val taskLaunchMode = if (forceAutoplay) "mts" else launchMode
             val taskTimeoutSeconds = if (taskAutoplay) {
+                autoplayHarnessTimeoutSeconds
+            } else if (command == "startup-cache-profile") {
                 autoplayHarnessTimeoutSeconds
             } else {
                 harnessTimeoutSeconds
@@ -829,6 +833,13 @@ private fun Project.registerHarnessTasks() {
             if (noStopAfterSmoke.toBooleanStrictOrNull() == true) {
                 args.add("-NoStopAfterSmoke")
             }
+            if (command == "startup-cache-profile") {
+                args.add("-CacheHitRuns")
+                args.add(startupCacheHitRuns)
+                if (startupCacheNoClear.toBooleanStrictOrNull() == true) {
+                    args.add("-NoClearStartupCache")
+                }
+            }
             commandLine(pythonExecutable, *args.toTypedArray())
         }
     }
@@ -884,6 +895,11 @@ private fun Project.registerHarnessTasks() {
         command = "single-room",
         taskDescription = "Run one configured autoplay combat room, export logs, and stop.",
         forceAutoplay = true
+    )
+    registerHarnessExecTask(
+        taskName = "stsHarnessStartupCacheProfile",
+        command = "startup-cache-profile",
+        taskDescription = "Run a cache-build launch followed by cache-hit launches and summarize startup timings."
     )
 }
 

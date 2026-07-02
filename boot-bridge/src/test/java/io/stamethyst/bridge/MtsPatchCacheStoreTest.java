@@ -2,13 +2,17 @@ package io.stamethyst.bridge;
 
 import com.evacipated.cardcrawl.modthespire.ByteArrayMapClassPath;
 import com.evacipated.cardcrawl.modthespire.MTSClassPool;
+import com.evacipated.cardcrawl.modthespire.ModInfo;
 import com.evacipated.cardcrawl.modthespire.PackageJar;
 import com.evacipated.cardcrawl.modthespire.Loader;
 import org.junit.Test;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.nio.file.Files;
+import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
+import java.util.jar.JarOutputStream;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -49,6 +53,83 @@ public class MtsPatchCacheStoreTest {
             clearCacheProperties();
             resetStubTracking();
             PackageJar.writePackageJarFiles = true;
+            deleteRecursively(root);
+        }
+    }
+
+    @Test
+    public void resolvePackageDirPath_usesCachePackageDirOnlyWhenCacheIsEnabled() throws Exception {
+        File root = Files.createTempDirectory("mts-patch-cache-store-package-dir-").toFile();
+        try {
+            clearCacheProperties();
+            System.setProperty(PROP_PACKAGE_DIR, new File(root, "package").getAbsolutePath());
+            assertEquals("package", MtsPatchCacheStore.resolvePackageDirPath());
+
+            System.setProperty(PROP_ENABLED, "true");
+            assertEquals(new File(root, "package").getAbsolutePath(), MtsPatchCacheStore.resolvePackageDirPath());
+        } finally {
+            clearCacheProperties();
+            deleteRecursively(root);
+        }
+    }
+
+    @Test
+    public void packageJarFastPath_writesCacheJarAndPackageJarsFromEntries() throws Exception {
+        File root = Files.createTempDirectory("mts-patch-cache-fast-package-").toFile();
+        try {
+            setCacheProperties(root);
+            resetStubTracking();
+            File baseJar = new File(root, "base.jar");
+            File modJar = new File(root, "Example Mod.jar");
+            writeJar(baseJar, "base/Base.class", "base");
+            writeJar(modJar, "example/ExampleMod.class", "mod");
+            Loader.STS_JAR = baseJar.getAbsolutePath();
+            Loader.MODINFOS = new ModInfo[] {
+                    new ModInfo("example", modJar.toURI().toURL())
+            };
+
+            PackageJar.Entries entries = new PackageJar.Entries();
+            entries.add(new PackageJar.Entry(
+                    "com/evacipated/cardcrawl/modthespire/PackageJar$PrepackagedLauncher.class",
+                    "launcher".getBytes("UTF-8"),
+                    null
+            ));
+            entries.add(new PackageJar.Entry("base/Base.class", PackageJar.Type.BASEGAME));
+            entries.add(new PackageJar.Entry(
+                    "base/Patched.class",
+                    "patched".getBytes("UTF-8"),
+                    null
+            ));
+            entries.add(new PackageJar.Entry("example/ExampleMod.class", "example"));
+            entries.add(new PackageJar.Entry(
+                    "example/Generated.class",
+                    "generated".getBytes("UTF-8"),
+                    modJar.toURI().toURL()
+            ));
+
+            JarOutputStream openOutput = new JarOutputStream(
+                    new FileOutputStream(new File(root, "desktop-1.0-modded.jar"))
+            );
+
+            assertTrue(MtsPatchCacheStore.packageJarFastPath(
+                    new MTSClassPool(),
+                    entries,
+                    openOutput,
+                    new File(root, "desktop-1.0-modded.jar").getAbsolutePath()
+            ));
+
+            File cachedJar = new File(root, "desktop-1.0-modded.jar");
+            File packageJar = new File(root, "package/Example Mod-modded.jar");
+            assertTrue(cachedJar.isFile());
+            assertTrue(packageJar.isFile());
+            assertTrue(hasJarEntry(cachedJar, "META-INF/MANIFEST.MF"));
+            assertTrue(java.util.Arrays.equals("base".getBytes("UTF-8"), readJarEntry(cachedJar, "base/Base.class")));
+            assertTrue(java.util.Arrays.equals("patched".getBytes("UTF-8"), readJarEntry(cachedJar, "base/Patched.class")));
+            assertTrue(java.util.Arrays.equals("mod".getBytes("UTF-8"), readJarEntry(packageJar, "example/ExampleMod.class")));
+            assertTrue(java.util.Arrays.equals("generated".getBytes("UTF-8"), readJarEntry(packageJar, "example/Generated.class")));
+        } finally {
+            clearCacheProperties();
+            resetStubTracking();
             deleteRecursively(root);
         }
     }
@@ -199,6 +280,10 @@ public class MtsPatchCacheStoreTest {
     private static void resetStubTracking() {
         Loader.PACKAGE = false;
         Loader.OUT_JAR = false;
+        Loader.STS_JAR = "";
+        Loader.KOTLIN_JAR = "/missing-kotlin.jar";
+        Loader.COREPATCHES_JAR = "/missing-corepatches.jar";
+        Loader.MODINFOS = new ModInfo[0];
         MTSClassPool.resetTracking();
         PackageJar.resetTracking();
     }
@@ -241,6 +326,17 @@ public class MtsPatchCacheStoreTest {
             return jarFile.getJarEntry(name) != null;
         } finally {
             jarFile.close();
+        }
+    }
+
+    private static void writeJar(File jar, String entryName, String content) throws Exception {
+        JarOutputStream output = new JarOutputStream(new FileOutputStream(jar, false));
+        try {
+            output.putNextEntry(new JarEntry(entryName));
+            output.write(content.getBytes("UTF-8"));
+            output.closeEntry();
+        } finally {
+            output.close();
         }
     }
 

@@ -284,6 +284,93 @@ class DecompilRoutingTest(unittest.TestCase):
         self.assertEqual(harness.result["status"], "OK")
 
 
+class StartupCacheProfileTest(unittest.TestCase):
+    def _make_options(self, **overrides):
+        values = dict(
+            command="startup-cache-profile",
+            launch_mode="mts_basemod",
+            device_serial="",
+            out_dir="",
+            timeout_seconds=300,
+            poll_interval_seconds=2,
+            force_jvm_crash=False,
+            force_runtime_crash=False,
+            autoplay=False,
+            skip_install=True,
+            no_stop_after_smoke=False,
+            mods=[],
+            mod_list_file="",
+            enable_all_mods=False,
+            disable_all_mods=False,
+        )
+        values.update(overrides)
+        return HarnessOptions(**values)
+
+    def test_command_is_registered(self):
+        self.assertIn("startup-cache-profile", COMMANDS)
+
+    def test_run_command_routes_to_startup_cache_profile(self):
+        harness = Harness(self._make_options())
+        out = Path(tempfile.mkdtemp())
+        try:
+            harness.result = {"artifacts": {}}
+            harness.harness_startup_cache_profile = MagicMock(return_value=0)
+            exit_code = harness.run_command(out)
+            self.assertEqual(exit_code, 0)
+            harness.harness_startup_cache_profile.assert_called_once_with(out)
+        finally:
+            shutil.rmtree(out, ignore_errors=True)
+
+    def test_extract_startup_cache_log_evidence_detects_build(self):
+        text = "\n".join([
+            "[Amethyst] Patch cache miss: marker changed",
+            "[Amethyst] Writing MTS patch cache jar: /tmp/desktop-1.0-modded.jar",
+            "[Amethyst] MTS patch cache step invokePackageJar cacheBytes=123 packageJars=21 took 4567ms",
+            "[Amethyst] Wrote cached MTS annotation DB entries=12 took 34ms",
+            "[Amethyst] MTS patch cache is ready: packageJars=21",
+        ])
+        evidence = Harness.extract_startup_cache_log_evidence(text)
+        self.assertEqual(evidence["mode"], "cache-build")
+        self.assertTrue(evidence["sawCacheBuild"])
+        self.assertTrue(evidence["sawCacheMiss"])
+        elapsed_values = [item["elapsedMs"] for item in evidence["timings"]]
+        self.assertIn(4567, elapsed_values)
+        self.assertIn(34, elapsed_values)
+
+    def test_extract_startup_cache_log_evidence_detects_hit(self):
+        text = "\n".join([
+            "[Amethyst] Launching cached MTS patch jar: /tmp/desktop-1.0-modded.jar",
+            "[Amethyst] Prepared cached MTS prepackaged launch took 98ms",
+            "[Amethyst] Restored cached MTS annotation DB: mods=20 entries=20 took 12ms",
+        ])
+        evidence = Harness.extract_startup_cache_log_evidence(text)
+        self.assertEqual(evidence["mode"], "cache-hit")
+        self.assertTrue(evidence["sawCacheHit"])
+        self.assertGreaterEqual(len(evidence["timings"]), 2)
+
+    def test_clear_startup_caches_clears_external_and_private_paths(self):
+        harness = Harness(self._make_options())
+        harness.application_id = "io.test"
+        harness.resolve_device_sts_root = MagicMock(
+            return_value={"root": "/sdcard/Android/data/io.test/files/sts", "accessMode": "shell"}
+        )
+        external_result = MagicMock(exit_code=0, output="")
+        private_result = MagicMock(exit_code=0, output="")
+        harness.remote_sts_root_script = MagicMock(return_value=external_result)
+        harness.adb = MagicMock(return_value=private_result)
+
+        summary = harness.clear_startup_caches()
+
+        self.assertEqual(summary["externalExitCode"], 0)
+        self.assertEqual(summary["privateExitCode"], 0)
+        external_script = harness.remote_sts_root_script.call_args.args[1]
+        private_args = harness.adb.call_args.args[0]
+        private_script = private_args[-1]
+        self.assertIn("cd '/sdcard/Android/data/io.test/files/sts' || exit 1", external_script)
+        self.assertIn(".mts_classpath_cache", external_script)
+        self.assertIn("files/mts_patch_cache", private_script)
+
+
 class JarLibraryDirTest(unittest.TestCase):
     def test_jar_library_dir_returns_correct_path(self):
         options = HarnessOptions(

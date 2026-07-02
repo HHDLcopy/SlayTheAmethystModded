@@ -8,6 +8,7 @@ import org.objectweb.asm.tree.InsnList
 import org.objectweb.asm.tree.InsnNode
 import org.objectweb.asm.tree.JumpInsnNode
 import org.objectweb.asm.tree.LabelNode
+import org.objectweb.asm.tree.LdcInsnNode
 import org.objectweb.asm.tree.FieldInsnNode
 import org.objectweb.asm.tree.MethodInsnNode
 import org.objectweb.asm.tree.MethodNode
@@ -64,6 +65,11 @@ internal object MtsLoaderCrashPatcher {
     private const val PATCH_CACHE_STORE_METHOD_NAME = "store"
     private const val LEGACY_PATCH_CACHE_STORE_METHOD_DESC = "(Ljava/lang/Object;)V"
     private const val PATCH_CACHE_STORE_METHOD_DESC = "(Ljava/lang/Object;Ljava/lang/Object;)V"
+    private const val PATCH_CACHE_RESOLVE_PACKAGE_DIR_METHOD_NAME = "resolvePackageDirPath"
+    private const val PATCH_CACHE_RESOLVE_PACKAGE_DIR_METHOD_DESC = "()Ljava/lang/String;"
+    private const val PATCH_CACHE_PACKAGE_JAR_FAST_PATH_METHOD_NAME = "packageJarFastPath"
+    private const val PATCH_CACHE_PACKAGE_JAR_FAST_PATH_METHOD_DESC =
+        "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/String;)Z"
     private const val PATCH_CACHE_BEGIN_COMPILE_CAPTURE_METHOD_NAME = "beginCompileCapture"
     private const val PATCH_CACHE_BEGIN_COMPILE_CAPTURE_METHOD_DESC = "()V"
     private const val PATCH_CACHE_FINISH_COMPILE_CAPTURE_METHOD_NAME = "finishCompileCapture"
@@ -76,7 +82,9 @@ internal object MtsLoaderCrashPatcher {
         "(Lcom/evacipated/cardcrawl/modthespire/MTSClassLoader;Lcom/evacipated/cardcrawl/modthespire/MTSClassPool;)Ljavassist/ClassPath;"
     private const val AMETHYST_PATCH_MARKER_METHOD_NAME = "amethyst\$loaderPatchV2"
     private const val AMETHYST_PATCH_MARKER_METHOD_DESC = "()I"
-    private const val AMETHYST_PACKAGE_PATCH_MARKER_METHOD_NAME = "amethyst\$packagePatchV2"
+    private const val AMETHYST_PACKAGE_PATCH_MARKER_METHOD_NAME_V2 = "amethyst\$packagePatchV2"
+    private const val AMETHYST_PACKAGE_PATCH_MARKER_METHOD_NAME_V3 = "amethyst\$packagePatchV3"
+    private const val AMETHYST_PACKAGE_PATCH_MARKER_METHOD_NAME = "amethyst\$packagePatchV4"
     private const val AMETHYST_PACKAGE_PATCH_MARKER_METHOD_DESC = "()I"
     private const val AMETHYST_PREPACKAGED_PATCH_MARKER_METHOD_NAME_V2 = "amethyst\$prepackagedLauncherPatchV2"
     private const val AMETHYST_PREPACKAGED_PATCH_MARKER_METHOD_NAME_V3 = "amethyst\$prepackagedLauncherPatchV3"
@@ -265,7 +273,29 @@ internal object MtsLoaderCrashPatcher {
     }
 
     internal fun isPatchedPackageJarClass(packageJarBytes: ByteArray): Boolean {
-        return hasPackagePatchMarker(readClassNode(packageJarBytes))
+        val classNode = readClassNode(packageJarBytes)
+        val packageJarMethod = classNode.methods.firstOrNull { method ->
+            method.name == PACKAGE_JAR_METHOD_NAME && method.desc == PACKAGE_JAR_METHOD_DESC
+        } ?: return false
+        return hasPackagePatchMarker(classNode) &&
+            hasPackageDirOverride(packageJarMethod) &&
+            hasPackageJarFastPathHook(packageJarMethod)
+    }
+
+    internal fun hasPackageDirOverride(packageJarBytes: ByteArray): Boolean {
+        val classNode = readClassNode(packageJarBytes)
+        val packageJarMethod = classNode.methods.firstOrNull { method ->
+            method.name == PACKAGE_JAR_METHOD_NAME && method.desc == PACKAGE_JAR_METHOD_DESC
+        } ?: return false
+        return hasPackageDirOverride(packageJarMethod)
+    }
+
+    internal fun hasPackageJarFastPathHook(packageJarBytes: ByteArray): Boolean {
+        val classNode = readClassNode(packageJarBytes)
+        val packageJarMethod = classNode.methods.firstOrNull { method ->
+            method.name == PACKAGE_JAR_METHOD_NAME && method.desc == PACKAGE_JAR_METHOD_DESC
+        } ?: return false
+        return hasPackageJarFastPathHook(packageJarMethod)
     }
 
     internal fun isPatchedPrepackagedLauncherClass(prepackagedLauncherBytes: ByteArray): Boolean {
@@ -357,6 +387,8 @@ internal object MtsLoaderCrashPatcher {
         insertNullInputReturn(findEntriesMethod, inputStreamLocal = 1)
         insertNullInputReturn(copyJarContentsMethod, inputStreamLocal = 2)
         insertNullSetFallbackAfterGetOutJarClasses(packageJarMethod)
+        insertPackageDirOverride(packageJarMethod)
+        insertPackageJarFastPathHook(packageJarMethod)
         insertPackagePatchMarker(classNode)
 
         val classWriter = ClassWriter(0)
@@ -569,7 +601,9 @@ internal object MtsLoaderCrashPatcher {
 
     private fun insertPackagePatchMarker(classNode: ClassNode) {
         classNode.methods.removeAll { method ->
-            method.name == AMETHYST_PACKAGE_PATCH_MARKER_METHOD_NAME &&
+            (method.name == AMETHYST_PACKAGE_PATCH_MARKER_METHOD_NAME ||
+                method.name == AMETHYST_PACKAGE_PATCH_MARKER_METHOD_NAME_V3 ||
+                method.name == AMETHYST_PACKAGE_PATCH_MARKER_METHOD_NAME_V2) &&
                 method.desc == AMETHYST_PACKAGE_PATCH_MARKER_METHOD_DESC
         }
         val marker = MethodNode(
@@ -584,6 +618,57 @@ internal object MtsLoaderCrashPatcher {
         marker.maxStack = 1
         marker.maxLocals = 0
         classNode.methods.add(marker)
+    }
+
+    private fun insertPackageJarFastPathHook(method: MethodNode) {
+        val copyStartMessage = method.instructions.iterator().asSequence().firstOrNull { instruction ->
+            instruction is LdcInsnNode && instruction.cst == "  Copying ModTheSpire entries..."
+        } ?: throw IOException("Unsupported ModTheSpire.jar: PackageJar copy start marker not found")
+        val insertBefore = copyStartMessage.previous ?: copyStartMessage
+        val continueLabel = LabelNode()
+        val instructions = InsnList()
+        instructions.add(VarInsnNode(Opcodes.ALOAD, 0))
+        instructions.add(VarInsnNode(Opcodes.ALOAD, 7))
+        instructions.add(VarInsnNode(Opcodes.ALOAD, 6))
+        instructions.add(VarInsnNode(Opcodes.ALOAD, 1))
+        instructions.add(
+            MethodInsnNode(
+                Opcodes.INVOKESTATIC,
+                PATCH_CACHE_STORE_CLASS,
+                PATCH_CACHE_PACKAGE_JAR_FAST_PATH_METHOD_NAME,
+                PATCH_CACHE_PACKAGE_JAR_FAST_PATH_METHOD_DESC,
+                false
+            )
+        )
+        instructions.add(JumpInsnNode(Opcodes.IFEQ, continueLabel))
+        instructions.add(InsnNode(Opcodes.RETURN))
+        instructions.add(continueLabel)
+        method.instructions.insertBefore(insertBefore, instructions)
+        method.maxStack = maxOf(method.maxStack, 4)
+    }
+
+    private fun insertPackageDirOverride(method: MethodNode) {
+        var replaced = 0
+        val iterator = method.instructions.iterator()
+        while (iterator.hasNext()) {
+            val instruction = iterator.next()
+            if (instruction is LdcInsnNode && instruction.cst == "package") {
+                method.instructions.set(
+                    instruction,
+                    MethodInsnNode(
+                        Opcodes.INVOKESTATIC,
+                        PATCH_CACHE_STORE_CLASS,
+                        PATCH_CACHE_RESOLVE_PACKAGE_DIR_METHOD_NAME,
+                        PATCH_CACHE_RESOLVE_PACKAGE_DIR_METHOD_DESC,
+                        false
+                    )
+                )
+                replaced++
+            }
+        }
+        if (replaced == 0) {
+            throw IOException("Unsupported ModTheSpire.jar: PackageJar package directory constant not found")
+        }
     }
 
     private fun insertPrepackagedPatchMarker(classNode: ClassNode) {
@@ -824,6 +909,38 @@ internal object MtsLoaderCrashPatcher {
             method.name == AMETHYST_PACKAGE_PATCH_MARKER_METHOD_NAME &&
                 method.desc == AMETHYST_PACKAGE_PATCH_MARKER_METHOD_DESC
         }
+    }
+
+    private fun hasPackageDirOverride(method: MethodNode): Boolean {
+        val iterator = method.instructions.iterator()
+        while (iterator.hasNext()) {
+            val instruction = iterator.next()
+            if (instruction is MethodInsnNode &&
+                instruction.opcode == Opcodes.INVOKESTATIC &&
+                instruction.owner == PATCH_CACHE_STORE_CLASS &&
+                instruction.name == PATCH_CACHE_RESOLVE_PACKAGE_DIR_METHOD_NAME &&
+                instruction.desc == PATCH_CACHE_RESOLVE_PACKAGE_DIR_METHOD_DESC
+            ) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun hasPackageJarFastPathHook(method: MethodNode): Boolean {
+        val iterator = method.instructions.iterator()
+        while (iterator.hasNext()) {
+            val instruction = iterator.next()
+            if (instruction is MethodInsnNode &&
+                instruction.opcode == Opcodes.INVOKESTATIC &&
+                instruction.owner == PATCH_CACHE_STORE_CLASS &&
+                instruction.name == PATCH_CACHE_PACKAGE_JAR_FAST_PATH_METHOD_NAME &&
+                instruction.desc == PATCH_CACHE_PACKAGE_JAR_FAST_PATH_METHOD_DESC
+            ) {
+                return true
+            }
+        }
+        return false
     }
 
     private fun hasPrepackagedPatchMarker(classNode: ClassNode): Boolean {

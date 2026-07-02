@@ -47,6 +47,8 @@ class MtsLoaderCrashPatcherTest {
             requireNotNull(patchedPrepackagedLauncherBytes)
             assertTrue(MtsLoaderCrashPatcher.isPatchedLoaderClass(patchedLoaderBytes))
             assertTrue(MtsLoaderCrashPatcher.isPatchedPackageJarClass(patchedPackageJarBytes))
+            assertTrue(MtsLoaderCrashPatcher.hasPackageDirOverride(patchedPackageJarBytes))
+            assertTrue(MtsLoaderCrashPatcher.hasPackageJarFastPathHook(patchedPackageJarBytes))
             assertTrue(MtsLoaderCrashPatcher.isPatchedPrepackagedLauncherClass(patchedPrepackagedLauncherBytes))
             assertTrue(MtsLoaderCrashPatcher.hasPatchCacheLaunchHook(patchedLoaderBytes))
             assertTrue(MtsLoaderCrashPatcher.hasPatchCacheStoreHook(patchedLoaderBytes))
@@ -98,7 +100,15 @@ class MtsLoaderCrashPatcherTest {
                 "com/evacipated/cardcrawl/modthespire/PackageJar\$PrepackagedLauncher.class"
             )
             requireNotNull(patchedPrepackagedLauncherBytes)
+            val patchedPackageJarBytes = JarFileIoUtils.readJarEntryBytes(
+                tempJar,
+                "com/evacipated/cardcrawl/modthespire/PackageJar.class"
+            )
+            requireNotNull(patchedPackageJarBytes)
             assertTrue(MtsLoaderCrashPatcher.isPatchedLoaderClass(patchedLoaderBytes))
+            assertTrue(MtsLoaderCrashPatcher.isPatchedPackageJarClass(patchedPackageJarBytes))
+            assertTrue(MtsLoaderCrashPatcher.hasPackageDirOverride(patchedPackageJarBytes))
+            assertTrue(MtsLoaderCrashPatcher.hasPackageJarFastPathHook(patchedPackageJarBytes))
             assertTrue(MtsLoaderCrashPatcher.hasOutJarPrimingHook(patchedLoaderBytes))
             assertTrue(MtsLoaderCrashPatcher.hasPatchCacheStoreHookWithCompiledClassPathArg(patchedLoaderBytes))
             assertTrue(MtsLoaderCrashPatcher.hasCloseWindowNullGuard(patchedLoaderBytes))

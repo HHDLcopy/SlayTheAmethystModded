@@ -3,6 +3,8 @@ package io.stamethyst.bridge;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.Closeable;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.net.URL;
@@ -10,11 +12,20 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Collection;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.jar.Attributes;
+import java.util.jar.JarEntry;
+import java.util.jar.JarInputStream;
+import java.util.jar.JarOutputStream;
+import java.util.jar.Manifest;
+import java.util.zip.Deflater;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
@@ -74,6 +85,66 @@ public final class MtsPatchCacheStore {
         }
     }
 
+    public static String resolvePackageDirPath() {
+        String packageDir = System.getProperty(PROPERTY_PACKAGE_DIR, "").trim();
+        if (Boolean.parseBoolean(System.getProperty(PROPERTY_ENABLED, "false")) && packageDir.length() != 0) {
+            return packageDir;
+        }
+        return "package";
+    }
+
+    public static boolean packageJarFastPath(
+            Object classPool,
+            Object entries,
+            Object openJarOutputStream,
+            String outputPath
+    ) {
+        if (!Boolean.parseBoolean(System.getProperty(PROPERTY_ENABLED, "false"))) {
+            return false;
+        }
+        long startNs = System.nanoTime();
+        boolean closedOriginalOutput = false;
+        try {
+            if (classPool == null || entries == null || outputPath == null || outputPath.trim().length() == 0) {
+                return false;
+            }
+            PackageJarReflection reflection = PackageJarReflection.create(classPool, entries);
+            List<EntrySnapshot> snapshots = reflection.readEntries(entries);
+            if (snapshots.isEmpty()) {
+                return false;
+            }
+
+            closeIfPossible(openJarOutputStream);
+            closedOriginalOutput = true;
+
+            File cachedJar = new File(outputPath);
+            File parent = cachedJar.getParentFile();
+            if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
+                throw new IllegalStateException("Failed to create cache jar dir: " + parent.getAbsolutePath());
+            }
+            File packageDir = new File(resolvePackageDirPath());
+            if (!packageDir.isDirectory() && !packageDir.mkdirs()) {
+                throw new IllegalStateException("Failed to create cache package dir: " + packageDir.getAbsolutePath());
+            }
+
+            writeFastMainJar(reflection, snapshots, cachedJar);
+            writeFastPackageJars(reflection, snapshots, packageDir);
+            logStep(
+                    "packageJarFastPath entries=" + snapshots.size() +
+                            " cacheBytes=" + (cachedJar.isFile() ? cachedJar.length() : 0L) +
+                            " packageJars=" + countPackageJars(packageDir),
+                    startNs
+            );
+            return true;
+        } catch (Throwable error) {
+            if (closedOriginalOutput) {
+                throw new IllegalStateException("Failed after taking over MTS PackageJar output", error);
+            }
+            log("MTS patch cache fast package writer unavailable: " + error);
+            return false;
+        }
+    }
+
     public static void store(Object classPool) {
         store(classPool, null);
     }
@@ -82,6 +153,7 @@ public final class MtsPatchCacheStore {
         if (!Boolean.parseBoolean(System.getProperty(PROPERTY_ENABLED, "false"))) {
             return;
         }
+        long storeStartNs = System.nanoTime();
         String expectedMarker = System.getProperty(PROPERTY_EXPECTED, "").trim();
         File cachedJar = new File(System.getProperty(PROPERTY_JAR, ""));
         File baseJar = new File(System.getProperty(PROPERTY_BASE_JAR, ""));
@@ -94,6 +166,7 @@ public final class MtsPatchCacheStore {
         }
 
         try {
+            long cleanupStartNs = System.nanoTime();
             deleteIfExists(markerFile);
             deleteIfExists(diagnosticFile);
             File parent = cachedJar.getParentFile();
@@ -111,6 +184,7 @@ public final class MtsPatchCacheStore {
             if (!packageDir.isDirectory() && !packageDir.mkdirs()) {
                 throw new IllegalStateException("Failed to create cache package dir: " + packageDir.getAbsolutePath());
             }
+            logStep("cleanup", cleanupStartNs);
             ClassLoader loader = classPool.getClass().getClassLoader();
             Class<?> packageJarClass = Class.forName(
                     "com.evacipated.cardcrawl.modthespire.PackageJar",
@@ -126,9 +200,19 @@ public final class MtsPatchCacheStore {
                             " cacheJar=" + cachedJar.getAbsolutePath() +
                             " packageDir=" + packageDir.getAbsolutePath()
             );
+            long primeStartNs = System.nanoTime();
             primeOutJarClasses(classPool, diagnosticFile);
+            logStep("primeOutJarClasses", primeStartNs);
+            long packageStartNs = System.nanoTime();
             invokePackageJarInCacheRoot(packageJar, classPool, cachedJar);
+            logStep(
+                    "invokePackageJar cacheBytes=" + (cachedJar.isFile() ? cachedJar.length() : 0L) +
+                            " packageJars=" + countPackageJars(packageDir),
+                    packageStartNs
+            );
+            long mergeStartNs = System.nanoTime();
             int mergedCompiledClasses = mergeCompiledClasses(cachedJar, baseJar, compiledClassPath, diagnosticFile);
+            logStep("mergeCompiledClasses merged=" + mergedCompiledClasses, mergeStartNs);
             writeDiagnostic(
                     diagnosticFile,
                     "after packageJar cacheBytes=" + (cachedJar.isFile() ? cachedJar.length() : 0L) +
@@ -136,9 +220,14 @@ public final class MtsPatchCacheStore {
                             " mergedCompiledClasses=" + mergedCompiledClasses
             );
             if (countPackageJars(packageDir) == 0 && !sameFile(packageDir, generatedPackageDir)) {
+                long migrateStartNs = System.nanoTime();
                 migratePackageJars(generatedPackageDir, packageDir, diagnosticFile);
+                logStep("migratePackageJars packageJars=" + countPackageJars(packageDir), migrateStartNs);
             }
+            long aliasStartNs = System.nanoTime();
             createJsonEscapedPackageAliases(packageDir);
+            logStep("createJsonEscapedPackageAliases packageJars=" + countPackageJars(packageDir), aliasStartNs);
+            long validateStartNs = System.nanoTime();
             if (!cachedJar.isFile() || cachedJar.length() < MIN_CACHE_JAR_BYTES) {
                 throw new IllegalStateException(
                         "Cache jar was not created or is too small: " +
@@ -151,12 +240,18 @@ public final class MtsPatchCacheStore {
             if (packageJarCount == 0) {
                 throw new IllegalStateException("Cache package jars were not created: " + packageDir.getAbsolutePath());
             }
+            logStep("validateCacheArtifacts packageJars=" + packageJarCount, validateStartNs);
             if (parent != null) {
+                long metadataStartNs = System.nanoTime();
                 MtsPatchAnnotationDbCache.writeFromPatcher(loader, parent, packageDir);
                 MtsPatchMainJarSpireEnumCache.writeFromPatchedJar(loader, parent, cachedJar);
+                logStep("writeMetadataCaches", metadataStartNs);
             }
+            long markerStartNs = System.nanoTime();
             writeMarker(markerFile, expectedMarker);
+            logStep("writeMarker", markerStartNs);
             log("MTS patch cache is ready: packageJars=" + packageJarCount);
+            logStep("store total", storeStartNs);
             deleteIfExists(diagnosticFile);
         } catch (Throwable error) {
             deleteIfExists(markerFile);
@@ -182,11 +277,14 @@ public final class MtsPatchCacheStore {
             Object compiledClassPath,
             File diagnosticFile
     ) throws Exception {
+        long collectStartNs = System.nanoTime();
         Map<String, byte[]> classes = collectCompiledClasses(baseJar, compiledClassPath, diagnosticFile);
+        logStep("collectCompiledClasses candidates=" + classes.size(), collectStartNs);
         if (classes.isEmpty()) {
             return 0;
         }
 
+        long rewriteStartNs = System.nanoTime();
         File tempJar = new File(cachedJar.getAbsolutePath() + ".merge.tmp");
         Set<String> written = new HashSet<String>();
         ZipInputStream input = new ZipInputStream(new FileInputStream(cachedJar));
@@ -238,6 +336,7 @@ public final class MtsPatchCacheStore {
             copyFile(tempJar, cachedJar);
             deleteIfExists(tempJar);
         }
+        logStep("rewriteCachedJar compiledClasses=" + classes.size(), rewriteStartNs);
         return classes.size();
     }
 
@@ -348,6 +447,356 @@ public final class MtsPatchCacheStore {
             }
         }
         return null;
+    }
+
+    private static void writeFastMainJar(
+            PackageJarReflection reflection,
+            List<EntrySnapshot> entries,
+            File cachedJar
+    ) throws Exception {
+        Manifest manifest = new Manifest();
+        Attributes attributes = manifest.getMainAttributes();
+        attributes.put(Attributes.Name.MANIFEST_VERSION, "1.0");
+        attributes.put(Attributes.Name.MAIN_CLASS, "com.evacipated.cardcrawl.modthespire.PackageJar$PrepackagedLauncher");
+        attributes.put(Attributes.Name.CLASS_PATH, reflection.createClassPath());
+        attributes.put(new Attributes.Name("Created-By"), "ModTheSpire");
+
+        Map<String, EntrySnapshot> entriesByPath = mapEntriesByPath(entries);
+        Set<String> written = new HashSet<String>();
+        FileOutputStream fileOutput = new FileOutputStream(cachedJar, false);
+        try {
+            JarOutputStream output = new JarOutputStream(fileOutput, manifest);
+            try {
+                output.setLevel(Deflater.NO_COMPRESSION);
+                writeSelectedJarEntries(output, written, entriesByPath, reflection.openMtsJar(), null, "MTS");
+                writeSelectedJarEntries(output, written, entriesByPath, reflection.openKotlinJar(), null, "KOTLIN");
+                writeOutJarEntries(output, written, entries, null);
+                writeSelectedJarEntries(output, written, entriesByPath, reflection.openCorePatchesJar(), null, "COREPATCH");
+                writeSelectedJarEntries(output, written, entriesByPath, reflection.openBaseGameJar(), null, "BASEGAME");
+            } finally {
+                output.close();
+            }
+        } finally {
+            fileOutput.close();
+        }
+    }
+
+    private static void writeFastPackageJars(
+            PackageJarReflection reflection,
+            List<EntrySnapshot> entries,
+            File packageDir
+    ) throws Exception {
+        Map<String, EntrySnapshot> entriesByPath = mapEntriesByPath(entries);
+        Object[] modInfos = reflection.modInfos();
+        for (int index = 0; index < modInfos.length; index++) {
+            Object modInfo = modInfos[index];
+            URL jarUrl = reflection.modJarUrl(modInfo);
+            String modId = reflection.modId(modInfo);
+            File sourceJar = new File(jarUrl.toURI());
+            File targetJar = new File(packageDir, reflection.createModdedJarName(sourceJar.getName()));
+            Set<String> written = new HashSet<String>();
+            FileOutputStream fileOutput = new FileOutputStream(targetJar, false);
+            try {
+                JarOutputStream output = new JarOutputStream(fileOutput);
+                try {
+                    output.setLevel(Deflater.NO_COMPRESSION);
+                    writeOutJarEntries(output, written, entries, jarUrl);
+                    writeSelectedJarEntries(output, written, entriesByPath, new FileInputStream(sourceJar), modId, "MOD");
+                } finally {
+                    output.close();
+                }
+            } finally {
+                fileOutput.close();
+            }
+        }
+    }
+
+    private static Map<String, EntrySnapshot> mapEntriesByPath(List<EntrySnapshot> entries) {
+        Map<String, EntrySnapshot> byPath = new LinkedHashMap<String, EntrySnapshot>();
+        for (EntrySnapshot entry : entries) {
+            byPath.put(entry.path, entry);
+        }
+        return byPath;
+    }
+
+    private static void writeSelectedJarEntries(
+            JarOutputStream output,
+            Set<String> written,
+            Map<String, EntrySnapshot> entriesByPath,
+            InputStream input,
+            String modId,
+            String type
+    ) throws Exception {
+        if (input == null) {
+            return;
+        }
+        try {
+            JarInputStream jarInput = new JarInputStream(input);
+            try {
+                byte[] buffer = new byte[8192];
+                JarEntry jarEntry;
+                while ((jarEntry = jarInput.getNextJarEntry()) != null) {
+                    String name = jarEntry.getName();
+                    EntrySnapshot expected = entriesByPath.get(name);
+                    if (expected == null ||
+                            !type.equals(expected.type) ||
+                            !Objects.equals(modId, expected.modId)) {
+                        continue;
+                    }
+                    writeStreamEntry(output, written, name, jarInput, buffer);
+                }
+            } finally {
+                jarInput.close();
+            }
+        } finally {
+            input.close();
+        }
+    }
+
+    private static void writeOutJarEntries(
+            JarOutputStream output,
+            Set<String> written,
+            List<EntrySnapshot> entries,
+            URL locationUrl
+    ) throws Exception {
+        for (EntrySnapshot entry : entries) {
+            if (!"OUTJAR".equals(entry.type) || !Objects.equals(locationUrl, entry.locationUrl) || entry.bytes == null) {
+                continue;
+            }
+            writeByteArrayEntry(output, written, entry.path, entry.bytes);
+        }
+    }
+
+    private static void writeStreamEntry(
+            JarOutputStream output,
+            Set<String> written,
+            String name,
+            InputStream input,
+            byte[] buffer
+    ) throws Exception {
+        if (!written.add(name)) {
+            return;
+        }
+        output.putNextEntry(new JarEntry(name));
+        int count;
+        while ((count = input.read(buffer)) != -1) {
+            output.write(buffer, 0, count);
+        }
+        output.closeEntry();
+    }
+
+    private static void writeByteArrayEntry(
+            JarOutputStream output,
+            Set<String> written,
+            String name,
+            byte[] bytes
+    ) throws Exception {
+        if (!written.add(name)) {
+            return;
+        }
+        output.putNextEntry(new JarEntry(name));
+        output.write(bytes);
+        output.closeEntry();
+    }
+
+    private static void closeIfPossible(Object value) throws Exception {
+        if (value instanceof Closeable) {
+            ((Closeable) value).close();
+        }
+    }
+
+    private static final class EntrySnapshot {
+        final String path;
+        final String modId;
+        final String type;
+        final byte[] bytes;
+        final URL locationUrl;
+
+        EntrySnapshot(String path, String modId, String type, byte[] bytes, URL locationUrl) {
+            this.path = path;
+            this.modId = modId;
+            this.type = type;
+            this.bytes = bytes;
+            this.locationUrl = locationUrl;
+        }
+    }
+
+    private static final class PackageJarReflection {
+        final Class<?> packageJarClass;
+        final Class<?> loaderClass;
+        final Field entriesField;
+        final Field entryPathField;
+        final Field entryModIdField;
+        final Field entryTypeField;
+        final Field entryBytesField;
+        final Field entryLocationUrlField;
+        final Field modInfosField;
+        final Field modInfoJarUrlField;
+        final Field modInfoIdField;
+        final Field stsJarField;
+        final Field kotlinJarField;
+        final Field corePatchesJarField;
+        final Method createClassPathMethod;
+        final Method createModdedJarNameMethod;
+
+        private PackageJarReflection(
+                Class<?> packageJarClass,
+                Class<?> loaderClass,
+                Field entriesField,
+                Field entryPathField,
+                Field entryModIdField,
+                Field entryTypeField,
+                Field entryBytesField,
+                Field entryLocationUrlField,
+                Field modInfosField,
+                Field modInfoJarUrlField,
+                Field modInfoIdField,
+                Field stsJarField,
+                Field kotlinJarField,
+                Field corePatchesJarField,
+                Method createClassPathMethod,
+                Method createModdedJarNameMethod
+        ) {
+            this.packageJarClass = packageJarClass;
+            this.loaderClass = loaderClass;
+            this.entriesField = entriesField;
+            this.entryPathField = entryPathField;
+            this.entryModIdField = entryModIdField;
+            this.entryTypeField = entryTypeField;
+            this.entryBytesField = entryBytesField;
+            this.entryLocationUrlField = entryLocationUrlField;
+            this.modInfosField = modInfosField;
+            this.modInfoJarUrlField = modInfoJarUrlField;
+            this.modInfoIdField = modInfoIdField;
+            this.stsJarField = stsJarField;
+            this.kotlinJarField = kotlinJarField;
+            this.corePatchesJarField = corePatchesJarField;
+            this.createClassPathMethod = createClassPathMethod;
+            this.createModdedJarNameMethod = createModdedJarNameMethod;
+        }
+
+        static PackageJarReflection create(Object classPool, Object entries) throws Exception {
+            ClassLoader loader = classPool.getClass().getClassLoader();
+            Class<?> packageJarClass = Class.forName(
+                    "com.evacipated.cardcrawl.modthespire.PackageJar",
+                    false,
+                    loader
+            );
+            Class<?> loaderClass = loadMtsLoaderClass(loader);
+            Field entriesField = requireField(entries.getClass(), "entries");
+            Object values = entriesField.get(entries);
+            Class<?> entryClass = null;
+            if (values instanceof Map) {
+                Collection<?> collection = ((Map<?, ?>) values).values();
+                for (Object entry : collection) {
+                    if (entry != null) {
+                        entryClass = entry.getClass();
+                        break;
+                    }
+                }
+            }
+            if (entryClass == null) {
+                throw new IllegalStateException("PackageJar entries are empty or unsupported");
+            }
+            Field modInfosField = requireField(loaderClass, "MODINFOS");
+            Object[] modInfos = (Object[]) modInfosField.get(null);
+            Class<?> modInfoClass = modInfos.length == 0 ? null : modInfos[0].getClass();
+            if (modInfoClass == null) {
+                throw new IllegalStateException("MTS Loader.MODINFOS is empty");
+            }
+            Method createClassPath = packageJarClass.getDeclaredMethod("createClassPath");
+            createClassPath.setAccessible(true);
+            Method createModdedJarName = packageJarClass.getDeclaredMethod("createModdedJarName", String.class);
+            createModdedJarName.setAccessible(true);
+            return new PackageJarReflection(
+                    packageJarClass,
+                    loaderClass,
+                    entriesField,
+                    requireField(entryClass, "path"),
+                    requireField(entryClass, "modID"),
+                    requireField(entryClass, "type"),
+                    requireField(entryClass, "b"),
+                    requireField(entryClass, "locationURL"),
+                    modInfosField,
+                    requireField(modInfoClass, "jarURL"),
+                    requireField(modInfoClass, "ID"),
+                    requireField(loaderClass, "STS_JAR"),
+                    requireField(loaderClass, "KOTLIN_JAR"),
+                    requireField(loaderClass, "COREPATCHES_JAR"),
+                    createClassPath,
+                    createModdedJarName
+            );
+        }
+
+        List<EntrySnapshot> readEntries(Object entries) throws Exception {
+            Object raw = entriesField.get(entries);
+            if (!(raw instanceof Map)) {
+                throw new IllegalStateException("PackageJar entries field is not a Map");
+            }
+            Collection<?> values = ((Map<?, ?>) raw).values();
+            List<EntrySnapshot> snapshots = new ArrayList<EntrySnapshot>(values.size());
+            for (Object entry : values) {
+                if (entry == null) {
+                    continue;
+                }
+                Object type = entryTypeField.get(entry);
+                snapshots.add(new EntrySnapshot(
+                        (String) entryPathField.get(entry),
+                        (String) entryModIdField.get(entry),
+                        type == null ? null : String.valueOf(type),
+                        (byte[]) entryBytesField.get(entry),
+                        (URL) entryLocationUrlField.get(entry)
+                ));
+            }
+            return snapshots;
+        }
+
+        String createClassPath() throws Exception {
+            return (String) createClassPathMethod.invoke(null);
+        }
+
+        String createModdedJarName(String fileName) throws Exception {
+            return (String) createModdedJarNameMethod.invoke(null, fileName);
+        }
+
+        Object[] modInfos() throws Exception {
+            Object value = modInfosField.get(null);
+            return value == null ? new Object[0] : (Object[]) value;
+        }
+
+        URL modJarUrl(Object modInfo) throws Exception {
+            return (URL) modInfoJarUrlField.get(modInfo);
+        }
+
+        String modId(Object modInfo) throws Exception {
+            return (String) modInfoIdField.get(modInfo);
+        }
+
+        InputStream openMtsJar() throws Exception {
+            File source = new File(loaderClass.getProtectionDomain().getCodeSource().getLocation().toURI());
+            return source.isFile() ? new FileInputStream(source) : null;
+        }
+
+        InputStream openKotlinJar() throws Exception {
+            return loaderClass.getResourceAsStream((String) kotlinJarField.get(null));
+        }
+
+        InputStream openCorePatchesJar() throws Exception {
+            return loaderClass.getResourceAsStream((String) corePatchesJarField.get(null));
+        }
+
+        InputStream openBaseGameJar() throws Exception {
+            return new FileInputStream(new File((String) stsJarField.get(null)));
+        }
+
+        private static Field requireField(Class<?> type, String name) throws Exception {
+            Field field = findField(type, name);
+            if (field == null) {
+                throw new NoSuchFieldException(type.getName() + "." + name);
+            }
+            field.setAccessible(true);
+            return field;
+        }
     }
 
     private static void invokePackageJarInCacheRoot(Method packageJar, Object classPool, File cachedJar)
@@ -616,5 +1065,13 @@ public final class MtsPatchCacheStore {
 
     private static void log(String message) {
         System.out.println("[Amethyst] " + message);
+    }
+
+    private static void logStep(String label, long startNs) {
+        log("MTS patch cache step " + label + " took " + elapsedMs(startNs) + "ms");
+    }
+
+    private static long elapsedMs(long startNs) {
+        return Math.max(0L, (System.nanoTime() - startNs) / 1000000L);
     }
 }

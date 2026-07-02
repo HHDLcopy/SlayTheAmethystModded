@@ -94,6 +94,8 @@ Common options:
 - `-ForceRuntimeCrash`: expects a runtime crash marker during `smoke`.
 - `-SkipInstall`: skip APK build/install during `smoke`.
 - `-NoStopAfterSmoke`: leave the app running after `smoke`.
+- `-CacheHitRuns <count>`: for `startup-cache-profile`, number of cache-hit launches after the cache-build launch. Defaults to `1`.
+- `-NoClearStartupCache`: for `startup-cache-profile`, reuse the existing startup cache instead of clearing it before the first run.
 - `-Mods <tokens>`: comma- or newline-separated optional mod ids, jar names, display names, launch ids, or storage paths for `set-mods`; repeatable.
 - `-ModListFile <path>`: local UTF-8 file with one optional mod token per line for `set-mods`; blank lines and `#` comments are ignored.
 - `-EnableAllMods`: enable every optional mod currently found in `sts/mods_library`.
@@ -106,6 +108,8 @@ Common options:
 Autoplay randomly handles `CardRewardScreen` discovery/card reward choice pages and logs `[amethyst-autoplay] choice: ...` markers with the selected card id, source, group size, and current action. This makes scripted repros for discovery-card pages deterministic enough to reach the interaction; visual twitch detection still requires reviewing the captured screen/log evidence.
 
 `single-room` is a harness-owned autoplay run mode. The harness writes or forwards a properties spec, pushes it to the device when needed, starts MTS autoplay with `autoplayMode=single_room`, waits until the runtime logs `[amethyst-autoplay] single_room result ...`, copies that parsed line into `statusSnapshot.latestLog.singleRoomResult`, exports logs, and stops the app. Success is reported as `SINGLE_ROOM_COMPLETE`; crashes and boot failures still use the normal `LOGCAT_CRASH`, `CRASH_MARKER`, or `FAIL` paths.
+
+`startup-cache-profile` is a harness-owned startup timing run. By default it clears launcher/MTS startup caches, runs one MTS launch that rebuilds the cache, force-stops the app, then runs one cache-hit launch. Pass `-CacheHitRuns` to collect more hit samples or `-NoClearStartupCache` to profile an existing cache. The top-level `result.json` stores `startupCacheProfile`; each phase has its own subdirectory with `result.json`, logs, logcat, cache state before/after, detected cache mode, and extracted timing evidence from `latest.log`.
 
 ## Gradle Harness Tasks
 
@@ -124,6 +128,7 @@ Windows:
 .\gradlew.bat :app:stsHarnessSmoke
 .\gradlew.bat :app:stsHarnessAutoplaySmoke
 .\gradlew.bat :app:stsHarnessSingleRoom
+.\gradlew.bat :app:stsHarnessStartupCacheProfile
 ```
 
 macOS/Linux:
@@ -150,6 +155,8 @@ Gradle properties:
 - `-PsingleRoomMonster=<id>`
 - `-PsingleRoomCards=<comma-separated-card-ids>`
 - `-PsingleRoomSpecFile=<local-properties-path>`
+- `-PstartupCacheHitRuns=<count>`
+- `-PstartupCacheNoClear=true`
 - `-PforceJvmCrash=true`
 - `-PforceRuntimeCrash=true`
 - `-PnoStopAfterSmoke=true`
@@ -162,6 +169,7 @@ Example:
 .\gradlew.bat :app:stsHarnessAutoplaySmoke -PdeviceSerial=emulator-5554 -PautoplaySaveMode=continue -PharnessOutDir=debug-artifacts\harness\autoplay-continue
 .\gradlew.bat :app:stsHarnessSingleRoom -PdeviceSerial=emulator-5554 -PsingleRoomCharacter=IRONCLAD -PsingleRoomMonster=Cultist -PsingleRoomCards=Strike_R,Defend_R,Bash -PharnessOutDir=debug-artifacts\harness\single-room
 .\gradlew.bat :app:stsHarnessSingleRoom -PdeviceSerial=emulator-5554 -PsingleRoomCharacter=IRONCLAD -PsingleRoomMonster=Looter -PsingleRoomCards=Strike_R -PdisableCardObtainEffectOwnershipCompat=true -PharnessOutDir=debug-artifacts\harness\card-obtain-ownership-unpatched
+.\gradlew.bat :app:stsHarnessStartupCacheProfile -PdeviceSerial=emulator-5554 -PstartupCacheHitRuns=2 -PharnessSkipInstall=true -PharnessOutDir=debug-artifacts\harness\startup-cache-profile
 ```
 
 `:app:stsHarnessAutoplaySmoke` and `:app:stsHarnessSmoke -Pautoplay=true` default to a 300-second harness timeout so first-run desktop jar patching can finish; pass `-PharnessTimeoutSeconds=<seconds>` to override it.

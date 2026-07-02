@@ -88,6 +88,21 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("-SkipInstall", "--skip-install", dest="skip_install", action="store_true")
     parser.add_argument("-NoStopAfterSmoke", "--no-stop-after-smoke", dest="no_stop_after_smoke", action="store_true")
     parser.add_argument(
+        "-CacheHitRuns",
+        "--cache-hit-runs",
+        dest="cache_hit_runs",
+        type=int,
+        default=1,
+        help="For startup-cache-profile, number of cache-hit launches after the cache-build launch.",
+    )
+    parser.add_argument(
+        "-NoClearStartupCache",
+        "--no-clear-startup-cache",
+        dest="no_clear_startup_cache",
+        action="store_true",
+        help="For startup-cache-profile, reuse existing startup cache instead of clearing it before the build phase.",
+    )
+    parser.add_argument(
         "-Mods",
         "--mods",
         dest="mods",
@@ -162,7 +177,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     timeout_seconds = args.timeout_seconds
     if timeout_seconds is None:
-        autoplay_like = args.autoplay or args.command == "single-room" or args.autoplay_mode == "single_room"
+        autoplay_like = (
+            args.autoplay
+            or args.command in {"single-room", "startup-cache-profile"}
+            or args.autoplay_mode == "single_room"
+        )
         timeout_seconds = 300 if autoplay_like else 120
     options = HarnessOptions(
         command=args.command,
@@ -194,5 +213,7 @@ def main(argv: list[str] | None = None) -> int:
         agent_port=args.agent_port,
         agent_duration=args.agent_duration,
         redefine_class_file=args.redefine_class_file,
+        cache_hit_runs=args.cache_hit_runs,
+        no_clear_startup_cache=args.no_clear_startup_cache,
     )
     return Harness(options).run()

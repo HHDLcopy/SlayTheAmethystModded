@@ -315,6 +315,7 @@ internal object SteamCloudPushCoordinator {
                 requireNotNull(uploadBatch).batchId,
                 EResult.OK,
             )
+            uploadBatch = null
 
             val refreshedSnapshot = SteamCloudPathMapper.buildManifestSnapshot(
                 fetchedAtMs = System.currentTimeMillis(),

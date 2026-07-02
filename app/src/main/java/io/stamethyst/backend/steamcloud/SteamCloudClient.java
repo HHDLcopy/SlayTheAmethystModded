@@ -90,6 +90,7 @@ public final class SteamCloudClient implements AutoCloseable {
     private static final long CALLBACK_POLL_TIMEOUT_MS = 250L;
     private static final int DOWNLOAD_MAX_ATTEMPTS = 4;
     private static final long[] DOWNLOAD_RETRY_DELAYS_MS = new long[] { 2_000L, 5_000L, 10_000L };
+    private static final int BEGIN_UPLOAD_BATCH_MAX_ATTEMPTS = 7;
     private static final int BEGIN_HTTP_UPLOAD_MAX_ATTEMPTS = 7;
     private static final long[] BEGIN_HTTP_UPLOAD_RETRY_DELAYS_MS = new long[] { 2_000L, 5_000L, 10_000L };
     private static final long[] BEGIN_HTTP_UPLOAD_PENDING_RETRY_DELAYS_MS =
@@ -755,12 +756,11 @@ public final class SteamCloudClient implements AutoCloseable {
                     .setAppBuildId(0L)
                     .build();
             ServiceMethodResponse<SteammessagesCloudSteamclient.CCloud_BeginAppUploadBatch_Response.Builder> response =
-                waitForServiceJobWithRetries(
-                    () -> cloudService.beginAppUploadBatch(request),
-                    RPC_TIMEOUT_MS,
-                    "BeginAppUploadBatch"
+                beginAppUploadBatchWithRetries(
+                    request,
+                    remotePathsToUpload.size(),
+                    remotePathsToDelete.size()
                 );
-            ensureServiceResult(response, "BeginAppUploadBatch");
             SteammessagesCloudSteamclient.CCloud_BeginAppUploadBatch_Response.Builder body = response.getBody();
             long batchId = body.getBatchId();
             if (batchId == 0L) {
@@ -1542,6 +1542,77 @@ public final class SteamCloudClient implements AutoCloseable {
         throw new IllegalStateException("BeginHTTPUpload failed without a response result.");
     }
 
+    private ServiceMethodResponse<SteammessagesCloudSteamclient.CCloud_BeginAppUploadBatch_Response.Builder>
+    beginAppUploadBatchWithRetries(
+        SteammessagesCloudSteamclient.CCloud_BeginAppUploadBatch_Request request,
+        int uploadCount,
+        int deleteCount
+    ) throws Exception {
+        ServiceMethodResponse<SteammessagesCloudSteamclient.CCloud_BeginAppUploadBatch_Response.Builder> response = null;
+        for (int attempt = 1; attempt <= BEGIN_UPLOAD_BATCH_MAX_ATTEMPTS; attempt++) {
+            response = waitForServiceJob(
+                cloudService.beginAppUploadBatch(request),
+                RPC_TIMEOUT_MS,
+                "BeginAppUploadBatch"
+            );
+            EResult result = response.getResult();
+            long batchId = response.getBody() == null ? 0L : response.getBody().getBatchId();
+            recordDiagnosticEvent(
+                "begin_app_upload_batch result uploads="
+                    + uploadCount
+                    + " deletes="
+                    + deleteCount
+                    + " attempt="
+                    + attempt
+                    + "/"
+                    + BEGIN_UPLOAD_BATCH_MAX_ATTEMPTS
+                    + " result="
+                    + result
+                    + " batchId="
+                    + batchId
+            );
+            if (result == EResult.OK && batchId != 0L) {
+                return response;
+            }
+            if (!isRetryableBeginAppUploadBatchResult(result, batchId)
+                || attempt >= BEGIN_UPLOAD_BATCH_MAX_ATTEMPTS
+            ) {
+                if (result == EResult.OK) {
+                    ensureValidUploadBatchId(batchId, result);
+                }
+                ensureServiceResult(response, "BeginAppUploadBatch");
+            }
+
+            long delayMs = beginAppUploadBatchRetryDelayMs(result, batchId, attempt);
+            Log.w(
+                TAG,
+                "BeginAppUploadBatch returned "
+                    + result
+                    + " (batchId="
+                    + batchId
+                    + ") for uploads="
+                    + uploadCount
+                    + " deletes="
+                    + deleteCount
+                    + "; retrying attempt "
+                    + (attempt + 1)
+                    + "/"
+                    + BEGIN_UPLOAD_BATCH_MAX_ATTEMPTS
+                    + " after "
+                    + delayMs
+                    + "ms."
+                    + beginAppUploadBatchRetryHint(result, batchId)
+            );
+            sleepBeforeRetry(delayMs);
+        }
+
+        if (response != null && response.getResult() == EResult.OK) {
+            ensureValidUploadBatchId(response.getBody() == null ? 0L : response.getBody().getBatchId(), response.getResult());
+        }
+        ensureServiceResult(response, "BeginAppUploadBatch");
+        throw new IllegalStateException("BeginAppUploadBatch failed without a response result.");
+    }
+
     private static void sleepBeforeTransientRetry(
         String stage,
         EResult result,
@@ -1660,6 +1731,26 @@ public final class SteamCloudClient implements AutoCloseable {
     private static boolean isRetryableBeginHttpUploadResult(EResult result) {
         return isRetryableSteamCloudResult(result)
             || result == EResult.TooManyPending;
+    }
+
+    private static boolean isRetryableBeginAppUploadBatchResult(EResult result, long batchId) {
+        return result == EResult.OK
+            ? batchId == 0L
+            : isRetryableSteamCloudResult(result) || result == EResult.TooManyPending;
+    }
+
+    private static long beginAppUploadBatchRetryDelayMs(EResult result, long batchId, int attempt) {
+        long[] delays = (result == EResult.TooManyPending || (result == EResult.OK && batchId == 0L))
+            ? BEGIN_HTTP_UPLOAD_PENDING_RETRY_DELAYS_MS
+            : BEGIN_HTTP_UPLOAD_RETRY_DELAYS_MS;
+        return delays[Math.min(attempt - 1, delays.length - 1)];
+    }
+
+    private static String beginAppUploadBatchRetryHint(EResult result, long batchId) {
+        if (result == EResult.TooManyPending || (result == EResult.OK && batchId == 0L)) {
+            return " Steam may still be clearing an earlier unfinished upload batch after repeated uploads or cancellations.";
+        }
+        return "";
     }
 
     private static long beginHttpUploadRetryDelayMs(EResult result, int attempt) {

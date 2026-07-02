@@ -131,9 +131,6 @@ final class BootBridgeGameStateWatcher {
         if ("GAMEPLAY".equals(snapshot.modeName) || "DUNGEON_TRANSITION".equals(snapshot.modeName)) {
             return true;
         }
-        if (!startupVisualSignalSeen) {
-            return false;
-        }
         if (!"CHAR_SELECT".equals(snapshot.modeName)) {
             return false;
         }

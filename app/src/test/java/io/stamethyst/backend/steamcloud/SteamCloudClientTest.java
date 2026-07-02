@@ -93,6 +93,24 @@ public final class SteamCloudClientTest {
     }
 
     @Test
+    public void isRetryableBeginAppUploadBatchResult_retriesTooManyPendingAndZeroBatchId() throws Exception {
+        Assert.assertTrue(invokeIsRetryableBeginAppUploadBatchResult(EResult.TooManyPending, 0L));
+        Assert.assertTrue(invokeIsRetryableBeginAppUploadBatchResult(EResult.Timeout, 0L));
+        Assert.assertTrue(invokeIsRetryableBeginAppUploadBatchResult(EResult.OK, 0L));
+        Assert.assertFalse(invokeIsRetryableBeginAppUploadBatchResult(EResult.OK, 1L));
+        Assert.assertFalse(invokeIsRetryableBeginAppUploadBatchResult(EResult.AccessDenied, 0L));
+    }
+
+    @Test
+    public void beginAppUploadBatchRetryDelayMs_usesLongerBackoffForTooManyPendingAndZeroBatchId() throws Exception {
+        Assert.assertEquals(10_000L, invokeBeginAppUploadBatchRetryDelayMs(EResult.TooManyPending, 0L, 1));
+        Assert.assertEquals(20_000L, invokeBeginAppUploadBatchRetryDelayMs(EResult.OK, 0L, 2));
+        Assert.assertEquals(120_000L, invokeBeginAppUploadBatchRetryDelayMs(EResult.OK, 0L, 7));
+        Assert.assertEquals(2_000L, invokeBeginAppUploadBatchRetryDelayMs(EResult.Timeout, 0L, 1));
+        Assert.assertEquals(10_000L, invokeBeginAppUploadBatchRetryDelayMs(EResult.Timeout, 99L, 4));
+    }
+
+    @Test
     public void beginHttpUploadRetryDelayMs_usesLongerBackoffForTooManyPending() throws Exception {
         Assert.assertEquals(10_000L, invokeBeginHttpUploadRetryDelayMs(EResult.TooManyPending, 1));
         Assert.assertEquals(20_000L, invokeBeginHttpUploadRetryDelayMs(EResult.TooManyPending, 2));
@@ -193,6 +211,27 @@ public final class SteamCloudClientTest {
         );
         method.setAccessible(true);
         return (long) method.invoke(null, result, attempt);
+    }
+
+    private static boolean invokeIsRetryableBeginAppUploadBatchResult(EResult result, long batchId) throws Exception {
+        Method method = SteamCloudClient.class.getDeclaredMethod(
+            "isRetryableBeginAppUploadBatchResult",
+            EResult.class,
+            long.class
+        );
+        method.setAccessible(true);
+        return (boolean) method.invoke(null, result, batchId);
+    }
+
+    private static long invokeBeginAppUploadBatchRetryDelayMs(EResult result, long batchId, int attempt) throws Exception {
+        Method method = SteamCloudClient.class.getDeclaredMethod(
+            "beginAppUploadBatchRetryDelayMs",
+            EResult.class,
+            long.class,
+            int.class
+        );
+        method.setAccessible(true);
+        return (long) method.invoke(null, result, batchId, attempt);
     }
 
     private static void invokeEnsureValidUploadBatchId(long batchId, EResult result) throws Exception {

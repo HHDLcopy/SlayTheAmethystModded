@@ -7,7 +7,7 @@ import static org.junit.Assert.assertTrue;
 
 public class BootBridgeGameStateWatcherTest {
     @Test
-    public void charSelectDoesNotReportReadyBeforeStartupVisualSignal() {
+    public void charSelectReportsReadyEvenWhenStartupVisualSignalWasMissed() {
         BootBridgeGameStateProbe.Snapshot snapshot = new BootBridgeGameStateProbe.Snapshot(
                 "CHAR_SELECT",
                 true,
@@ -16,7 +16,7 @@ public class BootBridgeGameStateWatcherTest {
                 Float.NaN
         );
 
-        assertFalse(BootBridgeGameStateWatcher.isReadyGameState(snapshot, false));
+        assertTrue(BootBridgeGameStateWatcher.isReadyGameState(snapshot, false));
         assertTrue(BootBridgeGameStateWatcher.isReadyGameState(snapshot, true));
     }
 

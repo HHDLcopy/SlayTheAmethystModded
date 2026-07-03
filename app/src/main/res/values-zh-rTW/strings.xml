@@ -1546,6 +1546,11 @@
     <string name="settings_status_info_empty">暫無狀態資訊</string>
     <string name="settings_log_paths_title">日誌路徑</string>
     <string name="settings_log_paths_empty">暫無日誌路徑</string>
+    <string name="settings_developer_clear_junk_files_title">清除垃圾檔案</string>
+    <string name="settings_developer_clear_junk_files_desc">刪除可安全清理的啟動補丁快取、舊版快取殘留和模組匯入暫存檔案，不會刪除模組、存檔或已匯入資源。</string>
+    <string name="settings_developer_clear_junk_files_done">垃圾檔案清理完成：已釋放 %1$s，清理 %2$d 處位置。</string>
+    <string name="settings_developer_clear_junk_files_partial">垃圾檔案清理完成：已釋放 %1$s，清理 %2$d 處位置，但仍有 %3$d 處未能刪除。</string>
+    <string name="settings_developer_clear_junk_files_empty">沒有發現可清理的垃圾檔案。</string>
     <string name="settings_render_scale_save_failed">儲存畫面清晰度失敗</string>
     <string name="settings_log_share_failed_prefix">分享日誌失敗</string>
     <string name="settings_busy_exporting_jvm_logs">正在匯出 JVM 日誌…</string>

@@ -16,6 +16,7 @@ import android.app.Activity
 import android.app.ActivityManager
 import android.os.Build
 import android.net.Uri
+import android.text.format.Formatter
 import android.widget.Toast
 import androidx.annotation.StringRes
 import androidx.appcompat.app.AlertDialog
@@ -27,6 +28,7 @@ import androidx.lifecycle.ViewModel
 import io.stamethyst.BuildConfig
 import io.stamethyst.backend.diag.LogcatCaptureProcessClient
 import io.stamethyst.backend.diag.LauncherLogcatCaptureProcessClient
+import io.stamethyst.backend.fs.LauncherJunkFileCleaner
 import io.stamethyst.backend.network.NetworkAccelerationPolicy
 import io.stamethyst.backend.steamcloud.STEAM_CLOUD_APP_ID
 import io.stamethyst.backend.steamcloud.SteamCloudAuthCoordinator
@@ -1884,6 +1886,30 @@ class SettingsScreenViewModel : ViewModel() {
                     host,
                     host.getString(R.string.settings_market_clear_preview_cache_done, deletedCount)
                 )
+            }
+        }
+    }
+
+    fun onClearJunkFiles(host: Activity) {
+        executor.execute {
+            val result = LauncherJunkFileCleaner.clear(host.applicationContext)
+            val deletedBytesText = Formatter.formatFileSize(host, result.deletedBytes)
+            val message = when {
+                result.failedTargetCount > 0 -> host.getString(
+                    R.string.settings_developer_clear_junk_files_partial,
+                    deletedBytesText,
+                    result.deletedTargetCount,
+                    result.failedTargetCount
+                )
+                result.deletedTargetCount > 0 -> host.getString(
+                    R.string.settings_developer_clear_junk_files_done,
+                    deletedBytesText,
+                    result.deletedTargetCount
+                )
+                else -> host.getString(R.string.settings_developer_clear_junk_files_empty)
+            }
+            host.runOnUiThread {
+                showToast(host, message)
             }
         }
     }

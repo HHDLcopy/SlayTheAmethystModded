@@ -1,5 +1,9 @@
 package io.stamethyst.backend.launch
 
+import android.app.Application
+import android.content.Context
+import android.content.ContextWrapper
+import io.stamethyst.config.RuntimePaths
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -290,10 +294,68 @@ class MtsPatchCacheCoordinatorTest {
         )
     }
 
+    @Test
+    fun clearRemovesCurrentAndLegacyCacheArtifacts() {
+        val roots = TestRoots.create("mts-patch-cache-clear-")
+        try {
+            writeFile(RuntimePaths.mtsPatchCacheJar(roots.context), "current-cache")
+            writeFile(File(RuntimePaths.mtsPatchCachePackageDir(roots.context), "ExampleMod.jar"), "pkg")
+            writeFile(File(RuntimePaths.legacyInternalStsRoot(roots.context), "desktop-1.0-modded.jar"), "legacy-internal")
+            writeFile(
+                File(RuntimePaths.legacyInternalStsRoot(roots.context), "mts_patch_cache/loadout-scan-cache/cache.bin"),
+                "legacy-internal-scan"
+            )
+            writeFile(
+                File(requireNotNull(RuntimePaths.externalAppStsRoot(roots.context)), ".mts_patch_cache"),
+                "legacy-external"
+            )
+
+            MtsPatchCacheCoordinator.clear(roots.context)
+
+            assertFalse(RuntimePaths.mtsPatchCacheDir(roots.context).exists())
+            assertFalse(File(RuntimePaths.legacyInternalStsRoot(roots.context), "desktop-1.0-modded.jar").exists())
+            assertFalse(File(RuntimePaths.legacyInternalStsRoot(roots.context), "mts_patch_cache").exists())
+            assertFalse(
+                File(requireNotNull(RuntimePaths.externalAppStsRoot(roots.context)), ".mts_patch_cache").exists()
+            )
+        } finally {
+            roots.rootDir.deleteRecursively()
+        }
+    }
+
     private fun writeFile(root: File, name: String, text: String): File {
         val file = File(root, name)
         file.parentFile?.mkdirs()
         file.writeText(text, StandardCharsets.UTF_8)
         return file
+    }
+
+    private fun writeFile(file: File, text: String): File {
+        file.parentFile?.mkdirs()
+        file.writeText(text, StandardCharsets.UTF_8)
+        return file
+    }
+
+    private class TestRoots private constructor(
+        val rootDir: File,
+        val context: Context
+    ) {
+        companion object {
+            fun create(prefix: String): TestRoots {
+                val rootDir = Files.createTempDirectory(prefix).toFile()
+                val filesDir = File(rootDir, "internal-files").apply { mkdirs() }
+                val externalFilesDir = File(rootDir, "external-files").apply { mkdirs() }
+                return TestRoots(
+                    rootDir = rootDir,
+                    context = object : ContextWrapper(Application()) {
+                        override fun getFilesDir(): File = filesDir
+
+                        override fun getExternalFilesDir(type: String?): File = externalFilesDir
+
+                        override fun getPackageName(): String = "io.stamethyst.test"
+                    }
+                )
+            }
+        }
     }
 }

@@ -374,16 +374,38 @@ object RuntimePaths {
         File(mtsPatchCacheDir(context), MTS_PATCH_CACHE_LOADOUT_SCAN_CACHE_DIR_NAME)
 
     @JvmStatic
-    fun legacyExternalMtsPatchCacheFiles(context: Context): List<File> {
-        val externalStsRoot = externalAppStsRoot(context) ?: return emptyList()
-        return listOf(
-            File(externalStsRoot, MTS_PATCH_CACHE_MARKER_FILE_NAME),
-            File(externalStsRoot, MTS_PATCH_CACHE_JAR_FILE_NAME),
-            File(externalStsRoot, MTS_PATCH_CACHE_PACKAGE_DIR_NAME),
-            File(File(externalStsRoot, MTS_PATCH_CACHE_DIR_NAME), MTS_PATCH_CACHE_LOADOUT_SCAN_CACHE_DIR_NAME),
-            File(externalStsRoot, "mts_patch_cache_debug.log")
-        )
-    }
+    fun legacyExternalMtsPatchCacheFiles(context: Context): List<File> =
+        legacyExternalStsRootCandidates(context.packageName, appExternalFilesRoot(context))
+            .asSequence()
+            .map(::File)
+            .flatMap { legacyMtsPatchCacheArtifacts(it).asSequence() }
+            .distinctBy { it.absolutePath }
+            .toList()
+
+    @JvmStatic
+    fun legacyInternalMtsPatchCacheFiles(context: Context): List<File> =
+        legacyInternalStsRootCandidates(context)
+            .asSequence()
+            .map(::File)
+            .flatMap { legacyMtsPatchCacheArtifacts(it).asSequence() }
+            .distinctBy { it.absolutePath }
+            .toList()
+
+    @JvmStatic
+    fun knownMtsPatchCacheArtifacts(context: Context): List<File> =
+        sequenceOf(mtsPatchCacheDir(context))
+            .plus(legacyInternalMtsPatchCacheFiles(context).asSequence())
+            .plus(legacyExternalMtsPatchCacheFiles(context).asSequence())
+            .distinctBy { it.absolutePath }
+            .toList()
+
+    private fun legacyMtsPatchCacheArtifacts(stsRoot: File): List<File> = listOf(
+        File(stsRoot, MTS_PATCH_CACHE_MARKER_FILE_NAME),
+        File(stsRoot, MTS_PATCH_CACHE_JAR_FILE_NAME),
+        File(stsRoot, MTS_PATCH_CACHE_PACKAGE_DIR_NAME),
+        File(stsRoot, MTS_PATCH_CACHE_DIR_NAME),
+        File(stsRoot, "mts_patch_cache_debug.log")
+    )
 
     @JvmStatic
     fun displayConfigFile(context: Context): File = File(stsRoot(context), "info.displayconfig")

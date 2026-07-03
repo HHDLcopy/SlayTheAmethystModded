@@ -405,6 +405,9 @@ fun LauncherDeveloperSettingsScreen(
         onGlBridgeSwapHeartbeatDebugChanged = { enabled ->
             viewModel.onGlBridgeSwapHeartbeatDebugChanged(activity, enabled)
         },
+        onClearJunkFiles = {
+            viewModel.onClearJunkFiles(activity)
+        },
         onOpenCloudControlConfig = {
             viewModel.onOpenCloudControlConfig(activity)
         },

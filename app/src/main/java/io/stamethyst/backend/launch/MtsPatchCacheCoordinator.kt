@@ -1,6 +1,7 @@
 package io.stamethyst.backend.launch
 
 import android.content.Context
+import io.stamethyst.backend.fs.FileTreeCleaner
 import io.stamethyst.config.RuntimePaths
 import java.io.File
 import java.io.IOException
@@ -48,10 +49,7 @@ internal object MtsPatchCacheCoordinator {
 
     @JvmStatic
     fun clear(context: Context) {
-        deleteCacheFiles(
-            listOf(RuntimePaths.mtsPatchCacheDir(context)) +
-                RuntimePaths.legacyExternalMtsPatchCacheFiles(context)
-        )
+        deleteCacheFiles(RuntimePaths.knownMtsPatchCacheArtifacts(context))
     }
 
     @Throws(IOException::class)
@@ -134,7 +132,7 @@ internal object MtsPatchCacheCoordinator {
         files.forEach { file ->
             runCatching {
                 if (file.isDirectory) {
-                    file.deleteRecursively()
+                    FileTreeCleaner.deleteRecursively(file)
                 } else {
                     file.delete()
                 }

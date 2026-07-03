@@ -88,6 +88,7 @@ internal data class StatusSettingsActions(
     val onGpuResourceDiagChanged: (Boolean) -> Unit,
     val onGdxPadCursorDebugChanged: (Boolean) -> Unit,
     val onGlBridgeSwapHeartbeatDebugChanged: (Boolean) -> Unit,
+    val onClearJunkFiles: () -> Unit,
 )
 
 
@@ -121,6 +122,7 @@ internal fun LauncherDeveloperSettingsScreenContent(
     onGpuResourceDiagChanged: (Boolean) -> Unit = {},
     onGdxPadCursorDebugChanged: (Boolean) -> Unit = {},
     onGlBridgeSwapHeartbeatDebugChanged: (Boolean) -> Unit = {},
+    onClearJunkFiles: () -> Unit = {},
     onOpenCloudControlConfig: () -> Unit = {},
     onDismissCloudControlConfigDialog: () -> Unit = {},
     onResetLauncherSettingsToDefaults: () -> Unit = {},
@@ -216,6 +218,7 @@ internal fun LauncherDeveloperSettingsScreenContent(
                         onGpuResourceDiagChanged = onGpuResourceDiagChanged,
                         onGdxPadCursorDebugChanged = onGdxPadCursorDebugChanged,
                         onGlBridgeSwapHeartbeatDebugChanged = onGlBridgeSwapHeartbeatDebugChanged,
+                        onClearJunkFiles = onClearJunkFiles,
                     ),
                 )
             }
@@ -953,6 +956,12 @@ internal fun SettingsStatusSection(
         title = stringResource(R.string.settings_unplayable_mods_entry_title),
         enabled = true,
         onClick = { showUnplayableModsDialog = true }
+    )
+    SettingsActionListItem(
+        title = stringResource(R.string.settings_developer_clear_junk_files_title),
+        supportingText = stringResource(R.string.settings_developer_clear_junk_files_desc),
+        enabled = !uiState.busy,
+        onClick = actions.onClearJunkFiles,
     )
 
     if (showStatusDialog) {

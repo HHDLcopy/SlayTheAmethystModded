@@ -120,7 +120,7 @@ test('presence stats trend uses hourly snapshots instead of live online count', 
   assert.equal(currentBucket.online, 0);
 });
 
-test('presence snapshot includes historical distribution for panel pie chart switching', async (t) => {
+test('presence snapshot includes online, current-day, and historical distributions for panel pie chart switching', async (t) => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-presence-'));
   const database = await openDatabase(path.join(tmpDir, 'presence.sqlite'));
   const store = new PresenceStore(database, {
@@ -133,6 +133,13 @@ test('presence snapshot includes historical distribution for panel pie chart swi
   });
 
   const baseMs = Date.UTC(2026, 0, 1, 10, 0, 0);
+  await store.recordHeartbeat({
+    client_id: 'client-previous-day',
+    state: 'game',
+    app_version: '1.1.0',
+    device_model: 'OnePlus 11',
+    android_version: 'Android 13 (SDK 33)'
+  }, baseMs - (20 * 60 * 60 * 1000));
   await store.recordHeartbeat({
     client_id: 'client-offline-history',
     state: 'game',
@@ -153,16 +160,32 @@ test('presence snapshot includes historical distribution for panel pie chart swi
   assert.equal(snapshot.online, 1);
   assert.equal(snapshot.sessions.length, 1);
   assert.equal(snapshot.sessions[0].clientId, 'client-online');
-  assert.equal(snapshot.historicalDistribution.total, 2);
-  assert.deepEqual(snapshot.historicalDistribution.deviceModels, [
+  assert.equal(snapshot.todayDistribution.total, 2);
+  assert.deepEqual(snapshot.todayDistribution.deviceModels, [
     { name: 'Google Pixel 8', value: 1 },
     { name: 'Samsung SM-S9280', value: 1 }
   ]);
+  assert.deepEqual(snapshot.todayDistribution.appVersions, [
+    { name: '1.2.0', value: 1 },
+    { name: '1.3.0', value: 1 }
+  ]);
+  assert.deepEqual(snapshot.todayDistribution.androidVersions, [
+    { name: 'Android 14 (SDK 34)', value: 1 },
+    { name: 'Android 15 (SDK 35)', value: 1 }
+  ]);
+  assert.equal(snapshot.historicalDistribution.total, 3);
+  assert.deepEqual(snapshot.historicalDistribution.deviceModels, [
+    { name: 'Google Pixel 8', value: 1 },
+    { name: 'OnePlus 11', value: 1 },
+    { name: 'Samsung SM-S9280', value: 1 }
+  ]);
   assert.deepEqual(snapshot.historicalDistribution.appVersions, [
+    { name: '1.1.0', value: 1 },
     { name: '1.2.0', value: 1 },
     { name: '1.3.0', value: 1 }
   ]);
   assert.deepEqual(snapshot.historicalDistribution.androidVersions, [
+    { name: 'Android 13 (SDK 33)', value: 1 },
     { name: 'Android 14 (SDK 34)', value: 1 },
     { name: 'Android 15 (SDK 35)', value: 1 }
   ]);

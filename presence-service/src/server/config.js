@@ -29,7 +29,7 @@ function loadConfig(env = process.env) {
     maxSessionsReturned: parsePositiveInteger(env.PRESENCE_MAX_SESSIONS_RETURNED, 1000),
     panelSnapshotPushIntervalSeconds: parsePositiveInteger(
       env.PRESENCE_PANEL_SNAPSHOT_PUSH_INTERVAL_SECONDS,
-      60
+      2
     ),
     panelStatsPushIntervalSeconds: parsePositiveInteger(
       env.PRESENCE_PANEL_STATS_PUSH_INTERVAL_SECONDS,

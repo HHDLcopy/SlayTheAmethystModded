@@ -51,6 +51,8 @@ PRESENCE_HEARTBEAT_INTERVAL_SECONDS=30
 PRESENCE_OFFLINE_TIMEOUT_SECONDS=90
 QQ_GROUP_NUMBER=1029305387
 PRESENCE_PANEL_TOKEN=change-me
+PRESENCE_PANEL_SNAPSHOT_PUSH_INTERVAL_SECONDS=2
+PRESENCE_PANEL_STATS_PUSH_INTERVAL_SECONDS=300
 LOG_LEVEL=info
 ```
 
@@ -161,7 +163,11 @@ the compatibility HTTP JSON responses. Send `type: "refresh_stats"` with
 `windowSeconds` to switch the trend window; supported panel choices are 24
 hours, 3 days, 7 days, 14 days, and 30 days.
 
-The panel pie chart can switch between current online sessions and historical
-unique devices. Historical distribution is aggregated from all rows in
-`presence_sessions`, while online distribution is calculated from active
-sessions in the latest panel snapshot.
+The panel pie chart can switch between current online sessions, current-day
+unique devices, and historical unique devices. Current-day distribution uses
+the `Asia/Hong_Kong` natural-day boundary and includes every device whose
+latest heartbeat landed on that day. Historical distribution is aggregated from
+all rows in `presence_sessions`, while online distribution is calculated from
+active sessions in the latest panel snapshot. Snapshot-driven panel data is
+pushed every 2 seconds by default; hourly trend stats remain on the slower
+server-push cadence.

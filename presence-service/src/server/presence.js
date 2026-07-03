@@ -15,6 +15,8 @@ const DEFAULT_STATS_BUCKET_SECONDS = 60 * 60;
 const MIN_STATS_BUCKET_SECONDS = 60 * 60;
 const MAX_STATS_BUCKET_SECONDS = 60 * 60;
 const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const HONG_KONG_UTC_OFFSET_MS = 8 * 60 * 60 * 1000;
 const CURRENT_SNAPSHOT_MIN_UPDATE_INTERVAL_MS = 5 * 60 * 1000;
 const HEARTBEAT_WRITE_GRACE_SECONDS = 60;
 const MAX_CLIENT_ID_LENGTH = 128;
@@ -160,30 +162,47 @@ class PresenceStore {
     return {
       ...summary,
       historicalDistribution: await this.buildHistoricalDistribution(),
+      todayDistribution: await this.buildTodayDistribution(nowMs),
       sessions: rows.map((row) => serializeSession(row, runtimeOptions, nowMs))
     };
   }
 
   async buildHistoricalDistribution() {
-    const totalRow = await this.database.get('SELECT COUNT(*) AS count FROM presence_sessions');
+    return this.buildDistributionScope('', []);
+  }
+
+  async buildTodayDistribution(nowMs = Date.now()) {
+    const dayRange = resolveHongKongDayRange(nowMs);
+    return this.buildDistributionScope(
+      'WHERE last_seen_at_ms >= ? AND last_seen_at_ms < ?',
+      [dayRange.startMs, dayRange.endMs]
+    );
+  }
+
+  async buildDistributionScope(whereClause, params) {
+    const totalRow = await this.database.get(
+      `SELECT COUNT(*) AS count FROM presence_sessions ${whereClause}`.trim(),
+      params
+    );
     return {
       total: Number(totalRow && totalRow.count) || 0,
-      deviceModels: await this.buildDistributionForColumn('device_model'),
-      appVersions: await this.buildDistributionForColumn('app_version'),
-      androidVersions: await this.buildDistributionForColumn('android_version')
+      deviceModels: await this.buildDistributionForColumn('device_model', whereClause, params),
+      appVersions: await this.buildDistributionForColumn('app_version', whereClause, params),
+      androidVersions: await this.buildDistributionForColumn('android_version', whereClause, params)
     };
   }
 
-  async buildDistributionForColumn(columnName) {
+  async buildDistributionForColumn(columnName, whereClause = '', params = []) {
     const normalizedColumn = normalizeDistributionColumn(columnName);
     const rows = await this.database.all(`
       SELECT
         COALESCE(NULLIF(TRIM(${normalizedColumn}), ''), 'unknown') AS name,
         COUNT(*) AS value
       FROM presence_sessions
+      ${whereClause}
       GROUP BY name
       ORDER BY value DESC, name COLLATE NOCASE ASC
-    `);
+    `, params);
     return collapseDistributionRows(rows);
   }
 
@@ -434,6 +453,16 @@ function serializeSession(row, runtimeOptions, nowMs) {
 
 function floorToBucketMs(value, bucketMs) {
   return Math.floor((Number(value) || 0) / bucketMs) * bucketMs;
+}
+
+function resolveHongKongDayRange(nowMs) {
+  const normalizedNowMs = Number(nowMs) || 0;
+  const startMs = floorToBucketMs(normalizedNowMs + HONG_KONG_UTC_OFFSET_MS, DAY_MS) -
+    HONG_KONG_UTC_OFFSET_MS;
+  return {
+    startMs,
+    endMs: startMs + DAY_MS
+  };
 }
 
 function safeJsonObject(value) {

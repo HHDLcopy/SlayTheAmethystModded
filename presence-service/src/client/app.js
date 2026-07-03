@@ -28,6 +28,7 @@
   const DEFAULT_STATS_WINDOW_SECONDS = 7 * 24 * HOUR_SECONDS;
   const DISTRIBUTION_SOURCE_ITEMS = [
     { title: '在线数据', value: 'online' },
+    { title: '当日数据', value: 'today' },
     { title: '历史数据', value: 'history' }
   ];
   const DEFAULT_DISTRIBUTION_SOURCE = 'online';
@@ -515,6 +516,10 @@
     return normalizeDistributionSummary(snapshot && snapshot.historicalDistribution);
   }
 
+  function buildTodayDistribution(snapshot) {
+    return normalizeDistributionSummary(snapshot && snapshot.todayDistribution);
+  }
+
   function normalizeDistributionSummary(distribution) {
     return {
       total: Math.max(0, Number(distribution && distribution.total) || 0),
@@ -566,15 +571,23 @@
   }
 
   function normalizeDistributionSource(value) {
-    return value === 'history' ? 'history' : DEFAULT_DISTRIBUTION_SOURCE;
+    return value === 'history' || value === 'today' ? value : DEFAULT_DISTRIBUTION_SOURCE;
   }
 
   function getDistributionSourceMeta(value) {
-    if (normalizeDistributionSource(value) === 'history') {
+    const normalizedSource = normalizeDistributionSource(value);
+    if (normalizedSource === 'history') {
       return {
         title: '历史分布',
         subtitle: '全部历史唯一上报设备 · 内圈机型，中圈 App 版本，外圈 Android 版本',
         centerLabel: '历史'
+      };
+    }
+    if (normalizedSource === 'today') {
+      return {
+        title: '当日分布',
+        subtitle: 'Asia/Hong_Kong 自然日内出现过的唯一设备 · 内圈机型，中圈 App 版本，外圈 Android 版本',
+        centerLabel: '当日'
       };
     }
     return {
@@ -651,6 +664,8 @@
       let resizeObserver = null;
       let distributionResizeObserver = null;
       let themeMediaQuery = null;
+      let distributionHoverState = null;
+      let distributionChartEventsBound = false;
       const vuetifyTheme = Vuetify.useTheme ? Vuetify.useTheme() : null;
 
       const state = reactive({
@@ -695,6 +710,12 @@
           appVersions: [],
           androidVersions: []
         },
+        todayDistribution: {
+          total: 0,
+          deviceModels: [],
+          appVersions: [],
+          androidVersions: []
+        },
         sessions: []
       });
       const stats = computed(() => state.stats || {
@@ -711,6 +732,7 @@
         ? snapshot.value.sessions
         : []);
       const onlineDistribution = computed(() => buildSessionDistribution(sessions.value));
+      const todayDistribution = computed(() => buildTodayDistribution(snapshot.value));
       const historicalDistribution = computed(() => buildHistoricalDistribution(snapshot.value));
       const selectedDistributionSource = computed({
         get() {
@@ -721,9 +743,13 @@
         }
       });
       const selectedDistribution = computed(() => {
-        return selectedDistributionSource.value === 'history'
-          ? historicalDistribution.value
-          : onlineDistribution.value;
+        if (selectedDistributionSource.value === 'history') {
+          return historicalDistribution.value;
+        }
+        if (selectedDistributionSource.value === 'today') {
+          return todayDistribution.value;
+        }
+        return onlineDistribution.value;
       });
       const selectedDistributionMeta = computed(() => getDistributionSourceMeta(selectedDistributionSource.value));
       const metricItems = computed(() => METRIC_ITEMS.map((item) => ({
@@ -968,11 +994,15 @@
           distributionChart = echarts.init(distributionChartEl.value, null, {
             renderer: 'canvas'
           });
+          bindDistributionChartEvents();
         }
-        distributionChart.setOption(
-          buildDistributionChartOption(selectedDistribution.value, selectedDistributionMeta.value),
-          true
+        const option = buildDistributionChartOption(
+          selectedDistribution.value,
+          selectedDistributionMeta.value
         );
+        const preservedHoverState = distributionHoverState;
+        distributionChart.setOption(option, true);
+        restoreDistributionChartHover(option, preservedHoverState);
       }
 
       function resizeChart() {
@@ -1068,7 +1098,80 @@
           distributionChart.dispose();
           distributionChart = null;
         }
+        distributionHoverState = null;
+        distributionChartEventsBound = false;
       });
+
+      function bindDistributionChartEvents() {
+        if (!distributionChart || distributionChartEventsBound) {
+          return;
+        }
+        distributionChart.on('mouseover', (params) => {
+          if (!params || params.componentType !== 'series' || params.seriesType !== 'pie') {
+            return;
+          }
+          if (params.data && params.data.empty) {
+            return;
+          }
+          distributionHoverState = {
+            seriesName: String(params.seriesName || ''),
+            itemName: String(params.name || ''),
+            dataIndex: Math.max(0, Number(params.dataIndex) || 0)
+          };
+        });
+        distributionChart.on('globalout', () => {
+          distributionHoverState = null;
+        });
+        distributionChartEventsBound = true;
+      }
+
+      function restoreDistributionChartHover(option, hoverState) {
+        if (!distributionChart || !hoverState) {
+          return;
+        }
+        const target = findDistributionHoverTarget(option, hoverState);
+        if (!target) {
+          distributionHoverState = null;
+          return;
+        }
+        distributionChart.dispatchAction({
+          type: 'highlight',
+          seriesIndex: target.seriesIndex,
+          dataIndex: target.dataIndex
+        });
+        distributionChart.dispatchAction({
+          type: 'showTip',
+          seriesIndex: target.seriesIndex,
+          dataIndex: target.dataIndex
+        });
+      }
+
+      function findDistributionHoverTarget(option, hoverState) {
+        const seriesList = Array.isArray(option && option.series) ? option.series : [];
+        for (let seriesIndex = 0; seriesIndex < seriesList.length; seriesIndex += 1) {
+          const series = seriesList[seriesIndex];
+          if (String(series && series.name || '') !== hoverState.seriesName) {
+            continue;
+          }
+          const dataList = Array.isArray(series && series.data) ? series.data : [];
+          const matchedIndex = dataList.findIndex((item, index) => {
+            if (item && item.empty) {
+              return false;
+            }
+            if (String(item && item.name || '') === hoverState.itemName) {
+              return true;
+            }
+            return index === hoverState.dataIndex;
+          });
+          if (matchedIndex >= 0) {
+            return {
+              seriesIndex,
+              dataIndex: matchedIndex
+            };
+          }
+        }
+        return null;
+      }
 
       return {
         chartEl,

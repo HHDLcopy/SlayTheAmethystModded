@@ -19,11 +19,8 @@ public class GameProbeTest {
         assertNotNull(registry);
 
         assertTrue(registry.registeredTypes().contains("tracing"));
-        assertTrue(registry.registeredTypes().contains("state"));
-        assertTrue(registry.registeredTypes().contains("thread"));
-        assertTrue(registry.registeredTypes().contains("gc"));
-        assertTrue(registry.registeredTypes().contains("class"));
-        assertTrue(registry.registeredTypes().contains("dumpbytecode"));
+        assertTrue(registry.registeredTypes().contains("play"));
+        assertEquals(2, registry.registeredTypes().size());
     }
 
     @Test

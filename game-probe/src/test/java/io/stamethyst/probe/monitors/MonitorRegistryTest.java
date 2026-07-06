@@ -72,7 +72,7 @@ public class MonitorRegistryTest {
 
         Set<String> types = registry.registeredTypes();
         assertTrue(types.contains("tracing"));
-        assertTrue(types.contains("state"));
+        assertTrue(types.contains("tracing2"));
         assertEquals(2, types.size());
     }
 

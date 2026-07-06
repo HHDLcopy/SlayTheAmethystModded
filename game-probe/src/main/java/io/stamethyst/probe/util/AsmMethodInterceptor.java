@@ -105,7 +105,7 @@ public class AsmMethodInterceptor extends ClassVisitor {
             mv.visitLdcInsn(methodName);
             mv.visitMethodInsn(INVOKESTATIC, "java/lang/System", "currentTimeMillis", "()J", false);
             mv.visitMethodInsn(INVOKESTATIC,
-                "io/stamethyst/agent/util/AgentBytecodeBridge",
+                "io/stamethyst/probe/util/AgentBytecodeBridge",
                 "onMethodEntry",
                 "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;J)V",
                 false);
@@ -148,7 +148,7 @@ public class AsmMethodInterceptor extends ClassVisitor {
             mv.visitMethodInsn(INVOKESTATIC, "java/lang/System", "currentTimeMillis", "()J", false);
             mv.visitVarInsn(LLOAD, durationSlot);
             mv.visitMethodInsn(INVOKESTATIC,
-                "io/stamethyst/agent/util/AgentBytecodeBridge",
+                "io/stamethyst/probe/util/AgentBytecodeBridge",
                 "onMethodExit",
                 "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;JJ)V",
                 false);
@@ -192,7 +192,7 @@ public class AsmMethodInterceptor extends ClassVisitor {
             mv.visitVarInsn(ALOAD, namesArrSlot);
             mv.visitVarInsn(ALOAD, valuesArrSlot);
             mv.visitMethodInsn(INVOKESTATIC,
-                "io/stamethyst/agent/util/AgentBytecodeBridge",
+                "io/stamethyst/probe/util/AgentBytecodeBridge",
                 "onMethodExceptionSimple",
                 "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;JLjava/lang/Throwable;[Ljava/lang/String;[Ljava/lang/Object;)V",
                 false);

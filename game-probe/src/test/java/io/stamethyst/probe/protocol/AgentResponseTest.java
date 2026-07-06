@@ -38,7 +38,7 @@ public class AgentResponseTest {
             new String[]{"tracing", "state", "gc"},
             new String[]{"active", "active", "active"}
         );
-        assertEquals("MONITORS tracing-1:tracing:active", line);
+        assertEquals("MONITORS tracing-1:tracing:active state-1:state:active gc-2:gc:active", line);
     }
 
     @Test

@@ -34,17 +34,54 @@ Arthas（阿尔萨斯）JVM 诊断工具集成模块。通过 connector daemon �
     └────────────────────────────┘
 ```
 
-## 流程
+## 启动序列
+
+### 步骤 1: 推送 JARs 到设备
+
+```python
+# 需要三个 JARs：
+# /data/data/io.stamethyst/files/arthas/arthas-core.jar  (Arthas 命令引擎)
+# /data/data/io.stamethyst/files/arthas/arthas-spy.jar   (Spy API)
+# /data/data/io.stamethyst/files/arthas/arthas-agent.jar (SocketTerm + 启动器)
+```
+
+### 步骤 2: 通过 game-probe 加载
 
 ```
-1. connector.push(arthas-core.jar, arthas-spy.jar, arthas-agent.jar → /data/.../arthas/)
-2. agent_client.load_agent("arthas-core.jar")           # classpath
-3. agent_client.load_agent("arthas-agent.jar", "port=8099")
-   → ArthasBootstrapCompat 构造完整 ArthasBootstrap（跳过 Netty）
-   → 注册 BuiltinCommandPack
-   → 启动 ServerSocket(:8099)
-4. stream = connector.connect_stream(port=8099)          # 透传通道
-5. stream.write(b"thread -n 3\n")                        # 发送命令
+LOAD_AGENT arthas-core.jar    → classpath-only (无 Agent-Class)
+LOAD_AGENT arthas-agent.jar port=8099  → agentmain 启动 ServerSocket
+```
+
+`ArthasCommandBridge.start()` 内部：
+1. 反射调用 `ArthasBootstrap` 原始构造函数（不传端口配置 → bind() 跳过 Netty）
+2. 取构造后的 `shellServer`，注册 `BuiltinCommandPack`
+3. 设 `arthasBootstrap` 静态单例
+4. 启动 `java.net.ServerSocket(:8099)`
+
+### 步骤 3: connector 建立透传
+
+```python
+stream = connector.connect_stream(port=8099)
+stream.write(b"thread -n 3\n")
+for line in stream.read_until(b"$ "):
+    print(line)
+stream.close()
+```
+
+## 协议
+
+纯文本，行分隔。命令以 `\n` 结束，需手动消费 prompt `[arthas@PID]$ `：
+
+```
+→ version\n
+← 3.6.9\n[arthas@12345]$
+
+→ thread -n 3\n
+← "Reference Handler" Id=2 ... WAITING ...
+← "Finalizer" Id=3 ... WAITING ...
+← [arthas@12345]$
+
+→ quit\n
 ```
 
 ## 启动
@@ -85,6 +122,19 @@ python -m scripts.tools.arthas stop
 | `SocketTerm.java` | Arthas Term 接口的纯 socket 实现 |
 | `BridgeSession.java` | 每连接线程：createShell → init → readline → 读命令 → 执行 → 写回 |
 | `NOTICE` | Apache 2.0 许可证声明 |
+## ArthasBootstrapCompat
+
+`com.taobao.arthas.core.server.ArthasBootstrapCompat` 是 Arthas
+源码的修改版本（Apache 2.0 许可）。关键改动：
+
+- 提供 `createWithoutNetty(Instrumentation, Map<String,String>)` 工厂方法
+- 调用原始 `ArthasBootstrap(Instrumentation, Map)` 构造函数
+- 当 `featureMap` 不含 `arthas.http-port` / `arthas.telnet-port` 时，
+  `bind()` 跳过 Netty 服务器创建，只执行 `shellServer.listen()` + `SpyAPI.init()`
+- 原版构造函数、`initSpy()`、`initArthasEnvironment()`、`initBeans()` 全部保留
+- 不需要字段注入或 Unsafe
+
+详见 `arthas-bridge/NOTICE` 的许可证声明。
 
 ## 已验证功能
 
@@ -99,6 +149,20 @@ python -m scripts.tools.arthas stop
 | `trace -n 1 <class> <method>` | 命令引擎正常，类增强受 ClassLoader 隔离限制 |
 | `monitor -c 1 -n 1 <class> <method>` | 同 trace |
 | `heapdump <path>` | 堆转储 OK（需写 app 私有目录 `/data/data/io.stamethyst/files/`） |
+## 停止流程
+
+```python
+stream.close()
+# Arthas JARs 留在设备 classpath，JVM 重启后自动清理
+```
+
+## 注意事项
+
+- Arthas 和 game-probe 的 tracing 使用独立的 `ClassFileTransformer`，互不影响
+- `reset` 命令撤销所有 Arthas 的 instrument，不影响 game-probe 的 transformer
+- arthas-bridge 使用 `java.net.ServerSocket`，不依赖 Netty
+- Connector daemon 需先启动
+- 在自定义 ClassLoader 中使用 `jad`/`sc` 需要指定 `-c <classloader-hash>`
 
 ## Arthas vs 现有功能对照
 

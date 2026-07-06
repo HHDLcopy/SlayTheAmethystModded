@@ -127,7 +127,7 @@ responsibility:
 | `monitor/` | 日志采集、截图、文件拉取 |
 
 各模块通过 `connector` daemon 访问设备，**不直接调用 adb**，**不直接开 TCP 连接**。
-详见各模块目录下的 `README.md` 和 `AGENTS.md`。
+详见各模块目录下的 `README.md`。
 
 ```
 harness / arthas / autoplay / monitor

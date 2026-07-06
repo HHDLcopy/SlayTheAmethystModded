@@ -21,8 +21,8 @@ tasks.register<Jar>("fatJar") {
     archiveFileName = "game-probe.jar"
     manifest {
         attributes(
-            "Premain-Class" to "io.stamethyst.agent.GameProbe",
-            "Agent-Class" to "io.stamethyst.agent.GameProbe",
+            "Premain-Class" to "io.stamethyst.probe.GameProbe",
+            "Agent-Class" to "io.stamethyst.probe.GameProbe",
             "Can-Redefine-Classes" to "true",
             "Can-Retransform-Classes" to "true"
         )

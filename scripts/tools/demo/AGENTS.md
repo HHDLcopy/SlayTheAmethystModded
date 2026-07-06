@@ -1,34 +1,32 @@
 # Agent Demo — Agent Reference
 
-Reference for LLM agents integrating with this demo tool.  Every API
-surface, JSON schema, and call path is documented so an agent can
-reproduce the exact protocol exchanges.
+Reference for LLM agents integrating with this demo tool.
 
 ## Architecture
 
 ```
 DemoRunner (demo_runner.py)
-  ├── HarnessConnection   ← adb forward + TCP socket
-  ├── AgentBridge         ← ATTACH/DETACH/LIST/STATUS/SUBSCRIBE
-  ├── AgentProtocol       ← OBSERVE/EXEC/PERF/DUMP/REDEFINE
-  └── Stage.run()         ← 6 stages, each self-contained
+  ├── ConnectorClient    ← Unix socket → connector daemon
+  ├── Stream             ← connect_stream(9099) → game-probe
+  ├── AgentClient        ← ATTACH/DETACH/LIST/STATUS/SUBSCRIBE/OBSERVE/EXEC
+  └── Stage.run()        ← 6 stages, each self-contained
 ```
 
 ## Protocol Commands
 
 | Command | Format | Response | Python API |
 |---------|--------|----------|------------|
-| `ATTACH` | `ATTACH <spec> <json>` | `OK <id>` or `ERROR <msg>` | `AgentBridge.attach(spec)` |
-| `DETACH` | `DETACH <id>` | `OK` or `ERROR <msg>` | `AgentBridge.detach(id)` |
-| `LIST` | `LIST` | `AGENTS id:spec:state ...` | `AgentBridge.list_agents()` |
-| `STATUS` | `STATUS <id>` | `STATUS id state uptime count` | `AgentBridge.status(id)` |
-| `SUBSCRIBE` | `SUBSCRIBE <id>` | `OK` | `AgentBridge.subscribe_and_capture()` |
-| `OBSERVE` | `OBSERVE` | `STATE <json>` | `AgentProtocol.observe()` |
-| `EXEC` | `EXEC <cmd> <json>` | `RESULT <json>` or `ERROR` | `AgentProtocol.execute()` |
-| `PERF_START` | `PERF_START <id>` | `OK` | `AgentProtocol.perf_start(id)` |
-| `PERF_STOP` | `PERF_STOP <id>` | `PERF <json>` | `AgentProtocol.perf_stop(id)` |
-| `DUMP_CLASS` | `DUMP_CLASS <fqcn>` | `BYTECODE <base64>` or `ERROR` | `AgentProtocol.dump_class(fqcn)` |
-| `REDEFINE_CLASS` | `REDEFINE_CLASS <base64>` | `OK` or `ERROR` | `AgentProtocol.redefine_class(bytes)` |
+| `ATTACH` | `ATTACH <spec> <json>` | `OK <id>` or `ERROR <msg>` | `AgentClient.attach(spec)` |
+| `DETACH` | `DETACH <id>` | `OK` or `ERROR <msg>` | `AgentClient.detach(id)` |
+| `LIST` | `LIST` | `MONITORS id:spec:state ...` | `AgentClient.send("LIST")` |
+| `STATUS` | `STATUS <id>` | `STATUS id state uptime count` | `AgentClient.status(id)` |
+| `SUBSCRIBE` | `SUBSCRIBE <id>` | `OK` | `AgentClient.subscribe_and_capture()` |
+| `OBSERVE` | `OBSERVE` | `STATE <json>` | `AgentClient.observe()` |
+| `EXEC` | `EXEC <cmd> <json>` | `RESULT <json>` or `ERROR` | `AgentClient.execute(cmd, params)` |
+| `PERF_START` | `PERF_START <id>` | `OK` | `AgentClient.perf_start(id)` |
+| `PERF_STOP` | `PERF_STOP <id>` | `PERF <json>` | `AgentClient.perf_stop(id)` |
+| `DUMP_CLASS` | `DUMP_CLASS <fqcn>` | `BYTECODE <base64>` or `ERROR` | `AgentClient.dump_class(fqcn)` |
+| `REDEFINE_CLASS` | `REDEFINE_CLASS <base64>` | `OK` or `ERROR` | `AgentClient.redefine_class(bytes)` |
 
 ## OBSERVE Response Schema
 
@@ -67,12 +65,13 @@ DemoRunner (demo_runner.py)
 
 | `EXEC <cmd>` | Params | What happens on the game thread |
 |---|---|---|
-| `PLAY_CARD` | `{}` | `AutoplayHook.playRandomCard()` — picks random playable card, plays it on a random alive monster |
+| `PLAY_CARD` | `{}` | `AutoplayHook.playRandomCard()` |
+| `PLAY_CARD_TARGETED` | `{"cardIndex":0,"monsterIndex":0}` | `AutoplayHook.playCardTargeted(idx, idx)` |
 | `END_TURN` | `{}` | `GameActionManager.callEndTurnEarlySequence()` |
 | `PRESS_PROCEED` | `{}` | `overlayMenu.proceedButton.hb.clicked = true` |
 | `SKIP_ROOM` | `{}` | `room.phase = COMPLETE; waitTimer = 0; pressProceed()` |
-| `WAIT` | `{"ms": 500}` | `Thread.sleep(ms)` on game thread (blocks 1 tick) |
-| `MODE_COMMAND` | `{"mode":"COMMAND_DRIVEN"}` / `{"mode":"AUTONOMOUS"}` | Switches play mode. `COMMAND_DRIVEN` stops autonomous autoplay; `AUTONOMOUS` resumes it |
+| `WAIT` | `{"ms": 500}` | `Thread.sleep(ms)` on game thread |
+| `MODE_COMMAND` | `{"mode":"COMMAND_DRIVEN"}` / `{"mode":"AUTONOMOUS"}` | Switches play mode |
 
 EXEC response: `RESULT {"queued":true,"command":"PLAY_CARD","queueSize":0}`
 
@@ -83,17 +82,13 @@ When the play monitor is attached, the autoplay driver reads its mode every tick
 ```
 mode = AUTONOMOUS (default)
   → Autoplay runs normally; agent commands are consumed as a side-effect
-  → Agent can OBSERVE without interfering with autonomous decisions
+  → Agent can OBSERVE without interfering
 
 mode = COMMAND_DRIVEN
   → Autoplay tick only consumes the command queue
   → No autonomous actions (main menu / map / combat / rewards) are taken
   → Returns to AUTONOMOUS when the play monitor is detached
 ```
-
-When `-Damethyst.autoplay.wait_for_agent=true` is passed (harness sets this automatically
-with `-Autoplay`), the driver makes **zero** autonomous decisions until the play monitor
-connects — keeping the game in the main menu until the demo starts.
 
 ## PERF Schema
 
@@ -116,11 +111,6 @@ tracing@classes=<glob1,glob2>@methods=<m1,m2>@locals=true
 - `classes` — glob patterns (`com.megacrit.*`)
 - `methods` — exact method names, comma-separated
 - `locals`  — `true` to capture crash locals in try-catch
-
-Example:
-```
-tracing@classes=io.stamethyst.compatmod.autoplay.AutoplayDriver@methods=onCardCrawlGameUpdate@locals=true
-```
 
 ## report.json Schema
 
@@ -147,7 +137,7 @@ tracing@classes=io.stamethyst.compatmod.autoplay.AutoplayDriver@methods=onCardCr
     "crash_locals": { "success": true,  "status": "8 locals captured", "data": {...} }
   },
   "operations": [
-    { "command": "adb -s ... forward tcp:9099 tcp:9099", "exitCode": 0, ... }
+    { "command": "connector connect_stream 9099", "exitCode": 0, ... }
   ]
 }
 ```
@@ -155,43 +145,24 @@ tracing@classes=io.stamethyst.compatmod.autoplay.AutoplayDriver@methods=onCardCr
 ## Error Strategy
 
 - Every stage is wrapped in `try/except` inside `DemoRunner._run_single_stage()`.
-- `AgentBridgeError` and generic `Exception` are caught; the stage reports `success: false`.
+- `AgentError` and generic `Exception` are caught; the stage reports `success: false`.
 - One stage failing **does not** skip subsequent stages.
-- The report always closes the TCP connection in `shutdown()`.
+- The report always closes the stream in `shutdown()`.
 - `_log_op()` records every protocol exchange into `operations[]` for auditing.
 
 ## Adding a New Stage
 
-1. Create `stages/new_stage.py`:
-   ```python
-   from .base import Stage
-   
-   class NewStage(Stage):
-       id = "new_stage"
-       name = "My New Stage"
-       def run(self, runner, out_dir):
-           proto = runner._proto
-           state = proto.observe()
-           return {"success": True, "status": "OK", "message": "...", "data": {...}}
-   ```
-
-2. Register in `demo_runner.py`:
-   ```python
-   from .stages.new_stage import NewStage
-   # Add to ALL_STAGES dict
-   ALL_STAGES = { ..., "new_stage": NewStage() }
-   ```
-
-3. Update this AGENTS.md with the new stage's description.
+1. Create `stages/new_stage.py`.
+2. Register in `demo_runner.py` `ALL_STAGES` dict.
+3. Update this AGENTS.md.
 
 ## Dependencies
 
 ### Python libraries
-- `scripts/tools/lib/harness_connection.py` — TCP connection manager
-- `scripts/tools/lib/agent_bridge.py`      — ATTACH/DETACH/STATUS/LIST/SUBSCRIBE
-- `scripts/tools/lib/agent_protocol.py`    — OBSERVE/EXEC/PERF/DUMP/REDEFINE
-- `scripts/tools/lib/sts_harness.py`       — `repo_root()`, `utc_timestamp()`, `read_local_property()`
-- `scripts/tools/lib/cfr.jar`              — CFR decompiler (optional)
+- `scripts/tools/lib/agent_client.py` — unified game-probe protocol client
+- `scripts/tools/connector/client.py` — ConnectorClient + connect_stream
+- `scripts/tools/lib/sts_harness.py`  — `repo_root()`, `utc_timestamp()`, `read_local_property()`
+- `scripts/tools/lib/cfr.jar`         — CFR decompiler (optional)
 
 ### Device mods
 - `demo/testcrash/TestCrashCard.jar` — bundled; pushed via `--install-test-crash`

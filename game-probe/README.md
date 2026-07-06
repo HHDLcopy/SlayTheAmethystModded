@@ -1,16 +1,15 @@
-# Agent Connector
+# Game Probe
 
-Java agent (`-javaagent`) that exposes runtime monitoring and instrumentation services over a TCP plain-text line protocol, allowing external tools to attach monitors to the running game JVM.
+Java agent (`-javaagent`) providing game-specific runtime monitoring and
+control over a TCP line protocol (default port `9099`).  Loads into the
+game JVM via `premain`; also supports `agentmain` attachment.
 
-## Supported monitors
+## Monitors
 
-| Type    | Spec prefix | Description |
-|---------|------------|-------------|
-| tracing | `tracing`  | Bytecode-level method entry/exit tracing via ASM `ClassFileTransformer` |
-| state   | `state`    | JVM/game state snapshot (reflective field reads) |
-| thread  | `thread`   | Thread dump with counts, states, deadlock detection, CPU time |
-| gc      | `gc`       | GC collector stats and heap/non-heap memory usage |
-| class   | `class`    | Loaded class counts grouped by package |
+| Type              | Spec prefix | Description |
+|-------------------|-------------|-------------|
+| tracing           | `tracing`   | Bytecode-level method entry/exit tracing via ASM `ClassFileTransformer`. Supports crash-locals capture via `@locals=true`. |
+| play              | `play`      | Interactive game control via `OBSERVE` (game-state snapshot) and `EXEC` (card play, end turn, etc.) |
 
 ## Spec format
 
@@ -20,26 +19,33 @@ Java agent (`-javaagent`) that exposes runtime monitoring and instrumentation se
 
 Examples:
 - `tracing@classes=com.megacrit.cardcrawl.cards.*@methods=update,applyPowers`
-- `thread`
-- `gc`
+- `tracing@classes=...@methods=...@locals=true` — crash-locals capture enabled
+- `play`
 
 ## Protocol
 
 Plain-text line protocol over TCP (default port `9099`).
 
-| Command                        | Response          |
+| Command                       | Response          |
 |-------------------------------|--------------------|
-| `ATTACH <spec> {"key":"val"}` | `OK <agent_id>`   |
-| `DETACH <agent_id>`          | `OK`              |
-| `LIST`                        | `AGENTS id:spec:state ...` |
-| `STATUS <agent_id>`          | `STATUS id state uptime_ms event_count` |
-| `SUBSCRIBE <agent_id>`       | `OK`              |
-| `UNSUBSCRIBE <agent_id>`     | `OK`              |
+| `ATTACH <spec> {"key":"val"}` | `OK <monitor_id>` |
+| `DETACH <monitor_id>`         | `OK`              |
+| `LIST`                        | `MONITORS id:spec:state ...` |
+| `STATUS <monitor_id>`         | `STATUS id state uptime_ms event_count` |
+| `SUBSCRIBE <monitor_id>`      | `OK`              |
+| `UNSUBSCRIBE <monitor_id>`    | `OK`              |
+| `OBSERVE`                     | `STATE <json>`    |
+| `EXEC <cmd> {"key":"val"}`    | `RESULT <json>`   |
+| `PERF_START <monitor_id>`     | `OK`              |
+| `PERF_STOP  <monitor_id>`     | `PERF <json>`     |
+| `DUMP_CLASS <fqcn>`           | `BYTECODE <b64>`  |
+| `REDEFINE_CLASS <b64>`        | `OK`              |
+| `LOAD_AGENT <path> <args>`    | `OK`              |
 | `QUIT`                        | `BYE`             |
 
 Data events (while subscribed):
 ```
-DATA <agent_id> {"type":"method_entry","class":"...","method":"...","ts":1234}
+DATA <monitor_id> {"type":"method_entry","class":"...","method":"...","ts":1234}
 ```
 
 Errors:
@@ -47,37 +53,12 @@ Errors:
 ERROR <message>
 ```
 
-## Usage via harness
-
-```bash
-# Start smoke test, auto-attach tracing agent on READY
-sts-harness smoke -AgentCommand attach -AgentSpec "tracing@classes=com.megacrit.cards.*"
-
-# Manual agent operations (requires game running with agent)
-sts-harness agent-attach -AgentSpec "tracing@classes=com.megacrit.cards.*"
-sts-harness agent-list
-sts-harness agent-status -AgentSpec "tracing"
-sts-harness agent-detach -AgentSpec "tracing"
-```
-
-## Usage via AgentBridge (Python)
-
-```python
-from lib.agent_bridge import AgentBridge
-
-bridge = AgentBridge(port=9099)
-bridge.connect()
-agent_id = bridge.attach("tracing@classes=com.megacrit.cards.*")
-bridge.subscribe_and_capture(agent_id, Path("output.jsonl"), timeout_seconds=30)
-bridge.detach(agent_id)
-bridge.close()
-```
-
 ## Build
 
-Part of the Gradle multi-project build. Produces `game-probe.jar` with `Premain-Class` and `Agent-Class` manifest attributes.
-
-The app's Gradle build copies this jar into `components/game_probe/` in generated runtime assets. At launch, the game JVM receives `-javaagent:<path>=port=9099`.
+Part of the Gradle multi-project build. Produces `game-probe.jar` with
+`Premain-Class: io.stamethyst.probe.GameProbe`.  The app's Gradle build
+copies this JAR into `components/game_probe/` in generated runtime assets.
+At launch the game JVM receives `-javaagent:<path>=port=9099`.
 
 ## Architecture
 
@@ -85,18 +66,39 @@ The app's Gradle build copies this jar into `components/game_probe/` in generate
 External client (Python/CLI)
        │ TCP :9099
        ▼
-AgentConnectionManager ── listens on 127.0.0.1
+AgentConnectionManager — listens on 127.0.0.1
        │ spawns per-connection
        ▼
-AgentSession ── parses protocol commands
-       │ creates via SpecMonitorRegistry
+AgentSession — parses protocol commands
+       │ creates via MonitorRegistry
        ▼
-MonitorAgent (tracing/state/thread/gc/class)
+Monitor (tracing / play)
        │ emits data through
        ▼
-AgentDataChannel (TcpDataChannel) ── writes to session socket
+AgentDataChannel (TcpDataChannel) — writes to session socket
        │
        ▼ (tracing only)
-AgentBytecodeBridge ── called from injected bytecode,
-                       looks up channel by agentId
+AgentBytecodeBridge — called from injected bytecode,
+                      looks up channel by monitorId
 ```
+
+## Loading external agents (LOAD_AGENT)
+
+The `LOAD_AGENT` command loads a JAR at runtime, creates an isolated
+`URLClassLoader` to invoke `agentmain()` on the agent class listed in the
+JAR manifest, then adds the JAR to the system classpath.
+
+```
+LOAD_AGENT /data/data/io.stamethyst/files/arthas/arthas-bridge.jar port=8099
+```
+
+This is how Arthas (via `arthas-bridge`) is embedded under the same JVM.
+
+## Integration
+
+| Module | How it connects |
+|--------|----------------|
+| `connector/` (Python) | `connect_stream(9099)` → Unix-socket-proxied TCP |
+| `scripts/tools/lib/agent_client.py` | Unified Python client for the above |
+| `arthas-bridge/` (Java) | Loaded via `LOAD_AGENT`, runs on `:8099` |
+| `mods/amethyst-runtime-compat/` | `AutoplayDriver` taps `PlayMonitor` via `Class.forName` |

@@ -149,6 +149,7 @@ python -m scripts.tools.arthas stop
 | `trace -n 1 <class> <method>` | 命令引擎正常，类增强受 ClassLoader 隔离限制 |
 | `monitor -c 1 -n 1 <class> <method>` | 同 trace |
 | `heapdump <path>` | 堆转储 OK（需写 app 私有目录 `/data/data/io.stamethyst/files/`） |
+| `jad <class>` | ✅ 反编译（BuiltinCommandPack 内置，链路已验证）。游戏类需 `-c <classLoaderHash>` |
 ## 停止流程
 
 ```python

@@ -278,10 +278,10 @@ public class FullAgentmainFlowTest {
                 return new TracingMonitor();
             }
         });
-        registry.register("tracing", new MonitorRegistry.MonitorFactory() {
+        registry.register("play", new MonitorRegistry.MonitorFactory() {
             @Override
             public Monitor create(Instrumentation inst, String argsJson, AgentDataChannel channel) {
-                return new io.stamethyst.probe.monitors.impl.TracingMonitor();
+                return new io.stamethyst.probe.monitors.impl.PlayMonitor();
             }
         });
     }

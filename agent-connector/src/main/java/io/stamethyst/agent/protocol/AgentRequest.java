@@ -48,6 +48,7 @@ public class AgentRequest {
         switch (cmd) {
             case ATTACH:
             case EXEC:
+            case LOAD_AGENT:
                 return parseTwoArg(cmd, remaining);
             case DETACH:
             case STATUS:

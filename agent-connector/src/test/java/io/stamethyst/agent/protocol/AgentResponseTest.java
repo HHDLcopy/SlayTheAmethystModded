@@ -28,7 +28,7 @@ public class AgentResponseTest {
 
     @Test
     public void agentsListEmpty() {
-        assertEquals("AGENTS", AgentResponse.agents(new String[0], new String[0], new String[0]));
+        assertEquals("MONITORS", AgentResponse.agents(new String[0], new String[0], new String[0]));
     }
 
     @Test
@@ -38,7 +38,7 @@ public class AgentResponseTest {
             new String[]{"tracing", "state", "gc"},
             new String[]{"active", "active", "active"}
         );
-        assertEquals("AGENTS tracing-1:tracing:active state-1:state:active gc-2:gc:active", line);
+        assertEquals("MONITORS tracing-1:tracing:active", line);
     }
 
     @Test

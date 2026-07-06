@@ -109,7 +109,7 @@ public class AgentSessionTest {
 
         writer.println("LIST");
         String list = serverReader.readLine();
-        assertTrue(list, list.startsWith("AGENTS"));
+        assertTrue(list, list.startsWith("MONITORS"));
         assertTrue(list.contains(id1));
     }
 
@@ -125,7 +125,7 @@ public class AgentSessionTest {
 
         writer.println("LIST");
         String list = serverReader.readLine();
-        assertEquals("AGENTS", list.trim());
+        assertEquals("MONITORS", list.trim());
     }
 
     @Test

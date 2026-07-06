@@ -13,7 +13,11 @@ import io.stamethyst.agent.protocol.AgentResponse;
 
 import java.io.*;
 import java.lang.instrument.Instrumentation;
+import java.lang.reflect.Method;
 import java.net.Socket;
+import java.net.URL;
+import java.net.URLClassLoader;
+import java.util.jar.JarFile;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -99,6 +103,9 @@ public class AgentSession implements Runnable {
                 break;
             case REDEFINE_CLASS:
                 handleRedefineClass(req.getSpec());
+                break;
+            case LOAD_AGENT:
+                handleLoadAgent(req.getSpec(), req.getArgsJson());
                 break;
             case QUIT:
                 handleQuit();
@@ -326,6 +333,50 @@ public class AgentSession implements Runnable {
             writer.println(AgentResponse.ok());
         } catch (Exception e) {
             writer.println(AgentResponse.error("redefine failed: " + e.getMessage()));
+        }
+    }
+
+    private void handleLoadAgent(String jarPath, String agentArgs) {
+        if (jarPath == null || jarPath.trim().isEmpty()) {
+            writer.println(AgentResponse.error("LOAD_AGENT requires a jar path"));
+            return;
+        }
+        try {
+            jarPath = jarPath.trim();
+            File jarFile = new File(jarPath);
+            if (!jarFile.isFile()) {
+                writer.println(AgentResponse.error("JAR not found: " + jarPath));
+                return;
+            }
+            JarFile jar = new JarFile(jarPath);
+            String agentClass = jar.getManifest().getMainAttributes().getValue("Agent-Class");
+            if (agentClass == null || agentClass.isEmpty()) {
+                agentClass = jar.getManifest().getMainAttributes().getValue("Premain-Class");
+            }
+            jar.close();
+
+            if (agentClass == null || agentClass.isEmpty()) {
+                jar = new JarFile(jarPath);
+                instrumentation.appendToSystemClassLoaderSearch(jar);
+                writer.println(AgentResponse.ok());
+                return;
+            }
+
+            URL[] urls = {jarFile.toURI().toURL()};
+            ClassLoader isolated = new URLClassLoader(urls, ClassLoader.getSystemClassLoader());
+            Class<?> cls = isolated.loadClass(agentClass);
+            Method m = cls.getMethod("agentmain", String.class, Instrumentation.class);
+            String args = agentArgs != null ? agentArgs : "";
+            m.invoke(null, args, instrumentation);
+
+            jar = new JarFile(jarPath);
+            instrumentation.appendToSystemClassLoaderSearch(jar);
+
+            writer.println(AgentResponse.ok());
+        } catch (Throwable e) {
+            String msg = e.getMessage();
+            if (msg == null) msg = e.getClass().getName();
+            writer.println(AgentResponse.error("load agent failed: " + msg));
         }
     }
 

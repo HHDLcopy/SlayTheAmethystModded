@@ -69,7 +69,7 @@ public class AgentConnectionManagerTest {
 
             writer.println("LIST");
             String response = reader.readLine();
-            assertEquals("AGENTS", response.trim());
+            assertEquals("MONITORS", response.trim());
 
             writer.println("QUIT");
             assertEquals("BYE", reader.readLine());

@@ -24,7 +24,7 @@ public final class AgentResponse {
         if (ids.length != specs.length || ids.length != states.length) {
             throw new IllegalArgumentException("arrays must have equal length");
         }
-        StringBuilder sb = new StringBuilder("AGENTS");
+        StringBuilder sb = new StringBuilder("MONITORS");
         for (int i = 0; i < ids.length; i++) {
             sb.append(' ').append(ids[i]).append(':').append(specs[i]).append(':').append(states[i]);
         }

@@ -97,10 +97,10 @@ stream.close()
 | `sc` | 搜索类 | ✅ `sc -d com.megacrit...` |
 | `jad` | 反编译 | ⚠️ MCP 类在自定义 ClassLoader，需指定 ClassLoader hash |
 | `ognl` | 表达式执行 | ✅ `ognl @System@getProperty("java.version")` |
-| `watch` | 方法观察 | 理论可用 |
-| `trace` | 调用链 | 理论可用 |
-| `monitor` | 调用统计 | 理论可用 |
-| `heapdump` | 堆转储 | 理论可用 |
+| `watch` | 方法观察 | ✅ `listenerId: 1` 注册成功（游戏类 Enhanced 成功） |
+| `trace` | 调用链 | ✅ 命令引擎正常；部分游戏类增强失败（ClassLoader 隔离导致引用链断裂） |
+| `monitor` | 调用统计 | ✅ 同 trace — 命令可用，类增强受 ClassLoader 隔离限制 |
+| `heapdump` | 堆转储 | ✅ 413MB → `/data/data/io.stamethyst/files/`（需 app 私有目录，不能写 /sdcard） |
 | `profiler` | CPU 采样 | 理论可用 |
 | `quit` | 退出 session | ✅ |
 

@@ -94,7 +94,11 @@ python -m scripts.tools.arthas stop
 | `thread -n 3` | 完整线程信息 |
 | `dashboard -i 1 -n 1` | 实时 CPU/内存面板 |
 | `sc -d <class>` | 类搜索 |
-| `ognl <expression>` | 运行时表达式执行 |
+| `ognl @Class@method(args)` | 运行时表达式执行（需单引号包裹 `'...'`） |
+| `watch <class> <method> '{params,returnObj}' -n 1` | listenerId 注册成功，游戏类 Enhanced 可用 |
+| `trace -n 1 <class> <method>` | 命令引擎正常，类增强受 ClassLoader 隔离限制 |
+| `monitor -c 1 -n 1 <class> <method>` | 同 trace |
+| `heapdump <path>` | 堆转储 OK（需写 app 私有目录 `/data/data/io.stamethyst/files/`） |
 
 ## Arthas vs 现有功能对照
 

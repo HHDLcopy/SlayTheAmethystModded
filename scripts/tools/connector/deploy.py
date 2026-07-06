@@ -4,10 +4,10 @@ import subprocess
 from typing import Any
 
 
-def deploy_agent_connector(connector: Any, app_id: str) -> None:
+def deploy_game_probe(connector: Any, app_id: str) -> None:
     subprocess.check_call(
-        ["./gradlew", ":agent-connector:fatJar"], timeout=120)
+        ["./gradlew", ":game-probe:fatJar"], timeout=120)
     connector.push(
-        local="agent-connector/build/libs/agent-connector.jar",
-        remote=f"/data/data/{app_id}/files/agent_connector/agent-connector.jar",
+        local="game-probe/build/libs/game-probe.jar",
+        remote=f"/data/data/{app_id}/files/game_probe/game-probe.jar",
     )

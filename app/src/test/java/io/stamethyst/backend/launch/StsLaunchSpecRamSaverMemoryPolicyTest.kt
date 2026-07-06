@@ -121,9 +121,9 @@ class StsLaunchSpecRamSaverMemoryPolicyTest {
     }
 
     @Test
-    fun shouldEnableAgentConnector_disablesForNormalMtsLaunch() {
+    fun shouldEnableGameProbe_disablesForNormalMtsLaunch() {
         assertFalse(
-            StsLaunchSpec.shouldEnableAgentConnector(
+            StsLaunchSpec.shouldEnableGameProbe(
                 launchMode = StsLaunchSpec.LAUNCH_MODE_MTS,
                 autoplay = false,
                 forceJvmCrash = false,
@@ -134,9 +134,9 @@ class StsLaunchSpecRamSaverMemoryPolicyTest {
     }
 
     @Test
-    fun shouldEnableAgentConnector_keepsDebugAndAutomationMtsLaunchesEnabled() {
+    fun shouldEnableGameProbe_keepsDebugAndAutomationMtsLaunchesEnabled() {
         assertTrue(
-            StsLaunchSpec.shouldEnableAgentConnector(
+            StsLaunchSpec.shouldEnableGameProbe(
                 launchMode = StsLaunchSpec.LAUNCH_MODE_MTS,
                 autoplay = true,
                 forceJvmCrash = false,
@@ -145,7 +145,7 @@ class StsLaunchSpecRamSaverMemoryPolicyTest {
             )
         )
         assertTrue(
-            StsLaunchSpec.shouldEnableAgentConnector(
+            StsLaunchSpec.shouldEnableGameProbe(
                 launchMode = StsLaunchSpec.LAUNCH_MODE_MTS,
                 autoplay = false,
                 forceJvmCrash = true,
@@ -154,7 +154,7 @@ class StsLaunchSpecRamSaverMemoryPolicyTest {
             )
         )
         assertTrue(
-            StsLaunchSpec.shouldEnableAgentConnector(
+            StsLaunchSpec.shouldEnableGameProbe(
                 launchMode = StsLaunchSpec.LAUNCH_MODE_MTS,
                 autoplay = false,
                 forceJvmCrash = false,
@@ -163,7 +163,7 @@ class StsLaunchSpecRamSaverMemoryPolicyTest {
             )
         )
         assertTrue(
-            StsLaunchSpec.shouldEnableAgentConnector(
+            StsLaunchSpec.shouldEnableGameProbe(
                 launchMode = StsLaunchSpec.LAUNCH_MODE_MTS,
                 autoplay = false,
                 forceJvmCrash = false,
@@ -174,9 +174,9 @@ class StsLaunchSpecRamSaverMemoryPolicyTest {
     }
 
     @Test
-    fun shouldEnableAgentConnector_disablesForVanillaEvenWhenDebugFlagsAreSet() {
+    fun shouldEnableGameProbe_disablesForVanillaEvenWhenDebugFlagsAreSet() {
         assertFalse(
-            StsLaunchSpec.shouldEnableAgentConnector(
+            StsLaunchSpec.shouldEnableGameProbe(
                 launchMode = StsLaunchSpec.LAUNCH_MODE_VANILLA,
                 autoplay = true,
                 forceJvmCrash = true,

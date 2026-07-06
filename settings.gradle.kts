@@ -25,7 +25,7 @@ rootProject.name = "SlayTheAmethyst"
 include(":app")
 include(":macrobenchmark")
 include(":boot-bridge")
-include(":agent-connector")
+include(":game-probe")
 include(":arthas-bridge")
 include(":mods:amethyst-runtime-compat")
 include(":mods:amethyst-floating-tools")

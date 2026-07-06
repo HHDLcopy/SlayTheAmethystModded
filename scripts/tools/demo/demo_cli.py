@@ -38,7 +38,7 @@ def create_parser() -> argparse.ArgumentParser:
         dest="agent_port",
         type=int,
         default=9099,
-        help="TCP port for agent-connector (default 9099).",
+        help="TCP port for game-probe (default 9099).",
     )
     parser.add_argument(
         "-OutDir",

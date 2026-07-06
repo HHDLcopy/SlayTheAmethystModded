@@ -1,4 +1,4 @@
-"""High-level typed protocol for agent-connector interaction.
+"""High-level typed protocol for game-probe interaction.
 
 Layers on top of HarnessConnection to provide typed request/response
 methods for the extended protocol commands (OBSERVE, EXEC, PERF_START,
@@ -28,7 +28,7 @@ from .harness_connection import HarnessConnection
 
 
 class AgentProtocol:
-    """Typed protocol client for extended agent-connector commands."""
+    """Typed protocol client for extended game-probe commands."""
 
     def __init__(self, connection: HarnessConnection) -> None:
         if not connection.is_connected():

@@ -707,7 +707,7 @@ object StsLaunchSpec {
         addCacioBootClasspath(args, RuntimePaths.cacioDir(context))
 
         args.add("-javaagent:${RuntimePaths.lwjgl2InjectorJar(context).absolutePath}")
-        if (shouldEnableAgentConnector(
+        if (shouldEnableGameProbe(
                 launchMode = launchMode,
                 autoplay = autoplay,
                 forceJvmCrash = forceJvmCrash,
@@ -782,7 +782,7 @@ object StsLaunchSpec {
         return builder.toString()
     }
 
-    internal fun shouldEnableAgentConnector(
+    internal fun shouldEnableGameProbe(
         launchMode: String,
         autoplay: Boolean,
         forceJvmCrash: Boolean,

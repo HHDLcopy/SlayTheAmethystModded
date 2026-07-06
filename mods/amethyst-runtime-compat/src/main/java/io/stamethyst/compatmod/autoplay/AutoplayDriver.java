@@ -17,7 +17,7 @@ package io.stamethyst.compatmod.autoplay;
  * </ul>
  *
  * <h3>Agent play-mode integration</h3>
- * <p>When a {@code PlayMonitorAgent} is attached via agentmain, normal autoplay reads its
+ * <p>When a {@code PlayMonitor} is attached via agentmain, normal autoplay reads its
  * {@code mode} field:
  * <ul>
  *   <li>{@code AUTONOMOUS} - autoplay runs normally; agent commands on the queue are
@@ -85,7 +85,7 @@ public final class AutoplayDriver {
 
     private static String getAgentPlayMode() {
         try {
-            Class<?> playCls = Class.forName("io.stamethyst.agent.monitors.impl.PlayMonitorAgent");
+            Class<?> playCls = Class.forName("io.stamethyst.probe.monitors.impl.PlayMonitor");
             Object inst = playCls.getField("INSTANCE").get(null);
             if (inst == null) {
                 return null;
@@ -101,7 +101,7 @@ public final class AutoplayDriver {
 
     private static boolean tryDispatchAgentCommand() {
         try {
-            Class<?> playCls = Class.forName("io.stamethyst.agent.monitors.impl.PlayMonitorAgent");
+            Class<?> playCls = Class.forName("io.stamethyst.probe.monitors.impl.PlayMonitor");
             Object inst = playCls.getField("INSTANCE").get(null);
             if (inst == null) {
                 return false;

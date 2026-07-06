@@ -186,11 +186,11 @@ object ComponentInstaller {
         reportProgress(
             progressCallback,
             18,
-            context.getString(R.string.startup_progress_installing_agent_connector)
+            context.getString(R.string.startup_progress_installing_game_probe)
         )
         replaceAssetTree(
             resources,
-            "components/agent_connector",
+            "components/game_probe",
             RuntimePaths.agentConnectorDir(context)
         )
         throwIfInterrupted()

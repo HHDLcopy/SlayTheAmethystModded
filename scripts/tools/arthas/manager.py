@@ -1,6 +1,6 @@
 """Arthas lifecycle manager.
 
-Loads Arthas into the device JVM via agent-connector's LOAD_AGENT
+Loads Arthas into the device JVM via game-probe's LOAD_AGENT
 protocol command.  All device I/O goes through connector daemon.
 """
 

@@ -141,7 +141,7 @@ adb forward + TCP connect，客户端只需通过当前 Unix socket 收发原始
 
 典型用法：
 ```python
-# 给 agent-connector 发 LIST 命令
+# 给 game-probe 发 LIST 命令
 conn = ConnectorClient()
 conn.connect(); conn.select("localhost:15555")
 stream = conn.connect_stream(port=9099)
@@ -279,7 +279,7 @@ c.select(serial="localhost:15555")
 # shell / push / pull
 result = c.shell("ps | grep java")
 
-# 透传通道：给 agent-connector 发命令
+# 透传通道：给 game-probe 发命令
 stream = c.connect_stream(port=9099)
 stream.write(b"OBSERVE\n")
 print(stream.readline())

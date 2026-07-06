@@ -47,8 +47,8 @@ class TestConnectStreamIntegration(unittest.TestCase):
         self.assertIn("stream_id", resp)
         conn.close()
 
-    def test_passthrough_agent_connector_list(self):
-        """connect_stream to agent-connector :9099 and send LIST."""
+    def test_passthrough_game_probe_list(self):
+        """connect_stream to game-probe :9099 and send LIST."""
         conn = ConnectorClient(self._sock_path)
         conn.connect()
         conn.select("localhost:15555")

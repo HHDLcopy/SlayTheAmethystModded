@@ -33,7 +33,7 @@ connector daemon                     │
 # /data/data/io.stamethyst/files/arthas/arthas-bridge.jar (SocketTerm + 启动器)
 ```
 
-### 步骤 2: 通过 agent-connector 加载
+### 步骤 2: 通过 game-probe 加载
 
 ```
 LOAD_AGENT arthas-core.jar    → classpath-only (无 Agent-Class)
@@ -112,8 +112,8 @@ stream.close()
 
 ## 注意事项
 
-- Arthas 和 agent-connector 的 tracing 使用独立的 `ClassFileTransformer`，互不影响
-- `reset` 命令撤销所有 Arthas 的 instrument，不影响 agent-connector 的 transformer
+- Arthas 和 game-probe 的 tracing 使用独立的 `ClassFileTransformer`，互不影响
+- `reset` 命令撤销所有 Arthas 的 instrument，不影响 game-probe 的 transformer
 - arthas-bridge 使用 `java.net.ServerSocket`，不依赖 Netty
 - Connector daemon 需先启动
 - 在自定义 ClassLoader 中使用 `jad`/`sc` 需要指定 `-c <classloader-hash>`

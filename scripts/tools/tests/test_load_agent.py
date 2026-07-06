@@ -54,7 +54,7 @@ class TestLoadAgentIntegration(unittest.TestCase):
             local=test_jar_path,
             remote="/data/data/io.stamethyst/files/test-agent.jar")
 
-        # Start game with agent-connector
+        # Start game with game-probe
         self._conn.shell("am force-stop io.stamethyst")
         time.sleep(1)
         self._conn.shell(
@@ -63,7 +63,7 @@ class TestLoadAgentIntegration(unittest.TestCase):
             " --ez io.stamethyst.debug_autoplay true",
         )
 
-        # Wait for agent-connector to come up
+        # Wait for game-probe to come up
         self._conn.forward(port=9099)
         agent = AgentClient(port=9099)
         for _ in range(90):
@@ -77,7 +77,7 @@ class TestLoadAgentIntegration(unittest.TestCase):
                 pass
             time.sleep(2)
         else:
-            self.fail("agent-connector did not come up within 60s")
+            self.fail("game-probe did not come up within 60s")
 
         try:
             resp = agent.send("LIST")

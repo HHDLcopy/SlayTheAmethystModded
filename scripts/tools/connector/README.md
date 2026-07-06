@@ -24,7 +24,7 @@ harness / arthas / autoplay / monitor  (临时进程)
           │ adb
           ▼
     Android Device
-    ├── agent-connector (:9099)
+    ├── game-probe (:9099)
     └── arthas-bridge    (:8099)
 ```
 

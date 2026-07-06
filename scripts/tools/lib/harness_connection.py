@@ -1,4 +1,4 @@
-"""General TCP connection manager for the agent-connector running inside the JVM.
+"""General TCP connection manager for the game-probe running inside the JVM.
 
 Wraps adb port forwarding and TCP socket management into a single reusable context manager.
 Replaces the scattered adb(["forward", ...]) + AgentBridge(...) + bridge.close() pattern
@@ -25,7 +25,7 @@ from .agent_bridge import AgentBridgeError
 
 
 class HarnessConnection:
-    """Manages adb forward + TCP connection to the JVM agent-connector server."""
+    """Manages adb forward + TCP connection to the JVM game-probe server."""
 
     def __init__(
         self,
@@ -60,7 +60,7 @@ class HarnessConnection:
     # ── TCP lifecycle ───────────────────────────────────────────────────
 
     def connect(self, timeout: float = 10.0) -> None:
-        """Open TCP connection to the forwarded agent-connector server."""
+        """Open TCP connection to the forwarded game-probe server."""
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._sock.settimeout(timeout)
         self._sock.connect((self._host, self._port))

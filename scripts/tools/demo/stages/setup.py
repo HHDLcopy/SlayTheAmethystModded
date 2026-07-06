@@ -1,7 +1,7 @@
 """Stage 0 — Environment check.
 
 Verifies the game process is alive, boot bridge reports READY,
-and the agent-connector TCP server is accepting connections.
+and the game-probe TCP server is accepting connections.
 """
 
 from __future__ import annotations

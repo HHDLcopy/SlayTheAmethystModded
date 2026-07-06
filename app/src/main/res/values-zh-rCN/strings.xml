@@ -360,7 +360,7 @@
     <string name="startup_progress_installing_lwjgl_bridge">正在安装 LWJGL 桥接…</string>
     <string name="startup_progress_installing_startup_bridge">正在安装启动桥…</string>
     <string name="startup_progress_installing_lwjgl2_injector">正在安装 LWJGL2 注入器…</string>
-    <string name="startup_progress_installing_agent_connector">正在安装 agent 连接器…</string>
+    <string name="startup_progress_installing_game_probe">正在安装 agent 连接器…</string>
     <string name="startup_progress_installing_gdx_patches">正在安装 gdx 补丁…</string>
     <string name="startup_progress_installing_gdx_video_natives">正在安装 gdx 视频原生库…</string>
     <string name="startup_progress_installing_bundled_native_libraries">正在安装内置原生库…</string>

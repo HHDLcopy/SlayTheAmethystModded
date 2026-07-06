@@ -361,7 +361,7 @@
     <string name="startup_progress_installing_lwjgl_bridge">正在安裝 LWJGL 橋接…</string>
     <string name="startup_progress_installing_startup_bridge">正在安裝啟動橋…</string>
     <string name="startup_progress_installing_lwjgl2_injector">正在安裝 LWJGL2 注入器…</string>
-    <string name="startup_progress_installing_agent_connector">正在安裝 agent 連接器…</string>
+    <string name="startup_progress_installing_game_probe">正在安裝 agent 連接器…</string>
     <string name="startup_progress_installing_gdx_patches">正在安裝 gdx 補丁…</string>
     <string name="startup_progress_installing_gdx_video_natives">正在安裝 gdx 影片原生庫…</string>
     <string name="startup_progress_installing_bundled_native_libraries">正在安裝內建原生庫…</string>

@@ -5,7 +5,7 @@ Arthas（阿尔萨斯）JVM 诊断工具集成模块。通过 connector daemon �
 
 ## 职责
 
-- 管理 Arthas JARs 的推送与 agent-connector 加载
+- 管理 Arthas JARs 的推送与 game-probe 加载
 - 通过 `connector.connect_stream()` 获取到 arthas-bridge 的透传通道
 - 封装常用 Arthas 命令为可脚本化接口
 
@@ -26,7 +26,7 @@ Arthas（阿尔萨斯）JVM 诊断工具集成模块。通过 connector daemon �
               │ adb forward + TCP
     ┌─────────┴──────────────────┐
     │  Device JVM                │
-    │  ├── agent-connector :9099 │  ← LOAD_AGENT
+    │  ├── game-probe :9099 │  ← LOAD_AGENT
     │  └── arthas-bridge  :8099  │  ← ServerSocket
     │       ├── ArthasBootstrapCompat  (Apache 2.0, modified)
     │       ├── SocketTerm
@@ -98,7 +98,7 @@ python -m scripts.tools.arthas stop
 
 ## Arthas vs 现有功能对照
 
-| Arthas 命令 | 现有 agent-connector | 优先级 |
+| Arthas 命令 | 现有 game-probe | 优先级 |
 |-------------|---------------------|--------|
 | `watch` | TracingMonitorAgent (无参数/返回值过滤) | 高 |
 | `trace` | TracingMonitorAgent + PERF | 高 |
@@ -109,4 +109,4 @@ python -m scripts.tools.arthas stop
 | `heapdump` | 无 | 低 |
 | `ognl` | 无 | 中 |
 
-Arthas 补充现有系统缺少的能力，agent-connector 保留游戏特有的 OBSERVE/EXEC。
+Arthas 补充现有系统缺少的能力，game-probe 保留游戏特有的 OBSERVE/EXEC。

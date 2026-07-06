@@ -1,6 +1,6 @@
 # Agent Demo
 
-Production-grade demo tool showcasing the agent-connector debugging pipeline
+Production-grade demo tool showcasing the game-probe debugging pipeline
 for SlayTheAmethyst.
 
 ## Quick Start
@@ -11,7 +11,7 @@ python scripts/tools/demo/run.py \
   --install-test-crash \
   -DeviceSerial <serial>
 
-# 1. Launch the game with autoplay + agent-connector (skip install if APK already built)
+# 1. Launch the game with autoplay + game-probe (skip install if APK already built)
 python scripts/tools/main.py sts-harness \
   -Command smoke \
   -LaunchMode mts \

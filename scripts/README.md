@@ -120,7 +120,7 @@ responsibility:
 | Module | Role |
 |--------|------|
 | `connector/` | 常驻守护进程，设备连接管理、TCP 透传代理、adb 命令代理 |
-| `lib/agent_client.py` | agent-connector 协议客户端（通过 connector.connect_stream 通信） |
+| `lib/agent_client.py` | game-probe 协议客户端（通过 connector.connect_stream 通信） |
 | `arthas/` | Arthas JVM 诊断工具集成（通过 connector + arthas-bridge） |
 | `harness/` | 高层编排（build, install, smoke, single-room, startup-cache） |
 | `autoplay/` | 游戏自动化控制 |
@@ -139,7 +139,7 @@ harness / arthas / autoplay / monitor
           │ adb
           ▼
     Android Device
-    ├── agent-connector (:9099)   ← OBSERVE / EXEC / LOAD_AGENT
+    ├── game-probe (:9099)   ← OBSERVE / EXEC / LOAD_AGENT
     └── arthas-bridge    (:8099)  ← ArthasBootstrapCompat (无 Netty)
 ```
 
@@ -147,7 +147,7 @@ Implementation files:
 
 - `scripts/tools/main.py`: thin tools entrypoint.
 - `scripts/tools/connector/`: 设备通信守护进程及其客户端库。
-- `scripts/tools/lib/agent_client.py`: 统一 agent-connector TCP 协议客户端。
+- `scripts/tools/lib/agent_client.py`: 统一 game-probe TCP 协议客户端。
 - `scripts/tools/lib/sts_harness_cli.py`: 遗留 harness CLI 解析器（将被 harness/ 模块替代）。
 - `scripts/tools/lib/sts_harness.py`: 遗留 harness 实现（将被 harness/ 模块替代）。
 - `scripts/tools/lib/device_mods.py`: 列出设备 mod、解析可选 mod token、写入 `enabled_mods.txt`。

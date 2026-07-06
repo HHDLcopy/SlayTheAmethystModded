@@ -16,7 +16,7 @@ public final class AutoplayConfig {
         "amethyst.debug.autoplay.tick_interval_ms";
     /** Optional verbose logging toggle. */
     public static final String AUTOPLAY_DEBUG_PROP = "amethyst.debug.autoplay.debug";
-    /** When true, normal autoplay waits until an agent PlayMonitorAgent connects. */
+    /** When true, normal autoplay waits until an agent PlayMonitor connects. */
     public static final String AUTOPLAY_WAIT_FOR_AGENT_PROP =
         "amethyst.autoplay.wait_for_agent";
     /** Optional delay before autoplay resolves visible choice screens. */

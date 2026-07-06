@@ -427,11 +427,11 @@ object RuntimePaths {
         File(lwjgl2InjectorDir(context), "lwjgl2_methods_injector.jar")
 
     @JvmStatic
-    fun agentConnectorDir(context: Context): File = File(componentRoot(context), "agent_connector")
+    fun agentConnectorDir(context: Context): File = File(componentRoot(context), "game_probe")
 
     @JvmStatic
     fun agentConnectorJar(context: Context): File =
-        File(agentConnectorDir(context), "agent-connector.jar")
+        File(agentConnectorDir(context), "game-probe.jar")
 
     @JvmStatic
     fun bootBridgeDir(context: Context): File = File(componentRoot(context), "boot_bridge")

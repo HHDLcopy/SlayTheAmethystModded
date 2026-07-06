@@ -1,4 +1,4 @@
-"""TCP client for the agent-connector server running inside the game JVM.
+"""TCP client for the game-probe server running inside the game JVM.
 
 Communicates with the AgentBridgeServer over a plain-text line protocol:
     ATTACH <spec> {"key":"value"}

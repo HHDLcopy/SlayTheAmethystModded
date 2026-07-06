@@ -1,4 +1,4 @@
-"""Unified client for the device-side agent-connector TCP protocol.
+"""Unified client for the device-side game-probe TCP protocol.
 
 替代原先 AgentBridge + AgentProtocol 的分离设计。通过 connector daemon
 的 connect_stream 建立透传通道，不直接开 TCP 连接。
@@ -31,7 +31,7 @@ class AgentError(Exception):
 
 
 class AgentClient:
-    """Unified client for agent-connector TCP protocol.
+    """Unified client for game-probe TCP protocol.
 
     ｜ 协议层：
     ｜ AgentClient (Python)
@@ -40,7 +40,7 @@ class AgentClient:
     ｜   发送 ATTACH / DETACH / OBSERVE / EXEC / LOAD_AGENT 等命令
     ｜
     ｜ 设备端：
-    ｜ AgentConnector (Java agent, :9099)
+    ｜ GameProbe (Java agent, :9099)
     """
 
     def __init__(
@@ -62,7 +62,7 @@ class AgentClient:
     # ── Connection lifecycle ──────────────────────────────────────
 
     def connect(self, timeout: float = 10.0) -> None:
-        """建立与设备端 agent-connector 的连接（已有 stream 时跳过）。"""
+        """建立与设备端 game-probe 的连接（已有 stream 时跳过）。"""
         if self._stream is not None:
             return
 
@@ -234,14 +234,14 @@ class AgentClient:
     # ── LOAD_AGENT — 动态加载外部 agent (如 Arthas) ────────────────
 
     def load_agent(self, jar_path: str, agent_args: str = "") -> None:
-        """通过 agent-connector 动态加载一个外部 Java agent JAR。
+        """通过 game-probe 动态加载一个外部 Java agent JAR。
 
         Args:
             jar_path: 设备上 agent JAR 的路径
             agent_args: 传给 agentmain 的参数（如 "http-port=8563"）
 
         原理:
-            agent-connector 通过 Instrumentation.appendToSystemClassLoaderSearch()
+            game-probe 通过 Instrumentation.appendToSystemClassLoaderSearch()
             将 JAR 加入类路径，然后反射调用 agent-class 的 agentmain() 方法。
             参见 AgentSession.handleLoadAgent()。
         """

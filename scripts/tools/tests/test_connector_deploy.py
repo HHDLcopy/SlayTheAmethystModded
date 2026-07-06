@@ -8,10 +8,10 @@ class TestConnectorDeploy(unittest.TestCase):
 
     @patch("subprocess.check_call")
     def test_deploy_builds_and_pushes(self, mock_check_call):
-        from scripts.tools.connector.deploy import deploy_agent_connector
+        from scripts.tools.connector.deploy import deploy_game_probe
         mock_conn = MagicMock()
         mock_conn.push.return_value = True
         mock_conn.shell.return_value = {"stdout": "/data/..."}
-        deploy_agent_connector(connector=mock_conn, app_id="io.stamethyst")
+        deploy_game_probe(connector=mock_conn, app_id="io.stamethyst")
         self.assertGreaterEqual(mock_check_call.call_count, 1)
         self.assertGreaterEqual(mock_conn.push.call_count, 1)

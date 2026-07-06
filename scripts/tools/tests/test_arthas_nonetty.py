@@ -58,7 +58,7 @@ class TestModifiedArthasCommands(unittest.TestCase):
         # Load core, then bridge (which internally uses modified ArthasBootstrap)
         agent.send("LOAD_AGENT /data/data/io.stamethyst/files/arthas/arthas-core.jar")
         resp = agent.send(
-            "LOAD_AGENT /data/data/io.stamethyst/files/arthas/arthas-bridge.jar "
+            "LOAD_AGENT /data/data/io.stamethyst/files/arthas/arthas-agent.jar "
             "port=8099"
         )
         self.assertEqual(resp, "OK", f"bridge load failed: {resp}")

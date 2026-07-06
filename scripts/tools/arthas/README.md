@@ -37,9 +37,9 @@ Arthas（阿尔萨斯）JVM 诊断工具集成模块。通过 connector daemon �
 ## 流程
 
 ```
-1. connector.push(arthas-core.jar, arthas-bridge.jar → /data/.../arthas/)
+1. connector.push(arthas-core.jar, arthas-spy.jar, arthas-agent.jar → /data/.../arthas/)
 2. agent_client.load_agent("arthas-core.jar")           # classpath
-3. agent_client.load_agent("arthas-bridge.jar", "port=8099")
+3. agent_client.load_agent("arthas-agent.jar", "port=8099")
    → ArthasBootstrapCompat 构造完整 ArthasBootstrap（跳过 Netty）
    → 注册 BuiltinCommandPack
    → 启动 ServerSocket(:8099)
@@ -73,7 +73,7 @@ python -m scripts.tools.arthas stop
 | `manager.py` | Arthas 生命周期管理：推送 JARs、加载、转发 |
 | `shell.py` | Shell 客户端：通过 connect_stream 收发命令 |
 | `cli.py` | 命令行入口 |
-| `resource/` | arthas-core.jar（从 Maven 下载） |
+| `resource/` | arthas-core.jar, arthas-spy.jar, arthas-agent.jar |
 
 ## 设备端模块
 
@@ -100,11 +100,10 @@ python -m scripts.tools.arthas stop
 
 | Arthas 命令 | 现有 game-probe | 优先级 |
 |-------------|---------------------|--------|
-| `watch` | TracingMonitorAgent (无参数/返回值过滤) | 高 |
-| `trace` | TracingMonitorAgent + PERF | 高 |
-| `dashboard` | ThreadMonitor / GcMonitor（无按需触发） | 中 |
-| `jad` | DUMP_CLASS + CFR | 中 |
-| `thread` | ThreadMonitor（无按需触发） | 中 |
+| `watch` | TracingMonitor (无参数/返回值过滤) | 高 |
+| `trace` | TracingMonitor + PERF | 高 |
+| `dashboard` | 已移除 — 委托 Arthas | 中 |
+| `thread` | 已移除 — 委托 Arthas | 中 |
 | `profiler` | 无 | 低 |
 | `heapdump` | 无 | 低 |
 | `ognl` | 无 | 中 |

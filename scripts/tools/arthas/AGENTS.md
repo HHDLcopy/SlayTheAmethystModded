@@ -12,7 +12,7 @@ bridge 内部调用 `ArthasBootstrapCompat.createWithoutNetty()` 构造
 Python (host)                          Device JVM
 ─────────────────────────────    ─────────────────────────────
 
-arthas/shell.py                  arthas-bridge.jar
+arthas/shell.py                  arthas-agent.jar
     │                                 │─ agentmain 加载
     │  connector.connect_stream(8099) │  ServerSocket(:8099)
     │  ─── raw bytes ───────────────► │  ArthasBootstrapCompat
@@ -28,16 +28,17 @@ connector daemon                     │
 ### 步骤 1: 推送 JARs 到设备
 
 ```python
-# 仅需两个 JARs：
+# 需要三个 JARs：
 # /data/data/io.stamethyst/files/arthas/arthas-core.jar  (Arthas 命令引擎)
-# /data/data/io.stamethyst/files/arthas/arthas-bridge.jar (SocketTerm + 启动器)
+# /data/data/io.stamethyst/files/arthas/arthas-spy.jar   (Spy API)
+# /data/data/io.stamethyst/files/arthas/arthas-agent.jar (SocketTerm + 启动器)
 ```
 
 ### 步骤 2: 通过 game-probe 加载
 
 ```
 LOAD_AGENT arthas-core.jar    → classpath-only (无 Agent-Class)
-LOAD_AGENT arthas-bridge.jar port=8099  → agentmain 启动 ServerSocket
+LOAD_AGENT arthas-agent.jar port=8099  → agentmain 启动 ServerSocket
 ```
 
 `ArthasCommandBridge.start()` 内部：

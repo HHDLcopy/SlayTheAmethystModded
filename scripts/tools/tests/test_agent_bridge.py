@@ -56,7 +56,7 @@ def _handler_attach_ok(reader, writer):
             writer.write("OK\n")
             writer.flush()
         elif line == "LIST":
-            writer.write("AGENTS tracing-1:tracing:active\n")
+            writer.write("MONITORS tracing-1:tracing:active\n")
             writer.flush()
         elif line.startswith("STATUS "):
             writer.write("STATUS tracing-1 active 12345 42\n")

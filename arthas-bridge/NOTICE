@@ -1,0 +1,10 @@
+Arthas - Alibaba Java Diagnostic Tool (https://github.com/alibaba/arthas)
+Copyright 2018-2024 Alibaba Group Holding Ltd. and contributors
+
+Licensed under the Apache License, Version 2.0.
+
+Modified for SlayTheAmethyst -- see:
+  arthas-bridge/.../server/ArthasBootstrapNoNetty.java
+
+Modifications: Added constructor path that skips Netty bind() for Android JVM compatibility.
+Original copyright and license retained per Apache 2.0 Section 4(c).

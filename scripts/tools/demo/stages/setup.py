@@ -49,7 +49,7 @@ class SetupStage(Stage):
 
         # 3. agent TCP
         resp = runner.conn.send_command("LIST")
-        checks["agent_server"] = resp.startswith("AGENTS")
+        checks["agent_server"] = resp.startswith("MONITORS")
         runner._log_op("TCP: LIST", resp)
 
         # 4. screenshot baseline

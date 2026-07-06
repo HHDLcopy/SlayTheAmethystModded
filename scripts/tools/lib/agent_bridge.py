@@ -96,7 +96,7 @@ class AgentBridge:
 
     def list_agents(self) -> list[dict[str, str]]:
         response = self._send_recv("LIST")
-        if not response.startswith("AGENTS"):
+        if not response.startswith("MONITORS"):
             raise AgentBridgeError(response)
         agents = []
         parts = response.split()[1:]

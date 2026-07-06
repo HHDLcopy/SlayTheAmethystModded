@@ -1,9 +1,9 @@
 package io.stamethyst.agent.connection;
 
 import io.stamethyst.agent.channel.AgentDataChannel;
-import io.stamethyst.agent.monitors.MonitorAgent;
+import io.stamethyst.agent.monitors.Monitor;
 import io.stamethyst.agent.monitors.MonitorCapability;
-import io.stamethyst.agent.monitors.SpecMonitorRegistry;
+import io.stamethyst.agent.monitors.MonitorRegistry;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -23,7 +23,7 @@ import static org.junit.Assert.*;
 
 public class AgentSessionTest {
 
-    private SpecMonitorRegistry registry;
+    private MonitorRegistry registry;
     private ServerSocket server;
     private Socket serverSide;
     private Socket clientSide;
@@ -34,16 +34,16 @@ public class AgentSessionTest {
 
     @Before
     public void setUp() throws Exception {
-        registry = new SpecMonitorRegistry();
-        registry.register("mock", new SpecMonitorRegistry.MonitorFactory() {
+        registry = new MonitorRegistry();
+        registry.register("mock", new MonitorRegistry.MonitorFactory() {
             @Override
-            public MonitorAgent create(Instrumentation inst, String argsJson, AgentDataChannel channel) {
+            public Monitor create(Instrumentation inst, String argsJson, AgentDataChannel channel) {
                 return new MockMonitor("mock-instance-" + argsJson, channel);
             }
         });
-        registry.register("tracing", new SpecMonitorRegistry.MonitorFactory() {
+        registry.register("tracing", new MonitorRegistry.MonitorFactory() {
             @Override
-            public MonitorAgent create(Instrumentation inst, String argsJson, AgentDataChannel channel) {
+            public Monitor create(Instrumentation inst, String argsJson, AgentDataChannel channel) {
                 return new MockMonitor("tracing-instance", channel);
             }
         });
@@ -227,7 +227,7 @@ public class AgentSessionTest {
         assertNotEquals(id1, id3);
     }
 
-    private static class MockMonitor implements MonitorAgent {
+    private static class MockMonitor implements Monitor {
         private final String status;
         private final AgentDataChannel channel;
         private volatile boolean attached = true;

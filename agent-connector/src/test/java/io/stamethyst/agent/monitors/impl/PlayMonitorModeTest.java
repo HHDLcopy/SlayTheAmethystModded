@@ -11,13 +11,13 @@ import java.util.Set;
 import static org.junit.Assert.*;
 
 /**
- * Tests for {@link PlayMonitorAgent} mode switching and command dispatch.
+ * Tests for {@link PlayMonitor} mode switching and command dispatch.
  */
-public class PlayMonitorAgentModeTest {
+public class PlayMonitorModeTest {
 
     @After
     public void cleanup() {
-        PlayMonitorAgent inst = PlayMonitorAgent.INSTANCE;
+        PlayMonitor inst = PlayMonitor.INSTANCE;
         if (inst != null) {
             inst.detach();
         }
@@ -25,7 +25,7 @@ public class PlayMonitorAgentModeTest {
 
     @Test
     public void defaultMode_isAutonomous() {
-        PlayMonitorAgent agent = new PlayMonitorAgent();
+        PlayMonitor agent = new PlayMonitor();
         agent.attach();
         try {
             assertEquals(AgentPlayMode.AUTONOMOUS, agent.getMode());
@@ -36,7 +36,7 @@ public class PlayMonitorAgentModeTest {
 
     @Test
     public void mode_switchesToCommandDriven() {
-        PlayMonitorAgent agent = new PlayMonitorAgent();
+        PlayMonitor agent = new PlayMonitor();
         agent.attach();
         try {
             // Enqueue MODE_COMMAND and consume it via pollAndExecute
@@ -52,7 +52,7 @@ public class PlayMonitorAgentModeTest {
 
     @Test
     public void mode_switchesBackToAutonomous() {
-        PlayMonitorAgent agent = new PlayMonitorAgent();
+        PlayMonitor agent = new PlayMonitor();
         agent.attach();
         try {
             agent.execute("MODE_COMMAND", "{\"mode\":\"COMMAND_DRIVEN\"}");
@@ -69,7 +69,7 @@ public class PlayMonitorAgentModeTest {
 
     @Test
     public void mode_resetsToAutonomousOnAttach() {
-        PlayMonitorAgent agent = new PlayMonitorAgent();
+        PlayMonitor agent = new PlayMonitor();
         agent.attach();
         agent.execute("MODE_COMMAND", "{\"mode\":\"COMMAND_DRIVEN\"}");
         agent.pollAndExecute();
@@ -86,7 +86,7 @@ public class PlayMonitorAgentModeTest {
 
     @Test
     public void mode_ignoresInvalidJson() {
-        PlayMonitorAgent agent = new PlayMonitorAgent();
+        PlayMonitor agent = new PlayMonitor();
         agent.attach();
         try {
             AgentPlayMode before = agent.getMode();
@@ -100,7 +100,7 @@ public class PlayMonitorAgentModeTest {
 
     @Test
     public void otherCommands_exist() {
-        PlayMonitorAgent agent = new PlayMonitorAgent();
+        PlayMonitor agent = new PlayMonitor();
         agent.attach();
         try {
             // PLAY_CARD should not throw

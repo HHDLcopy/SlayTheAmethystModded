@@ -1,7 +1,7 @@
 package io.stamethyst.agent.monitors.impl;
 
 import io.stamethyst.agent.channel.AgentDataChannel;
-import io.stamethyst.agent.monitors.MonitorAgent;
+import io.stamethyst.agent.monitors.Monitor;
 import io.stamethyst.agent.monitors.MonitorCapability;
 
 import java.lang.instrument.Instrumentation;
@@ -24,9 +24,9 @@ import java.util.Set;
  * A single VM-wide instance is stored in {@link #INSTANCE} so other game
  * threads can reference it without Spring/dependency-injection.
  */
-public class PlayMonitorAgent implements MonitorAgent {
+public class PlayMonitor implements Monitor {
 
-    public static PlayMonitorAgent INSTANCE;
+    public static PlayMonitor INSTANCE;
 
     /**
      * Current play mode visible to {@link AutoplayDriver}.
@@ -168,7 +168,7 @@ public class PlayMonitorAgent implements MonitorAgent {
 
     // ── Interface
 
-    @Override public String toString() { return "PlayMonitorAgent"; }
+    @Override public String toString() { return "PlayMonitor"; }
 
     private static String escape(String s) {
         if (s == null) return "";

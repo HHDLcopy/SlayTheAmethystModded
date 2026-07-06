@@ -9,20 +9,20 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.Assert.*;
 
-public class SpecMonitorRegistryTest {
+public class MonitorRegistryTest {
 
-    private SpecMonitorRegistry registry = new SpecMonitorRegistry();
+    private MonitorRegistry registry = new MonitorRegistry();
 
     @Test
     public void parseSpecNoOptions() {
-        SpecMonitorRegistry.ParsedSpec parsed = registry.parseSpec("tracing");
+        MonitorRegistry.ParsedSpec parsed = registry.parseSpec("tracing");
         assertEquals("tracing", parsed.prefix);
         assertEquals("{}", parsed.argsJson);
     }
 
     @Test
     public void parseSpecWithOptions() {
-        SpecMonitorRegistry.ParsedSpec parsed = registry.parseSpec("tracing@classes=com.a.*,com.b.*@methods=render");
+        MonitorRegistry.ParsedSpec parsed = registry.parseSpec("tracing@classes=com.a.*,com.b.*@methods=render");
         assertEquals("tracing", parsed.prefix);
         assertTrue(parsed.argsJson.contains("\"classes\""));
         assertTrue(parsed.argsJson.contains("com.a.*"));
@@ -36,7 +36,7 @@ public class SpecMonitorRegistryTest {
         AtomicBoolean created = new AtomicBoolean(false);
         registry.register("mock", (inst, args, channel) -> {
             created.set(true);
-            return new MonitorAgent() {
+            return new Monitor() {
                 @Override public void attach(Instrumentation inst, String agentArgs, AgentDataChannel channel) {}
                 @Override public void detach() {}
                 @Override public String status() { return "ok"; }
@@ -44,7 +44,7 @@ public class SpecMonitorRegistryTest {
             };
         });
 
-        MonitorAgent agent = registry.create("mock", null, null);
+        Monitor agent = registry.create("mock", null, null);
         assertNotNull(agent);
         assertTrue(created.get());
         assertEquals(EnumSet.of(MonitorCapability.TRACING), agent.capabilities());
@@ -85,12 +85,12 @@ public class SpecMonitorRegistryTest {
             return new StubMonitor("new", MonitorCapability.TRACING);
         });
 
-        MonitorAgent agent = registry.create("dup", null, null);
+        Monitor agent = registry.create("dup", null, null);
         assertNotNull(agent);
         assertTrue(secondCalled.get());
     }
 
-    private static class StubMonitor implements MonitorAgent {
+    private static class StubMonitor implements Monitor {
         private final String name;
         private final MonitorCapability cap;
         StubMonitor(String name, MonitorCapability cap) { this.name = name; this.cap = cap; }

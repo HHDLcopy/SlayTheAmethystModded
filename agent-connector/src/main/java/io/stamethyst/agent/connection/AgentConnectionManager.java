@@ -1,6 +1,6 @@
 package io.stamethyst.agent.connection;
 
-import io.stamethyst.agent.monitors.SpecMonitorRegistry;
+import io.stamethyst.agent.monitors.MonitorRegistry;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -15,7 +15,7 @@ public class AgentConnectionManager implements Closeable {
 
     private static final int DEFAULT_PORT = 9099;
 
-    private final SpecMonitorRegistry registry;
+    private final MonitorRegistry registry;
     private final Instrumentation instrumentation;
     private final int configuredPort;
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -23,11 +23,11 @@ public class AgentConnectionManager implements Closeable {
     private Thread acceptThread;
     private final List<AgentSession> sessions = new CopyOnWriteArrayList<AgentSession>();
 
-    public AgentConnectionManager(SpecMonitorRegistry registry, Instrumentation instrumentation) {
+    public AgentConnectionManager(MonitorRegistry registry, Instrumentation instrumentation) {
         this(registry, instrumentation, DEFAULT_PORT);
     }
 
-    public AgentConnectionManager(SpecMonitorRegistry registry, Instrumentation instrumentation, int port) {
+    public AgentConnectionManager(MonitorRegistry registry, Instrumentation instrumentation, int port) {
         this.registry = registry;
         this.instrumentation = instrumentation;
         this.configuredPort = port;

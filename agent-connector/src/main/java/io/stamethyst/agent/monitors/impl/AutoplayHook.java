@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.Random;
 
 /**
- * Game-logic primitives called by {@link PlayMonitorAgent} on the render
+ * Game-logic primitives called by {@link PlayMonitor} on the render
  * thread.  All game-class access routes through {@link ReflectionUtil}
  * which uses the captured MTS ClassLoader.
  */

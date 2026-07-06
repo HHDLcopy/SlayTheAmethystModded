@@ -1,6 +1,6 @@
 package io.stamethyst.agent.connection;
 
-import io.stamethyst.agent.monitors.SpecMonitorRegistry;
+import io.stamethyst.agent.monitors.MonitorRegistry;
 import org.junit.After;
 import org.junit.Test;
 
@@ -24,7 +24,7 @@ public class AgentConnectionManagerTest {
 
     @Test
     public void startAndStop() throws Exception {
-        SpecMonitorRegistry registry = new SpecMonitorRegistry();
+        MonitorRegistry registry = new MonitorRegistry();
         manager = new AgentConnectionManager(registry, null, 0);
         manager.start();
         assertTrue(manager.isRunning());
@@ -34,7 +34,7 @@ public class AgentConnectionManagerTest {
 
     @Test
     public void bindsPortAndAcceptsConnections() throws Exception {
-        SpecMonitorRegistry registry = new SpecMonitorRegistry();
+        MonitorRegistry registry = new MonitorRegistry();
         manager = new AgentConnectionManager(registry, null, 0);
         manager.start();
         assertTrue(manager.isRunning());
@@ -57,7 +57,7 @@ public class AgentConnectionManagerTest {
 
     @Test
     public void multipleConnections() throws Exception {
-        SpecMonitorRegistry registry = new SpecMonitorRegistry();
+        MonitorRegistry registry = new MonitorRegistry();
         manager = new AgentConnectionManager(registry, null, 0);
         manager.start();
         int port = manager.getPort();
@@ -81,7 +81,7 @@ public class AgentConnectionManagerTest {
 
     @Test
     public void closeTwiceDoesNotThrow() throws Exception {
-        SpecMonitorRegistry registry = new SpecMonitorRegistry();
+        MonitorRegistry registry = new MonitorRegistry();
         manager = new AgentConnectionManager(registry, null, 0);
         manager.start();
         manager.close();
@@ -90,28 +90,28 @@ public class AgentConnectionManagerTest {
 
     @Test
     public void notRunningBeforeStart() {
-        SpecMonitorRegistry registry = new SpecMonitorRegistry();
+        MonitorRegistry registry = new MonitorRegistry();
         manager = new AgentConnectionManager(registry, null);
         assertFalse(manager.isRunning());
     }
 
     @Test
     public void defaultPort() {
-        SpecMonitorRegistry registry = new SpecMonitorRegistry();
+        MonitorRegistry registry = new MonitorRegistry();
         manager = new AgentConnectionManager(registry, null);
         assertEquals(9099, manager.getPort());
     }
 
     @Test
     public void customPort() {
-        SpecMonitorRegistry registry = new SpecMonitorRegistry();
+        MonitorRegistry registry = new MonitorRegistry();
         manager = new AgentConnectionManager(registry, null, 12345);
         assertEquals(12345, manager.getPort());
     }
 
     @Test
     public void portResolvedAfterStart() throws Exception {
-        SpecMonitorRegistry registry = new SpecMonitorRegistry();
+        MonitorRegistry registry = new MonitorRegistry();
         manager = new AgentConnectionManager(registry, null, 0);
         assertEquals(0, manager.getPort());
         manager.start();

@@ -2,8 +2,8 @@ package io.stamethyst.agent.integration;
 
 import io.stamethyst.agent.channel.AgentDataChannel;
 import io.stamethyst.agent.monitors.MonitorCapability;
-import io.stamethyst.agent.monitors.SpecMonitorRegistry;
-import io.stamethyst.agent.monitors.impl.TracingMonitorAgent;
+import io.stamethyst.agent.monitors.MonitorRegistry;
+import io.stamethyst.agent.monitors.impl.TracingMonitor;
 import io.stamethyst.agent.util.AsmMethodInterceptor;
 import org.junit.After;
 import org.junit.Before;
@@ -24,20 +24,20 @@ import static org.junit.Assert.*;
 public class AgentmainBytecodeTest {
 
     private FakeInstrumentation fakeInst;
-    private SpecMonitorRegistry registry;
+    private MonitorRegistry registry;
     private CapturingChannel channel;
-    private TracingMonitorAgent agent;
+    private TracingMonitor agent;
 
     @Before
     public void setUp() {
         fakeInst = new FakeInstrumentation();
-        registry = new SpecMonitorRegistry();
+        registry = new MonitorRegistry();
         channel = new CapturingChannel("tracing-1");
 
-        registry.register("tracing", new SpecMonitorRegistry.MonitorFactory() {
+        registry.register("tracing", new MonitorRegistry.MonitorFactory() {
             @Override
-            public io.stamethyst.agent.monitors.MonitorAgent create(Instrumentation inst, String argsJson, AgentDataChannel channel) {
-                TracingMonitorAgent a = new TracingMonitorAgent();
+            public io.stamethyst.agent.monitors.Monitor create(Instrumentation inst, String argsJson, AgentDataChannel channel) {
+                TracingMonitor a = new TracingMonitor();
                 a.attach(inst, argsJson, channel);
                 return a;
             }
@@ -53,7 +53,7 @@ public class AgentmainBytecodeTest {
 
     @Test
     public void tracingAgentRegistersTransformer() {
-        agent = (TracingMonitorAgent) registry.create(
+        agent = (TracingMonitor) registry.create(
             "tracing@classes=io.stamethyst.test.*@methods=compute",
             fakeInst, channel);
 
@@ -62,7 +62,7 @@ public class AgentmainBytecodeTest {
 
     @Test
     public void tracingAgentDetachRemovesTransformer() {
-        agent = (TracingMonitorAgent) registry.create(
+        agent = (TracingMonitor) registry.create(
             "tracing@classes=io.stamethyst.test.*@methods=compute",
             fakeInst, channel);
 
@@ -211,7 +211,7 @@ public class AgentmainBytecodeTest {
         // Transform internal name to dot notation for matching
         String dotName = internalName.replace('/', '.');
         String dotPattern = classPattern.replace('/', '.');
-        if (!io.stamethyst.agent.monitors.impl.TracingMonitorAgent.matchesPattern(dotName, dotPattern)) {
+        if (!io.stamethyst.agent.monitors.impl.TracingMonitor.matchesPattern(dotName, dotPattern)) {
             return null;
         }
         try {

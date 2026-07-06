@@ -2,10 +2,10 @@ package io.stamethyst.agent.connection;
 
 import io.stamethyst.agent.channel.AgentDataChannel;
 import io.stamethyst.agent.channel.TcpDataChannel;
-import io.stamethyst.agent.monitors.MonitorAgent;
-import io.stamethyst.agent.monitors.impl.PlayMonitorAgent;
-import io.stamethyst.agent.monitors.impl.TracingMonitorAgent;
-import io.stamethyst.agent.monitors.SpecMonitorRegistry;
+import io.stamethyst.agent.monitors.Monitor;
+import io.stamethyst.agent.monitors.impl.PlayMonitor;
+import io.stamethyst.agent.monitors.impl.TracingMonitor;
+import io.stamethyst.agent.monitors.MonitorRegistry;
 import io.stamethyst.agent.AgentConnector;
 import io.stamethyst.agent.protocol.AgentCommand;
 import io.stamethyst.agent.protocol.AgentRequest;
@@ -21,9 +21,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class AgentSession implements Runnable {
 
     private final Socket socket;
-    private final SpecMonitorRegistry registry;
+    private final MonitorRegistry registry;
     private final Instrumentation instrumentation;
-    private final Map<String, MonitorAgent> attachedAgents = new ConcurrentHashMap<String, MonitorAgent>();
+    private final Map<String, Monitor> attachedAgents = new ConcurrentHashMap<String, Monitor>();
     private final Map<String, TcpDataChannel> agentChannels = new ConcurrentHashMap<String, TcpDataChannel>();
     private final Set<String> subscribedIds = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
     private final Map<String, Long> agentStartTimes = new ConcurrentHashMap<String, Long>();
@@ -32,7 +32,7 @@ public class AgentSession implements Runnable {
     private PrintWriter writer;
     private volatile boolean running = true;
 
-    public AgentSession(Socket socket, SpecMonitorRegistry registry, Instrumentation instrumentation) {
+    public AgentSession(Socket socket, MonitorRegistry registry, Instrumentation instrumentation) {
         this.socket = socket;
         this.registry = registry;
         this.instrumentation = instrumentation;
@@ -110,8 +110,8 @@ public class AgentSession implements Runnable {
         String spec = req.getSpec();
         String id = generateId(spec);
 
-        SpecMonitorRegistry.ParsedSpec parsed = registry.parseSpec(spec);
-        MonitorAgent agent = registry.create(spec, instrumentation, null);
+        MonitorRegistry.ParsedSpec parsed = registry.parseSpec(spec);
+        Monitor agent = registry.create(spec, instrumentation, null);
         TcpDataChannel channel = new TcpDataChannel(writer, id, agent.capabilities());
         agent.attach(instrumentation, parsed.argsJson, channel);
         attachedAgents.put(id, agent);
@@ -132,7 +132,7 @@ public class AgentSession implements Runnable {
     }
 
     private void handleDetach(String id) {
-        MonitorAgent agent = attachedAgents.remove(id);
+        Monitor agent = attachedAgents.remove(id);
         if (agent == null) {
             writer.println(AgentResponse.error("agent not found: " + id));
             return;
@@ -149,14 +149,14 @@ public class AgentSession implements Runnable {
         String[] ids = attachedAgents.keySet().toArray(new String[0]);
         String[] states = new String[ids.length];
         for (int i = 0; i < ids.length; i++) {
-            MonitorAgent agent = attachedAgents.get(ids[i]);
+            Monitor agent = attachedAgents.get(ids[i]);
             states[i] = agent.status();
         }
         writer.println(AgentResponse.agents(ids, ids, states));
     }
 
     private void handleStatus(String id) {
-        MonitorAgent agent = attachedAgents.get(id);
+        Monitor agent = attachedAgents.get(id);
         if (agent == null) {
             writer.println(AgentResponse.error("agent not found: " + id));
             return;
@@ -199,7 +199,7 @@ public class AgentSession implements Runnable {
     // ── Extended protocol handlers (Stages 2-5) ─────────────────────
 
     private void handleObserve() {
-        PlayMonitorAgent play = PlayMonitorAgent.INSTANCE;
+        PlayMonitor play = PlayMonitor.INSTANCE;
         if (play == null) {
             writer.println(AgentResponse.state("{\"available\":false}"));
             return;
@@ -213,7 +213,7 @@ public class AgentSession implements Runnable {
     }
 
     private void handleExec(AgentRequest req) {
-        PlayMonitorAgent play = PlayMonitorAgent.INSTANCE;
+        PlayMonitor play = PlayMonitor.INSTANCE;
         if (play == null) {
             writer.println(AgentResponse.result("{\"executed\":false,\"error\":\"play monitor not attached\"}"));
             return;
@@ -222,9 +222,9 @@ public class AgentSession implements Runnable {
     }
 
     private void handlePerfStart(String agentId) {
-        MonitorAgent agent = attachedAgents.get(agentId);
-        if (agent instanceof TracingMonitorAgent) {
-            ((TracingMonitorAgent) agent).perfStart();
+        Monitor agent = attachedAgents.get(agentId);
+        if (agent instanceof TracingMonitor) {
+            ((TracingMonitor) agent).perfStart();
             writer.println(AgentResponse.ok());
         } else {
             writer.println(AgentResponse.error("not a tracing agent: " + agentId));
@@ -232,9 +232,9 @@ public class AgentSession implements Runnable {
     }
 
     private void handlePerfStop(String agentId) {
-        MonitorAgent agent = attachedAgents.get(agentId);
-        if (agent instanceof TracingMonitorAgent) {
-            writer.println(AgentResponse.perf(((TracingMonitorAgent) agent).perfStop()));
+        Monitor agent = attachedAgents.get(agentId);
+        if (agent instanceof TracingMonitor) {
+            writer.println(AgentResponse.perf(((TracingMonitor) agent).perfStop()));
         } else {
             writer.println(AgentResponse.error("not a tracing agent: " + agentId));
         }
@@ -350,7 +350,7 @@ public class AgentSession implements Runnable {
     }
 
     private void cleanup() {
-        for (Map.Entry<String, MonitorAgent> entry : attachedAgents.entrySet()) {
+        for (Map.Entry<String, Monitor> entry : attachedAgents.entrySet()) {
             try {
                 entry.getValue().detach();
             } catch (Exception ignored) {}

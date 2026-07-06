@@ -1,7 +1,7 @@
 package io.stamethyst.agent.monitors;
 
 import io.stamethyst.agent.channel.AgentDataChannel;
-import io.stamethyst.agent.monitors.impl.TracingMonitorAgent;
+import io.stamethyst.agent.monitors.impl.TracingMonitor;
 import org.junit.Test;
 
 import java.lang.instrument.Instrumentation;
@@ -12,46 +12,46 @@ import java.util.Set;
 
 import static org.junit.Assert.*;
 
-public class TracingMonitorAgentTest {
+public class TracingMonitorTest {
 
     @Test
     public void classPatternMatches() {
-        assertTrue(TracingMonitorAgent.matchesPattern("com.megacrit.cardcrawl.cards.DamageCard", "com.megacrit.cardcrawl.cards.*"));
-        assertTrue(TracingMonitorAgent.matchesPattern("com.megacrit.cardcrawl.characters.Ironclad", "com.megacrit.cardcrawl.*"));
-        assertTrue(TracingMonitorAgent.matchesPattern("com.badlogic.gdx.Gdx", "com.badlogic.*"));
+        assertTrue(TracingMonitor.matchesPattern("com.megacrit.cardcrawl.cards.DamageCard", "com.megacrit.cardcrawl.cards.*"));
+        assertTrue(TracingMonitor.matchesPattern("com.megacrit.cardcrawl.characters.Ironclad", "com.megacrit.cardcrawl.*"));
+        assertTrue(TracingMonitor.matchesPattern("com.badlogic.gdx.Gdx", "com.badlogic.*"));
     }
 
     @Test
     public void classPatternNoMatch() {
-        assertFalse(TracingMonitorAgent.matchesPattern("com.megacrit.cardcrawl.cards.DamageCard", "com.badlogic.*"));
-        assertFalse(TracingMonitorAgent.matchesPattern("java.lang.String", "com.megacrit.*"));
+        assertFalse(TracingMonitor.matchesPattern("com.megacrit.cardcrawl.cards.DamageCard", "com.badlogic.*"));
+        assertFalse(TracingMonitor.matchesPattern("java.lang.String", "com.megacrit.*"));
     }
 
     @Test
     public void classPatternExactMatch() {
-        assertTrue(TracingMonitorAgent.matchesPattern("com.megacrit.cardcrawl.cards.DamageCard",
+        assertTrue(TracingMonitor.matchesPattern("com.megacrit.cardcrawl.cards.DamageCard",
             "com.megacrit.cardcrawl.cards.DamageCard"));
-        assertFalse(TracingMonitorAgent.matchesPattern("com.megacrit.cardcrawl.cards.OtherCard",
+        assertFalse(TracingMonitor.matchesPattern("com.megacrit.cardcrawl.cards.OtherCard",
             "com.megacrit.cardcrawl.cards.DamageCard"));
     }
 
     @Test
     public void methodPatternMatches() {
-        assertTrue(TracingMonitorAgent.matchesMethod("render", new String[]{"render", "update"}));
-        assertTrue(TracingMonitorAgent.matchesMethod("update", new String[]{"render", "update"}));
-        assertFalse(TracingMonitorAgent.matchesMethod("dispose", new String[]{"render", "update"}));
+        assertTrue(TracingMonitor.matchesMethod("render", new String[]{"render", "update"}));
+        assertTrue(TracingMonitor.matchesMethod("update", new String[]{"render", "update"}));
+        assertFalse(TracingMonitor.matchesMethod("dispose", new String[]{"render", "update"}));
     }
 
     @Test
     public void nullMethodFilterMeansAllMethods() {
-        assertTrue(TracingMonitorAgent.matchesMethod("anything", null));
-        assertTrue(TracingMonitorAgent.matchesMethod("foo", null));
+        assertTrue(TracingMonitor.matchesMethod("anything", null));
+        assertTrue(TracingMonitor.matchesMethod("foo", null));
     }
 
     @Test
     public void capabilities() {
         StubChannel channel = new StubChannel("test");
-        TracingMonitorAgent agent = new TracingMonitorAgent();
+        TracingMonitor agent = new TracingMonitor();
         Set<MonitorCapability> caps = agent.capabilities();
         assertEquals(1, caps.size());
         assertTrue(caps.contains(MonitorCapability.TRACING));

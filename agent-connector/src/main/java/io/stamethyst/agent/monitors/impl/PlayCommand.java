@@ -1,7 +1,7 @@
 package io.stamethyst.agent.monitors.impl;
 
 /**
- * Commands the PlayMonitorAgent can execute.
+ * Commands the PlayMonitor can execute.
  * Each command may accept a JSON params object with additional detail.
  */
 public enum PlayCommand {

@@ -1,6 +1,6 @@
 package io.stamethyst.agent;
 
-import io.stamethyst.agent.monitors.SpecMonitorRegistry;
+import io.stamethyst.agent.monitors.MonitorRegistry;
 import org.junit.Test;
 
 import java.lang.instrument.ClassDefinition;
@@ -15,7 +15,7 @@ public class AgentConnectorTest {
     @Test
     public void premainRegistersBuiltinMonitors() {
         AgentConnector.premain("port=0", null);
-        SpecMonitorRegistry registry = AgentConnector.getRegistry();
+        MonitorRegistry registry = AgentConnector.getRegistry();
         assertNotNull(registry);
 
         assertTrue(registry.registeredTypes().contains("tracing"));

@@ -1,7 +1,7 @@
 package io.stamethyst.agent.monitors.impl;
 
 import io.stamethyst.agent.channel.AgentDataChannel;
-import io.stamethyst.agent.monitors.MonitorAgent;
+import io.stamethyst.agent.monitors.Monitor;
 import io.stamethyst.agent.monitors.MonitorCapability;
 import io.stamethyst.agent.util.AgentBytecodeBridge;
 import io.stamethyst.agent.util.AsmMethodInterceptor;
@@ -17,7 +17,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Pattern;
 
-public class TracingMonitorAgent implements MonitorAgent, AgentBytecodeBridge.TracingPerfSink {
+public class TracingMonitor implements Monitor, AgentBytecodeBridge.TracingPerfSink {
 
     private static final AtomicInteger COUNTER = new AtomicInteger();
 

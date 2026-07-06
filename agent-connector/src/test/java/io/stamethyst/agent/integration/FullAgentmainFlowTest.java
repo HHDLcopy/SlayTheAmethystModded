@@ -3,9 +3,9 @@ package io.stamethyst.agent.integration;
 import io.stamethyst.agent.AgentConnector;
 import io.stamethyst.agent.channel.AgentDataChannel;
 import io.stamethyst.agent.connection.AgentConnectionManager;
-import io.stamethyst.agent.monitors.MonitorAgent;
-import io.stamethyst.agent.monitors.SpecMonitorRegistry;
-import io.stamethyst.agent.monitors.impl.TracingMonitorAgent;
+import io.stamethyst.agent.monitors.Monitor;
+import io.stamethyst.agent.monitors.MonitorRegistry;
+import io.stamethyst.agent.monitors.impl.TracingMonitor;
 import org.junit.*;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
@@ -31,9 +31,9 @@ public class FullAgentmainFlowTest {
     @Before
     public void setUp() throws Exception {
         fakeInst = new FakeInstrumentation();
-        SpecMonitorRegistry registry = AgentConnector.getRegistry();
+        MonitorRegistry registry = AgentConnector.getRegistry();
         if (registry == null) {
-            registry = new SpecMonitorRegistry();
+            registry = new MonitorRegistry();
             specInit(registry);
         }
         manager = new AgentConnectionManager(registry, fakeInst, 0);
@@ -271,17 +271,17 @@ public class FullAgentmainFlowTest {
         return cw.toByteArray();
     }
 
-    private static void specInit(SpecMonitorRegistry registry) {
-        registry.register("tracing", new SpecMonitorRegistry.MonitorFactory() {
+    private static void specInit(MonitorRegistry registry) {
+        registry.register("tracing", new MonitorRegistry.MonitorFactory() {
             @Override
-            public MonitorAgent create(Instrumentation inst, String argsJson, AgentDataChannel channel) {
-                return new TracingMonitorAgent();
+            public Monitor create(Instrumentation inst, String argsJson, AgentDataChannel channel) {
+                return new TracingMonitor();
             }
         });
-        registry.register("tracing", new SpecMonitorRegistry.MonitorFactory() {
+        registry.register("tracing", new MonitorRegistry.MonitorFactory() {
             @Override
-            public MonitorAgent create(Instrumentation inst, String argsJson, AgentDataChannel channel) {
-                return new io.stamethyst.agent.monitors.impl.TracingMonitorAgent();
+            public Monitor create(Instrumentation inst, String argsJson, AgentDataChannel channel) {
+                return new io.stamethyst.agent.monitors.impl.TracingMonitor();
             }
         });
     }

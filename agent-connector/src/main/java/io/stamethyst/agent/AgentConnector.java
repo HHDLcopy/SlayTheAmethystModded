@@ -1,9 +1,9 @@
 package io.stamethyst.agent;
 
 import io.stamethyst.agent.connection.AgentConnectionManager;
-import io.stamethyst.agent.monitors.impl.PlayMonitorAgent;
-import io.stamethyst.agent.monitors.impl.TracingMonitorAgent;
-import io.stamethyst.agent.monitors.SpecMonitorRegistry;
+import io.stamethyst.agent.monitors.impl.PlayMonitor;
+import io.stamethyst.agent.monitors.impl.TracingMonitor;
+import io.stamethyst.agent.monitors.MonitorRegistry;
 
 import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.Instrumentation;
@@ -14,7 +14,7 @@ public final class AgentConnector {
 
     private static final int DEFAULT_PORT = 9099;
 
-    private static SpecMonitorRegistry registry;
+    private static MonitorRegistry registry;
     private static Instrumentation instrumentation;
     private static AgentConnectionManager connectionManager;
 
@@ -34,7 +34,7 @@ public final class AgentConnector {
         Properties props = parseArgs(agentArgs);
         int port = Integer.parseInt(props.getProperty("port", String.valueOf(DEFAULT_PORT)));
 
-        registry = new SpecMonitorRegistry();
+        registry = new MonitorRegistry();
         registerBuiltinMonitors();
 
         // Capture the first non-agent ClassLoader on any class-load event.
@@ -64,8 +64,8 @@ public final class AgentConnector {
         String premainSpec = props.getProperty("spec");
         if (premainSpec != null && !premainSpec.isEmpty()) {
             try {
-                SpecMonitorRegistry.ParsedSpec parsed = registry.parseSpec(premainSpec);
-                io.stamethyst.agent.monitors.MonitorAgent monitor = registry.create(premainSpec, inst, null);
+                MonitorRegistry.ParsedSpec parsed = registry.parseSpec(premainSpec);
+                io.stamethyst.agent.monitors.Monitor monitor = registry.create(premainSpec, inst, null);
                 if (monitor != null) {
                     String agentId = parsed.prefix + "-premain";
                     io.stamethyst.agent.channel.AgentDataChannel channel =
@@ -91,7 +91,7 @@ public final class AgentConnector {
         premain(agentArgs, inst);
     }
 
-    public static SpecMonitorRegistry getRegistry() {
+    public static MonitorRegistry getRegistry() {
         return registry;
     }
 
@@ -104,17 +104,17 @@ public final class AgentConnector {
     }
 
     private static void registerBuiltinMonitors() {
-        registry.register("tracing", new SpecMonitorRegistry.MonitorFactory() {
+        registry.register("tracing", new MonitorRegistry.MonitorFactory() {
             @Override
-            public io.stamethyst.agent.monitors.MonitorAgent create(Instrumentation inst, String argsJson, io.stamethyst.agent.channel.AgentDataChannel channel) {
-                return new TracingMonitorAgent();
+            public io.stamethyst.agent.monitors.Monitor create(Instrumentation inst, String argsJson, io.stamethyst.agent.channel.AgentDataChannel channel) {
+                return new TracingMonitor();
             }
         });
 
-        registry.register("play", new SpecMonitorRegistry.MonitorFactory() {
+        registry.register("play", new MonitorRegistry.MonitorFactory() {
             @Override
-            public io.stamethyst.agent.monitors.MonitorAgent create(Instrumentation inst, String argsJson, io.stamethyst.agent.channel.AgentDataChannel channel) {
-                return new PlayMonitorAgent();
+            public io.stamethyst.agent.monitors.Monitor create(Instrumentation inst, String argsJson, io.stamethyst.agent.channel.AgentDataChannel channel) {
+                return new PlayMonitor();
             }
         });
     }

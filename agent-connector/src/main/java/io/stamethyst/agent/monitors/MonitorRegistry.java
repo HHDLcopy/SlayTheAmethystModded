@@ -6,10 +6,10 @@ import java.lang.instrument.Instrumentation;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
-public class SpecMonitorRegistry {
+public class MonitorRegistry {
 
     public interface MonitorFactory {
-        MonitorAgent create(Instrumentation inst, String argsJson, AgentDataChannel channel);
+        Monitor create(Instrumentation inst, String argsJson, AgentDataChannel channel);
     }
 
     private final Map<String, MonitorFactory> factories = new ConcurrentHashMap<String, MonitorFactory>();
@@ -18,7 +18,7 @@ public class SpecMonitorRegistry {
         factories.put(typePrefix, factory);
     }
 
-    public MonitorAgent create(String spec, Instrumentation inst, AgentDataChannel channel) {
+    public Monitor create(String spec, Instrumentation inst, AgentDataChannel channel) {
         ParsedSpec parsed = parseSpec(spec);
         MonitorFactory factory = factories.get(parsed.prefix);
         if (factory == null) {

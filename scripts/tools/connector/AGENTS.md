@@ -146,7 +146,7 @@ conn = ConnectorClient()
 conn.connect(); conn.select("localhost:15555")
 stream = conn.connect_stream(port=9099)
 stream.write(b"LIST\n")
-print(stream.readline())  # "AGENTS ..."
+print(stream.readline())  # "MONITORS ..."
 stream.close()
 ```
 

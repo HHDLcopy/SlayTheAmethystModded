@@ -57,7 +57,7 @@ class TestConnectStreamIntegration(unittest.TestCase):
         stream.write(b"LIST\n")
         time.sleep(1)
         data = stream.read(4096)
-        self.assertIn(b"MONITORS", data, f"Expected AGENTS, got: {data}")
+        self.assertIn(b"MONITORS", data, f"Expected MONITORS, got: {data}")
         stream.close()
 
 

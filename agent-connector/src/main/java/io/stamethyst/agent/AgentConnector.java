@@ -1,11 +1,6 @@
 package io.stamethyst.agent;
 
 import io.stamethyst.agent.connection.AgentConnectionManager;
-import io.stamethyst.agent.monitors.impl.BytecodeDumpAgent;
-import io.stamethyst.agent.monitors.impl.ClassMonitorAgent;
-import io.stamethyst.agent.monitors.impl.GcMonitorAgent;
-import io.stamethyst.agent.monitors.impl.StateMonitorAgent;
-import io.stamethyst.agent.monitors.impl.ThreadMonitorAgent;
 import io.stamethyst.agent.monitors.impl.PlayMonitorAgent;
 import io.stamethyst.agent.monitors.impl.TracingMonitorAgent;
 import io.stamethyst.agent.monitors.SpecMonitorRegistry;
@@ -113,41 +108,6 @@ public final class AgentConnector {
             @Override
             public io.stamethyst.agent.monitors.MonitorAgent create(Instrumentation inst, String argsJson, io.stamethyst.agent.channel.AgentDataChannel channel) {
                 return new TracingMonitorAgent();
-            }
-        });
-
-        registry.register("state", new SpecMonitorRegistry.MonitorFactory() {
-            @Override
-            public io.stamethyst.agent.monitors.MonitorAgent create(Instrumentation inst, String argsJson, io.stamethyst.agent.channel.AgentDataChannel channel) {
-                return new StateMonitorAgent();
-            }
-        });
-
-        registry.register("thread", new SpecMonitorRegistry.MonitorFactory() {
-            @Override
-            public io.stamethyst.agent.monitors.MonitorAgent create(Instrumentation inst, String argsJson, io.stamethyst.agent.channel.AgentDataChannel channel) {
-                return new ThreadMonitorAgent();
-            }
-        });
-
-        registry.register("gc", new SpecMonitorRegistry.MonitorFactory() {
-            @Override
-            public io.stamethyst.agent.monitors.MonitorAgent create(Instrumentation inst, String argsJson, io.stamethyst.agent.channel.AgentDataChannel channel) {
-                return new GcMonitorAgent();
-            }
-        });
-
-        registry.register("class", new SpecMonitorRegistry.MonitorFactory() {
-            @Override
-            public io.stamethyst.agent.monitors.MonitorAgent create(Instrumentation inst, String argsJson, io.stamethyst.agent.channel.AgentDataChannel channel) {
-                return new ClassMonitorAgent();
-            }
-        });
-
-        registry.register("dumpbytecode", new SpecMonitorRegistry.MonitorFactory() {
-            @Override
-            public io.stamethyst.agent.monitors.MonitorAgent create(Instrumentation inst, String argsJson, io.stamethyst.agent.channel.AgentDataChannel channel) {
-                return new BytecodeDumpAgent();
             }
         });
 

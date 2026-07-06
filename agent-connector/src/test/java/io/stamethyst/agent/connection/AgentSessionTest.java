@@ -238,6 +238,6 @@ public class AgentSessionTest {
         @Override public void attach(Instrumentation inst, String agentArgs, AgentDataChannel channel) {}
         @Override public void detach() { attached = false; }
         @Override public String status() { return attached ? status : "detached"; }
-        @Override public Set<MonitorCapability> capabilities() { return EnumSet.of(MonitorCapability.STATE); }
+        @Override public Set<MonitorCapability> capabilities() { return EnumSet.of(MonitorCapability.TRACING); }
     }
 }

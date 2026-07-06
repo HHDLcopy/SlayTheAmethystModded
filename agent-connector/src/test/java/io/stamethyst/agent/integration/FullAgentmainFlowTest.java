@@ -5,7 +5,6 @@ import io.stamethyst.agent.channel.AgentDataChannel;
 import io.stamethyst.agent.connection.AgentConnectionManager;
 import io.stamethyst.agent.monitors.MonitorAgent;
 import io.stamethyst.agent.monitors.SpecMonitorRegistry;
-import io.stamethyst.agent.monitors.impl.StateMonitorAgent;
 import io.stamethyst.agent.monitors.impl.TracingMonitorAgent;
 import org.junit.*;
 import org.objectweb.asm.ClassWriter;
@@ -279,10 +278,10 @@ public class FullAgentmainFlowTest {
                 return new TracingMonitorAgent();
             }
         });
-        registry.register("state", new SpecMonitorRegistry.MonitorFactory() {
+        registry.register("tracing", new SpecMonitorRegistry.MonitorFactory() {
             @Override
             public MonitorAgent create(Instrumentation inst, String argsJson, AgentDataChannel channel) {
-                return new StateMonitorAgent();
+                return new io.stamethyst.agent.monitors.impl.TracingMonitorAgent();
             }
         });
     }

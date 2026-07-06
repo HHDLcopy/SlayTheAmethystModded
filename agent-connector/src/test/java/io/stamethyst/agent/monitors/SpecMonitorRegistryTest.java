@@ -40,25 +40,24 @@ public class SpecMonitorRegistryTest {
                 @Override public void attach(Instrumentation inst, String agentArgs, AgentDataChannel channel) {}
                 @Override public void detach() {}
                 @Override public String status() { return "ok"; }
-                @Override public Set<MonitorCapability> capabilities() { return EnumSet.of(MonitorCapability.STATE); }
+                @Override public Set<MonitorCapability> capabilities() { return EnumSet.of(MonitorCapability.TRACING); }
             };
         });
 
         MonitorAgent agent = registry.create("mock", null, null);
         assertNotNull(agent);
         assertTrue(created.get());
-        assertEquals(EnumSet.of(MonitorCapability.STATE), agent.capabilities());
+        assertEquals(EnumSet.of(MonitorCapability.TRACING), agent.capabilities());
     }
 
     @Test
     public void registerMultipleMonitors() {
         registry.register("tracing", (inst, args, channel) -> new StubMonitor("tracing", MonitorCapability.TRACING));
-        registry.register("state", (inst, args, channel) -> new StubMonitor("state", MonitorCapability.STATE));
-        registry.register("gc", (inst, args, channel) -> new StubMonitor("gc", MonitorCapability.GC));
+        registry.register("state", (inst, args, channel) -> new StubMonitor("state", MonitorCapability.TRACING));
+        registry.register("tracing2", (inst, args, channel) -> new StubMonitor("gc", MonitorCapability.TRACING));
 
         assertNotNull(registry.create("tracing", null, null));
-        assertNotNull(registry.create("state", null, null));
-        assertNotNull(registry.create("gc", null, null));
+        assertNotNull(registry.create("tracing2", null, null));
     }
 
     @Test(expected = IllegalArgumentException.class)
@@ -69,7 +68,7 @@ public class SpecMonitorRegistryTest {
     @Test
     public void listRegisteredTypes() {
         registry.register("tracing", (inst, args, channel) -> new StubMonitor("t", MonitorCapability.TRACING));
-        registry.register("state", (inst, args, channel) -> new StubMonitor("s", MonitorCapability.STATE));
+        registry.register("tracing2", (inst, args, channel) -> new StubMonitor("s", MonitorCapability.TRACING));
 
         Set<String> types = registry.registeredTypes();
         assertTrue(types.contains("tracing"));
@@ -80,7 +79,7 @@ public class SpecMonitorRegistryTest {
     @Test
     public void duplicateRegisterReplace() {
         AtomicBoolean secondCalled = new AtomicBoolean(false);
-        registry.register("dup", (inst, args, channel) -> new StubMonitor("old", MonitorCapability.STATE));
+        registry.register("dup", (inst, args, channel) -> new StubMonitor("old", MonitorCapability.TRACING));
         registry.register("dup", (inst, args, channel) -> {
             secondCalled.set(true);
             return new StubMonitor("new", MonitorCapability.TRACING);

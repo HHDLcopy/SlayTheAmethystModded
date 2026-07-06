@@ -61,23 +61,22 @@ public class TcpDataChannelTest {
 
     @Test
     public void getAgentId() {
-        Set<MonitorCapability> caps = EnumSet.of(MonitorCapability.STATE);
+        Set<MonitorCapability> caps = EnumSet.of(MonitorCapability.TRACING);
         TcpDataChannel channel = new TcpDataChannel(null, "my-agent-3", caps);
         assertEquals("my-agent-3", channel.getAgentId());
     }
 
     @Test
     public void getCapabilities() {
-        Set<MonitorCapability> caps = EnumSet.of(MonitorCapability.GC, MonitorCapability.THREAD);
+        Set<MonitorCapability> caps = EnumSet.of(MonitorCapability.TRACING);
         TcpDataChannel channel = new TcpDataChannel(null, "gc-agent", caps);
         assertEquals(caps, channel.getCapabilities());
-        assertTrue(channel.getCapabilities().contains(MonitorCapability.GC));
-        assertTrue(channel.getCapabilities().contains(MonitorCapability.THREAD));
+        assertTrue(channel.getCapabilities().contains(MonitorCapability.TRACING));
     }
 
     @Test
     public void sendDoesNotThrowOnClosedSocket() {
-        Set<MonitorCapability> caps = EnumSet.of(MonitorCapability.CLASS);
+        Set<MonitorCapability> caps = EnumSet.of(MonitorCapability.TRACING);
         TcpDataChannel channel = new TcpDataChannel(null, "test-2", caps);
         channel.send("test-2", "{}");
     }

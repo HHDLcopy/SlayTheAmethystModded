@@ -145,9 +145,9 @@ python -m scripts.tools.arthas stop
 | `dashboard -i 1 -n 1` | 实时 CPU/内存面板 |
 | `sc -d <class>` | 类搜索 |
 | `ognl @Class@method(args)` | 运行时表达式执行（需单引号包裹 `'...'`） |
-| `watch <class> <method> '{params,returnObj}' -n 1` | listenerId 注册成功，游戏类 Enhanced 可用 |
-| `trace -n 1 <class> <method>` | 命令引擎正常，类增强受 ClassLoader 隔离限制 |
-| `monitor -c 1 -n 1 <class> <method>` | 同 trace |
+| `watch <class> <method> '{params,returnObj}' -n 1` | 命令可用，增强是否成功取决于目标类的依赖链。简单类（如 AbstractDungeon.getCurrRoom）增强成功；复杂类（如 CardCrawlGame.render 引用 BuildSettings）增强失败 |
+| `trace -n 1 <class> <method>` | 同 watch — 字节码增强受 ClassLoader 隔离限制，不可用 `-c` 解决 |
+| `monitor -c 1 -n 1 <class> <method>` | 同 trace（monitor 的 `-c` 是循环次数，非 ClassLoader hash） |
 | `heapdump <path>` | 堆转储 OK（需写 app 私有目录 `/data/data/io.stamethyst/files/`） |
 | `jad <class>` | ✅ 反编译（BuiltinCommandPack 内置，链路已验证）。游戏类需 `-c <classLoaderHash>` |
 ## 停止流程
@@ -163,7 +163,26 @@ stream.close()
 - `reset` 命令撤销所有 Arthas 的 instrument，不影响 game-probe 的 transformer
 - arthas-bridge 使用 `java.net.ServerSocket`，不依赖 Netty
 - Connector daemon 需先启动
-- 在自定义 ClassLoader 中使用 `jad`/`sc` 需要指定 `-c <classloader-hash>`
+
+### ClassLoader 隔离与 `-c` 参数
+
+| 命令 | `-c` 含义 | 用途 |
+|------|-----------|------|
+| `jad -c <hash>` | ClassLoader hash | 指定从哪个 ClassLoader 反编译类 |
+| `sc -d <class>` | — | 列出的 `classLoaderHash` 用于配合 jad |
+| `monitor -c <n>` | 循环次数 | 统计汇报间隔，与 ClassLoader 无关 |
+| `trace` / `watch` | 无 `-c` 参数 | — |
+
+**字节码增强命令（`trace`/`watch`/`monitor`）的 ClassLoader 限制：**
+
+Arthas 在增强游戏类时需要解析目标类的所有类型引用。如果引用链路中包含 Arthas
+系统 ClassLoader 无法访问的类（如在 MTSClassLoader 中的 `BuildSettings`），
+增强会失败（`TypeNotPresentException`）。这是字节码 transforms 的固有限制，
+无法用 `-c` 解决 — `-c` 仅适用于 jad 的类字节码反编译路径。
+
+**简单类增强成功，复杂引用链类失败。** 实测：
+- `AbstractDungeon.getCurrRoom` ✅ 成功
+- `CardCrawlGame.render`（引用 `BuildSettings`）❌ 失败
 
 ## Arthas vs 现有功能对照
 

@@ -112,7 +112,7 @@ public class FullAgentmainFlowTest {
 
         String id1 = client.sendAttach("tracing@classes=com.example.A");
         String id2 = client.sendAttach("tracing@classes=com.example.B");
-        String id3 = client.sendAttach("state");
+        String id3 = client.sendAttach("play");
 
         String list = client.send("LIST");
         assertTrue(list.contains(id1));

@@ -63,6 +63,39 @@ public final class AutoplayHook {
         } catch (Throwable ignored) {}
     }
 
+    public static void playCardTargeted(int cardIndex, int monsterIndex) {
+        try {
+            Object player = ReflectionUtil.getStaticField(
+                "com.megacrit.cardcrawl.dungeons.AbstractDungeon", "player");
+            if (player == null) return;
+            Object hand = ReflectionUtil.getField(player, "hand");
+            if (hand == null) return;
+            List<?> handGroup = (List<?>) ReflectionUtil.getField(hand, "group");
+            if (handGroup == null || handGroup.isEmpty()) return;
+            Object room = ReflectionUtil.invokeStatic(
+                "com.megacrit.cardcrawl.dungeons.AbstractDungeon", "getCurrRoom");
+            Object monsters = ReflectionUtil.getField(room, "monsters");
+            if (monsters == null) return;
+            List<?> monsterList = (List<?>) ReflectionUtil.getField(monsters, "monsters");
+            if (monsterList == null || monsterList.isEmpty()) return;
+            if (cardIndex < 0 || cardIndex >= handGroup.size()) { playRandomCard(); return; }
+            Object card = handGroup.get(cardIndex);
+            Object target = (monsterIndex >= 0 && monsterIndex < monsterList.size())
+                ? monsterList.get(monsterIndex) : pickRandomAlive(monsterList);
+            if (target == null) return;
+            Class<?> ap = g("com.megacrit.cardcrawl.characters.AbstractPlayer");
+            Class<?> am = g("com.megacrit.cardcrawl.monsters.AbstractMonster");
+            Class<?> ac = g("com.megacrit.cardcrawl.cards.AbstractCard");
+            if (ap == null || am == null || ac == null) return;
+            boolean canUse = (Boolean) card.getClass()
+                .getMethod("canUse", ap, am).invoke(card, player, target);
+            if (!canUse) return;
+            int energy = getEnergy();
+            player.getClass().getMethod("useCard", ac, am, int.class)
+                .invoke(player, card, target, energy);
+        } catch (Throwable ignored) {}
+    }
+
     public static void endTurn() {
         try {
             Object am = ReflectionUtil.getStaticField(

@@ -122,6 +122,11 @@ public class PlayMonitor implements Monitor {
                 case PLAY_CARD:
                     AutoplayHook.playRandomCard();
                     break;
+                case PLAY_CARD_TARGETED:
+                    int cardIdx = extractIntParam(paramsJson, "cardIndex", 0);
+                    int monsterIdx = extractIntParam(paramsJson, "monsterIndex", 0);
+                    AutoplayHook.playCardTargeted(cardIdx, monsterIdx);
+                    break;
                 case END_TURN:
                     AutoplayHook.endTurn();
                     break;
@@ -153,11 +158,14 @@ public class PlayMonitor implements Monitor {
                         }
                     } catch (Exception ignored) {}
                     break;
-                default:
-                    // Unimplemented commands — log and continue
+                case SELECT_MAP_NODE:
+                case SELECT_BOSS:
+                case CHOOSE_CHARACTER:
+                case EMBARK:
+                case RETURN_TO_MENU:
                     if (channel != null) {
-                        String json = "{\"type\":\"exec_unsupported\",\"command\":\"" + escape(cmd.name()) + "\"}";
-                        channel.send(channel.getAgentId(), json);
+                        channel.send(channel.getAgentId(),
+                            "{\"type\":\"exec_unsupported\",\"command\":\"" + escape(cmd.name()) + "\"}");
                     }
                     break;
             }

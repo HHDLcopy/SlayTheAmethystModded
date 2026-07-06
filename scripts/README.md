@@ -112,9 +112,42 @@ python scripts/tools/main.py sts-harness -Command smoke -Autoplay -DisableCardOb
 Harness output is always written to `result.json`. The `mods` and `set-mods` commands add `deviceMods`; `set-mods` also adds `modSelection`. Autoplay now also logs and auto-resolves `CardRewardScreen` discovery/card reward pages. `single-room` writes the pushed spec to `artifacts.singleRoomSpec`, waits for a `[amethyst-autoplay] single_room result ...` line in `latest.log`, stores it at `statusSnapshot.latestLog.singleRoomResult`, exports logs, and then stops the app.
 `startup-cache-profile` writes a top-level `startupCacheProfile` summary and a `startup-cache-profile-summary.json` artifact. Each phase also gets its own subdirectory with `result.json`, logs, logcat, cache state before/after, detected cache mode, and extracted timing evidence from `latest.log`.
 
+## Architecture
+
+The tools directory is organized into modular components, each with single
+responsibility:
+
+| Module | Role |
+|--------|------|
+| `connector/` | 常驻守护进程，设备连接管理、TCP 透传代理、adb 命令代理 |
+| `lib/agent_client.py` | agent-connector 协议客户端（通过 connector.connect_stream 通信） |
+| `arthas/` | Arthas JVM 诊断工具集成（通过 connector + arthas-bridge） |
+| `harness/` | 高层编排（build, install, smoke, single-room, startup-cache） |
+| `autoplay/` | 游戏自动化控制 |
+| `monitor/` | 日志采集、截图、文件拉取 |
+
+各模块通过 `connector` daemon 访问设备，**不直接调用 adb**，**不直接开 TCP 连接**。
+详见各模块目录下的 `README.md` 和 `AGENTS.md`。
+
+```
+harness / arthas / autoplay / monitor
+        │
+        ▼
+   ┌─────────────┐
+   │  connector  │  ← Unix socket ~/.sts/connector.sock (daemon)
+   └──────┬──────┘
+          │ adb
+          ▼
+    Android Device
+    ├── agent-connector (:9099)   ← OBSERVE / EXEC / LOAD_AGENT
+    └── arthas-bridge    (:8099)  ← ArthasBootstrapCompat (无 Netty)
+```
+
 Implementation files:
 
 - `scripts/tools/main.py`: thin tools entrypoint.
-- `scripts/tools/lib/sts_harness_cli.py`: parses harness arguments.
-- `scripts/tools/lib/sts_harness.py`: implements Android device selection, Gradle/adb calls, log capture, screenshots, status detection, smoke runs, and `result.json` output.
-- `scripts/tools/lib/device_mods.py`: lists device mods, resolves requested optional mod tokens, and writes `enabled_mods.txt`.
+- `scripts/tools/connector/`: 设备通信守护进程及其客户端库。
+- `scripts/tools/lib/agent_client.py`: 统一 agent-connector TCP 协议客户端。
+- `scripts/tools/lib/sts_harness_cli.py`: 遗留 harness CLI 解析器（将被 harness/ 模块替代）。
+- `scripts/tools/lib/sts_harness.py`: 遗留 harness 实现（将被 harness/ 模块替代）。
+- `scripts/tools/lib/device_mods.py`: 列出设备 mod、解析可选 mod token、写入 `enabled_mods.txt`。

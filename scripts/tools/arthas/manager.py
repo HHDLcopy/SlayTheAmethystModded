@@ -25,7 +25,7 @@ class ArthasManager:
     Usage:
         mgr = ArthasManager(connector=conn, agent_client=agent)
         mgr.start()
-        # ... use HTTP :8563 or telnet :3658 ...
+        # ... use shell/query or connect_stream(:8099) ...
         mgr.stop()
     """
 
@@ -33,11 +33,7 @@ class ArthasManager:
         self._conn = connector
         self._agent = agent_client
 
-    def start(
-        self,
-        http_port: int = 8563,
-        telnet_port: int = 3658,
-    ) -> None:
+    def start(self, port: int = 8099) -> None:
         # 1. Push JARs to device (idempotent)
         for jar_name, has_agent_class in _JARS:
             local = str(_RESOURCE_DIR / jar_name)
@@ -51,11 +47,11 @@ class ArthasManager:
         self._agent.send("LOAD_AGENT " + core_path)
         self._agent.load_agent(
             agent_path,
-            f"{core_path};port={telnet_port}",
+            f"{core_path};port={port}",
         )
 
         # 3. Forward bridge port
-        self._conn.forward(port=telnet_port)
+        self._conn.forward(port=port)
 
-    def stop(self, telnet_port: int = 3658) -> None:
-        self._conn.unforward(port=telnet_port)
+    def stop(self, port: int = 8099) -> None:
+        self._conn.unforward(port=port)

@@ -5,7 +5,7 @@ import org.objectweb.asm.*;
 import java.lang.instrument.ClassFileTransformer;
 import java.security.ProtectionDomain;
 
-class ClassMetaClassWriterTransformer implements ClassFileTransformer {
+public class ClassMetaClassWriterTransformer implements ClassFileTransformer {
 
     private static final String TARGET = "com/alibaba/bytekit/asm/ClassMetaClassWriter";
 

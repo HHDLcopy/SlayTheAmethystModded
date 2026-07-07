@@ -279,6 +279,23 @@ MTS ClassLoader 隔离会导致 ASM 的 `ClassWriter.getCommonSuperClass()` 解�
 | `mc` | Android JRE 缺少 `tools.jar`（JDK 编译器）。替代方案：本地 `javac` → `adb push` → `retransform` |
 | `profiler` | Android 平台缺少 `libasyncProfiler.so`（`perf_event_open` 非所有设备/内核均支持）。替代方案：`dashboard`、`trace`、`heapdump` 代替 |
 
+### 线程 CPU 使用率（`/proc/self/task` fallback）
+
+Android ART 的 `ThreadMXBean.getThreadCpuTime()` 默认返回 0 或 -1，导致 `dashboard`
+和 `thread -n N` 的 %CPU 始终为 0。Bridge 启动时会自动加载 JNI 库
+`libprocfs_cpu.so` 并通过动态代理注入 `ThreadSampler`：当 JVM 返回无效值时
+fallback 读取 `/proc/self/task/<tid>/stat` 的 utime+stime 字段来获取真实线程
+CPU 时间。
+
+**构建 .so**：`scripts/tools/arthas/build-procfs-so.sh`（需要 NDK 27+，target aarch64）
+
+**部署**：`.so` 由 bridge
+自动从 `/data/data/io.stamethyst/files/libprocfs_cpu.so` 加载，需通过 `adb push`
+部署一次。
+
+> 注意：首次 push `.so` 后需要 `chown u0_a81:u0_a81` 和 `chmod 755`，否则
+> `System.load` 会被 SELinux 拒绝。
+
 ### heapdump
 
 堆转储路径必须是应用私有目录（`/data/data/io.stamethyst/files/`），

@@ -53,6 +53,8 @@ public class ArthasCommandBridge {
             java.net.ServerSocket server = new java.net.ServerSocket(port);
             log("listening on " + port);
 
+            setupProcFSFallback();
+
             while (true) {
                 java.net.Socket client = server.accept();
                 log("client connected");
@@ -62,6 +64,13 @@ public class ArthasCommandBridge {
         } catch (Throwable e) {
             log("START FAILED: " + e);
             e.printStackTrace(logger);
+        }
+    }
+
+    private static void setupProcFSFallback() {
+        ProcFSBridge.ensureLoaded();
+        if (ProcFSBridge.isLoaded()) {
+            ProcFSThreadCpuPatch.install();
         }
     }
 

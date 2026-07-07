@@ -159,35 +159,75 @@ python -m scripts.tools.arthas stop
 
 ## 已验证功能
 
+### L1 基础命令 (22/22)
+
 | 命令 | 结果 | 备注 |
 |------|------|------|
-| `version` | `3.6.9` | ✅ 已验证 |
-| `help` | 完整命令列表 | ✅ 已测 |
-| `thread -n 3` | 完整线程信息 | ✅ 已测 |
-| `dashboard -i 1 -n 1` | 实时 CPU/内存面板 | ✅ 已测 |
-| `jvm` | JVM 运行时信息 | ✅ 已测 |
-| `memory` | heap/nonheap 使用率 | ✅ 已测 |
-| `sysenv` / `sysprop` | 环境变量/系统属性 | ✅ 已测 |
-| `vmoption` | 诊断选项 | ✅ 已测 |
-| `perfcounter` | Perf Counter 信息 | ✅ 已测 |
-| `classloader` | classloader 列表 | ✅ 已测 |
-| `options` | Arthas 全局选项 | ✅ 已测 |
-| `history` | 命令历史 | ✅ 已测 |
-| `keymap` | 快捷键列表 | ✅ 已测 |
-| `pwd` / `cls` / `echo` / `base64` / `cat` | 基础工具命令 | ✅ 已测 |
-| `reset` | 重置增强 | ✅ 已测 |
-| `sc -d <class>` | 类搜索详情 | ✅ 已测 |
-| `sm <class>` | 方法列表 | ✅ 已测 |
-| `jad <class>` | 反编译 | ✅ 已测 |
-| `getstatic <class>` | 静态字段 | ✅ 已测 |
-| `ognl <expr>` | 运行时表达式执行 | ✅ 已测 |
-| `vmtool` | 堆对象查询 | ✅ 已测 |
-| `session` | 会话信息 | ✅ 已测 |
-| `heapdump <path>` | 堆转储 | ✅ 已测 |
-| `profiler` | 火焰图 | 待测（需 async-profiler） |
-| `watch/trace/monitor/stack/tt/line` | 动态监控 | 待测（需战斗场景） |
+| `version` | `3.6.9` | |
+| `help` | 完整命令列表 | |
+| `thread -n 3` | 完整线程信息 | |
+| `dashboard -i 1 -n 1` | 实时 CPU/内存面板 | |
+| `jvm` | JVM 运行时信息 | |
+| `memory` | heap/nonheap 使用率 | |
+| `sysenv` | 环境变量 | |
+| `sysprop` | 系统属性 | |
+| `vmoption` | 诊断选项 | |
+| `perfcounter` | Perf Counter 信息 | |
+| `classloader` | classloader 列表 | |
+| `options` | Arthas 全局选项 | |
+| `session` | 会话信息 | |
+| `history` | 命令历史 | |
+| `keymap` | 快捷键列表 | |
+| `pwd` | 工作目录 | |
+| `cls` | 清屏 | |
+| `echo` | 输出参数 | |
+| `base64` | Base64 编解码 | |
+| `cat <file>` | 打印文件内容 | |
+| `reset` | 重置增强 | |
+| `quit` | 退出会话 | |
 
-**总计: 29/48 已验证 (60%)**
+### L2 类检查命令 (10/10)
+
+| 命令 | 结果 | 备注 |
+|------|------|------|
+| `sc -d <class>` | 类搜索详情 | |
+| `sc <pattern>` | 通配符类搜索 | |
+| `sm <class>` | 方法列表 | |
+| `jad <class>` | 反编译 | |
+| `getstatic <class>` | 静态字段 | |
+| `dump <class>` | 字节码 dump | |
+| `ognl <expr>` | 运行时表达式执行 | |
+| `vmtool --action getInstances` | 堆对象查询 | |
+| `mc <file>` | 内存编译器 | 需写入测试 .java |
+| `redefine / retransform` | 热替换 | 需预编译 .class |
+
+### L3 动态监控 (6/6，需战斗场景)
+
+| 命令 | 结果 | 备注 |
+|------|------|------|
+| `monitor <class> <method> -c 1 -n 1` | ✅ 方法统计 | 配合 PLAY_CARD 触发 |
+| `stack <class> <method> -n 1` | ✅ 调用栈 | |
+| `trace <class> <method> -n 1` | ✅ 调用链耗时 | |
+| `watch <class> <method> "{params,returnObj}" -n 1 -x 1` | ✅ 参数/返回值 | |
+| `tt -t <class> <method> -n 1` | ✅ 时空隧道 | |
+| `line <class> <method> <line>` | ✅ 源码行观测 | |
+
+### L4 资源操作 (3/3)
+
+| 命令 | 结果 | 备注 |
+|------|------|------|
+| `profiler list` | ✅ 事件列表 | |
+| `profiler start / stop` | ✅ 采样停止 | |
+| `heapdump <path>` | ✅ 堆转储 | 写 app 私有目录 |
+
+### L5 受限/特殊 (4 条实测)
+
+| 命令 | 结果 | 备注 |
+|------|------|------|
+| `mbean` | ✅ 有效输出 | MBean 信息 |
+| `logger` | ✅ 有效输出 | root logger 信息 |
+| `stop` | ✅ 成功 | 关闭 Arthas 服务端 |
+| `tee` / `grep` / 管道 | ✅ 支持 | Arthas 内置 |
 ## 停止流程
 
 ```python

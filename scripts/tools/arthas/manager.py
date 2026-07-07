@@ -15,8 +15,7 @@ _RESOURCE_DIR = Path(__file__).resolve().parent / "resource"
 
 _JARS = [
     ("arthas-core.jar", False),
-    ("arthas-spy.jar", False),
-    ("arthas-agent.jar", True),
+    ("arthas-bridge.jar", True),
 ]
 
 
@@ -45,19 +44,18 @@ class ArthasManager:
             remote = f"{_ARTHAS_DIR}/{jar_name}"
             self._conn.push(local=local, remote=remote)
 
-        # 2. Load agent via isolated ClassLoader → agentmain →
-        #    then append to system classpath
+        # 2. Load core.jar into system classpath (no Agent-Class),
+        #    then load bridge agent via isolated classloader → agentmain
         core_path = f"{_ARTHAS_DIR}/arthas-core.jar"
-        agent_path = f"{_ARTHAS_DIR}/arthas-agent.jar"
+        agent_path = f"{_ARTHAS_DIR}/arthas-bridge.jar"
+        self._agent.send("LOAD_AGENT " + core_path)
         self._agent.load_agent(
             agent_path,
-            f"{core_path};http-port={http_port};telnet-port={telnet_port}",
+            f"{core_path};port={telnet_port}",
         )
 
-        # 3. Forward ports
-        self._conn.forward(port=http_port)
+        # 3. Forward bridge port
         self._conn.forward(port=telnet_port)
 
-    def stop(self, http_port: int = 8563, telnet_port: int = 3658) -> None:
-        self._conn.unforward(port=http_port)
+    def stop(self, telnet_port: int = 3658) -> None:
         self._conn.unforward(port=telnet_port)

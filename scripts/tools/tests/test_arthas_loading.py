@@ -57,11 +57,13 @@ class TestArthasIsolatedLoading(unittest.TestCase):
             agent = AgentClient(connector=conn, port=9099)
             agent.connect()
 
+            agent.send(
+                "LOAD_AGENT /data/data/io.stamethyst/files/arthas/arthas-core.jar")
             r1 = agent.send(
-                "LOAD_AGENT /data/data/io.stamethyst/files/arthas-agent.jar "
-                "/data/data/io.stamethyst/files/arthas-core.jar"
+                "LOAD_AGENT /data/data/io.stamethyst/files/arthas/arthas-bridge.jar "
+                "port=8099"
             )
-            self.assertEqual(r1, "OK", f"agent load failed: {r1}")
+            self.assertEqual(r1, "OK", f"bridge load failed: {r1}")
 
             time.sleep(5)
             logs = conn.shell(

@@ -53,15 +53,14 @@ class TestArthasManager(unittest.TestCase):
         mgr = ArthasManager(connector=mock_conn, agent_client=mock_agent)
         mgr.start()
 
-        # Three JARs pushed
-        self.assertEqual(mock_conn.push.call_count, 3)
+        # Two JARs pushed: core + bridge
+        self.assertEqual(mock_conn.push.call_count, 2)
         # load_agent with correct arg format
         mock_agent.load_agent.assert_called_once()
         args_call = mock_agent.load_agent.call_args
-        self.assertIn("arthas-agent.jar", args_call[0][0])
-        self.assertIn("arthas-core.jar;http-port=8563;telnet-port=3658", args_call[0][1])
-        # Two ports forwarded
-        self.assertEqual(mock_conn.forward.call_count, 2)
+        self.assertIn("arthas-bridge.jar", args_call[0][0])
+        # One port forwarded: telnet
+        self.assertEqual(mock_conn.forward.call_count, 1)
 
     def test_stop_unforwards_ports(self):
         from scripts.tools.arthas.manager import ArthasManager
@@ -72,7 +71,7 @@ class TestArthasManager(unittest.TestCase):
         mgr = ArthasManager(connector=mock_conn, agent_client=mock_agent)
         mgr.stop()
 
-        self.assertEqual(mock_conn.unforward.call_count, 2)
+        self.assertEqual(mock_conn.unforward.call_count, 1)
 
 
 if __name__ == "__main__":

@@ -159,18 +159,35 @@ python -m scripts.tools.arthas stop
 
 ## 已验证功能
 
-| 命令 | 结果 |
-|------|------|
-| `version` | `3.6.9` |
-| `thread -n 3` | 完整线程信息 |
-| `dashboard -i 1 -n 1` | 实时 CPU/内存面板 |
-| `sc -d <class>` | 类搜索 |
-| `ognl @Class@method(args)` | 运行时表达式执行（需单引号包裹 `'...'`） |
-| `watch <class> <method> '{params,returnObj}' -n 1` | ✅ 可用（已修复 ClassLoader 隔离，见下文） |
-| `trace -n 1 <class> <method>` | ✅ 可用 |
-| `monitor -c 1 -n 1 <class> <method>` | ✅ 可用 |
-| `heapdump <path>` | 堆转储 OK（需写 app 私有目录 `/data/data/io.stamethyst/files/`） |
-| `jad <class>` | ✅ 反编译（BuiltinCommandPack 内置，链路已验证）。游戏类需 `-c <classLoaderHash>` |
+| 命令 | 结果 | 备注 |
+|------|------|------|
+| `version` | `3.6.9` | ✅ 已验证 |
+| `help` | 完整命令列表 | ✅ 已测 |
+| `thread -n 3` | 完整线程信息 | ✅ 已测 |
+| `dashboard -i 1 -n 1` | 实时 CPU/内存面板 | ✅ 已测 |
+| `jvm` | JVM 运行时信息 | ✅ 已测 |
+| `memory` | heap/nonheap 使用率 | ✅ 已测 |
+| `sysenv` / `sysprop` | 环境变量/系统属性 | ✅ 已测 |
+| `vmoption` | 诊断选项 | ✅ 已测 |
+| `perfcounter` | Perf Counter 信息 | ✅ 已测 |
+| `classloader` | classloader 列表 | ✅ 已测 |
+| `options` | Arthas 全局选项 | ✅ 已测 |
+| `history` | 命令历史 | ✅ 已测 |
+| `keymap` | 快捷键列表 | ✅ 已测 |
+| `pwd` / `cls` / `echo` / `base64` / `cat` | 基础工具命令 | ✅ 已测 |
+| `reset` | 重置增强 | ✅ 已测 |
+| `sc -d <class>` | 类搜索详情 | ✅ 已测 |
+| `sm <class>` | 方法列表 | ✅ 已测 |
+| `jad <class>` | 反编译 | ✅ 已测 |
+| `getstatic <class>` | 静态字段 | ✅ 已测 |
+| `ognl <expr>` | 运行时表达式执行 | ✅ 已测 |
+| `vmtool` | 堆对象查询 | ✅ 已测 |
+| `session` | 会话信息 | ✅ 已测 |
+| `heapdump <path>` | 堆转储 | ✅ 已测 |
+| `profiler` | 火焰图 | 待测（需 async-profiler） |
+| `watch/trace/monitor/stack/tt/line` | 动态监控 | 待测（需战斗场景） |
+
+**总计: 29/48 已验证 (60%)**
 ## 停止流程
 
 ```python

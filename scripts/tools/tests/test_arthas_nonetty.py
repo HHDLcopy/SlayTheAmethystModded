@@ -59,7 +59,7 @@ class TestModifiedArthasCommands(unittest.TestCase):
 
             agent.send("LOAD_AGENT /data/data/io.stamethyst/files/arthas/arthas-core.jar")
             resp = agent.send(
-                "LOAD_AGENT /data/data/io.stamethyst/files/arthas/arthas-agent.jar "
+                "LOAD_AGENT /data/data/io.stamethyst/files/arthas/arthas-bridge.jar "
                 "port=8099"
             )
             self.assertEqual(resp, "OK", f"bridge load failed: {resp}")
@@ -70,8 +70,8 @@ class TestModifiedArthasCommands(unittest.TestCase):
             shell = ArthasShell(stream=stream)
             result = shell.command("version")
 
-            self.assertNotIn("null\n", result,
-                             f"Command returned null: {repr(result)}")
+            self.assertTrue(result and "3.6" in result,
+                            f"Command returned unexpected: {repr(result)}")
 
             stream.close()
             agent.close()

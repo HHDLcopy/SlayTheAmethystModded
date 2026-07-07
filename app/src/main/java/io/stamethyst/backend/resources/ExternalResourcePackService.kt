@@ -9,8 +9,6 @@ import io.stamethyst.backend.github.GithubRequestClients
 import io.stamethyst.backend.launch.StartupProgressCallback
 import io.stamethyst.backend.launch.progressText
 import io.stamethyst.backend.network.NetworkAccelerationPolicy
-import io.stamethyst.backend.update.GithubMirrorFallbackException
-import io.stamethyst.backend.update.GithubMirrorFallbackFailure
 import io.stamethyst.backend.update.UpdateMirrorManager
 import io.stamethyst.backend.update.UpdateSource
 import io.stamethyst.config.RuntimePaths
@@ -18,6 +16,7 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
+import java.net.URL
 import java.nio.charset.StandardCharsets
 import java.util.ArrayDeque
 import java.util.Locale
@@ -32,8 +31,9 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 
 data class ResourcePackSlowDownloadMirrorSwitch(
-    val currentSource: UpdateSource,
-    val nextSource: UpdateSource
+    val currentSourceLabel: String,
+    val nextSourceLabel: String,
+    val nextPreferredMirrorSource: UpdateSource?
 )
 
 class ResourcePackDownloadMirrorSwitchController {
@@ -147,9 +147,18 @@ object ExternalResourcePackService {
         "libzink_dri.so"
     )
 
-    internal data class ResourcePackLinkProbeResult(
-        val source: UpdateSource,
+    internal data class ConfiguredResourcePackDownloadCandidate(
+        val displayName: String,
         val requestUrl: String,
+        val usesGithubAcceleration: Boolean,
+        val preferredMirrorSource: UpdateSource?
+    )
+
+    internal data class ResourcePackLinkProbeResult(
+        val displayName: String,
+        val requestUrl: String,
+        val usesGithubAcceleration: Boolean,
+        val preferredMirrorSource: UpdateSource?,
         val reachable: Boolean,
         val elapsedNanos: Long,
         val candidateIndex: Int,
@@ -157,10 +166,17 @@ object ExternalResourcePackService {
     )
 
     internal data class ResourcePackDownloadCandidate(
-        val source: UpdateSource,
+        val displayName: String,
         val requestUrl: String,
+        val usesGithubAcceleration: Boolean,
+        val preferredMirrorSource: UpdateSource?,
         val elapsedNanos: Long,
         val candidateIndex: Int
+    )
+
+    private data class ResourcePackDownloadFailure(
+        val sourceLabel: String,
+        val error: Throwable
     )
 
     internal fun orderResourcePackDownloadCandidates(
@@ -175,13 +191,58 @@ object ExternalResourcePackService {
             )
             .map { result ->
                 ResourcePackDownloadCandidate(
-                    source = result.source,
+                    displayName = result.displayName,
                     requestUrl = result.requestUrl,
+                    usesGithubAcceleration = result.usesGithubAcceleration,
+                    preferredMirrorSource = result.preferredMirrorSource,
                     elapsedNanos = result.elapsedNanos,
                     candidateIndex = result.candidateIndex
                 )
             }
             .toList()
+    }
+
+    internal fun buildResourcePackDownloadCandidates(
+        resourcePackUrls: List<String>,
+        preferredSource: UpdateSource,
+        bypassAcceleratedLinks: Boolean
+    ): List<ConfiguredResourcePackDownloadCandidate> {
+        val normalizedUrls = resourcePackUrls
+            .asSequence()
+            .map(String::trim)
+            .filter(String::isNotEmpty)
+            .distinct()
+            .toList()
+        val githubMirrorCandidates = UpdateSource.downloadCandidates(
+            preferredUserSource = preferredSource,
+            metadataSource = preferredSource,
+            bypassAcceleratedLinks = bypassAcceleratedLinks
+        )
+        return buildList {
+            normalizedUrls.forEach { resourcePackUrl ->
+                if (UpdateSource.isMirrorableGithubUrl(resourcePackUrl)) {
+                    githubMirrorCandidates.forEach { source ->
+                        add(
+                            ConfiguredResourcePackDownloadCandidate(
+                                displayName = source.displayName,
+                                requestUrl = source.buildUrl(resourcePackUrl),
+                                usesGithubAcceleration = source.usesGithubAcceleration,
+                                preferredMirrorSource = source.takeIf { it.userSelectable }
+                            )
+                        )
+                    }
+                } else {
+                    add(
+                        ConfiguredResourcePackDownloadCandidate(
+                            displayName = directResourcePackSourceName(resourcePackUrl),
+                            requestUrl = resourcePackUrl,
+                            usesGithubAcceleration = false,
+                            preferredMirrorSource = null
+                        )
+                    )
+                }
+            }
+        }.distinctBy(ConfiguredResourcePackDownloadCandidate::requestUrl)
     }
 
     @JvmStatic
@@ -248,10 +309,15 @@ object ExternalResourcePackService {
             return
         }
 
-        val resourcePackUrl = BuildConfig.RESOURCE_PACK_DOWNLOAD_URL.trim()
-        if (resourcePackUrl.isEmpty()) {
+        val resourcePackUrls = BuildConfig.RESOURCE_PACK_DOWNLOAD_URLS
+            .asSequence()
+            .map(String::trim)
+            .filter(String::isNotEmpty)
+            .distinct()
+            .toList()
+        if (resourcePackUrls.isEmpty()) {
             throw IOException(
-                "External resource pack is required but RESOURCE_PACK_DOWNLOAD_URL is not configured. " +
+                "External resource pack is required but RESOURCE_PACK_DOWNLOAD_URLS is not configured. " +
                     "Missing bundled resources: ${bundledMissing.joinToString(", ")}. " +
                     "External pack issues: ${externalPackIssues.joinToString(", ")}"
             )
@@ -267,7 +333,7 @@ object ExternalResourcePackService {
         try {
             downloadResourcePack(
                 context = context,
-                resourcePackUrl = resourcePackUrl,
+                resourcePackUrls = resourcePackUrls,
                 targetFile = downloadFile,
                 progressCallback = progressCallback,
                 mirrorSwitchController = mirrorSwitchController
@@ -370,7 +436,7 @@ object ExternalResourcePackService {
     @Throws(IOException::class)
     private fun downloadResourcePack(
         context: Context,
-        resourcePackUrl: String,
+        resourcePackUrls: List<String>,
         targetFile: File,
         progressCallback: StartupProgressCallback?,
         mirrorSwitchController: ResourcePackDownloadMirrorSwitchController?
@@ -389,19 +455,18 @@ object ExternalResourcePackService {
         )
         val preferredSource = UpdateMirrorManager.current(context)
         val bypassAcceleratedLinks = NetworkAccelerationPolicy.shouldBypassAcceleratedLinks(context)
-        val candidates = UpdateSource.downloadCandidates(
-            preferredUserSource = preferredSource,
-            metadataSource = preferredSource,
+        val candidates = buildResourcePackDownloadCandidates(
+            resourcePackUrls = resourcePackUrls,
+            preferredSource = preferredSource,
             bypassAcceleratedLinks = bypassAcceleratedLinks
         )
         val orderedCandidates = probeResourcePackDownloadCandidates(
             clients = probeClients,
-            resourcePackUrl = resourcePackUrl,
             candidates = candidates,
             progressCallback = progressCallback,
             context = context
         )
-        val failures = ArrayList<GithubMirrorFallbackFailure>()
+        val failures = ArrayList<ResourcePackDownloadFailure>()
         for ((index, candidate) in orderedCandidates.withIndex()) {
             throwIfInterrupted()
             mirrorSwitchController?.publishSlowDownloadPrompt(null)
@@ -410,12 +475,12 @@ object ExternalResourcePackService {
                 10,
                 context.progressText(
                     R.string.startup_progress_selected_external_resource_link,
-                    candidate.source.displayName
+                    candidate.displayName
                 )
             )
             try {
                 downloadFile(
-                    client = downloadClients.pick(candidate.source.usesGithubAcceleration),
+                    client = downloadClients.pick(candidate.usesGithubAcceleration),
                     requestUrl = candidate.requestUrl,
                     targetFile = targetFile,
                     progressCallback = progressCallback,
@@ -424,8 +489,9 @@ object ExternalResourcePackService {
                         ResourcePackDownloadMirrorSwitchContext(
                             controller = controller,
                             switchRequestVersion = controller.switchRequestVersion(),
-                            currentSource = candidate.source,
-                            nextSource = orderedCandidates.getOrNull(index + 1)?.source
+                            currentSourceLabel = candidate.displayName,
+                            nextSourceLabel = orderedCandidates.getOrNull(index + 1)?.displayName,
+                            nextPreferredMirrorSource = orderedCandidates.getOrNull(index + 1)?.preferredMirrorSource
                         )
                     }
                 )
@@ -435,23 +501,22 @@ object ExternalResourcePackService {
                 if (error is ResourcePackMirrorSwitchRequestedException) {
                     continue
                 }
-                failures += GithubMirrorFallbackFailure(candidate.source, error)
+                failures += ResourcePackDownloadFailure(candidate.displayName, error)
             } finally {
                 mirrorSwitchController?.publishSlowDownloadPrompt(null)
             }
         }
-        throw GithubMirrorFallbackException(failures)
+        throw ResourcePackDownloadFallbackException(failures)
     }
 
     private fun probeResourcePackDownloadCandidates(
         clients: GithubRequestClients,
-        resourcePackUrl: String,
-        candidates: List<UpdateSource>,
+        candidates: List<ConfiguredResourcePackDownloadCandidate>,
         progressCallback: StartupProgressCallback?,
         context: Context
     ): List<ResourcePackDownloadCandidate> {
         val results = ArrayList<ResourcePackLinkProbeResult>()
-        candidates.forEachIndexed { index, source ->
+        candidates.forEachIndexed { index, candidate ->
             throwIfInterrupted()
             reportProgress(
                 progressCallback,
@@ -460,23 +525,21 @@ object ExternalResourcePackService {
                     R.string.startup_progress_checking_external_resource_links,
                     index + 1,
                     candidates.size,
-                    source.displayName
+                    candidate.displayName
                 )
             )
-            val requestUrl = source.buildUrl(resourcePackUrl)
             results += probeResourcePackLink(
-                client = clients.pick(source.usesGithubAcceleration),
-                source = source,
-                requestUrl = requestUrl,
+                client = clients.pick(candidate.usesGithubAcceleration),
+                candidate = candidate,
                 candidateIndex = index
             )
         }
         return orderResourcePackDownloadCandidates(results)
             .ifEmpty {
-                throw GithubMirrorFallbackException(
+                throw ResourcePackDownloadFallbackException(
                     results.map { result ->
-                        GithubMirrorFallbackFailure(
-                            source = result.source,
+                        ResourcePackDownloadFailure(
+                            sourceLabel = result.displayName,
                             error = result.error ?: IOException("Resource pack link is unreachable.")
                         )
                     }
@@ -486,18 +549,19 @@ object ExternalResourcePackService {
 
     private fun probeResourcePackLink(
         client: OkHttpClient,
-        source: UpdateSource,
-        requestUrl: String,
+        candidate: ConfiguredResourcePackDownloadCandidate,
         candidateIndex: Int,
     ): ResourcePackLinkProbeResult {
         val startedAtNs = System.nanoTime()
         return runCatching {
-            if (!isResourcePackLinkReachable(client, requestUrl)) {
+            if (!isResourcePackLinkReachable(client, candidate.requestUrl)) {
                 throw IOException("Resource pack link is unreachable.")
             }
             ResourcePackLinkProbeResult(
-                source = source,
-                requestUrl = requestUrl,
+                displayName = candidate.displayName,
+                requestUrl = candidate.requestUrl,
+                usesGithubAcceleration = candidate.usesGithubAcceleration,
+                preferredMirrorSource = candidate.preferredMirrorSource,
                 reachable = true,
                 elapsedNanos = System.nanoTime() - startedAtNs,
                 candidateIndex = candidateIndex,
@@ -505,8 +569,10 @@ object ExternalResourcePackService {
             )
         }.getOrElse { error ->
             ResourcePackLinkProbeResult(
-                source = source,
-                requestUrl = requestUrl,
+                displayName = candidate.displayName,
+                requestUrl = candidate.requestUrl,
+                usesGithubAcceleration = candidate.usesGithubAcceleration,
+                preferredMirrorSource = candidate.preferredMirrorSource,
                 reachable = false,
                 elapsedNanos = System.nanoTime() - startedAtNs,
                 candidateIndex = candidateIndex,
@@ -653,8 +719,9 @@ object ExternalResourcePackService {
     private data class ResourcePackDownloadMirrorSwitchContext(
         val controller: ResourcePackDownloadMirrorSwitchController,
         val switchRequestVersion: Long,
-        val currentSource: UpdateSource,
-        val nextSource: UpdateSource?
+        val currentSourceLabel: String,
+        val nextSourceLabel: String?,
+        val nextPreferredMirrorSource: UpdateSource?
     ) {
         private val speedMonitor = ResourcePackSlowDownloadSpeedMonitor()
         private val latestDownloadedBytes = AtomicLong(0L)
@@ -666,7 +733,7 @@ object ExternalResourcePackService {
         }
 
         fun startSlowDownloadTicker(): AutoCloseable? {
-            if (nextSource == null) {
+            if (nextSourceLabel == null) {
                 return null
             }
             val running = AtomicBoolean(true)
@@ -693,14 +760,15 @@ object ExternalResourcePackService {
         @Synchronized
         fun recordDownloadProgress(downloadedBytes: Long) {
             latestDownloadedBytes.set(downloadedBytes)
-            if (nextSource == null) {
+            if (nextSourceLabel == null) {
                 return
             }
             if (speedMonitor.record(System.nanoTime(), downloadedBytes)) {
                 controller.publishSlowDownloadPrompt(
                     ResourcePackSlowDownloadMirrorSwitch(
-                        currentSource = currentSource,
-                        nextSource = nextSource
+                        currentSourceLabel = currentSourceLabel,
+                        nextSourceLabel = nextSourceLabel,
+                        nextPreferredMirrorSource = nextPreferredMirrorSource
                     )
                 )
             }
@@ -762,6 +830,31 @@ object ExternalResourcePackService {
     private class ResourcePackMirrorSwitchRequestedException : IOException(
         "Resource pack mirror switch requested."
     )
+
+    private class ResourcePackDownloadFallbackException(
+        failures: List<ResourcePackDownloadFailure>
+    ) : IOException(
+        failures.joinToString(separator = " | ") { failure ->
+            "${failure.sourceLabel}: ${summarizeResourcePackError(failure.error)}"
+        }.ifBlank { "No resource pack download candidates succeeded." },
+        failures.lastOrNull()?.error
+    )
+
+    private fun directResourcePackSourceName(requestUrl: String): String {
+        val host = runCatching { URL(requestUrl).host.lowercase(Locale.ROOT) }.getOrNull().orEmpty()
+        return when {
+            host == "gitee.com" || host.endsWith(".gitee.com") -> "Gitee"
+            host.isNotEmpty() -> host
+            else -> "Direct"
+        }
+    }
+
+    private fun summarizeResourcePackError(error: Throwable): String {
+        return error.message
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?: error.javaClass.simpleName
+    }
 
     private fun mapDownloadPercent(downloadedBytes: Long, totalBytes: Long?): Int {
         if (totalBytes == null || totalBytes <= 0L) {

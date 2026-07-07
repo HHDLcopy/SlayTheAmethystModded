@@ -121,6 +121,8 @@ python -m scripts.tools.arthas stop
 | `ArthasBootstrapCompat.java` | Arthas 源码修改版（Apache 2.0），构造完整 Bootstrap 跳过 Netty |
 | `SocketTerm.java` | Arthas Term 接口的纯 socket 实现 |
 | `BridgeSession.java` | 每连接线程：createShell → init → readline → 读命令 → 执行 → 写回 |
+| `CommonSuperBridge.java` | 静态桥，覆盖 ClassMetaClassWriter 的类型解析，遍历 Instrumentation 查找 MTS 类 |
+| `ClassMetaClassWriterTransformer.java` | 字节码重写：注入 CommonSuperBridge 调用到 getCommonSuperClass() 中 |
 | `NOTICE` | Apache 2.0 许可证声明 |
 ## ArthasBootstrapCompat
 
@@ -145,9 +147,9 @@ python -m scripts.tools.arthas stop
 | `dashboard -i 1 -n 1` | 实时 CPU/内存面板 |
 | `sc -d <class>` | 类搜索 |
 | `ognl @Class@method(args)` | 运行时表达式执行（需单引号包裹 `'...'`） |
-| `watch <class> <method> '{params,returnObj}' -n 1` | listenerId 注册成功，游戏类 Enhanced 可用 |
-| `trace -n 1 <class> <method>` | 命令引擎正常，类增强受 ClassLoader 隔离限制 |
-| `monitor -c 1 -n 1 <class> <method>` | 同 trace |
+| `watch <class> <method> '{params,returnObj}' -n 1` | ✅ 可用（已修复 ClassLoader 隔离，见下文） |
+| `trace -n 1 <class> <method>` | ✅ 可用 |
+| `monitor -c 1 -n 1 <class> <method>` | ✅ 可用 |
 | `heapdump <path>` | 堆转储 OK（需写 app 私有目录 `/data/data/io.stamethyst/files/`） |
 | `jad <class>` | ✅ 反编译（BuiltinCommandPack 内置，链路已验证）。游戏类需 `-c <classLoaderHash>` |
 ## 停止流程
@@ -164,6 +166,7 @@ stream.close()
 - arthas-bridge 使用 `java.net.ServerSocket`，不依赖 Netty
 - Connector daemon 需先启动
 - 在自定义 ClassLoader 中使用 `jad`/`sc` 需要指定 `-c <classloader-hash>`
+- `trace`/`watch`/`monitor` 的字节码增强通过 `CommonSuperBridge` 解决了 MTS ClassLoader 的类型解析问题：每次客户端连接后对已加载的 `ClassMetaClassWriter` 执行 `retransformClasses` 注入 Instrumentation 感知的 `getCommonSuperClass` 实现，使 ASM 栈帧计算能解析 MTS 类（如 `BuildSettings`）。首次连接增强可能失败（类在 retransform 前加载），断开重连即可。
 
 ## Arthas vs 现有功能对照
 

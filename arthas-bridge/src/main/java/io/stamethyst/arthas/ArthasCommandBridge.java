@@ -2,7 +2,6 @@ package io.stamethyst.arthas;
 
 import com.taobao.arthas.core.command.BuiltinCommandPack;
 import com.taobao.arthas.core.shell.ShellServer;
-import com.taobao.arthas.core.shell.ShellServerOptions;
 import com.taobao.arthas.core.shell.command.CommandResolver;
 
 import java.io.FileWriter;
@@ -35,10 +34,12 @@ public class ArthasCommandBridge {
 
         try {
             log("starting on port " + port);
+
+            CommonSuperBridge.setInstrumentation(inst);
+            inst.addTransformer(new ClassMetaClassWriterTransformer(), true);
+
             CommandResolver resolver = new BuiltinCommandPack(Collections.<String>emptyList());
 
-            // Let ArthasBootstrap constructor create the ShellServer.
-            // We inject our command resolver AFTER construction.
             com.taobao.arthas.core.server.ArthasBootstrap bootstrap =
                 com.taobao.arthas.core.server.ArthasBootstrapCompat
                     .createWithoutNetty(inst,
@@ -55,11 +56,23 @@ public class ArthasCommandBridge {
             while (true) {
                 java.net.Socket client = server.accept();
                 log("client connected");
+                retransformClassMetaClassWriter(inst);
                 new Thread(new BridgeSession(client, shellServer)).start();
             }
         } catch (Throwable e) {
             log("START FAILED: " + e);
             e.printStackTrace(logger);
+        }
+    }
+
+    private static void retransformClassMetaClassWriter(Instrumentation inst) {
+        for (Class<?> c : inst.getAllLoadedClasses()) {
+            if ("com.alibaba.bytekit.asm.ClassMetaClassWriter".equals(c.getName())) {
+                try {
+                    inst.retransformClasses(c);
+                } catch (Throwable ignored) {}
+                return;
+            }
         }
     }
 

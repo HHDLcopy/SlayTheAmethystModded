@@ -12,6 +12,9 @@ java {
 
 dependencies {
     implementation(files(rootProject.file("scripts/tools/arthas/resource/arthas-core.jar")))
+    implementation("org.ow2.asm:asm:9.7.1")
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.ow2.asm:asm:9.7.1")
 }
 
 tasks.register<Jar>("fatJar") {

@@ -45,6 +45,16 @@ python -m scripts.tools.connector daemon --device localhost:15555
 python -m scripts.tools.connector daemon --device auto --pid-file /tmp/sts-connector.pid
 ```
 
+## 环境变量
+
+测试和自动化脚本应通过环境变量 `STS_TEST_DEVICE` 统一配置设备序列号，避免硬编码：
+
+```bash
+export STS_TEST_DEVICE=localhost:15555
+```
+
+`scripts/tools/lib/env_device.py` 的 `get_test_device_serial()` 读取该变量，默认值为 `"auto"`（自动选择 `adb devices` 第一个设备）。所有集成测试文件、`HarnessOrchestrator` 均通过该函数取值。
+
 ## API 方法
 
 通过 Unix socket JSON-line 协议调用。
@@ -187,8 +197,9 @@ adb forward + TCP connect，客户端只需通过当前 Unix socket 收发原始
 典型用法：
 ```python
 # 给 game-probe 发 LIST 命令
+from scripts.tools.lib.env_device import get_test_device_serial
 conn = ConnectorClient()
-conn.connect(); conn.select("localhost:15555")
+conn.connect(); conn.select(get_test_device_serial())
 stream = conn.connect_stream(port=9099)
 stream.write(b"LIST\n")
 print(stream.readline())  # "MONITORS ..."
@@ -315,11 +326,12 @@ stream.close()
 
 ```python
 from scripts.tools.connector.client import ConnectorClient
+from scripts.tools.lib.env_device import get_test_device_serial
 
 # 控制通道
 c = ConnectorClient()
 c.connect()
-c.select(serial="localhost:15555")
+c.select(serial=get_test_device_serial())  # 从 STS_TEST_DEVICE 环境变量读取
 
 # shell / push / pull
 result = c.shell("ps | grep java")

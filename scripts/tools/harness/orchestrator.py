@@ -1,6 +1,8 @@
 import subprocess
 from typing import Any
 
+from scripts.tools.lib.env_device import get_test_device_serial
+
 
 class HarnessOrchestrator:
 
@@ -8,16 +10,18 @@ class HarnessOrchestrator:
         self,
         connector: Any,
         application_id: str,
+        device_serial: str | None = None,
     ) -> None:
         self._conn = connector
         self._app_id = application_id
+        self._device_serial = device_serial or get_test_device_serial()
 
     def build_and_install(self) -> None:
         subprocess.check_call(
             ["./gradlew", ":app:assembleDebug"],
             timeout=600)
         subprocess.check_call(
-            ["adb", "-s", "localhost:15555", "install", "-r",
+            ["adb", "-s", self._device_serial, "install", "-r",
              "app/build/outputs/apk/debug/app-debug.apk"],
             timeout=60)
 

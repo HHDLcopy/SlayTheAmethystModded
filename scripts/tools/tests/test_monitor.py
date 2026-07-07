@@ -7,6 +7,7 @@ import time
 import unittest
 
 from scripts.tools.connector.client import ConnectorClient
+from scripts.tools.lib.env_device import get_test_device_serial
 
 
 class TestDeviceMonitor(unittest.TestCase):
@@ -41,7 +42,7 @@ class TestDeviceMonitor(unittest.TestCase):
     def setUp(self):
         client = ConnectorClient(socket_path=self._sock_path)
         client.connect()
-        client.select("localhost:15555", timeout_ms=10000)
+        client.select(get_test_device_serial(), timeout_ms=10000)
         self.client = client
 
     def tearDown(self):

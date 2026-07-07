@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from scripts.tools.connector.client import ConnectorClient
+from scripts.tools.lib.env_device import get_test_device_serial
 
 
 class TestConnectorDaemonIntegration(unittest.TestCase):
@@ -129,10 +130,13 @@ class TestConnectorDaemonIntegration(unittest.TestCase):
         devices = client.devices()
         self.assertIsInstance(devices, list)
         serials = [d["serial"] for d in devices]
-        self.assertIn("localhost:15555", serials)
+        expected_device = get_test_device_serial()
+        if expected_device == "auto":
+            expected_device = serials[0]
+        self.assertIn(expected_device, serials)
 
         # 3. select
-        ok = client.select("localhost:15555", timeout_ms=10000)
+        ok = client.select(expected_device, timeout_ms=10000)
         self.assertTrue(ok)
 
         # 4. status

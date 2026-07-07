@@ -7,6 +7,7 @@ import unittest
 
 from scripts.tools.connector.client import ConnectorClient
 from scripts.tools.lib.agent_client import AgentClient
+from scripts.tools.lib.env_device import get_test_device_serial
 
 
 class TestArthasIsolatedLoading(unittest.TestCase):
@@ -35,7 +36,7 @@ class TestArthasIsolatedLoading(unittest.TestCase):
     def test_arthas_starts_without_already_bind_error(self):
         conn = ConnectorClient(self._sock_path)
         conn.connect()
-        conn.select("localhost:15555")
+        conn.select(get_test_device_serial())
 
         # Wait for JVM
         for _ in range(30):

@@ -6,7 +6,7 @@
 使用流程:
     conn = ConnectorClient()
     conn.connect()
-    conn.select("localhost:15555")
+    conn.select(get_test_device_serial())  # or specific serial like "localhost:15555"
     stream = conn.connect_stream(port=9099)
 
     client = AgentClient(stream=stream)

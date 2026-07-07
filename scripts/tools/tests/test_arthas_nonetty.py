@@ -7,6 +7,7 @@ import unittest
 
 from scripts.tools.connector.client import ConnectorClient
 from scripts.tools.lib.agent_client import AgentClient
+from scripts.tools.lib.env_device import get_test_device_serial
 
 
 class TestModifiedArthasCommands(unittest.TestCase):
@@ -39,7 +40,7 @@ class TestModifiedArthasCommands(unittest.TestCase):
         """Load bridge via modified Arthas, send 'version', expect non-null output."""
         conn = ConnectorClient(self._sock_path)
         conn.connect()
-        conn.select("localhost:15555")
+        conn.select(get_test_device_serial())
 
         # Wait for JVM and connect agent
         for _ in range(30):

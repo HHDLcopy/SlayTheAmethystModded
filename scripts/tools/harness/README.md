@@ -24,10 +24,11 @@ harness (编排层)
 ```python
 from scripts.tools.connector.client import ConnectorClient
 from scripts.tools.lib.agent_client import AgentClient
+from scripts.tools.lib.env_device import get_test_device_serial
 
 conn = ConnectorClient()
 conn.connect()
-conn.select(serial="localhost:15555")
+conn.select(serial=get_test_device_serial())
 
 agent = AgentClient(connector=conn, port=9099)
 agent.connect()

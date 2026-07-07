@@ -6,6 +6,7 @@ import time
 import unittest
 
 from scripts.tools.connector.client import ConnectorClient
+from scripts.tools.lib.env_device import get_test_device_serial
 
 
 class TestConnectStreamIntegration(unittest.TestCase):
@@ -38,7 +39,7 @@ class TestConnectStreamIntegration(unittest.TestCase):
         """Verify daemon responds to connect_stream with stream_id."""
         conn = ConnectorClient(self._sock_path)
         conn.connect()
-        conn.select("localhost:15555")
+        conn.select(get_test_device_serial())
 
         resp = conn.send_request({
             "method": "connect_stream",
@@ -51,7 +52,7 @@ class TestConnectStreamIntegration(unittest.TestCase):
         """connect_stream to game-probe :9099 and send LIST."""
         conn = ConnectorClient(self._sock_path)
         conn.connect()
-        conn.select("localhost:15555")
+        conn.select(get_test_device_serial())
 
         stream = conn.connect_stream(port=9099)
         stream.write(b"LIST\n")

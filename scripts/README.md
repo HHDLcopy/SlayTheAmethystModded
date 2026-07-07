@@ -121,6 +121,7 @@ responsibility:
 |--------|------|
 | `connector/` | 常驻守护进程，设备连接管理、TCP 透传代理、adb 命令代理 |
 | `lib/agent_client.py` | game-probe 协议客户端（通过 connector.connect_stream 通信） |
+| `lib/env_device.py` | 从 `STS_TEST_DEVICE` 环境变量读取设备序列号，所有测试和脚本共用 |
 | `arthas/` | Arthas JVM 诊断工具集成（通过 connector + arthas-bridge） |
 | `harness/` | 高层编排（build, install, smoke, single-room, startup-cache） |
 | `autoplay/` | 游戏自动化控制 |
@@ -128,6 +129,16 @@ responsibility:
 
 各模块通过 `connector` daemon 访问设备，**不直接调用 adb**，**不直接开 TCP 连接**。
 详见各模块目录下的 `README.md`。
+
+## 环境变量
+
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `STS_TEST_DEVICE` | 集成测试和自动化脚本的默认设备序列号。`scripts/tools/lib/env_device.py` 的 `get_test_device_serial()` 读取该变量，各测试文件和 `HarnessOrchestrator` 通过该函数统一获取设备序列。设为 `"auto"` 时由 connector daemon 自动选择 `adb devices` 中的第一个设备。 | `auto` |
+
+```bash
+export STS_TEST_DEVICE=localhost:15555
+```
 
 ```
 harness / arthas / autoplay / monitor

@@ -8,6 +8,7 @@ import unittest
 
 from scripts.tools.connector.client import ConnectorClient
 from scripts.tools.lib.agent_client import AgentClient
+from scripts.tools.lib.env_device import get_test_device_serial
 
 
 class TestLoadAgentIntegration(unittest.TestCase):
@@ -41,7 +42,7 @@ class TestLoadAgentIntegration(unittest.TestCase):
     def setUp(self):
         self._conn = ConnectorClient(socket_path=self._sock_path)
         self._conn.connect()
-        self._conn.select("localhost:15555", timeout_ms=10000)
+        self._conn.select(get_test_device_serial(), timeout_ms=10000)
 
     def tearDown(self):
         self._conn.close()

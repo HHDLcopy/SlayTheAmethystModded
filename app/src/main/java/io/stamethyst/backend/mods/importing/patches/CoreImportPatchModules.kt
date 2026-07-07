@@ -3,6 +3,7 @@ package io.stamethyst.backend.mods.importing.patches
 import android.content.Context
 import io.stamethyst.R
 import io.stamethyst.backend.mods.AtlasOfflineDownscaleStrategy
+import io.stamethyst.backend.mods.ChaofanModCompatPatcher
 import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.mods.DownfallImportCompatPatcher
 import io.stamethyst.backend.mods.DuplicateZipEntryNormalizer
@@ -421,6 +422,57 @@ internal object VupShionImportPatchModule : ImportPatchModule {
                 context.importString(R.string.mod_import_patch_vupshion_noop)
             },
             details = listOf(context.importString(R.string.mod_import_patch_vupshion_detail, result.hasAnyPatch.toString()))
+        )
+    }
+}
+
+internal object ChaofanModImportPatchModule : ImportPatchModule {
+    private const val TARGET_MOD_ID = "chaofanmod"
+    override val id = "mod.chaofanmod.steamworks"
+    override val version = 1
+    override val displayNameResId = R.string.mod_import_patch_chaofanmod_title
+    override val summaryResId = R.string.mod_import_patch_chaofanmod_summary
+    override val category = ImportPatchCategory.ModSpecific
+    override val defaultEnabled = true
+    override val userConfigurable = false
+    override val order = 635
+    override val failurePolicy = ImportPatchFailurePolicy.SkipPatchContinueImport
+
+    override fun isAvailable(context: Context): Boolean {
+        return CompatibilitySettings.isChaofanModCompatEnabled(context)
+    }
+
+    override fun plan(context: Context, item: ModImportItemPlan): ImportPatchPlan? {
+        if (item.normalizedModId != TARGET_MOD_ID) return null
+        return basePlan(applicable = true)
+    }
+
+    override fun apply(
+        context: Context,
+        workingJar: File,
+        item: ModImportItemPlan,
+        plan: ImportPatchPlan,
+        decisions: ModImportDecisions
+    ): ImportPatchResult {
+        val result = ChaofanModCompatPatcher.patchInPlace(workingJar)
+        return ImportPatchResult(
+            moduleId = id,
+            moduleVersion = version,
+            displayNameResId = displayNameResId,
+            summaryResId = summaryResId,
+            displayName = context.importString(displayNameResId),
+            applied = result.hasAnyPatch,
+            summary = if (result.hasAnyPatch) {
+                context.importString(R.string.mod_import_patch_chaofanmod_applied)
+            } else {
+                context.importString(R.string.mod_import_patch_chaofanmod_noop)
+            },
+            details = listOf(
+                context.importString(
+                    R.string.mod_import_patch_chaofanmod_detail,
+                    result.patchedSteamworksHelperInitialization.toString()
+                )
+            )
         )
     }
 }

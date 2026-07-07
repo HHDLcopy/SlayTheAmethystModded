@@ -136,6 +136,7 @@ import io.stamethyst.ui.settings.steamcloud.LauncherSteamCloudSaveSettingsScreen
 import io.stamethyst.ui.settings.steamcloud.LauncherSteamCloudSyncBlacklistSettingsScreen
 import io.stamethyst.ui.settings.core.SettingsEffectsHandler
 import io.stamethyst.ui.settings.core.SettingsScreenViewModel
+import io.stamethyst.ui.settings.core.StsJarIntegrityDialogHost
 import io.stamethyst.ui.preferences.LauncherPreferences
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -1035,6 +1036,15 @@ fun LauncherContent(
                             }
                         )
                     }
+                }
+                settingsUiState.stsJarIntegrityDialogState?.let { dialogState ->
+                    StsJarIntegrityDialogHost(
+                        dialogState = dialogState,
+                        onDismiss = settingsViewModel::dismissStsJarIntegrityDialog,
+                        onRequestForceImport = settingsViewModel::requestStsJarForceImportConfirmation,
+                        onDismissForceConfirm = settingsViewModel::dismissStsJarForceImportConfirmation,
+                        onConfirmForceImport = { settingsViewModel.confirmPendingStsJarForceImport(activity) }
+                    )
                 }
             feedbackInboxState.pendingNotice?.let { notice ->
                 AlertDialog(

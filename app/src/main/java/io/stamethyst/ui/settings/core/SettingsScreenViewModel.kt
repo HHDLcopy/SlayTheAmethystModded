@@ -88,6 +88,7 @@ import io.stamethyst.backend.mods.ImportDownscaleMaterialPolicy
 import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.backend.mods.RuntimeDownscaleMaterialPolicy
+import io.stamethyst.backend.mods.StsDesktopJarIntegrity
 import io.stamethyst.backend.update.LauncherUpdateService
 import io.stamethyst.backend.update.LauncherUpdateUiReducer
 import io.stamethyst.backend.update.UpdateCheckExecutionResult
@@ -247,6 +248,13 @@ class SettingsScreenViewModel : ViewModel() {
         val rawText: String,
     )
 
+    data class StsJarIntegrityDialogState(
+        val displayName: String,
+        val expectedSha1: String,
+        val actualSha1: String,
+        val forceConfirmationVisible: Boolean = false,
+    )
+
     data class RendererBackendOptionState(
         val backend: RendererBackend,
         val available: Boolean,
@@ -394,6 +402,7 @@ class SettingsScreenViewModel : ViewModel() {
         val releaseHistoryDialogState: UpdateHistoryDialogState? = null,
         val cloudControlConfigLoading: Boolean = false,
         val cloudControlConfigDialogState: CloudControlConfigDialogState? = null,
+        val stsJarIntegrityDialogState: StsJarIntegrityDialogState? = null,
         val nativeLibraryMarketPackages: List<NativeLibraryMarketPackageState> = emptyList(),
         val nativeLibraryMarketLoading: Boolean = false,
         val nativeLibraryMarketErrorText: String? = null,
@@ -444,6 +453,13 @@ class SettingsScreenViewModel : ViewModel() {
         val version: String
     )
 
+    private data class PendingStsJarImport(
+        val stagedFile: File,
+        val displayName: String,
+        val showSuccessToast: Boolean,
+        val onCompleted: ((Boolean) -> Unit)?,
+    )
+
     private data class DeviceRuntimeStatus(
         val cpuModel: String,
         val cpuArch: String,
@@ -492,6 +508,7 @@ class SettingsScreenViewModel : ViewModel() {
     private var quickStartSteamImportCompletion: ((Boolean) -> Unit)? = null
     private var quickStartSteamPauseController: PauseController? = null
     private var quickStartSteamImportMode: QuickStartSteamImportMode = QuickStartSteamImportMode.AUTHENTICATED
+    private var pendingStsJarImport: PendingStsJarImport? = null
     @Volatile
     private var quickStartSteamImportGeneration: Int = 0
 
@@ -764,6 +781,46 @@ class SettingsScreenViewModel : ViewModel() {
     fun dismissCloudControlConfigDialog() {
         if (uiState.cloudControlConfigDialogState != null) {
             uiState = uiState.copy(cloudControlConfigDialogState = null)
+        }
+    }
+
+    fun dismissStsJarIntegrityDialog() {
+        clearPendingStsJarImport(notifyCancelled = true)
+    }
+
+    fun requestStsJarForceImportConfirmation() {
+        val dialogState = uiState.stsJarIntegrityDialogState ?: return
+        uiState = uiState.copy(
+            stsJarIntegrityDialogState = dialogState.copy(forceConfirmationVisible = true)
+        )
+    }
+
+    fun dismissStsJarForceImportConfirmation() {
+        val dialogState = uiState.stsJarIntegrityDialogState ?: return
+        if (!dialogState.forceConfirmationVisible) {
+            return
+        }
+        uiState = uiState.copy(
+            stsJarIntegrityDialogState = dialogState.copy(forceConfirmationVisible = false)
+        )
+    }
+
+    fun confirmPendingStsJarForceImport(host: Activity) {
+        val pendingImport = pendingStsJarImport ?: return
+        pendingStsJarImport = null
+        uiState = uiState.copy(stsJarIntegrityDialogState = null)
+        setBusy(
+            busy = true,
+            message = UiText.StringResource(R.string.sts_jar_import_busy),
+            operation = UiBusyOperation.MOD_IMPORT
+        )
+        executor.execute {
+            importPreparedLocalStsJar(
+                host = host,
+                sourceFile = pendingImport.stagedFile,
+                showSuccessToast = pendingImport.showSuccessToast,
+                onCompleted = pendingImport.onCompleted,
+            )
         }
     }
 
@@ -3273,7 +3330,7 @@ class SettingsScreenViewModel : ViewModel() {
         showSuccessToast: Boolean = true,
         onCompleted: ((Boolean) -> Unit)? = null
     ) {
-        if (uri == null || uiState.busy) {
+        if (uri == null || uiState.busy || uiState.stsJarIntegrityDialogState != null) {
             return
         }
         setBusy(
@@ -3282,27 +3339,42 @@ class SettingsScreenViewModel : ViewModel() {
             operation = UiBusyOperation.MOD_IMPORT
         )
         executor.execute {
+            var stagedFile: File? = null
             try {
-                SettingsFileService.importUriToFileAtomically(
-                    host = host,
-                    uri = uri,
-                    targetFile = RuntimePaths.importedStsJar(host),
-                    validator = StsJarValidator::validate
-                )
-                MtsStartupCacheCoordinator.invalidate(host)
-                val warmupWarning = prewarmMtsClasspathAfterImport(host)
-                host.runOnUiThread {
-                    setBusy(false, null)
-                    if (showSuccessToast) {
-                        showToast(host, UiText.StringResource(R.string.sts_jar_import_success), Toast.LENGTH_SHORT)
+                val displayName = SettingsFileService.resolveDisplayName(host, uri)
+                val preparedFile = createStsJarImportScratchFile(host)
+                stagedFile = preparedFile
+                SettingsFileService.copyUriToFile(host, uri, preparedFile)
+                StsJarValidator.validate(preparedFile)
+                val integrity = StsDesktopJarIntegrity.inspect(preparedFile)
+                if (!integrity.matchesExpected) {
+                    val pendingImport = PendingStsJarImport(
+                        stagedFile = preparedFile,
+                        displayName = displayName,
+                        showSuccessToast = showSuccessToast,
+                        onCompleted = onCompleted,
+                    )
+                    stagedFile = null
+                    host.runOnUiThread {
+                        replacePendingStsJarImport(pendingImport)
+                        setBusy(false, null)
+                        uiState = uiState.copy(
+                            stsJarIntegrityDialogState = StsJarIntegrityDialogState(
+                                displayName = pendingImport.displayName,
+                                expectedSha1 = integrity.expectedSha1.uppercase(Locale.ROOT),
+                                actualSha1 = integrity.actualSha1.uppercase(Locale.ROOT),
+                            )
+                        )
                     }
-                    if (warmupWarning != null) {
-                        showToast(host, warmupWarning, Toast.LENGTH_LONG)
-                    }
-                    refreshStatus(host)
-                    onCompleted?.invoke(true)
-//                    todo: host.notifyMainDataChanged()
+                    return@execute
                 }
+                importPreparedLocalStsJar(
+                    host = host,
+                    sourceFile = preparedFile,
+                    showSuccessToast = showSuccessToast,
+                    onCompleted = onCompleted,
+                )
+                stagedFile = null
             } catch (error: Throwable) {
                 host.runOnUiThread {
                     setBusy(false, null)
@@ -3317,6 +3389,8 @@ class SettingsScreenViewModel : ViewModel() {
                     refreshStatus(host)
                     onCompleted?.invoke(false)
                 }
+            } finally {
+                stagedFile?.delete()
             }
         }
     }
@@ -3930,6 +4004,79 @@ class SettingsScreenViewModel : ViewModel() {
                 busyMessage = null,
                 busyProgressPercent = null
             )
+        }
+    }
+
+    private fun replacePendingStsJarImport(pendingImport: PendingStsJarImport) {
+        val previous = pendingStsJarImport
+        pendingStsJarImport = pendingImport
+        previous?.stagedFile?.delete()
+    }
+
+    private fun clearPendingStsJarImport(notifyCancelled: Boolean) {
+        val pendingImport = pendingStsJarImport
+        pendingStsJarImport = null
+        if (uiState.stsJarIntegrityDialogState != null) {
+            uiState = uiState.copy(stsJarIntegrityDialogState = null)
+        }
+        pendingImport?.stagedFile?.delete()
+        if (notifyCancelled) {
+            pendingImport?.onCompleted?.invoke(false)
+        }
+    }
+
+    private fun createStsJarImportScratchFile(host: Activity): File {
+        val scratchDir = File(host.cacheDir, "sts-jar-import").apply {
+            if (!exists() && !mkdirs()) {
+                throw IOException("Failed to create import scratch directory: $absolutePath")
+            }
+        }
+        return File(scratchDir, "desktop-1.0-${System.nanoTime()}.jar")
+    }
+
+    private fun importPreparedLocalStsJar(
+        host: Activity,
+        sourceFile: File,
+        showSuccessToast: Boolean,
+        onCompleted: ((Boolean) -> Unit)?,
+    ) {
+        try {
+            SettingsFileService.importFileToFileAtomically(
+                sourceFile = sourceFile,
+                targetFile = RuntimePaths.importedStsJar(host),
+                validator = StsJarValidator::validate
+            )
+            MtsStartupCacheCoordinator.invalidate(host)
+            val warmupWarning = prewarmMtsClasspathAfterImport(host)
+            host.runOnUiThread {
+                setBusy(false, null)
+                if (showSuccessToast) {
+                    showToast(host, UiText.StringResource(R.string.sts_jar_import_success), Toast.LENGTH_SHORT)
+                }
+                if (warmupWarning != null) {
+                    showToast(host, warmupWarning, Toast.LENGTH_LONG)
+                }
+                refreshStatus(host)
+                onCompleted?.invoke(true)
+            }
+        } catch (error: Throwable) {
+            host.runOnUiThread {
+                setBusy(false, null)
+                showToast(
+                    host,
+                    UiText.StringResource(
+                        R.string.sts_jar_import_failed,
+                        resolveThrowableMessage(host, error)
+                    ),
+                    Toast.LENGTH_LONG
+                )
+                refreshStatus(host)
+                onCompleted?.invoke(false)
+            }
+        } finally {
+            if (sourceFile.exists()) {
+                sourceFile.delete()
+            }
         }
     }
 

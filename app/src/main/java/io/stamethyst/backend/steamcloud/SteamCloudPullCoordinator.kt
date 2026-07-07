@@ -33,6 +33,7 @@ internal object SteamCloudPullCoordinator {
     fun refreshManifest(
         host: Context,
         authMaterial: SteamCloudAuthStore.SavedAuthMaterial,
+        allowReconnectRetry: Boolean = true,
     ): SteamCloudManifestSnapshot {
         val startedAtMs = System.currentTimeMillis()
         val client = SteamCloudClient(host)
@@ -74,6 +75,15 @@ internal object SteamCloudPullCoordinator {
                 return snapshot
             }
         } catch (error: Throwable) {
+            val failureDiagnostics = client.snapshotDiagnostics()
+            if (allowReconnectRetry && isManifestReconnectRetryCandidate(error, failureDiagnostics)) {
+                SteamCloudNetworkEnvironment.clearNetworkCache(host)
+                return refreshManifest(
+                    host = host,
+                    authMaterial = authMaterial,
+                    allowReconnectRetry = false,
+                )
+            }
             runCatching {
                 SteamCloudDiagnosticsStore.writeSummary(
                     context = host,
@@ -82,7 +92,7 @@ internal object SteamCloudPullCoordinator {
                     accountName = authMaterial.accountName,
                     startedAtMs = startedAtMs,
                     completedAtMs = System.currentTimeMillis(),
-                    diagnostics = client.snapshotDiagnostics(),
+                    diagnostics = failureDiagnostics,
                     failureSummary = summarizeError(error),
                     error = error,
                     extraLines = listOf(
@@ -100,6 +110,7 @@ internal object SteamCloudPullCoordinator {
         authMaterial: SteamCloudAuthStore.SavedAuthMaterial,
         outputRoot: File,
         progressCallback: ((SteamCloudSyncProgress) -> Unit)? = null,
+        allowReconnectRetry: Boolean = true,
     ): SteamCloudManifestSnapshot {
         val startedAtMs = System.currentTimeMillis()
         if (!outputRoot.isDirectory && !outputRoot.mkdirs()) {
@@ -176,6 +187,20 @@ internal object SteamCloudPullCoordinator {
                 return snapshot
             }
         } catch (error: Throwable) {
+            val failureDiagnostics = client.snapshotDiagnostics()
+            if (allowReconnectRetry &&
+                downloadResults.isEmpty() &&
+                isManifestReconnectRetryCandidate(error, failureDiagnostics)
+            ) {
+                SteamCloudNetworkEnvironment.clearNetworkCache(host)
+                return downloadAllToDirectory(
+                    host = host,
+                    authMaterial = authMaterial,
+                    outputRoot = outputRoot,
+                    progressCallback = progressCallback,
+                    allowReconnectRetry = false,
+                )
+            }
             SteamCloudAuthStore.recordFailure(host, summarizeError(error))
             runCatching {
                 SteamCloudDiagnosticsStore.writeSummary(
@@ -185,7 +210,7 @@ internal object SteamCloudPullCoordinator {
                     accountName = authMaterial.accountName,
                     startedAtMs = startedAtMs,
                     completedAtMs = System.currentTimeMillis(),
-                    diagnostics = client.snapshotDiagnostics(),
+                    diagnostics = failureDiagnostics,
                     failureSummary = summarizeError(error),
                     error = error,
                     extraLines = listOf(
@@ -203,6 +228,7 @@ internal object SteamCloudPullCoordinator {
         host: Context,
         authMaterial: SteamCloudAuthStore.SavedAuthMaterial,
         progressCallback: ((SteamCloudSyncProgress) -> Unit)? = null,
+        allowReconnectRetry: Boolean = true,
     ): SteamCloudPullResult {
         val startedAtMs = System.currentTimeMillis()
         val outputDir = SteamCloudManifestStore.outputDir(host)
@@ -404,6 +430,20 @@ internal object SteamCloudPullCoordinator {
                 return result
             }
         } catch (error: Throwable) {
+            val failureDiagnostics = client.snapshotDiagnostics()
+            if (allowReconnectRetry &&
+                snapshot == null &&
+                downloadResults.isEmpty() &&
+                isManifestReconnectRetryCandidate(error, failureDiagnostics)
+            ) {
+                SteamCloudNetworkEnvironment.clearNetworkCache(host)
+                return pullAll(
+                    host = host,
+                    authMaterial = authMaterial,
+                    progressCallback = progressCallback,
+                    allowReconnectRetry = false,
+                )
+            }
             SteamCloudAuthStore.recordFailure(host, summarizeError(error))
             runCatching {
                 val downloadDetailsPath = if (downloadResults.isNotEmpty()) {
@@ -418,7 +458,7 @@ internal object SteamCloudPullCoordinator {
                     accountName = authMaterial.accountName,
                     startedAtMs = startedAtMs,
                     completedAtMs = System.currentTimeMillis(),
-                    diagnostics = client.snapshotDiagnostics(),
+                    diagnostics = failureDiagnostics,
                     failureSummary = summarizeError(error),
                     error = error,
                     extraLines = buildList {
@@ -884,6 +924,34 @@ internal object SteamCloudPullCoordinator {
         } else {
             error.javaClass.simpleName
         }
+    }
+
+    private fun isManifestReconnectRetryCandidate(
+        error: Throwable,
+        diagnostics: SteamCloudClient.DiagnosticsSnapshot?,
+    ): Boolean {
+        var sawManifestStage = diagnostics?.currentStage
+            .orEmpty()
+            .lowercase(Locale.US)
+            .contains("getappfilechangelist")
+        var sawReconnectFailure = diagnostics?.disconnectedDescription
+            .orEmpty()
+            .lowercase(Locale.US)
+            .contains("unexpected")
+        var current: Throwable? = error
+        while (current != null) {
+            val normalized = current.message.orEmpty().lowercase(Locale.US)
+            if (normalized.contains("getappfilechangelist")) {
+                sawManifestStage = true
+            }
+            if ((normalized.contains("steam disconnected") && normalized.contains("unexpected")) ||
+                normalized.contains("client or session is no longer active")
+            ) {
+                sawReconnectFailure = true
+            }
+            current = current.cause
+        }
+        return sawManifestStage && sawReconnectFailure
     }
 
     private fun elapsedMs(startedAtNs: Long): Long {

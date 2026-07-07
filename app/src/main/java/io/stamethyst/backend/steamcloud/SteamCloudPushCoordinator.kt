@@ -42,6 +42,7 @@ internal object SteamCloudPushCoordinator {
         host: Context,
         authMaterial: SteamCloudAuthStore.SavedAuthMaterial,
         shouldContinue: () -> Boolean = { true },
+        allowReconnectRetry: Boolean = true,
     ): SteamCloudUploadPlan {
         val startedAtMs = System.currentTimeMillis()
         val totalStartedAtNs = System.nanoTime()
@@ -148,6 +149,16 @@ internal object SteamCloudPushCoordinator {
                 return plan
             }
         } catch (error: Throwable) {
+            val failureDiagnostics = client.snapshotDiagnostics()
+            if (allowReconnectRetry && shouldContinue() && isReconnectRetryCandidate(error, failureDiagnostics)) {
+                SteamCloudNetworkEnvironment.clearNetworkCache(host)
+                return buildUploadPlan(
+                    host = host,
+                    authMaterial = authMaterial,
+                    shouldContinue = shouldContinue,
+                    allowReconnectRetry = false,
+                )
+            }
             SteamCloudAuthStore.recordFailure(host, summarizeError(error))
             runCatching {
                 telemetry.totalMeasuredMs = elapsedMs(totalStartedAtNs)
@@ -158,7 +169,7 @@ internal object SteamCloudPushCoordinator {
                     accountName = authMaterial.accountName,
                     startedAtMs = startedAtMs,
                     completedAtMs = System.currentTimeMillis(),
-                    diagnostics = client.snapshotDiagnostics(),
+                    diagnostics = failureDiagnostics,
                     failureSummary = summarizeError(error),
                     error = error,
                     extraLines = buildList {
@@ -863,15 +874,22 @@ internal object SteamCloudPushCoordinator {
         error: Throwable,
         diagnostics: SteamCloudClient.DiagnosticsSnapshot?,
     ): Boolean {
-        var sawBeginHttpUpload = diagnostics?.currentStage
+        var sawReconnectableStage = diagnostics?.currentStage
             .orEmpty()
             .lowercase(Locale.US)
-            .contains("beginhttpupload")
-        var sawReconnectFailure = false
+            .let { stage ->
+                stage.contains("beginhttpupload") || stage.contains("getappfilechangelist")
+            }
+        var sawReconnectFailure = diagnostics?.disconnectedDescription
+            .orEmpty()
+            .lowercase(Locale.US)
+            .contains("unexpected")
         var current: Throwable? = error
         while (current != null) {
             val normalized = current.message.orEmpty().lowercase(Locale.US)
-            sawBeginHttpUpload = sawBeginHttpUpload || normalized.contains("beginhttpupload")
+            sawReconnectableStage = sawReconnectableStage ||
+                normalized.contains("beginhttpupload") ||
+                normalized.contains("getappfilechangelist")
             if ((normalized.contains("steam disconnected") && normalized.contains("unexpected")) ||
                 normalized.contains("client or session is no longer active")
             ) {
@@ -879,7 +897,7 @@ internal object SteamCloudPushCoordinator {
             }
             current = current.cause
         }
-        return sawBeginHttpUpload && sawReconnectFailure
+        return sawReconnectableStage && sawReconnectFailure
     }
 
     private fun prepareMirrorPlan(plan: SteamCloudMirrorPlan): PreparedMirrorPlan {

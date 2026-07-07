@@ -72,6 +72,7 @@ internal object ImportPatchRegistry {
             FrierenImportPatchModule,
             DownfallImportPatchModule,
             VupShionImportPatchModule,
+            ChaofanModImportPatchModule,
             JacketNoAnoKoImportPatchModule,
             OriImportPatchModule
         ).filter { it.isAvailable(context) }

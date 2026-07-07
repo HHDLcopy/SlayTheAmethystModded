@@ -459,6 +459,7 @@ private fun FeedbackIssueReportCard(
                     markdown = reportBody,
                     textColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     codeContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    textSelectable = true,
                     imageShowOpenButton = false,
                     onImageClick = onOpenImagePreview
                 )
@@ -791,6 +792,7 @@ private fun FeedbackMessageCluster(
                             markdown = event.body,
                             textColor = contentColor,
                             codeContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            textSelectable = true,
                             imageShowOpenButton = false,
                             onImageClick = { imageUrl ->
                                 onOpenImagePreview(event, imageUrl)

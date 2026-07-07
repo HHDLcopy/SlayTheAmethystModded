@@ -35,6 +35,8 @@ internal object ImportedModPatchRegistry {
         "patchedDownfallBossMechanicPanelClassEntries"
     private const val JSON_KEY_PATCHED_VUPSHION_WEB_BUTTON_CONSTRUCTOR =
         "patchedVupShionWebButtonConstructor"
+    private const val JSON_KEY_PATCHED_CHAOFANMOD_STEAMWORKS_HELPER_INITIALIZATION =
+        "patchedChaofanModSteamworksHelperInitialization"
     private const val JSON_KEY_PATCHED_JACKETNOANOKO_SHADER_ENTRIES =
         "patchedJacketNoAnoKoShaderEntries"
     private const val JSON_KEY_PATCHED_JACKETNOANOKO_DESKTOP_VERSION_DIRECTIVES =
@@ -100,6 +102,10 @@ internal object ImportedModPatchRegistry {
         val patchInfo = entries.remove(normalizedOldStoragePath) ?: return
         entries[normalizedNewStoragePath] = patchInfo
         writeAll(context, entries)
+    }
+
+    fun lookupKey(context: Context, storagePath: String?): String? {
+        return normalizeStoragePath(context, storagePath)
     }
 
     @Throws(IOException::class)
@@ -190,6 +196,11 @@ internal object ImportedModPatchRegistry {
                 optInt(JSON_KEY_PATCHED_DOWNFALL_BOSS_MECHANIC_PANEL_CLASS_ENTRIES),
             patchedVupShionWebButtonConstructor =
                 optBoolean(JSON_KEY_PATCHED_VUPSHION_WEB_BUTTON_CONSTRUCTOR, false),
+            patchedChaofanModSteamworksHelperInitialization =
+                optBoolean(
+                    JSON_KEY_PATCHED_CHAOFANMOD_STEAMWORKS_HELPER_INITIALIZATION,
+                    false
+                ),
             patchedJacketNoAnoKoShaderEntries =
                 optInt(JSON_KEY_PATCHED_JACKETNOANOKO_SHADER_ENTRIES),
             patchedJacketNoAnoKoDesktopVersionDirectives =
@@ -242,6 +253,10 @@ internal object ImportedModPatchRegistry {
             put(
                 JSON_KEY_PATCHED_VUPSHION_WEB_BUTTON_CONSTRUCTOR,
                 patchedVupShionWebButtonConstructor
+            )
+            put(
+                JSON_KEY_PATCHED_CHAOFANMOD_STEAMWORKS_HELPER_INITIALIZATION,
+                patchedChaofanModSteamworksHelperInitialization
             )
             put(
                 JSON_KEY_PATCHED_JACKETNOANOKO_SHADER_ENTRIES,

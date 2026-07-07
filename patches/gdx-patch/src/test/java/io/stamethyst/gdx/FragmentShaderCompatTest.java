@@ -203,6 +203,63 @@ public class FragmentShaderCompatTest {
     }
 
     @Test
+    public void normalizeFragmentShader_promotesVectorMultiplyIntegerLiteral() {
+        String original = "uniform sampler2D u_texture;\n" +
+            "varying vec2 v_texCoord;\n" +
+            "void main() {\n" +
+            "    vec2 texDiff = vec2(0.1, 0.2);\n" +
+            "    vec4 texColor = texture2D(u_texture, " +
+            "v_texCoord + texDiff / vec2(1920.0, 1080.0) * 3);\n" +
+            "    gl_FragColor = texColor;\n" +
+            "}\n";
+        String previous = System.getProperty(ENABLED_PROP);
+        try {
+            System.setProperty(ENABLED_PROP, "true");
+            String patched = FragmentShaderCompat.normalizeFragmentShader(original);
+            assertTrue(patched.contains("texDiff / vec2(1920.0, 1080.0) * 3.0"));
+            assertFalse(patched.contains("vec2(1920.0, 1080.0) * 3)"));
+        } finally {
+            restoreProperty(previous);
+        }
+    }
+
+    @Test
+    public void normalizeFragmentShader_promotesIntegerLiteralBeforeVectorOperand() {
+        String original = "uniform sampler2D u_texture;\n" +
+            "varying vec2 v_texCoord;\n" +
+            "void main() {\n" +
+            "    gl_FragColor = 2 * texture2D(u_texture, v_texCoord);\n" +
+            "}\n";
+        String previous = System.getProperty(ENABLED_PROP);
+        try {
+            System.setProperty(ENABLED_PROP, "true");
+            String patched = FragmentShaderCompat.normalizeFragmentShader(original);
+            assertTrue(patched.contains("gl_FragColor = 2.0 * texture2D"));
+        } finally {
+            restoreProperty(previous);
+        }
+    }
+
+    @Test
+    public void normalizeFragmentShader_keepsIntegerOnlyArithmetic() {
+        String original = "varying vec2 v_texCoord;\n" +
+            "void main() {\n" +
+            "    int count = 4;\n" +
+            "    int doubled = count * 2;\n" +
+            "    gl_FragColor = vec4(v_texCoord, 0.0, 1.0);\n" +
+            "}\n";
+        String previous = System.getProperty(ENABLED_PROP);
+        try {
+            System.setProperty(ENABLED_PROP, "true");
+            String patched = FragmentShaderCompat.normalizeFragmentShader(original);
+            assertTrue(patched.contains("int doubled = count * 2;"));
+            assertFalse(patched.contains("int doubled = count * 2.0;"));
+        } finally {
+            restoreProperty(previous);
+        }
+    }
+
+    @Test
     public void normalizeFragmentShader_respectsDisabledProperty() {
         String original = "#version 120\nvoid main() {\n    gl_FragColor = vec4(1.0);\n}\n";
         String previous = System.getProperty(ENABLED_PROP);

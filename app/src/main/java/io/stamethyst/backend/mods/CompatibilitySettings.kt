@@ -12,6 +12,7 @@ object CompatibilitySettings {
         setFrierenModCompatEnabled(context, true)
         setDownfallImportCompatEnabled(context, true)
         setVupShionModCompatEnabled(context, true)
+        setChaofanModCompatEnabled(context, true)
         setFragmentShaderPrecisionCompatEnabled(
             context,
             LauncherConfig.DEFAULT_FRAGMENT_SHADER_PRECISION_COMPAT_ENABLED
@@ -188,6 +189,16 @@ object CompatibilitySettings {
     @JvmStatic
     fun setVupShionModCompatEnabled(context: Context, enabled: Boolean) {
         LauncherConfig.setVupShionModCompatEnabled(context, enabled)
+    }
+
+    @JvmStatic
+    fun isChaofanModCompatEnabled(context: Context): Boolean {
+        return LauncherConfig.isChaofanModCompatEnabled(context)
+    }
+
+    @JvmStatic
+    fun setChaofanModCompatEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setChaofanModCompatEnabled(context, enabled)
     }
 
     @JvmStatic

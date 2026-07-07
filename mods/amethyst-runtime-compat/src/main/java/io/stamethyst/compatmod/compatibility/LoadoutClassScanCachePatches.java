@@ -64,7 +64,7 @@ public final class LoadoutClassScanCachePatches {
     public static class AutoAddCardModsPatch {
         @SpirePrefixPatch
         public static SpireReturn<Void> Prefix(Object __instance) {
-            if (!StartupCacheRuntimeConfig.readBooleanSystemProperty(ENABLED_PROP, true)) {
+            if (!StartupCacheRuntimeConfig.isCacheFeatureEnabled(ENABLED_PROP, true)) {
                 return SpireReturn.Continue();
             }
             try {
@@ -86,7 +86,7 @@ public final class LoadoutClassScanCachePatches {
     public static class AutoAddStuffsPatch {
         @SpirePrefixPatch
         public static SpireReturn<Void> Prefix(Object __instance) {
-            if (!StartupCacheRuntimeConfig.readBooleanSystemProperty(ENABLED_PROP, true)) {
+            if (!StartupCacheRuntimeConfig.isCacheFeatureEnabled(ENABLED_PROP, true)) {
                 return SpireReturn.Continue();
             }
             try {
@@ -139,7 +139,7 @@ public final class LoadoutClassScanCachePatches {
     }
 
     private static SpireReturn<Void> runCachedAdder(Object adder, Kind kind) {
-        if (!StartupCacheRuntimeConfig.readBooleanSystemProperty(ENABLED_PROP, true)) {
+        if (!StartupCacheRuntimeConfig.isCacheFeatureEnabled(ENABLED_PROP, true)) {
             return SpireReturn.Continue();
         }
         long startedAtNs = System.nanoTime();

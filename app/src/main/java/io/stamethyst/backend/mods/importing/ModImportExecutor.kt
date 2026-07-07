@@ -13,6 +13,7 @@ import io.stamethyst.backend.mods.MtsLaunchManifestValidator
 import io.stamethyst.backend.mods.OptionalModStorageCoordinator
 import io.stamethyst.backend.mods.importing.patches.AtlasFilterPatchModule
 import io.stamethyst.backend.mods.importing.patches.AtlasOfflineDownscalePatchModule
+import io.stamethyst.backend.mods.importing.patches.ChaofanModImportPatchModule
 import io.stamethyst.backend.mods.importing.patches.DownfallImportPatchModule
 import io.stamethyst.backend.mods.importing.patches.DuplicateZipEntryPatchModule
 import io.stamethyst.backend.mods.importing.patches.FrierenImportPatchModule
@@ -584,6 +585,7 @@ internal object ModImportExecutor {
         var patchedDownfallHexaghost = 0
         var patchedDownfallBossPanel = 0
         var patchedVupShion = false
+        var patchedChaofanMod = false
         var patchedJacketShaderEntries = 0
         var patchedJacketVersionDirectives = 0
         var patchedJacketPrecisionBlocks = 0
@@ -617,6 +619,7 @@ internal object ModImportExecutor {
                     patchedDownfallBossPanel += result.metrics["patchedBossMechanicPanelClassEntries"] ?: 0
                 }
                 VupShionImportPatchModule.id -> patchedVupShion = true
+                ChaofanModImportPatchModule.id -> patchedChaofanMod = true
                 JacketNoAnoKoImportPatchModule.id -> {
                     patchedJacketShaderEntries += result.metrics["patchedShaderEntries"] ?: 0
                     patchedJacketVersionDirectives += result.metrics["removedDesktopVersionDirectives"] ?: 0
@@ -657,6 +660,7 @@ internal object ModImportExecutor {
             patchedDownfallHexaghostBodyClassEntries = patchedDownfallHexaghost,
             patchedDownfallBossMechanicPanelClassEntries = patchedDownfallBossPanel,
             patchedVupShionWebButtonConstructor = patchedVupShion,
+            patchedChaofanModSteamworksHelperInitialization = patchedChaofanMod,
             patchedJacketNoAnoKoShaderEntries = patchedJacketShaderEntries,
             patchedJacketNoAnoKoDesktopVersionDirectives = patchedJacketVersionDirectives,
             patchedJacketNoAnoKoFragmentPrecisionBlocks = patchedJacketPrecisionBlocks,

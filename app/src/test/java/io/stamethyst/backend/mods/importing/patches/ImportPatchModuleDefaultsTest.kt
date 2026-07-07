@@ -27,6 +27,7 @@ class ImportPatchModuleDefaultsTest {
             FrierenImportPatchModule,
             DownfallImportPatchModule,
             VupShionImportPatchModule,
+            ChaofanModImportPatchModule,
             JacketNoAnoKoImportPatchModule,
             OriImportPatchModule,
         )

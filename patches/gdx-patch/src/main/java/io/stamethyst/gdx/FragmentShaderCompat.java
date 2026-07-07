@@ -1,5 +1,8 @@
 package io.stamethyst.gdx;
 
+import java.util.HashSet;
+import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public final class FragmentShaderCompat {
@@ -20,6 +23,16 @@ public final class FragmentShaderCompat {
         Pattern.compile(
             "(?<![A-Za-z0-9_])((?:\\d+\\.\\d*|\\.\\d+|\\d+)(?:[eE][+-]?\\d+)?)[fF](?![A-Za-z0-9_])"
         );
+    private static final Pattern VECTOR_DECLARATION_PATTERN =
+        Pattern.compile("(?<![A-Za-z0-9_])vec[234]\\s+([A-Za-z_][A-Za-z0-9_]*)");
+    private static final Pattern VECTOR_CONSTRUCTOR_PATTERN =
+        Pattern.compile("(?<![A-Za-z0-9_])vec[234]\\s*\\(");
+    private static final Pattern VECTOR_SWIZZLE_PATTERN =
+        Pattern.compile("\\.[xyzwrgba]{2,4}(?![A-Za-z0-9_])");
+    private static final Pattern TEXTURE_FUNCTION_PATTERN =
+        Pattern.compile("(?<![A-Za-z0-9_])texture(?:2D|Cube)?\\s*\\(");
+    private static final Pattern IDENTIFIER_PATTERN =
+        Pattern.compile("(?<![A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*)(?![A-Za-z0-9_])");
     private static final Pattern FLOAT_PRECISION_PATTERN =
         Pattern.compile("(?m)^\\s*precision\\s+(?:lowp|mediump|highp)\\s+float\\s*;");
     private static final Pattern INT_PRECISION_PATTERN =
@@ -38,7 +51,8 @@ public final class FragmentShaderCompat {
 
         String stripped = stripLeadingDesktopVersionDirective(source, "vertex");
         String versioned = ensureGles100VersionDirective(stripped, "vertex");
-        return removeJavaFloatLiteralSuffixes(versioned);
+        String withoutJavaFloatSuffixes = removeJavaFloatLiteralSuffixes(versioned);
+        return promoteVectorScalarIntegerLiterals(withoutJavaFloatSuffixes);
     }
 
     public static String normalizeFragmentShader(String source) {
@@ -53,9 +67,11 @@ public final class FragmentShaderCompat {
         String versioned = ensureGles100VersionDirective(stripped, "fragment");
         String withoutRedefinedBuiltIns = removeBuiltInFunctionRedefinitions(versioned);
         String withoutJavaFloatSuffixes = removeJavaFloatLiteralSuffixes(withoutRedefinedBuiltIns);
-        String legacyCompatible = isModernGlesVersionDirective(withoutJavaFloatSuffixes)
-            ? withoutJavaFloatSuffixes
-            : ensureLegacyFragmentCompatibility(withoutJavaFloatSuffixes);
+        String withoutVectorIntegerOperands =
+            promoteVectorScalarIntegerLiterals(withoutJavaFloatSuffixes);
+        String legacyCompatible = isModernGlesVersionDirective(withoutVectorIntegerOperands)
+            ? withoutVectorIntegerOperands
+            : ensureLegacyFragmentCompatibility(withoutVectorIntegerOperands);
         return ensureDefaultPrecisionInternal(legacyCompatible);
     }
 
@@ -149,6 +165,310 @@ public final class FragmentShaderCompat {
         }
         matcher.appendTail(out);
         return out.toString();
+    }
+
+    private static String promoteVectorScalarIntegerLiterals(String source) {
+        Set<String> vectorIdentifiers = collectVectorIdentifiers(source);
+        StringBuilder out = null;
+        int lastAppend = 0;
+        int index = 0;
+        while (index < source.length()) {
+            int commentEnd = skipComment(source, index);
+            if (commentEnd != index) {
+                index = commentEnd;
+                continue;
+            }
+
+            char current = source.charAt(index);
+            if (current == '*' || current == '/') {
+                IntegerLiteral leftLiteral = findIntegerLiteralBefore(source, index);
+                if (leftLiteral != null &&
+                    leftLiteral.end >= lastAppend &&
+                    isVectorLikeRightOperand(source, index, vectorIdentifiers)
+                ) {
+                    if (out == null) {
+                        out = new StringBuilder(source.length() + 16);
+                    }
+                    out.append(source, lastAppend, leftLiteral.end).append(".0");
+                    lastAppend = leftLiteral.end;
+                }
+
+                IntegerLiteral rightLiteral = findIntegerLiteralAfter(source, index);
+                if (rightLiteral != null &&
+                    rightLiteral.end >= lastAppend &&
+                    isVectorLikeLeftOperand(source, index, vectorIdentifiers)
+                ) {
+                    if (out == null) {
+                        out = new StringBuilder(source.length() + 16);
+                    }
+                    out.append(source, lastAppend, rightLiteral.end).append(".0");
+                    lastAppend = rightLiteral.end;
+                    index = rightLiteral.end;
+                    continue;
+                }
+            }
+            index++;
+        }
+
+        if (out == null) {
+            return source;
+        }
+        out.append(source, lastAppend, source.length());
+        return out.toString();
+    }
+
+    private static Set<String> collectVectorIdentifiers(String source) {
+        String analysisSource = blankComments(source);
+        Set<String> identifiers = new HashSet<String>();
+        Matcher matcher = VECTOR_DECLARATION_PATTERN.matcher(analysisSource);
+        while (matcher.find()) {
+            int afterIdentifier = skipWhitespace(analysisSource, matcher.end(1));
+            if (afterIdentifier < analysisSource.length() &&
+                analysisSource.charAt(afterIdentifier) == '('
+            ) {
+                continue;
+            }
+            identifiers.add(matcher.group(1));
+        }
+        return identifiers;
+    }
+
+    private static boolean isVectorLikeLeftOperand(
+        String source,
+        int operatorIndex,
+        Set<String> vectorIdentifiers
+    ) {
+        int start = findLeftOperandStart(source, operatorIndex);
+        return isVectorLikeExpression(source.substring(start, operatorIndex), vectorIdentifiers);
+    }
+
+    private static boolean isVectorLikeRightOperand(
+        String source,
+        int operatorIndex,
+        Set<String> vectorIdentifiers
+    ) {
+        int end = findRightOperandEnd(source, operatorIndex);
+        return isVectorLikeExpression(
+            source.substring(operatorIndex + 1, end),
+            vectorIdentifiers
+        );
+    }
+
+    private static boolean isVectorLikeExpression(
+        String expression,
+        Set<String> vectorIdentifiers
+    ) {
+        if (VECTOR_CONSTRUCTOR_PATTERN.matcher(expression).find() ||
+            VECTOR_SWIZZLE_PATTERN.matcher(expression).find() ||
+            TEXTURE_FUNCTION_PATTERN.matcher(expression).find()
+        ) {
+            return true;
+        }
+
+        Matcher matcher = IDENTIFIER_PATTERN.matcher(expression);
+        while (matcher.find()) {
+            if (vectorIdentifiers.contains(matcher.group(1))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static int findLeftOperandStart(String source, int operatorIndex) {
+        int index = operatorIndex - 1;
+        int depth = 0;
+        while (index >= 0) {
+            char current = source.charAt(index);
+            if (current == ')' || current == ']') {
+                depth++;
+            } else if (current == '(' || current == '[') {
+                if (depth > 0) {
+                    depth--;
+                }
+            } else if (depth == 0 && isAdditiveOrStatementBoundary(current)) {
+                return index + 1;
+            }
+            index--;
+        }
+        return 0;
+    }
+
+    private static int findRightOperandEnd(String source, int operatorIndex) {
+        int index = operatorIndex + 1;
+        int depth = 0;
+        boolean sawOperand = false;
+        while (index < source.length()) {
+            char current = source.charAt(index);
+            if (current == '(' || current == '[') {
+                depth++;
+            } else if (current == ')' || current == ']') {
+                if (depth > 0) {
+                    depth--;
+                }
+            } else if (depth == 0) {
+                if (current == ';' || current == '\n' || current == '\r' ||
+                    current == '=' || current == ',' || current == '?' ||
+                    current == ':'
+                ) {
+                    break;
+                }
+                if (sawOperand && (current == '+' || current == '-')) {
+                    break;
+                }
+            }
+
+            if (!Character.isWhitespace(current)) {
+                sawOperand = true;
+            }
+            index++;
+        }
+        return index;
+    }
+
+    private static boolean isAdditiveOrStatementBoundary(char current) {
+        return current == '+' || current == '-' || current == '=' ||
+            current == ',' || current == ';' || current == '\n' ||
+            current == '\r' || current == '?' || current == ':';
+    }
+
+    private static IntegerLiteral findIntegerLiteralAfter(String source, int operatorIndex) {
+        int start = skipWhitespace(source, operatorIndex + 1);
+        if (start >= source.length()) {
+            return null;
+        }
+
+        int digitsStart = start;
+        char first = source.charAt(digitsStart);
+        if ((first == '+' || first == '-') &&
+            digitsStart + 1 < source.length() &&
+            Character.isDigit(source.charAt(digitsStart + 1))
+        ) {
+            digitsStart++;
+        }
+
+        int digitsEnd = skipDigits(source, digitsStart);
+        if (digitsEnd == digitsStart || !isPlainIntegerLiteral(source, digitsStart, digitsEnd)) {
+            return null;
+        }
+        return new IntegerLiteral(digitsStart, digitsEnd);
+    }
+
+    private static IntegerLiteral findIntegerLiteralBefore(String source, int operatorIndex) {
+        int digitsEnd = skipWhitespaceBackward(source, operatorIndex - 1) + 1;
+        if (digitsEnd <= 0) {
+            return null;
+        }
+
+        int digitsStart = digitsEnd;
+        while (digitsStart > 0 && Character.isDigit(source.charAt(digitsStart - 1))) {
+            digitsStart--;
+        }
+        if (digitsEnd == digitsStart || !isPlainIntegerLiteral(source, digitsStart, digitsEnd)) {
+            return null;
+        }
+        return new IntegerLiteral(digitsStart, digitsEnd);
+    }
+
+    private static boolean isPlainIntegerLiteral(String source, int start, int end) {
+        if (start > 0) {
+            char previous = source.charAt(start - 1);
+            if (previous == '.' || isIdentifierPart(previous)) {
+                return false;
+            }
+        }
+        if (end < source.length()) {
+            char next = source.charAt(end);
+            if (next == '.' || isIdentifierPart(next)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static int skipDigits(String source, int start) {
+        int index = start;
+        while (index < source.length() && Character.isDigit(source.charAt(index))) {
+            index++;
+        }
+        return index;
+    }
+
+    private static int skipWhitespace(String source, int start) {
+        int index = start;
+        while (index < source.length() && Character.isWhitespace(source.charAt(index))) {
+            index++;
+        }
+        return index;
+    }
+
+    private static int skipWhitespaceBackward(String source, int start) {
+        int index = start;
+        while (index >= 0 && Character.isWhitespace(source.charAt(index))) {
+            index--;
+        }
+        return index;
+    }
+
+    private static boolean isIdentifierPart(char current) {
+        return (current >= 'A' && current <= 'Z') ||
+            (current >= 'a' && current <= 'z') ||
+            (current >= '0' && current <= '9') ||
+            current == '_';
+    }
+
+    private static String blankComments(String source) {
+        StringBuilder out = null;
+        int index = 0;
+        int lastAppend = 0;
+        while (index < source.length()) {
+            int commentEnd = skipComment(source, index);
+            if (commentEnd == index) {
+                index++;
+                continue;
+            }
+
+            if (out == null) {
+                out = new StringBuilder(source.length());
+            }
+            out.append(source, lastAppend, index);
+            appendBlanksPreservingLines(out, source, index, commentEnd);
+            lastAppend = commentEnd;
+            index = commentEnd;
+        }
+
+        if (out == null) {
+            return source;
+        }
+        out.append(source, lastAppend, source.length());
+        return out.toString();
+    }
+
+    private static int skipComment(String source, int index) {
+        if (index + 1 >= source.length() || source.charAt(index) != '/') {
+            return index;
+        }
+
+        char next = source.charAt(index + 1);
+        if (next == '/') {
+            return skipLine(source, index);
+        }
+        if (next == '*') {
+            int end = source.indexOf("*/", index + 2);
+            return end < 0 ? source.length() : end + 2;
+        }
+        return index;
+    }
+
+    private static void appendBlanksPreservingLines(
+        StringBuilder out,
+        String source,
+        int start,
+        int end
+    ) {
+        for (int index = start; index < end; index++) {
+            char current = source.charAt(index);
+            out.append(current == '\n' || current == '\r' ? current : ' ');
+        }
     }
 
     private static String ensureGles100VersionDirective(String source, String shaderType) {
@@ -363,5 +683,15 @@ public final class FragmentShaderCompat {
             return true;
         }
         return System.getProperty("os.version", "").startsWith("Android-");
+    }
+
+    private static final class IntegerLiteral {
+        final int start;
+        final int end;
+
+        IntegerLiteral(int start, int end) {
+            this.start = start;
+            this.end = end;
+        }
     }
 }

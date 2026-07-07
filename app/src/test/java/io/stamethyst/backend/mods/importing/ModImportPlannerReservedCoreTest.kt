@@ -5,7 +5,10 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.SharedPreferences
 import android.content.res.Resources
+import io.stamethyst.backend.mods.CompatibilitySettings
+import io.stamethyst.backend.mods.ImportedModPatchRegistry
 import io.stamethyst.backend.mods.ReservedCoreModComponents
+import io.stamethyst.backend.mods.importing.patches.ChaofanModImportPatchModule
 import java.io.File
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
@@ -14,10 +17,81 @@ import java.util.LinkedHashSet
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.objectweb.asm.ClassWriter
+import org.objectweb.asm.Opcodes
 
 class ModImportPlannerReservedCoreTest {
+    @Test
+    fun planLocalFiles_addsChaofanModCompatPatchWhenEnabled() {
+        val roots = TestRoots.create("mod-import-planner-chaofanmod")
+        val jarFile = File(roots.rootDir, "chaofanmod.jar")
+        writeModJar(
+            jarFile = jarFile,
+            modId = "chaofanmod",
+            name = "Chaofan Mod",
+        )
+
+        val plan = ModImportPlanner.planLocalFiles(roots.context, listOf(jarFile))
+        try {
+            val item = plan.importableItems.single()
+            assertTrue(
+                item.patchPlans.any { patch -> patch.moduleId == ChaofanModImportPatchModule.id }
+            )
+        } finally {
+            ModImportPlanner.cleanup(plan.session)
+        }
+    }
+
+    @Test
+    fun planLocalFiles_skipsChaofanModCompatPatchWhenDisabled() {
+        val roots = TestRoots.create("mod-import-planner-chaofanmod-disabled")
+        CompatibilitySettings.setChaofanModCompatEnabled(roots.context, false)
+        val jarFile = File(roots.rootDir, "chaofanmod.jar")
+        writeModJar(
+            jarFile = jarFile,
+            modId = "chaofanmod",
+            name = "Chaofan Mod",
+        )
+
+        val plan = ModImportPlanner.planLocalFiles(roots.context, listOf(jarFile))
+        try {
+            val item = plan.importableItems.single()
+            assertFalse(
+                item.patchPlans.any { patch -> patch.moduleId == ChaofanModImportPatchModule.id }
+            )
+        } finally {
+            ModImportPlanner.cleanup(plan.session)
+        }
+    }
+
+    @Test
+    fun execute_recordsChaofanModPatchMetadataForMainListBadge() {
+        val roots = TestRoots.create("mod-import-executor-chaofanmod")
+        val jarFile = File(roots.rootDir, "chaofanmod.jar")
+        writeChaofanModJar(jarFile)
+        val plan = ModImportPlanner.planLocalFiles(roots.context, listOf(jarFile))
+
+        try {
+            val report = ModImportExecutor.execute(
+                context = roots.context,
+                plan = plan,
+                decisions = ModImportDecisions()
+            )
+
+            val imported = report.importedResults.single()
+            val patchInfo = ImportedModPatchRegistry.readAll(roots.context)[imported.storagePath]
+            assertNotNull(patchInfo)
+            assertTrue(patchInfo!!.wasChaofanModPatched)
+            assertTrue(patchInfo.hasCompatibilityPatches)
+        } finally {
+            ModImportPlanner.cleanup(plan.session)
+        }
+    }
+
     @Test
     fun planLocalFiles_blocksAmethystRuntimeCompatAsReservedCoreComponent() {
         val roots = TestRoots.create("mod-import-planner-runtime-compat")
@@ -72,6 +146,89 @@ class ModImportPlannerReservedCoreTest {
             zipOut.closeEntry()
         }
         assertTrue(jarFile.isFile)
+    }
+
+    private fun writeChaofanModJar(jarFile: File) {
+        ZipOutputStream(jarFile.outputStream()).use { zipOut ->
+            zipOut.putNextEntry(ZipEntry("ModTheSpire.json"))
+            zipOut.write(
+                """
+                    {
+                      "modid": "chaofanmod",
+                      "name": "Chaofan Mod"
+                    }
+                """.trimIndent().toByteArray(StandardCharsets.UTF_8)
+            )
+            zipOut.closeEntry()
+
+            zipOut.putNextEntry(ZipEntry("io/chaofan/sts/chaofanmod/ChaofanMod.class"))
+            zipOut.write(buildChaofanModClassBytes())
+            zipOut.closeEntry()
+        }
+        assertTrue(jarFile.isFile)
+    }
+
+    private fun buildChaofanModClassBytes(): ByteArray {
+        val classWriter = ClassWriter(ClassWriter.COMPUTE_MAXS)
+        classWriter.visit(
+            Opcodes.V1_8,
+            Opcodes.ACC_PUBLIC,
+            "io/chaofan/sts/chaofanmod/ChaofanMod",
+            null,
+            "java/lang/Object",
+            null
+        )
+        classWriter.visitField(
+            Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC,
+            "steamworksHelper",
+            "Lio/chaofan/sts/chaofanmod/utils/SteamworksHelper;",
+            null,
+            null
+        ).visitEnd()
+        classWriter.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null).apply {
+            visitCode()
+            visitVarInsn(Opcodes.ALOAD, 0)
+            visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false)
+            visitInsn(Opcodes.RETURN)
+            visitMaxs(0, 0)
+            visitEnd()
+        }
+        classWriter.visitMethod(Opcodes.ACC_PUBLIC, "receivePostInitialize", "()V", null, null).apply {
+            visitCode()
+            visitTypeInsn(Opcodes.NEW, "io/chaofan/sts/chaofanmod/utils/SteamworksHelper")
+            visitInsn(Opcodes.DUP)
+            visitMethodInsn(
+                Opcodes.INVOKESPECIAL,
+                "io/chaofan/sts/chaofanmod/utils/SteamworksHelper",
+                "<init>",
+                "()V",
+                false
+            )
+            visitFieldInsn(
+                Opcodes.PUTSTATIC,
+                "io/chaofan/sts/chaofanmod/ChaofanMod",
+                "steamworksHelper",
+                "Lio/chaofan/sts/chaofanmod/utils/SteamworksHelper;"
+            )
+            visitFieldInsn(
+                Opcodes.GETSTATIC,
+                "io/chaofan/sts/chaofanmod/ChaofanMod",
+                "steamworksHelper",
+                "Lio/chaofan/sts/chaofanmod/utils/SteamworksHelper;"
+            )
+            visitMethodInsn(
+                Opcodes.INVOKESTATIC,
+                "basemod/BaseMod",
+                "subscribe",
+                "(Lbasemod/interfaces/ISubscriber;)V",
+                false
+            )
+            visitInsn(Opcodes.RETURN)
+            visitMaxs(0, 0)
+            visitEnd()
+        }
+        classWriter.visitEnd()
+        return classWriter.toByteArray()
     }
 
     private class TestRoots private constructor(

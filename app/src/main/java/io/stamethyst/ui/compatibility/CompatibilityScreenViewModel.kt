@@ -19,6 +19,7 @@ class CompatibilityScreenViewModel : ViewModel() {
         val frierenModCompatEnabled: Boolean = true,
         val downfallImportCompatEnabled: Boolean = true,
         val vupShionModCompatEnabled: Boolean = true,
+        val chaofanModCompatEnabled: Boolean = true,
         val fragmentShaderPrecisionCompatEnabled: Boolean = true,
         val runtimeTextureCompatEnabled: Boolean = false,
         val mainMenuPreviewReuseCompatEnabled: Boolean = true,
@@ -71,6 +72,7 @@ class CompatibilityScreenViewModel : ViewModel() {
             frierenModCompatEnabled = CompatibilitySettings.isFrierenModCompatEnabled(host),
             downfallImportCompatEnabled = CompatibilitySettings.isDownfallImportCompatEnabled(host),
             vupShionModCompatEnabled = CompatibilitySettings.isVupShionModCompatEnabled(host),
+            chaofanModCompatEnabled = CompatibilitySettings.isChaofanModCompatEnabled(host),
             fragmentShaderPrecisionCompatEnabled = CompatibilitySettings.isFragmentShaderPrecisionCompatEnabled(host),
             runtimeTextureCompatEnabled = CompatibilitySettings.isRuntimeTextureCompatEnabled(host),
             mainMenuPreviewReuseCompatEnabled = CompatibilitySettings.isMainMenuPreviewReuseCompatEnabled(host),
@@ -162,6 +164,14 @@ class CompatibilityScreenViewModel : ViewModel() {
         }
         CompatibilitySettings.setVupShionModCompatEnabled(host, enabled)
         uiState = uiState.copy(vupShionModCompatEnabled = enabled)
+    }
+
+    fun onChaofanModCompatToggled(host: Context, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        CompatibilitySettings.setChaofanModCompatEnabled(host, enabled)
+        uiState = uiState.copy(chaofanModCompatEnabled = enabled)
     }
 
     fun onFragmentShaderPrecisionCompatToggled(host: Context, enabled: Boolean) {

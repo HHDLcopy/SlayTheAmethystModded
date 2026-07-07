@@ -27,6 +27,7 @@ import io.stamethyst.R
 import io.stamethyst.backend.diag.DiagnosticsProcessClient
 import io.stamethyst.backend.file_interactive.FileShareCompat
 import io.stamethyst.backend.launch.JvmLogRotationManager
+import io.stamethyst.backend.mods.ChaofanModCompatPatcher
 import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.mods.DownfallImportCompatPatcher
 import io.stamethyst.backend.mods.FrierenModCompatPatcher
@@ -88,6 +89,7 @@ internal data class ModImportResult(
     val patchedDownfallHexaghostBodyClassEntries: Int = 0,
     val patchedDownfallBossMechanicPanelClassEntries: Int = 0,
     val patchedVupShionWebButtonConstructor: Boolean = false,
+    val patchedChaofanModSteamworksHelperInitialization: Boolean = false,
     val patchedJacketNoAnoKoShaderEntries: Int = 0,
     val patchedJacketNoAnoKoDesktopVersionDirectives: Int = 0,
     val patchedJacketNoAnoKoFragmentPrecisionBlocks: Int = 0,
@@ -111,6 +113,8 @@ internal data class ModImportResult(
         get() = patchedDownfallClassEntries > 0
     val wasVupShionPatched: Boolean
         get() = patchedVupShionWebButtonConstructor
+    val wasChaofanModPatched: Boolean
+        get() = patchedChaofanModSteamworksHelperInitialization
     val wasJacketNoAnoKoPatched: Boolean
         get() = patchedJacketNoAnoKoShaderEntries > 0
     val wasOriRenderShaderPatched: Boolean
@@ -122,6 +126,7 @@ internal data class ModImportResult(
             wasFrierenAntiPiratePatched ||
             wasDownfallPatched ||
             wasVupShionPatched ||
+            wasChaofanModPatched ||
             wasJacketNoAnoKoPatched ||
             wasOriRenderShaderPatched
 }
@@ -247,6 +252,7 @@ internal object SettingsFileService {
     private const val DOWNFALL_MOD_ID = "downfall"
     private const val FRIEREN_MOD_ID = "frierenmod"
     private const val VUPSHION_MOD_ID = "vupshionmod"
+    private const val CHAOFANMOD_MOD_ID = "chaofanmod"
     private const val JACKETNOANOKO_MOD_ID = "jacketnoanokomod"
     private const val ORI_MOD_ID = "another ori mod"
     private val MOD_IMPORT_ARCHIVE_EXTENSIONS = arrayOf(
@@ -589,6 +595,13 @@ internal object SettingsFileService {
                 patchedVupShionWebButtonConstructor =
                     VupShionModCompatPatcher.patchInPlace(tempFile).hasAnyPatch
             }
+            var patchedChaofanModSteamworksHelperInitialization = false
+            if (CompatibilitySettings.isChaofanModCompatEnabled(host)
+                && modId == CHAOFANMOD_MOD_ID
+            ) {
+                patchedChaofanModSteamworksHelperInitialization =
+                    ChaofanModCompatPatcher.patchInPlace(tempFile).hasAnyPatch
+            }
             var patchedJacketNoAnoKoShaderEntries = 0
             var patchedJacketNoAnoKoDesktopVersionDirectives = 0
             var patchedJacketNoAnoKoFragmentPrecisionBlocks = 0
@@ -655,6 +668,8 @@ internal object SettingsFileService {
                 patchedDownfallBossMechanicPanelClassEntries =
                     patchedDownfallBossMechanicPanelClassEntries,
                 patchedVupShionWebButtonConstructor = patchedVupShionWebButtonConstructor,
+                patchedChaofanModSteamworksHelperInitialization =
+                    patchedChaofanModSteamworksHelperInitialization,
                 patchedJacketNoAnoKoShaderEntries = patchedJacketNoAnoKoShaderEntries,
                 patchedJacketNoAnoKoDesktopVersionDirectives =
                     patchedJacketNoAnoKoDesktopVersionDirectives,
@@ -782,6 +797,9 @@ internal object SettingsFileService {
                             patchedVupShionWebButtonConstructor =
                                 existing.patchedVupShionWebButtonConstructor ||
                                     result.patchedVupShionWebButtonConstructor,
+                            patchedChaofanModSteamworksHelperInitialization =
+                                existing.patchedChaofanModSteamworksHelperInitialization ||
+                                    result.patchedChaofanModSteamworksHelperInitialization,
                             patchedJacketNoAnoKoShaderEntries =
                                 existing.patchedJacketNoAnoKoShaderEntries +
                                     result.patchedJacketNoAnoKoShaderEntries,
@@ -1520,6 +1538,51 @@ internal object SettingsFileService {
         }.trimEnd()
     }
 
+    fun buildChaofanModPatchImportSummaryMessage(
+        context: Context,
+        patchedResults: Collection<ModImportResult>
+    ): String {
+        val mergedByModId = LinkedHashMap<String, ModImportResult>()
+        for (result in patchedResults) {
+            if (!result.wasChaofanModPatched) {
+                continue
+            }
+            val existing = mergedByModId[result.modId]
+            if (existing == null) {
+                mergedByModId[result.modId] = result
+            } else {
+                mergedByModId[result.modId] = existing.copy(
+                    modName = if (existing.modName.isNotBlank()) existing.modName else result.modName,
+                    patchedChaofanModSteamworksHelperInitialization =
+                        existing.patchedChaofanModSteamworksHelperInitialization ||
+                            result.patchedChaofanModSteamworksHelperInitialization
+                )
+            }
+        }
+
+        if (mergedByModId.isEmpty()) {
+            return context.getString(R.string.mod_import_chaofanmod_message_none)
+        }
+
+        return buildString {
+            append(context.getString(R.string.mod_import_chaofanmod_message_intro))
+            for (result in mergedByModId.values) {
+                append("- ")
+                append(
+                    context.getString(
+                        R.string.mod_import_summary_item_title,
+                        result.modName.ifBlank { result.modId },
+                        result.modId
+                    )
+                )
+                append('\n')
+                append(context.getString(R.string.mod_import_chaofanmod_message_item_detail))
+                append('\n')
+            }
+            append(context.getString(R.string.mod_import_chaofanmod_message_rule))
+        }.trimEnd()
+    }
+
     fun buildJacketNoAnoKoPatchImportSummaryMessage(
         context: Context,
         patchedResults: Collection<ModImportResult>
@@ -1737,6 +1800,13 @@ internal object SettingsFileService {
                 titleResId = R.string.main_mod_patch_section_vupshion_title,
                 detail = context.getString(R.string.mod_import_vupshion_message_item_detail),
                 rule = context.getString(R.string.mod_import_vupshion_message_rule)
+            )
+        }
+        if (patchInfo.wasChaofanModPatched) {
+            addSection(
+                titleResId = R.string.main_mod_patch_section_chaofanmod_title,
+                detail = context.getString(R.string.mod_import_chaofanmod_message_item_detail),
+                rule = context.getString(R.string.mod_import_chaofanmod_message_rule)
             )
         }
         if (patchInfo.wasJacketNoAnoKoPatched) {
@@ -2010,6 +2080,8 @@ internal object SettingsFileService {
             patchedDownfallBossMechanicPanelClassEntries =
                 patchedDownfallBossMechanicPanelClassEntries,
             patchedVupShionWebButtonConstructor = patchedVupShionWebButtonConstructor,
+            patchedChaofanModSteamworksHelperInitialization =
+                patchedChaofanModSteamworksHelperInitialization,
             patchedJacketNoAnoKoShaderEntries = patchedJacketNoAnoKoShaderEntries,
             patchedJacketNoAnoKoDesktopVersionDirectives =
                 patchedJacketNoAnoKoDesktopVersionDirectives,

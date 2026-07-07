@@ -27,21 +27,30 @@ import io.stamethyst.R
 import io.stamethyst.backend.diag.DiagnosticsProcessClient
 import io.stamethyst.backend.file_interactive.FileShareCompat
 import io.stamethyst.backend.launch.JvmLogRotationManager
-import io.stamethyst.backend.mods.ChaofanModCompatPatcher
 import io.stamethyst.backend.mods.CompatibilitySettings
-import io.stamethyst.backend.mods.DownfallImportCompatPatcher
-import io.stamethyst.backend.mods.FrierenModCompatPatcher
 import io.stamethyst.backend.mods.ImportedModPatchInfo
 import io.stamethyst.backend.mods.ImportedModPatchRegistry
 import io.stamethyst.backend.mods.AtlasOfflineDownscaleStrategy
-import io.stamethyst.backend.mods.JacketNoAnoKoModCompatPatcher
-import io.stamethyst.backend.mods.ModAtlasFilterCompatPatcher
 import io.stamethyst.backend.mods.ModAtlasOfflineDownscalePatcher
 import io.stamethyst.backend.mods.MtsLaunchManifestValidator
 import io.stamethyst.backend.mods.ModManifestNameRewriter
-import io.stamethyst.backend.mods.OriImportCompatPatcher
 import io.stamethyst.backend.mods.OptionalModStorageCoordinator
-import io.stamethyst.backend.mods.VupShionModCompatPatcher
+import io.stamethyst.backend.mods.importing.ImportPatchResult
+import io.stamethyst.backend.mods.importing.ModImportDecisions
+import io.stamethyst.backend.mods.importing.ModImportItemPlan
+import io.stamethyst.backend.mods.importing.ModImportItemStatus
+import io.stamethyst.backend.mods.importing.PreparedImportSource
+import io.stamethyst.backend.mods.importing.patches.ImportPatchRegistry
+import io.stamethyst.backend.mods.importing.patches.mods.chaofanmod.ChaofanModImportPatchModule
+import io.stamethyst.backend.mods.importing.patches.mods.downfall.DownfallImportPatchModule
+import io.stamethyst.backend.mods.importing.patches.mods.frieren.FrierenImportPatchModule
+import io.stamethyst.backend.mods.importing.patches.mods.jacketnoanoko.JacketNoAnoKoImportPatchModule
+import io.stamethyst.backend.mods.importing.patches.mods.ori.OriImportPatchModule
+import io.stamethyst.backend.mods.importing.patches.mods.vupshion.VupShionImportPatchModule
+import io.stamethyst.backend.mods.importing.patches.structure.DuplicateZipEntryPatchModule
+import io.stamethyst.backend.mods.importing.patches.structure.ManifestRootPatchModule
+import io.stamethyst.backend.mods.importing.patches.texture.AtlasFilterPatchModule
+import io.stamethyst.backend.mods.importing.patches.texture.AtlasOfflineDownscalePatchModule
 import io.stamethyst.backend.resources.RuntimeResourceProvider
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.backend.mods.ModJarSupport
@@ -174,6 +183,29 @@ internal data class ModBatchImportResult(
     )
 }
 
+private data class AppliedImportPatchSummary(
+    val patchedAtlasEntries: Int = 0,
+    val patchedFilterLines: Int = 0,
+    val downscaledAtlasEntries: Int = 0,
+    val downscaledAtlasPageEntries: Int = 0,
+    val downscaledAtlasRuntimeMemorySavedMb: Int = 0,
+    val patchedFrierenAntiPirateMethod: Boolean = false,
+    val patchedDownfallClassEntries: Int = 0,
+    val patchedDownfallMerchantClassEntries: Int = 0,
+    val patchedDownfallHexaghostBodyClassEntries: Int = 0,
+    val patchedDownfallBossMechanicPanelClassEntries: Int = 0,
+    val patchedVupShionWebButtonConstructor: Boolean = false,
+    val patchedChaofanModSteamworksHelperInitialization: Boolean = false,
+    val patchedJacketNoAnoKoShaderEntries: Int = 0,
+    val patchedJacketNoAnoKoDesktopVersionDirectives: Int = 0,
+    val patchedJacketNoAnoKoFragmentPrecisionBlocks: Int = 0,
+    val patchedOriShaderEntries: Int = 0,
+    val patchedOriGaussianBlurShaderEntries: Int = 0,
+    val patchedOriBoxBlurShaderEntries: Int = 0,
+    val patchedOriTextureSamplesBefore: Int = 0,
+    val patchedOriTextureSamplesAfter: Int = 0
+)
+
 internal data class InvalidModImportFailure(
     val displayName: String,
     val reason: String
@@ -249,12 +281,6 @@ internal object SettingsFileService {
         @JvmField val reason: String
     ) : IOException(reason)
 
-    private const val DOWNFALL_MOD_ID = "downfall"
-    private const val FRIEREN_MOD_ID = "frierenmod"
-    private const val VUPSHION_MOD_ID = "vupshionmod"
-    private const val CHAOFANMOD_MOD_ID = "chaofanmod"
-    private const val JACKETNOANOKO_MOD_ID = "jacketnoanokomod"
-    private const val ORI_MOD_ID = "another ori mod"
     private val MOD_IMPORT_ARCHIVE_EXTENSIONS = arrayOf(
         ".zip",
         ".rar",
@@ -545,89 +571,23 @@ internal object SettingsFileService {
             } else {
                 DuplicateModImportReusePlan()
             }
-
-            var patchedAtlasEntries = 0
-            var patchedFilterLines = 0
-            if (CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(host)) {
-                val patchResult = ModAtlasFilterCompatPatcher.patchMipMapFiltersInPlace(tempFile)
-                patchedAtlasEntries = patchResult.patchedAtlasEntries
-                patchedFilterLines = patchResult.patchedFilterLines
-            }
-            var downscaledAtlasEntries = 0
-            var downscaledAtlasPageEntries = 0
-            var downscaledAtlasRuntimeMemorySavedMb = 0
-            if (importAtlasDownscaleStrategy != null) {
-                val patchResult = ModAtlasOfflineDownscalePatcher.patchOversizedAtlasPagesInPlace(
-                    tempFile,
-                    importAtlasDownscaleStrategy,
-                    CompatibilitySettings.readImportDownscaleMaterialPolicy(host)
+            val importItem = buildLegacyImportPatchItem(
+                uri = uri,
+                displayName = displayName,
+                tempFile = tempFile,
+                manifest = manifest,
+                normalizedModId = modId,
+                launchModId = launchModId
+            )
+            val patchSummary = applyRegisteredImportPatches(
+                context = host,
+                workingJar = tempFile,
+                item = importItem,
+                decisions = buildLegacyImportPatchDecisions(
+                    itemId = importItem.id,
+                    importAtlasDownscaleStrategy = importAtlasDownscaleStrategy
                 )
-                downscaledAtlasEntries = patchResult.patchedAtlasEntries
-                downscaledAtlasPageEntries = patchResult.downscaledPageEntries
-                downscaledAtlasRuntimeMemorySavedMb =
-                    bytesToWholeMegabytes(patchResult.estimatedRuntimeBytesSaved)
-            }
-            var patchedFrierenAntiPirateMethod = false
-            if (CompatibilitySettings.isFrierenModCompatEnabled(host)
-                && modId == FRIEREN_MOD_ID
-            ) {
-                patchedFrierenAntiPirateMethod =
-                    FrierenModCompatPatcher.patchAntiPirateInPlace(tempFile).patchedAntiPirateMethod
-            }
-            var patchedDownfallClassEntries = 0
-            var patchedDownfallMerchantClassEntries = 0
-            var patchedDownfallHexaghostBodyClassEntries = 0
-            var patchedDownfallBossMechanicPanelClassEntries = 0
-            if (CompatibilitySettings.isDownfallImportCompatEnabled(host)
-                && modId == DOWNFALL_MOD_ID
-            ) {
-                val patchResult = DownfallImportCompatPatcher.patchInPlace(tempFile)
-                patchedDownfallClassEntries = patchResult.patchedClassEntries
-                patchedDownfallMerchantClassEntries = patchResult.patchedMerchantClassEntries
-                patchedDownfallHexaghostBodyClassEntries = patchResult.patchedHexaghostBodyClassEntries
-                patchedDownfallBossMechanicPanelClassEntries =
-                    patchResult.patchedBossMechanicPanelClassEntries
-            }
-            var patchedVupShionWebButtonConstructor = false
-            if (CompatibilitySettings.isVupShionModCompatEnabled(host)
-                && modId == VUPSHION_MOD_ID
-            ) {
-                patchedVupShionWebButtonConstructor =
-                    VupShionModCompatPatcher.patchInPlace(tempFile).hasAnyPatch
-            }
-            var patchedChaofanModSteamworksHelperInitialization = false
-            if (CompatibilitySettings.isChaofanModCompatEnabled(host)
-                && modId == CHAOFANMOD_MOD_ID
-            ) {
-                patchedChaofanModSteamworksHelperInitialization =
-                    ChaofanModCompatPatcher.patchInPlace(tempFile).hasAnyPatch
-            }
-            var patchedJacketNoAnoKoShaderEntries = 0
-            var patchedJacketNoAnoKoDesktopVersionDirectives = 0
-            var patchedJacketNoAnoKoFragmentPrecisionBlocks = 0
-            if (CompatibilitySettings.isJacketNoAnoKoModCompatEnabled(host)
-                && modId == JACKETNOANOKO_MOD_ID
-            ) {
-                val patchResult = JacketNoAnoKoModCompatPatcher.patchInPlace(tempFile)
-                patchedJacketNoAnoKoShaderEntries = patchResult.patchedShaderEntries
-                patchedJacketNoAnoKoDesktopVersionDirectives =
-                    patchResult.removedDesktopVersionDirectives
-                patchedJacketNoAnoKoFragmentPrecisionBlocks =
-                    patchResult.insertedFragmentPrecisionBlocks
-            }
-            var patchedOriShaderEntries = 0
-            var patchedOriGaussianBlurShaderEntries = 0
-            var patchedOriBoxBlurShaderEntries = 0
-            var patchedOriTextureSamplesBefore = 0
-            var patchedOriTextureSamplesAfter = 0
-            if (modId == ORI_MOD_ID) {
-                val patchResult = OriImportCompatPatcher.patchInPlace(tempFile)
-                patchedOriShaderEntries = patchResult.patchedShaderEntries
-                patchedOriGaussianBlurShaderEntries = patchResult.patchedGaussianBlurShaderEntries
-                patchedOriBoxBlurShaderEntries = patchResult.patchedBoxBlurShaderEntries
-                patchedOriTextureSamplesBefore = patchResult.estimatedTextureSamplesBefore
-                patchedOriTextureSamplesAfter = patchResult.estimatedTextureSamplesAfter
-            }
+            )
             if (replaceExistingDuplicates) {
                 ModManager.removeExistingOptionalModsForImport(
                     context = host,
@@ -654,32 +614,32 @@ internal object SettingsFileService {
                 modId = modId,
                 modName = modName,
                 storagePath = targetFile.absolutePath,
-                patchedAtlasEntries = patchedAtlasEntries,
-                patchedFilterLines = patchedFilterLines,
-                downscaledAtlasEntries = downscaledAtlasEntries,
-                downscaledAtlasPageEntries = downscaledAtlasPageEntries,
-                downscaledAtlasRuntimeMemorySavedMb = downscaledAtlasRuntimeMemorySavedMb,
+                patchedAtlasEntries = patchSummary.patchedAtlasEntries,
+                patchedFilterLines = patchSummary.patchedFilterLines,
+                downscaledAtlasEntries = patchSummary.downscaledAtlasEntries,
+                downscaledAtlasPageEntries = patchSummary.downscaledAtlasPageEntries,
+                downscaledAtlasRuntimeMemorySavedMb = patchSummary.downscaledAtlasRuntimeMemorySavedMb,
                 patchedManifestRootEntries = patchedManifestRootEntries,
                 patchedManifestRootPrefix = patchedManifestRootPrefix,
-                patchedFrierenAntiPirateMethod = patchedFrierenAntiPirateMethod,
-                patchedDownfallClassEntries = patchedDownfallClassEntries,
-                patchedDownfallMerchantClassEntries = patchedDownfallMerchantClassEntries,
-                patchedDownfallHexaghostBodyClassEntries = patchedDownfallHexaghostBodyClassEntries,
+                patchedFrierenAntiPirateMethod = patchSummary.patchedFrierenAntiPirateMethod,
+                patchedDownfallClassEntries = patchSummary.patchedDownfallClassEntries,
+                patchedDownfallMerchantClassEntries = patchSummary.patchedDownfallMerchantClassEntries,
+                patchedDownfallHexaghostBodyClassEntries = patchSummary.patchedDownfallHexaghostBodyClassEntries,
                 patchedDownfallBossMechanicPanelClassEntries =
-                    patchedDownfallBossMechanicPanelClassEntries,
-                patchedVupShionWebButtonConstructor = patchedVupShionWebButtonConstructor,
+                    patchSummary.patchedDownfallBossMechanicPanelClassEntries,
+                patchedVupShionWebButtonConstructor = patchSummary.patchedVupShionWebButtonConstructor,
                 patchedChaofanModSteamworksHelperInitialization =
-                    patchedChaofanModSteamworksHelperInitialization,
-                patchedJacketNoAnoKoShaderEntries = patchedJacketNoAnoKoShaderEntries,
+                    patchSummary.patchedChaofanModSteamworksHelperInitialization,
+                patchedJacketNoAnoKoShaderEntries = patchSummary.patchedJacketNoAnoKoShaderEntries,
                 patchedJacketNoAnoKoDesktopVersionDirectives =
-                    patchedJacketNoAnoKoDesktopVersionDirectives,
+                    patchSummary.patchedJacketNoAnoKoDesktopVersionDirectives,
                 patchedJacketNoAnoKoFragmentPrecisionBlocks =
-                    patchedJacketNoAnoKoFragmentPrecisionBlocks,
-                patchedOriShaderEntries = patchedOriShaderEntries,
-                patchedOriGaussianBlurShaderEntries = patchedOriGaussianBlurShaderEntries,
-                patchedOriBoxBlurShaderEntries = patchedOriBoxBlurShaderEntries,
-                patchedOriTextureSamplesBefore = patchedOriTextureSamplesBefore,
-                patchedOriTextureSamplesAfter = patchedOriTextureSamplesAfter,
+                    patchSummary.patchedJacketNoAnoKoFragmentPrecisionBlocks,
+                patchedOriShaderEntries = patchSummary.patchedOriShaderEntries,
+                patchedOriGaussianBlurShaderEntries = patchSummary.patchedOriGaussianBlurShaderEntries,
+                patchedOriBoxBlurShaderEntries = patchSummary.patchedOriBoxBlurShaderEntries,
+                patchedOriTextureSamplesBefore = patchSummary.patchedOriTextureSamplesBefore,
+                patchedOriTextureSamplesAfter = patchSummary.patchedOriTextureSamplesAfter,
                 suggestedFolderId = duplicateReusePlan.assignedFolderId
             )
             runCatching {
@@ -2061,6 +2021,185 @@ internal object SettingsFileService {
             }
         }
     }
+
+    private fun buildLegacyImportPatchItem(
+        uri: Uri,
+        displayName: String,
+        tempFile: File,
+        manifest: ModJarSupport.ModManifestInfo,
+        normalizedModId: String,
+        launchModId: String
+    ): ModImportItemPlan {
+        return ModImportItemPlan(
+            id = "settings-import::$normalizedModId::${System.nanoTime()}",
+            source = PreparedImportSource(
+                index = 0,
+                uri = uri,
+                displayName = displayName,
+                mimeType = null,
+                file = tempFile
+            ),
+            status = ModImportItemStatus.IMPORTABLE,
+            manifest = manifest,
+            normalizedModId = normalizedModId,
+            launchModId = launchModId
+        )
+    }
+
+    private fun buildLegacyImportPatchDecisions(
+        itemId: String,
+        importAtlasDownscaleStrategy: AtlasOfflineDownscaleStrategy?
+    ): ModImportDecisions {
+        val patchEnabledByKey = LinkedHashMap<String, Boolean>()
+        if (importAtlasDownscaleStrategy != null) {
+            patchEnabledByKey[
+                ModImportDecisions.patchDecisionKey(itemId, AtlasOfflineDownscalePatchModule.id)
+            ] = true
+        }
+        return ModImportDecisions(
+            patchEnabledByKey = patchEnabledByKey,
+            atlasDownscaleStrategy = importAtlasDownscaleStrategy
+        )
+    }
+
+    private fun applyRegisteredImportPatches(
+        context: Context,
+        workingJar: File,
+        item: ModImportItemPlan,
+        decisions: ModImportDecisions
+    ): AppliedImportPatchSummary {
+        val patchResults = ArrayList<ImportPatchResult>()
+        ImportPatchRegistry.modules(context).forEach { module ->
+            if (module.id == DuplicateZipEntryPatchModule.id ||
+                module.id == ManifestRootPatchModule.id
+            ) {
+                return@forEach
+            }
+            val plan = module.plan(context, item, workingJar) ?: return@forEach
+            if (!plan.applicable || !decisions.isPatchEnabled(item.id, plan)) {
+                return@forEach
+            }
+            patchResults += module.apply(
+                context = context,
+                workingJar = workingJar,
+                item = item,
+                plan = plan,
+                decisions = decisions
+            )
+        }
+        return patchResults.toAppliedImportPatchSummary()
+    }
+
+    private fun List<ImportPatchResult>.toAppliedImportPatchSummary(): AppliedImportPatchSummary {
+        var patchedAtlasEntries = 0
+        var patchedFilterLines = 0
+        var downscaledAtlasEntries = 0
+        var downscaledAtlasPageEntries = 0
+        var downscaledAtlasRuntimeMemorySavedMb = 0
+        var patchedFrierenAntiPirateMethod = false
+        var patchedDownfallClassEntries = 0
+        var patchedDownfallMerchantClassEntries = 0
+        var patchedDownfallHexaghostBodyClassEntries = 0
+        var patchedDownfallBossMechanicPanelClassEntries = 0
+        var patchedVupShionWebButtonConstructor = false
+        var patchedChaofanModSteamworksHelperInitialization = false
+        var patchedJacketNoAnoKoShaderEntries = 0
+        var patchedJacketNoAnoKoDesktopVersionDirectives = 0
+        var patchedJacketNoAnoKoFragmentPrecisionBlocks = 0
+        var patchedOriShaderEntries = 0
+        var patchedOriGaussianBlurShaderEntries = 0
+        var patchedOriBoxBlurShaderEntries = 0
+        var patchedOriTextureSamplesBefore = 0
+        var patchedOriTextureSamplesAfter = 0
+
+        for (result in this) {
+            when (result.moduleId) {
+                AtlasFilterPatchModule.id -> {
+                    patchedAtlasEntries += result.metric("patchedAtlasEntries")
+                    patchedFilterLines += result.metric("patchedFilterLines")
+                }
+                AtlasOfflineDownscalePatchModule.id -> {
+                    downscaledAtlasEntries += result.metric("patchedAtlasEntries")
+                    downscaledAtlasPageEntries += result.metric("downscaledPageEntries")
+                    downscaledAtlasRuntimeMemorySavedMb +=
+                        result.metric("estimatedRuntimeBytesSavedMb")
+                }
+                FrierenImportPatchModule.id -> {
+                    patchedFrierenAntiPirateMethod =
+                        patchedFrierenAntiPirateMethod || result.applied
+                }
+                DownfallImportPatchModule.id -> {
+                    patchedDownfallClassEntries += result.metric("patchedClassEntries")
+                    patchedDownfallMerchantClassEntries +=
+                        result.metric("patchedMerchantClassEntries")
+                    patchedDownfallHexaghostBodyClassEntries +=
+                        result.metric("patchedHexaghostBodyClassEntries")
+                    patchedDownfallBossMechanicPanelClassEntries +=
+                        result.metric("patchedBossMechanicPanelClassEntries")
+                }
+                VupShionImportPatchModule.id -> {
+                    patchedVupShionWebButtonConstructor =
+                        patchedVupShionWebButtonConstructor || result.applied
+                }
+                ChaofanModImportPatchModule.id -> {
+                    patchedChaofanModSteamworksHelperInitialization =
+                        patchedChaofanModSteamworksHelperInitialization || result.applied
+                }
+                JacketNoAnoKoImportPatchModule.id -> {
+                    patchedJacketNoAnoKoShaderEntries += result.metric("patchedShaderEntries")
+                    patchedJacketNoAnoKoDesktopVersionDirectives +=
+                        result.metric("removedDesktopVersionDirectives")
+                    patchedJacketNoAnoKoFragmentPrecisionBlocks +=
+                        result.metric("insertedFragmentPrecisionBlocks")
+                }
+                OriImportPatchModule.id -> {
+                    patchedOriShaderEntries += result.metric("patchedShaderEntries")
+                    patchedOriGaussianBlurShaderEntries +=
+                        result.metric("patchedGaussianBlurShaderEntries")
+                    patchedOriBoxBlurShaderEntries += result.metric("patchedBoxBlurShaderEntries")
+                    patchedOriTextureSamplesBefore =
+                        maxOf(
+                            patchedOriTextureSamplesBefore,
+                            result.metric("estimatedTextureSamplesBefore")
+                        )
+                    patchedOriTextureSamplesAfter =
+                        maxOf(
+                            patchedOriTextureSamplesAfter,
+                            result.metric("estimatedTextureSamplesAfter")
+                        )
+                }
+            }
+        }
+
+        return AppliedImportPatchSummary(
+            patchedAtlasEntries = patchedAtlasEntries,
+            patchedFilterLines = patchedFilterLines,
+            downscaledAtlasEntries = downscaledAtlasEntries,
+            downscaledAtlasPageEntries = downscaledAtlasPageEntries,
+            downscaledAtlasRuntimeMemorySavedMb = downscaledAtlasRuntimeMemorySavedMb,
+            patchedFrierenAntiPirateMethod = patchedFrierenAntiPirateMethod,
+            patchedDownfallClassEntries = patchedDownfallClassEntries,
+            patchedDownfallMerchantClassEntries = patchedDownfallMerchantClassEntries,
+            patchedDownfallHexaghostBodyClassEntries = patchedDownfallHexaghostBodyClassEntries,
+            patchedDownfallBossMechanicPanelClassEntries =
+                patchedDownfallBossMechanicPanelClassEntries,
+            patchedVupShionWebButtonConstructor = patchedVupShionWebButtonConstructor,
+            patchedChaofanModSteamworksHelperInitialization =
+                patchedChaofanModSteamworksHelperInitialization,
+            patchedJacketNoAnoKoShaderEntries = patchedJacketNoAnoKoShaderEntries,
+            patchedJacketNoAnoKoDesktopVersionDirectives =
+                patchedJacketNoAnoKoDesktopVersionDirectives,
+            patchedJacketNoAnoKoFragmentPrecisionBlocks =
+                patchedJacketNoAnoKoFragmentPrecisionBlocks,
+            patchedOriShaderEntries = patchedOriShaderEntries,
+            patchedOriGaussianBlurShaderEntries = patchedOriGaussianBlurShaderEntries,
+            patchedOriBoxBlurShaderEntries = patchedOriBoxBlurShaderEntries,
+            patchedOriTextureSamplesBefore = patchedOriTextureSamplesBefore,
+            patchedOriTextureSamplesAfter = patchedOriTextureSamplesAfter
+        )
+    }
+
+    private fun ImportPatchResult.metric(key: String): Int = metrics[key] ?: 0
 
     private fun ModImportResult.toImportedModPatchInfo(): ImportedModPatchInfo {
         return ImportedModPatchInfo(

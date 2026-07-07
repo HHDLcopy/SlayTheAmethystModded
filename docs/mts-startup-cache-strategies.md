@@ -87,7 +87,9 @@ the mod id/version when available.
 On a cache miss, one jar scan builds all four Loadout indexes. On later launches,
 Loadout reloads the cached class names, revalidates them through class loading and
 type checks, and fills Loadout's original maps synchronously. This removes the
-startup fan-out of many Loadout scanner threads.
+startup fan-out of many Loadout scanner threads. The patch stays inactive whenever
+`amethyst.mts.patch_cache.current=false`, so non-cache and cache-miss launches keep
+Loadout's original threaded scanner behavior.
 
 Disable with `amethyst.runtime_compat.loadout_class_scan_cache=false`.
 
@@ -161,10 +163,11 @@ Disable with `amethyst.runtime_compat.fast_cache_splash=false`. Tune with
 
 ## Supporting non-cache optimization
 
-`LoadoutBaseGameMonsterSkipPatches` is not a cache strategy. It skips Loadout's
-base-game monster scan on Amethyst because the original path spends time scanning and
-then fails with an empty map in the observed Android runtime. It is documented here
-only because it was introduced while reducing the same startup bottleneck.
+`LoadoutBaseGameMonsterSkipPatches` is a cache-hit-only companion optimization. It
+skips Loadout's base-game monster scan only when `amethyst.mts.patch_cache.current=true`
+because the original cache-hit path spends time scanning and then fails with an empty
+map in the observed Android runtime. Non-cache launches keep Loadout's original scan
+so the monster selector can still populate vanilla monsters.
 
 `BaseModEditCardsTimingPatches` and `BaseModPostInitializeTimingPatches` are also
 not cache strategies. They are diagnostic wrappers used to identify which subscriber

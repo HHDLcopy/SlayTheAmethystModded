@@ -1,5 +1,6 @@
 package io.stamethyst.backend.mods
 
+import io.stamethyst.backend.mods.importing.patches.mods.ori.OriImportCompatPatcher
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.util.zip.ZipEntry

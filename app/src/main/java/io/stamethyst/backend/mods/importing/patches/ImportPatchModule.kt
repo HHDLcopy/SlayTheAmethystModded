@@ -62,24 +62,6 @@ internal interface ImportPatchModule {
     }
 }
 
-internal object ImportPatchRegistry {
-    fun modules(context: Context): List<ImportPatchModule> {
-        return listOf(
-            DuplicateZipEntryPatchModule,
-            ManifestRootPatchModule,
-            AtlasFilterPatchModule,
-            AtlasOfflineDownscalePatchModule,
-            FrierenImportPatchModule,
-            DownfallImportPatchModule,
-            VupShionImportPatchModule,
-            ChaofanModImportPatchModule,
-            JacketNoAnoKoImportPatchModule,
-            OriImportPatchModule
-        ).filter { it.isAvailable(context) }
-            .sortedBy { it.order }
-    }
-}
-
 internal fun ModImportPlan.patchModuleIdsForItem(itemId: String): Set<String> {
     return items.firstOrNull { it.id == itemId }
         ?.patchPlans

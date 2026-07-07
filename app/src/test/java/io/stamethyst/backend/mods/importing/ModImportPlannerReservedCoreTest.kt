@@ -8,7 +8,7 @@ import android.content.res.Resources
 import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.mods.ImportedModPatchRegistry
 import io.stamethyst.backend.mods.ReservedCoreModComponents
-import io.stamethyst.backend.mods.importing.patches.ChaofanModImportPatchModule
+import io.stamethyst.backend.mods.importing.patches.mods.chaofanmod.ChaofanModImportPatchModule
 import java.io.File
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files

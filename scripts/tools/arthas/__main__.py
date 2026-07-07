@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 
-from scripts.tools.connector.client import ConnectorClient
+from scripts.tools.connector.client import ConnectorClient, Stream
 from scripts.tools.lib.agent_client import AgentClient
 from scripts.tools.arthas.cli import run_query, run_shell
 from scripts.tools.arthas.manager import ArthasManager
@@ -35,6 +35,14 @@ def _usage() -> None:
     print("  stop       – unforward ports")
 
 
+def _make_arthas_stream(port: int = 8099) -> Stream:
+    c = ConnectorClient()
+    c.connect()
+    c.select("auto")
+    c.forward(port=port)
+    return c.connect_stream(port=port)
+
+
 def _cmd_start() -> int:
     conn = ConnectorClient()
     conn.connect()
@@ -54,7 +62,7 @@ def _cmd_shell() -> int:
     conn.select("auto")
     conn.forward(port=8099)
     stream = conn.connect_stream(port=8099)
-    run_shell(stream)
+    run_shell(stream, reconnect_fn=_make_arthas_stream)
     stream.close()
     conn.unforward(port=8099)
     return 0
@@ -69,7 +77,7 @@ def _cmd_query() -> int:
     conn.select("auto")
     conn.forward(port=8099)
     stream = conn.connect_stream(port=8099)
-    run_query(stream, " ".join(sys.argv[2:]))
+    run_query(stream, " ".join(sys.argv[2:]), reconnect_fn=_make_arthas_stream)
     stream.close()
     conn.unforward(port=8099)
     return 0

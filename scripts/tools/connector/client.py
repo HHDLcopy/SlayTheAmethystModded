@@ -94,6 +94,8 @@ class ConnectorClient:
         stream_id = resp.get("stream_id", "unknown")
         sock = self._sock
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._sock.connect(("127.0.0.1", self._port))
+        self._sock.sendall(f"AUTH {self._token}\n".encode("utf-8"))
         return Stream(sock=sock, stream_id=stream_id)
 
 

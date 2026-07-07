@@ -211,6 +211,8 @@ monitor -c 1 com.megacrit.cardcrawl.cards.AbstractCard update -n 5
 
 ### Profiler / 堆分析
 
+> **`profiler` 在 Android 上不可用**（缺少 `libasyncProfiler.so`）。见下方 [不支持的 Android 命令](#不支持的-android-命令)。
+
 | 命令 | 用途 |
 |------|------|
 | `profiler list` | 列出可采样的事件类型（cpu、alloc、lock 等） |
@@ -275,6 +277,7 @@ MTS ClassLoader 隔离会导致 ASM 的 `ClassWriter.getCommonSuperClass()` 解�
 | `classloader-metaspace` | Android ART 没有 JDK metaspace |
 | `jfr` | Android JVM 不支持 JDK Flight Recorder |
 | `mc` | Android JRE 缺少 `tools.jar`（JDK 编译器）。替代方案：本地 `javac` → `adb push` → `retransform` |
+| `profiler` | Android 平台缺少 `libasyncProfiler.so`（`perf_event_open` 非所有设备/内核均支持）。替代方案：`dashboard`、`trace`、`heapdump` 代替 |
 
 ### heapdump
 

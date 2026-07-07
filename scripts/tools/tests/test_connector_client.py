@@ -96,8 +96,12 @@ class TestConnectorClient(unittest.TestCase):
         result = client.shell("echo hello")
         self.assertEqual(result["stdout"], "hello")
 
-    def test_connect_stream_sends_request_and_returns_stream_id(self):
+    @patch("socket.socket")
+    def test_connect_stream_sends_request_and_returns_stream_id(self, mock_socket_cls):
         from scripts.tools.connector.client import ConnectorClient
+        mock_new_sock = MagicMock()
+        mock_socket_cls.return_value = mock_new_sock
+
         client = ConnectorClient(port=1, token="x")
         mock_sock = MagicMock()
         mock_sock.recv.return_value = b'{"stream_id":"s1"}\n'
@@ -108,9 +112,16 @@ class TestConnectorClient(unittest.TestCase):
         self.assertEqual(req["method"], "connect_stream")
         self.assertEqual(req["params"]["port"], 8099)
         self.assertEqual(stream.stream_id, "s1")
+        mock_new_sock.connect.assert_called_once_with(("127.0.0.1", 1))
+        mock_new_sock.sendall.assert_called_once_with(b"AUTH x\n")
+        self.assertIs(client._sock, mock_new_sock)
 
-    def test_stream_raw_io(self):
+    @patch("socket.socket")
+    def test_stream_raw_io(self, mock_socket_cls):
         from scripts.tools.connector.client import ConnectorClient, Stream
+        mock_new_sock = MagicMock()
+        mock_socket_cls.return_value = mock_new_sock
+
         client = ConnectorClient(port=1, token="x")
         mock_sock = MagicMock()
         mock_sock.recv.side_effect = [b'{"stream_id":"st"}\n']
@@ -121,6 +132,8 @@ class TestConnectorClient(unittest.TestCase):
         stream.write(b"hello\n")
         self.assertEqual(mock_sock.sendall.call_count, 2)
         mock_sock.sendall.assert_any_call(b"hello\n")
+        # client socket was replaced with a fresh reconnected one
+        self.assertIs(client._sock, mock_new_sock)
 
 
 if __name__ == "__main__":

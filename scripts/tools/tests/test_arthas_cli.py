@@ -14,6 +14,7 @@ class TestArthasCLI(unittest.TestCase):
         mock_sock = MagicMock()
         mock_sock.recv.side_effect = [
             b"[arthas@1]$ ",
+            OSError(),
             b"hello world\n[arthas@1]$ ",
             b"",
         ]
@@ -22,3 +23,27 @@ class TestArthasCLI(unittest.TestCase):
         run_query(stream=stream, command="mycmd", stdout=out)
         mock_sock.sendall.assert_called()
         self.assertIn("hello world", out.getvalue())
+
+    def test_query_passes_reconnect_fn_to_shell(self):
+        from scripts.tools.arthas.cli import run_query
+        mock_sock = MagicMock()
+        stream = Stream(sock=mock_sock, stream_id="s1")
+        out = io.StringIO()
+
+        def reconnect_fn():
+            return stream
+
+        with patch("scripts.tools.arthas.cli.ArthasShell") as MockShell:
+            mock_shell = MockShell.return_value
+            mock_shell.command.return_value = "result"
+            run_query(
+                stream=stream,
+                command="test",
+                reconnect_fn=reconnect_fn,
+                stdout=out,
+            )
+        MockShell.assert_called_once_with(
+            stream=stream, reconnect_fn=reconnect_fn,
+        )
+        mock_shell.command.assert_called_once_with("test")
+        self.assertIn("result", out.getvalue())

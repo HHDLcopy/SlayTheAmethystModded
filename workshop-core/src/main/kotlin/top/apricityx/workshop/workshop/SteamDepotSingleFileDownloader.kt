@@ -24,7 +24,7 @@ data class SteamDepotFileDownloadRequest(
     val branch: String = "public",
     val fileName: String,
     val outputFile: File,
-    val depotKey: ByteArray,
+    val depotKey: ByteArray?,
 )
 
 data class SteamDepotFileDownloadProgress(
@@ -91,10 +91,12 @@ class SteamDepotSingleFileDownloader(
                 cdnAuthTokenCache = cdnAuthTokenCache,
                 waitIfPaused = waitIfPaused,
             )
-            val preparedManifest = if (manifest.filenamesEncrypted) {
-                manifest.decryptFilenames(request.depotKey)
-            } else {
-                manifest
+            val preparedManifest = when {
+                manifest.filenamesEncrypted && request.depotKey != null -> manifest.decryptFilenames(request.depotKey)
+                manifest.filenamesEncrypted -> throw WorkshopDownloadException(
+                    "Steam depot ${request.depotId} manifest ${request.manifestId} has encrypted filenames, but no depot key is available",
+                )
+                else -> manifest
             }
             val targetEntry = preparedManifest.files.firstOrNull { it.matchesTargetFileName(request.fileName) }
                 ?: throw WorkshopDownloadException(

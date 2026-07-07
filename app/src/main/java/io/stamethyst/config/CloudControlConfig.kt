@@ -8,29 +8,50 @@ import io.stamethyst.backend.network.NetworkAccelerationPolicy
 import io.stamethyst.backend.update.GithubMirrorFallback
 import io.stamethyst.backend.update.UpdateMirrorManager
 import io.stamethyst.backend.update.UpdateSource
+import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
 import java.io.IOException
 import java.net.URI
 import java.net.URL
 import java.nio.charset.StandardCharsets
+import java.util.Base64
+import java.util.Locale
 import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.atomic.AtomicBoolean
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
 private const val DEFAULT_QQ_GROUP_NUMBER_VALUE = "1029305387"
+private const val STEAM_DEPOT_KEY_BYTES = 32
 
 data class CloudControlSettings(
     val heartbeatIntervalSeconds: Int,
     val heartbeatWsUrl: String,
-    val qqGroupNumber: String = DEFAULT_QQ_GROUP_NUMBER_VALUE
+    val qqGroupNumber: String = DEFAULT_QQ_GROUP_NUMBER_VALUE,
+    val steamDepotKeys: List<CloudControlSteamDepotKey> = emptyList()
 ) {
     val heartbeatIntervalMs: Long
         get() = heartbeatIntervalSeconds * 1000L
 
     val qqGroupUrl: String
         get() = CloudControlConfig.qqGroupUrlFor(qqGroupNumber)
+
+    fun steamDepotKeyBytes(appId: UInt, depotId: UInt): ByteArray? =
+        steamDepotKeys
+            .firstOrNull { key ->
+                key.appId == appId.toLong() && key.depotId == depotId.toLong()
+            }
+            ?.decodeKeyBytes()
+}
+
+data class CloudControlSteamDepotKey(
+    val appId: Long,
+    val depotId: Long,
+    val keyHex: String
+) {
+    fun decodeKeyBytes(): ByteArray? =
+        CloudControlConfig.decodeSteamDepotKeyHex(keyHex)
 }
 
 data class CloudControlRemoteConfigText(
@@ -51,6 +72,11 @@ object CloudControlConfig {
     private const val READ_TIMEOUT_MS = 8_000
     private val USER_AGENT = "SlayTheAmethyst/${BuildConfig.VERSION_NAME}"
     private val QQ_GROUP_NUMBER_REGEX = Regex("[1-9][0-9]{4,19}")
+    private val STEAM_DEPOT_KEY_HEX_REGEX = Regex("[0-9a-f]{64}")
+    private val HEX_DIGITS = charArrayOf(
+        '0', '1', '2', '3', '4', '5', '6', '7',
+        '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'
+    )
 
     private val startupRefreshStarted = AtomicBoolean(false)
     private val refreshing = AtomicBoolean(false)
@@ -76,6 +102,9 @@ object CloudControlConfig {
 
     @JvmStatic
     fun qqGroupUrl(): String = current().qqGroupUrl
+
+    fun steamDepotKeyBytes(appId: UInt, depotId: UInt): ByteArray? =
+        current().steamDepotKeyBytes(appId, depotId)
 
     @JvmStatic
     fun isStartupRefreshCompleted(): Boolean = startupRefreshCompleted
@@ -148,7 +177,8 @@ object CloudControlConfig {
                     "Cloud control config loaded; heartbeatIntervalSeconds=" +
                         "${fetched.heartbeatIntervalSeconds}, heartbeatWsUrl=" +
                         "${fetched.heartbeatWsUrl}, qqGroupNumber=" +
-                        fetched.qqGroupNumber
+                        "${fetched.qqGroupNumber}, steamDepotKeys=" +
+                        fetched.steamDepotKeys.size
                 )
             } catch (error: Throwable) {
                 updateCurrentSettings(defaultSettings())
@@ -163,6 +193,28 @@ object CloudControlConfig {
         }, "STS-CloudControlFetch").apply {
             isDaemon = true
             start()
+        }
+    }
+
+    @JvmStatic
+    fun refreshBlocking(context: Context): CloudControlSettings {
+        val appContext = context.applicationContext
+        return try {
+            val configUrl = BuildConfig.CLOUD_CONTROL_CONFIG_URL.trim()
+            if (configUrl.isEmpty()) {
+                Log.i(TAG, "Cloud control config URL is empty; keeping current settings")
+                return currentSettings
+            }
+            val fetched = fetchRemoteSettings(appContext, configUrl)
+            updateCurrentSettings(fetched)
+            fetched
+        } catch (error: Throwable) {
+            Log.w(
+                TAG,
+                "Cloud control config fetch failed; keeping current settings: " +
+                    "${error.javaClass.simpleName}: ${error.message ?: "no message"}"
+            )
+            currentSettings
         }
     }
 
@@ -240,11 +292,14 @@ object CloudControlConfig {
                 ?: defaults.qqGroupNumber,
             defaults.qqGroupNumber
         )
+        val steamDepotKeys = parseSteamDepotKeys(root)
+            .ifEmpty { defaults.steamDepotKeys }
 
         return CloudControlSettings(
             heartbeatIntervalSeconds = intervalSeconds,
             heartbeatWsUrl = wsUrl,
-            qqGroupNumber = qqGroupNumber
+            qqGroupNumber = qqGroupNumber,
+            steamDepotKeys = steamDepotKeys
         )
     }
 
@@ -333,6 +388,128 @@ object CloudControlConfig {
         } else {
             fallback
         }
+    }
+
+    private fun parseSteamDepotKeys(root: JSONObject): List<CloudControlSteamDepotKey> {
+        val steamObject = root.optJSONObject("steam")
+        val keys = ArrayList<CloudControlSteamDepotKey>()
+        parseSteamDepotKeyArray(root.optJSONArray("steamDepotKeys"), keys)
+        parseSteamDepotKeyArray(root.optJSONArray("depotKeys"), keys)
+        parseSteamDepotKeyArray(steamObject?.optJSONArray("depotKeys"), keys)
+        parseSteamDepotKeyArray(steamObject?.optJSONArray("steamDepotKeys"), keys)
+        return keys.distinctBy { key -> key.appId to key.depotId }
+    }
+
+    private fun parseSteamDepotKeyArray(
+        array: JSONArray?,
+        output: MutableList<CloudControlSteamDepotKey>
+    ) {
+        if (array == null) {
+            return
+        }
+        for (index in 0 until array.length()) {
+            val item = array.optJSONObject(index) ?: continue
+            val appId = firstPositiveLong(
+                item,
+                "appId",
+                "appID",
+                "app_id",
+                "app"
+            ) ?: continue
+            val depotId = firstPositiveLong(
+                item,
+                "depotId",
+                "depotID",
+                "depot_id",
+                "depot"
+            ) ?: continue
+            val keyHex = normalizeSteamDepotKeyHex(
+                firstNonBlankString(
+                    item,
+                    "keyHex",
+                    "depotKeyHex",
+                    "depot_key_hex",
+                    "hex",
+                    "key"
+                )
+            ) ?: normalizeSteamDepotKeyBase64(
+                firstNonBlankString(
+                    item,
+                    "keyBase64",
+                    "depotKeyBase64",
+                    "depot_key_base64",
+                    "base64"
+                )
+            ) ?: continue
+            output += CloudControlSteamDepotKey(
+                appId = appId,
+                depotId = depotId,
+                keyHex = keyHex
+            )
+        }
+    }
+
+    private fun firstPositiveLong(
+        json: JSONObject?,
+        vararg names: String
+    ): Long? {
+        if (json == null) {
+            return null
+        }
+        for (name in names) {
+            val value = optionalPositiveLong(json, name)
+            if (value != null) {
+                return value
+            }
+        }
+        return null
+    }
+
+    private fun optionalPositiveLong(json: JSONObject, name: String): Long? {
+        if (!json.has(name)) {
+            return null
+        }
+        val rawValue = json.opt(name) ?: return null
+        val parsed = when (rawValue) {
+            is Number -> rawValue.toLong()
+            is String -> rawValue.trim().toLongOrNull()
+            else -> null
+        }
+        return parsed?.takeIf { it > 0L }
+    }
+
+    private fun normalizeSteamDepotKeyHex(value: String?): String? {
+        val normalized = value
+            ?.trim()
+            ?.removePrefix("0x")
+            ?.removePrefix("0X")
+            ?.filterNot(Char::isWhitespace)
+            ?.lowercase(Locale.ROOT)
+            ?: return null
+        return normalized.takeIf { STEAM_DEPOT_KEY_HEX_REGEX.matches(it) }
+    }
+
+    private fun normalizeSteamDepotKeyBase64(value: String?): String? =
+        runCatching {
+            val decoded = Base64.getDecoder().decode(value?.trim().orEmpty())
+            decoded.takeIf { it.size == STEAM_DEPOT_KEY_BYTES }?.toHexString()
+        }.getOrNull()
+
+    internal fun decodeSteamDepotKeyHex(value: String): ByteArray? {
+        val normalized = normalizeSteamDepotKeyHex(value) ?: return null
+        return ByteArray(STEAM_DEPOT_KEY_BYTES) { index ->
+            normalized.substring(index * 2, index * 2 + 2).toInt(16).toByte()
+        }
+    }
+
+    private fun ByteArray.toHexString(): String {
+        val chars = CharArray(size * 2)
+        for (index in indices) {
+            val unsigned = this[index].toInt() and 0xff
+            chars[index * 2] = HEX_DIGITS[unsigned ushr 4]
+            chars[index * 2 + 1] = HEX_DIGITS[unsigned and 0x0f]
+        }
+        return String(chars)
     }
 
     private fun normalizeHttpUrl(value: String): String? {

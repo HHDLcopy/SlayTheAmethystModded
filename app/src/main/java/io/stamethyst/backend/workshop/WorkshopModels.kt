@@ -87,6 +87,27 @@ data class WorkshopItemRating(
     val maxScore: Int = 5,
 )
 
+enum class WorkshopPreviewMediaKind {
+    Image,
+    YouTubeVideo,
+    SteamVideo,
+}
+
+enum class WorkshopPreviewVideoSource {
+    YouTube,
+    Steam,
+}
+
+data class WorkshopPreviewMedia(
+    val id: String,
+    val kind: WorkshopPreviewMediaKind,
+    val imageUrl: String = "",
+    val thumbnailUrl: String = "",
+    val youtubeVideoId: String = "",
+    val steamVideoUrl: String = "",
+    val videoSource: WorkshopPreviewVideoSource = WorkshopPreviewVideoSource.YouTube,
+)
+
 internal fun normalizedWorkshopRating(score: Float?, maxScore: Int = 5): WorkshopItemRating? {
     val rawScore = score ?: return null
     if (!rawScore.isFinite() || rawScore <= 0f || maxScore <= 0) return null
@@ -103,6 +124,7 @@ data class WorkshopItemDetails(
     val hcontentFile: ULong? = null,
     val depotId: UInt? = null,
     val jsonMetadata: String = "",
+    val previewMedia: List<WorkshopPreviewMedia> = emptyList(),
     val previewImageUrls: List<String> = emptyList(),
     val fullDescriptionUnavailable: Boolean = false,
     val changeNotes: String = "",

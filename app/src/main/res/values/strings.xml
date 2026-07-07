@@ -2294,6 +2294,12 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="workshop_download_state_cancelling">Cancelling</string>
     <string name="workshop_download_state_failed">Download failed</string>
     <string name="workshop_download_state_unavailable">Unavailable</string>
+    <string name="workshop_preview_gallery_video_content_description">%1$s video %2$d of %3$d</string>
+    <string name="workshop_preview_gallery_video_failed">Video preview unavailable</string>
+    <string name="workshop_preview_gallery_video_unplayable">This video can\'t be played. Make sure your network can access YouTube.</string>
+    <string name="workshop_preview_gallery_play_video">Play video</string>
+    <string name="workshop_preview_gallery_video_source_youtube">YouTube</string>
+    <string name="workshop_preview_gallery_video_source_steam">Steam</string>
     <string name="workshop_action_download">Download</string>
     <string name="workshop_action_update">Update</string>
     <string name="workshop_action_continue">Continue</string>

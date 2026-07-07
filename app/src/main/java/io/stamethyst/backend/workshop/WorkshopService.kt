@@ -10,6 +10,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.util.LinkedHashMap
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -488,16 +489,18 @@ internal class WorkshopService(
             val commentThreadContext = localizedDetail?.commentThreadContext
                 ?: detail.toCommentThreadContext(publishedFileId)
             val commentCount = localizedDetail?.commentCount
+            val previewMedia = buildWorkshopPreviewMedia(
+                summary.previewUrl,
+                localizedDetail?.previewMedia.orEmpty(),
+            )
             WorkshopItemDetails(
                 summary = summary,
                 fileUrl = detail.fileUrl,
                 hcontentFile = detail.hcontentFile?.takeIf { it > 0L }?.toULong(),
                 depotId = detail.consumerAppId?.takeIf { it > 0 }?.toUInt(),
                 jsonMetadata = payload,
-                previewImageUrls = buildWorkshopPreviewImageUrls(
-                    summary.previewUrl,
-                    localizedDetail?.previewImageUrls.orEmpty(),
-                ),
+                previewMedia = previewMedia,
+                previewImageUrls = buildWorkshopPreviewImageUrls(previewMedia),
                 fullDescriptionUnavailable = fullDescriptionUnavailable,
                 changeNotesUrl = buildWorkshopChangeNotesUrl(publishedFileId, languagePreference.requestValue),
                 dependencies = dependencyIds.map { dependencyId ->
@@ -593,7 +596,7 @@ internal class WorkshopService(
             LocalizedWorkshopDetail(
                 description = extractWorkshopDescription(payload),
                 authorName = extractWorkshopAuthorName(payload),
-                previewImageUrls = extractPreviewImageUrls(payload),
+                previewMedia = extractPreviewMediaItems(payload),
                 requiredItemIds = extractRequiredItemIds(payload),
                 commentThreadContext = extractCommentThreadContext(payload),
                 commentCount = extractCommentCount(payload),
@@ -1246,14 +1249,74 @@ internal class WorkshopService(
                 ?.let(WorkshopServiceHtmlDecoder::stripTagsAndDecode)
                 .orEmpty()
 
-    private fun buildWorkshopPreviewImageUrls(
+    private fun buildWorkshopPreviewMedia(
         summaryPreviewUrl: String,
-        detailPreviewUrls: List<String>,
-    ): List<String> = (detailPreviewUrls + summaryPreviewUrl)
-        .map { url -> WorkshopServiceHtmlDecoder.decode(url).trim() }
-        .filter(String::isNotBlank)
-        .map(::resizeWorkshopPreviewImageUrl)
-        .distinctBy(::normalizePreviewImageUrlForDedupe)
+        detailPreviewMedia: List<WorkshopPreviewMedia>,
+    ): List<WorkshopPreviewMedia> {
+        val seenImageUrls = mutableSetOf<String>()
+        val seenYoutubeIds = mutableSetOf<String>()
+        val result = ArrayList<WorkshopPreviewMedia>(detailPreviewMedia.size + 1)
+
+        detailPreviewMedia.forEach { media ->
+            when (media.kind) {
+                WorkshopPreviewMediaKind.Image -> {
+                    val imageUrl = WorkshopServiceHtmlDecoder.decode(media.imageUrl).trim()
+                        .takeIf(::isSupportedPreviewImageUrl)
+                        ?.let(::resizeWorkshopPreviewImageUrl)
+                        ?: return@forEach
+                    val dedupeKey = normalizePreviewImageUrlForDedupe(imageUrl)
+                    if (!seenImageUrls.add(dedupeKey)) return@forEach
+                    result += media.copy(
+                        imageUrl = imageUrl,
+                        thumbnailUrl = media.thumbnailUrl.ifBlank { imageUrl },
+                    )
+                }
+
+                WorkshopPreviewMediaKind.YouTubeVideo -> {
+                    val youtubeVideoId = media.youtubeVideoId.trim().takeIf(String::isNotBlank) ?: return@forEach
+                    if (!seenYoutubeIds.add(youtubeVideoId)) return@forEach
+                    result += media.copy(
+                        youtubeVideoId = youtubeVideoId,
+                        videoSource = WorkshopPreviewVideoSource.YouTube,
+                        thumbnailUrl = normalizeWorkshopYouTubeThumbnailUrl(
+                            youtubeVideoId = youtubeVideoId,
+                            candidateUrl = media.thumbnailUrl,
+                        ),
+                    )
+                }
+
+                WorkshopPreviewMediaKind.SteamVideo -> {
+                    // Steam-hosted workshop videos are hidden until we have a stable in-app playback path.
+                    return@forEach
+                }
+            }
+        }
+
+        val normalizedSummaryPreviewUrl = WorkshopServiceHtmlDecoder.decode(summaryPreviewUrl).trim()
+            .takeIf(::isSupportedPreviewImageUrl)
+            ?.let(::resizeWorkshopPreviewImageUrl)
+        if (normalizedSummaryPreviewUrl != null) {
+            val dedupeKey = normalizePreviewImageUrlForDedupe(normalizedSummaryPreviewUrl)
+            if (seenImageUrls.add(dedupeKey)) {
+                result += WorkshopPreviewMedia(
+                    id = "summary_preview",
+                    kind = WorkshopPreviewMediaKind.Image,
+                    imageUrl = normalizedSummaryPreviewUrl,
+                    thumbnailUrl = normalizedSummaryPreviewUrl,
+                )
+            }
+        }
+
+        return result
+    }
+
+    private fun buildWorkshopPreviewImageUrls(previewMedia: List<WorkshopPreviewMedia>): List<String> =
+        previewMedia.asSequence()
+            .filter { media -> media.kind == WorkshopPreviewMediaKind.Image }
+            .map(WorkshopPreviewMedia::imageUrl)
+            .filter(String::isNotBlank)
+            .distinctBy(::normalizePreviewImageUrlForDedupe)
+            .toList()
 
     private fun resizeWorkshopPreviewImageUrl(url: String): String =
         runCatching {
@@ -1281,6 +1344,158 @@ internal class WorkshopService(
                 .build()
                 .toString()
         }.getOrDefault(url)
+
+    private fun extractPreviewMediaItems(payload: String): List<WorkshopPreviewMedia> {
+        val screenshotsByPreviewId = extractPreviewImageUrlsByPreviewId(payload)
+        val videosByMovieId = extractPreviewVideoItemsByMovieId(payload)
+        val orderedMedia = highlightStripItemOpeningRegex.findAll(payload)
+            .mapNotNull { match ->
+                val kind = match.groupValues.getOrNull(1).orEmpty().lowercase(Locale.US)
+                val id = match.groupValues.getOrNull(2).orEmpty()
+                val block = extractDivBlock(
+                    payload = payload,
+                    openingTagStart = match.range.first,
+                    openingTagLength = match.value.length,
+                )
+                when (kind) {
+                    "movie" -> videosByMovieId[id]?.let { video ->
+                        buildWorkshopVideoPreviewMedia(id, video, extractFirstImageUrl(block))
+                    }
+
+                    "screenshot" -> screenshotsByPreviewId[id]?.let { url ->
+                        WorkshopPreviewMedia(
+                            id = "screenshot:$id",
+                            kind = WorkshopPreviewMediaKind.Image,
+                            imageUrl = url,
+                            thumbnailUrl = url,
+                        )
+                    }
+
+                    else -> null
+                }
+            }
+            .filterNotNull()
+            .toList()
+        if (orderedMedia.isNotEmpty()) return orderedMedia
+
+        val fallbackVideos = videosByMovieId.entries
+            .sortedBy { (id, _) -> id.toIntOrNull() ?: Int.MAX_VALUE }
+            .mapNotNull { (id, video) ->
+                buildWorkshopVideoPreviewMedia(id, video, "")
+            }
+        val fallbackImages = screenshotsByPreviewId.entries
+            .sortedBy { (id, _) -> id.toIntOrNull() ?: Int.MAX_VALUE }
+            .map { (id, url) ->
+                WorkshopPreviewMedia(
+                    id = "screenshot:$id",
+                    kind = WorkshopPreviewMediaKind.Image,
+                    imageUrl = url,
+                    thumbnailUrl = url,
+                )
+            }
+        return (fallbackVideos + fallbackImages).ifEmpty {
+            extractPreviewImageUrls(payload).mapIndexed { index, url ->
+                WorkshopPreviewMedia(
+                    id = "screenshot:$index",
+                    kind = WorkshopPreviewMediaKind.Image,
+                    imageUrl = url,
+                    thumbnailUrl = url,
+                )
+            }
+        }
+    }
+
+    private fun buildWorkshopVideoPreviewMedia(
+        movieId: String,
+        video: PreviewVideoItem,
+        thumbnailUrl: String,
+    ): WorkshopPreviewMedia? = when (video.videoSource) {
+        WorkshopPreviewVideoSource.YouTube -> WorkshopPreviewMedia(
+            id = "movie:$movieId",
+            kind = WorkshopPreviewMediaKind.YouTubeVideo,
+            thumbnailUrl = thumbnailUrl.ifBlank {
+                normalizeWorkshopYouTubeThumbnailUrl(
+                    youtubeVideoId = video.youtubeVideoId,
+                    candidateUrl = video.thumbnailUrl,
+                )
+            },
+            youtubeVideoId = video.youtubeVideoId,
+            videoSource = WorkshopPreviewVideoSource.YouTube,
+        )
+
+        WorkshopPreviewVideoSource.Steam -> {
+            // Steam-hosted workshop videos are hidden until we have a stable in-app playback path.
+            null
+        }
+    }
+
+    private fun extractPreviewImageUrlsByPreviewId(payload: String): Map<String, String> =
+        fullScreenshotUrlsBlockRegex.find(payload)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.let { block ->
+                fullScreenshotUrlEntryRegex.findAll(block)
+                    .mapNotNull { match ->
+                        val previewId = match.groupValues.getOrNull(1)?.trim().orEmpty().takeIf(String::isNotBlank)
+                            ?: return@mapNotNull null
+                        val url = match.groupValues.getOrNull(2)
+                            ?.let(::decodeJavascriptStringLiteral)
+                            ?.let(WorkshopServiceHtmlDecoder::decode)
+                            ?.trim()
+                            ?.takeIf(::isSupportedPreviewImageUrl)
+                            ?: return@mapNotNull null
+                        previewId to url
+                    }
+                    .toMap(LinkedHashMap())
+            }
+            .orEmpty()
+
+    private fun extractPreviewVideoItemsByMovieId(payload: String): Map<String, PreviewVideoItem> =
+        movieFlashvarsEntryRegex.findAll(payload)
+            .mapNotNull { match ->
+                val movieId = match.groupValues.getOrNull(1)?.trim().orEmpty().takeIf(String::isNotBlank)
+                    ?: return@mapNotNull null
+                val block = match.groupValues.getOrNull(2).orEmpty()
+                val youtubeVideoId = youtubeVideoIdRegex.find(block)
+                    ?.groupValues
+                    ?.getOrNull(1)
+                    ?.trim()
+                    ?.takeIf(String::isNotBlank)
+                if (youtubeVideoId != null) {
+                    return@mapNotNull movieId to PreviewVideoItem(
+                        videoSource = WorkshopPreviewVideoSource.YouTube,
+                        youtubeVideoId = youtubeVideoId,
+                    )
+                }
+                // Steam-hosted workshop videos are hidden until we have a stable in-app playback path.
+                null
+            }
+            .toMap(LinkedHashMap())
+
+    private fun normalizeWorkshopYouTubeThumbnailUrl(
+        youtubeVideoId: String,
+        candidateUrl: String,
+    ): String {
+        val normalizedCandidate = WorkshopServiceHtmlDecoder.decode(candidateUrl).trim()
+        if (normalizedCandidate.startsWith("http://", ignoreCase = true) ||
+            normalizedCandidate.startsWith("https://", ignoreCase = true)
+        ) {
+            return normalizedCandidate
+                .replace("/default.jpg", "/hqdefault.jpg")
+                .replace("/mqdefault.jpg", "/hqdefault.jpg")
+        }
+        return "https://img.youtube.com/vi/$youtubeVideoId/hqdefault.jpg"
+    }
+
+    private fun extractFirstImageUrl(payload: String?): String {
+        if (payload.isNullOrBlank()) return ""
+        return imageSrcRegex.find(payload)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.let(WorkshopServiceHtmlDecoder::decode)
+            ?.trim()
+            .orEmpty()
+    }
 
     private fun extractPreviewImageUrls(payload: String): List<String> =
         fullScreenshotUrlsBlockRegex.find(payload)
@@ -1595,13 +1810,33 @@ internal class WorkshopService(
             """var\s+rgFullScreenshotURLs\s*=\s*\[(.*?)\]\s*;""",
             setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE),
         )
+        private val fullScreenshotUrlEntryRegex = Regex(
+            """\{\s*['"]previewid['"]\s*:\s*['"]([^'"]+)['"]\s*,\s*['"]url['"]\s*:\s*['"]([^'"]+)['"]\s*\}""",
+            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE),
+        )
         private val javascriptStringRegex = Regex(
             """['"]((?:\\.|[^'"\\])*)['"]""",
             setOf(RegexOption.DOT_MATCHES_ALL),
         )
+        private val movieFlashvarsEntryRegex = Regex(
+            """['"]movie_([^'"]+)['"]\s*:\s*\{(.*?)\}""",
+            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE),
+        )
+        private val youtubeVideoIdRegex = Regex(
+            """YOUTUBE_VIDEO_ID\s*:\s*["']([^"']+)["']""",
+            RegexOption.IGNORE_CASE,
+        )
         private val previewImageEnlargeableRegex = Regex(
             """<a\b[^>]*onclick="ShowEnlargedImagePreview\(\s*'([^']+)'""",
             setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE),
+        )
+        private val highlightStripItemOpeningRegex = Regex(
+            """<div\b(?=[^>]*class="[^"]*\bhighlight_strip_item\b[^"]*\bhighlight_strip_(movie|screenshot)\b[^"]*")(?=[^>]*id="thumb_(?:movie|screenshot)_([^"]+)")[^>]*>""",
+            RegexOption.IGNORE_CASE,
+        )
+        private val imageSrcRegex = Regex(
+            """<img\b[^>]*src="([^"]+)""",
+            RegexOption.IGNORE_CASE,
         )
     }
 }
@@ -1713,10 +1948,16 @@ private fun knownWorkshopDependencyTitle(publishedFileId: ULong): String? = when
 private data class LocalizedWorkshopDetail(
     val description: String,
     val authorName: String = "",
-    val previewImageUrls: List<String> = emptyList(),
+    val previewMedia: List<WorkshopPreviewMedia> = emptyList(),
     val requiredItemIds: List<ULong> = emptyList(),
     val commentThreadContext: WorkshopCommentThreadContext? = null,
     val commentCount: Long? = null,
+)
+
+private data class PreviewVideoItem(
+    val videoSource: WorkshopPreviewVideoSource,
+    val youtubeVideoId: String = "",
+    val thumbnailUrl: String = "",
 )
 
 private data class CommunityDetailCacheKey(
@@ -1735,6 +1976,7 @@ private class SteamCommunityRateLimitException(statusCode: Int) :
 private fun LocalizedWorkshopDetail.hasUsefulContent(): Boolean =
     description.isNotBlank() ||
         authorName.isNotBlank() ||
+        previewMedia.isNotEmpty() ||
         requiredItemIds.isNotEmpty() ||
         commentThreadContext != null ||
         commentCount != null

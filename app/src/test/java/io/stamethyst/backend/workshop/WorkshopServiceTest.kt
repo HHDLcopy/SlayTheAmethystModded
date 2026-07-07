@@ -219,6 +219,146 @@ class WorkshopServiceTest {
     }
 
     @Test
+    fun getDetailsParsesOrderedWorkshopVideoAndScreenshotGallery() {
+        detailsServer.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    {
+                      "response": {
+                        "publishedfiledetails": [
+                          {
+                            "publishedfileid": "1610056683",
+                            "title": "Downfall Expansion Mod - 6.0",
+                            "consumer_app_id": 646570,
+                            "description": "API details",
+                            "preview_url": "https://images.steamusercontent.com/ugc/2482116236401327367/9E2E72339F73CC987617BBEC6BC45442C0DC748B/?imw=512&amp;&amp;ima=fit&amp;impolicy=Letterbox&amp;imcolor=%23000000&amp;letterbox=false"
+                          }
+                        ]
+                      }
+                    }
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+        browseServer.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    <div class="workshopItemDescription" id="highlightContent">Localized details</div>
+                    <div id="highlight_strip_scroll">
+                      <div class="highlight_selector"></div>
+                      <div class="highlight_strip_item highlight_strip_movie" id="thumb_movie_19652634">
+                        <img class="movie_thumb" src="https://img.youtube.com/vi/vYthsh8a1Dc/default.jpg">
+                        <div class="highlight_movie_marker"></div>
+                      </div>
+                      <div class="highlight_strip_item highlight_strip_screenshot" id="thumb_screenshot_0">
+                        <img src="https://images.steamusercontent.com/ugc/2482116236401327367/9E2E72339F73CC987617BBEC6BC45442C0DC748B/?imw=116&amp;imh=65&amp;ima=fit&amp;impolicy=Letterbox&amp;imcolor=%23000000&amp;letterbox=true">
+                      </div>
+                    </div>
+                    <script>
+                      var rgMovieFlashvars = {
+                        'movie_19652634': {
+                          YOUTUBE_VIDEO_ID: "vYthsh8a1Dc",
+                          MOVIE_NAME: ""
+                        },
+                        '' : ''
+                      };
+                      var rgFullScreenshotURLs = [
+                        { 'previewid' : '0', 'url': 'https://images.steamusercontent.com/ugc/2482116236401327367/9E2E72339F73CC987617BBEC6BC45442C0DC748B/?imw=5000&amp;imh=5000&amp;ima=fit&amp;impolicy=Letterbox&amp;imcolor=%23000000&amp;letterbox=false' }
+                      ];
+                    </script>
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+
+        val service = newService()
+        val details = runBlocking { service.getDetails(646570u, 1610056683uL) }
+
+        assertEquals(2, details.previewMedia.size)
+        assertEquals(WorkshopPreviewMediaKind.YouTubeVideo, details.previewMedia[0].kind)
+        assertEquals(WorkshopPreviewVideoSource.YouTube, details.previewMedia[0].videoSource)
+        assertEquals("vYthsh8a1Dc", details.previewMedia[0].youtubeVideoId)
+        assertEquals(
+            "https://img.youtube.com/vi/vYthsh8a1Dc/hqdefault.jpg",
+            details.previewMedia[0].thumbnailUrl,
+        )
+        assertEquals(WorkshopPreviewMediaKind.Image, details.previewMedia[1].kind)
+        assertEquals(
+            "https://images.steamusercontent.com/ugc/2482116236401327367/9E2E72339F73CC987617BBEC6BC45442C0DC748B/?imw=1280&imh=720&ima=fit&impolicy=Letterbox&imcolor=%23000000&letterbox=false",
+            details.previewMedia[1].imageUrl,
+        )
+        assertEquals(
+            listOf(
+                "https://images.steamusercontent.com/ugc/2482116236401327367/9E2E72339F73CC987617BBEC6BC45442C0DC748B/?imw=1280&imh=720&ima=fit&impolicy=Letterbox&imcolor=%23000000&letterbox=false",
+            ),
+            details.previewImageUrls,
+        )
+    }
+
+    @Test
+    fun getDetailsIgnoresSteamNativeMoviePreviewMediaWhenOnlyYoutubeIsSupported() {
+        detailsServer.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    {
+                      "response": {
+                        "publishedfiledetails": [
+                          {
+                            "publishedfileid": "123456789",
+                            "title": "Steam Native Video Mod",
+                            "consumer_app_id": 646570,
+                            "description": "API details",
+                            "preview_url": "https://images.steamusercontent.com/ugc/111/AAA/"
+                          }
+                        ]
+                      }
+                    }
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+        browseServer.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    <div class="workshopItemDescription" id="highlightContent">Localized details</div>
+                    <div id="highlight_strip_scroll">
+                      <div class="highlight_selector"></div>
+                      <div class="highlight_strip_item highlight_strip_movie" id="thumb_movie_2033154">
+                        <img class="movie_thumb" src="https://images.steamusercontent.com/ugc/steam-video-thumb/POSTER/">
+                        <div class="highlight_movie_marker"></div>
+                      </div>
+                    </div>
+                    <script>
+                      var rgMovieFlashvars = {
+                        'movie_2033154': {
+                          FILENAME: "https://cdn.akamai.steamstatic.com/steam/apps/2033154/movie480_vp9.webm",
+                          MOVIE_NAME: "Steam hosted movie"
+                        },
+                        '' : ''
+                      };
+                    </script>
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+
+        val service = newService()
+        val details = runBlocking { service.getDetails(646570u, 123456789uL) }
+
+        assertEquals(1, details.previewMedia.size)
+        assertEquals(WorkshopPreviewMediaKind.Image, details.previewMedia[0].kind)
+        assertTrue(details.previewMedia.none { it.kind == WorkshopPreviewMediaKind.SteamVideo })
+    }
+
+    @Test
     fun getDetailsFallsBackToCommunityPageAuthor() {
         detailsServer.enqueue(
             MockResponse.Builder()

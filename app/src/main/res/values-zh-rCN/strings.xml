@@ -2293,6 +2293,12 @@
     <string name="workshop_download_state_cancelling">正在取消</string>
     <string name="workshop_download_state_failed">下载失败</string>
     <string name="workshop_download_state_unavailable">不可下载</string>
+    <string name="workshop_preview_gallery_video_content_description">%1$s 视频，第 %2$d 个，共 %3$d 个</string>
+    <string name="workshop_preview_gallery_video_failed">视频预览暂不可用</string>
+    <string name="workshop_preview_gallery_video_unplayable">无法播放该视频，请确保你的网络环境支持访问 Youtube</string>
+    <string name="workshop_preview_gallery_play_video">播放视频</string>
+    <string name="workshop_preview_gallery_video_source_youtube">YouTube</string>
+    <string name="workshop_preview_gallery_video_source_steam">Steam</string>
     <string name="workshop_action_download">下载</string>
     <string name="workshop_action_update">更新</string>
     <string name="workshop_action_continue">继续</string>

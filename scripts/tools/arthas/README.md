@@ -287,7 +287,7 @@ Android ART 的 `ThreadMXBean.getThreadCpuTime()` 默认返回 0 或 -1，导致
 fallback 读取 `/proc/self/task/<tid>/stat` 的 utime+stime 字段来获取真实线程
 CPU 时间。
 
-**构建 .so**：`scripts/tools/arthas/build-procfs-so.sh`（需要 NDK 27+，target aarch64）
+**构建 .so**：`python3 scripts/tools/arthas/build-procfs-so.py`（需要 NDK 27+，target aarch64）
 
 **部署**：`.so` 由 bridge
 自动从 `/data/data/io.stamethyst/files/libprocfs_cpu.so` 加载，需通过 `adb push`

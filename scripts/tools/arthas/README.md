@@ -155,6 +155,7 @@ ArthasShell (透传)     Device JVM
 | `sm <class>` | **Search Method**：列出类的方法签名 |
 | `jad <class>` | 反编译 Java 字节码为源码。游戏类通常需要 `-c <classLoaderHash>` |
 | `classloader` | 列出所有 ClassLoader 实例、层级和加载的类数 |
+| `classloader-metaspace` | ~~显示 Metaspace 使用情况~~ **由 bridge 补全**，基于 JMX `MemoryPoolMXBean`，显示 Metaspace/CompressedClassSpace 内存用量 |
 | `getstatic <class>` | 查看类的静态字段 |
 | `dump <class> -d <dir>` | 导出字节码到文件 |
 | `ognl <expression>` | 执行 OGNL 表达式。可调用任意静态方法、读取字段、执行计算 |
@@ -270,11 +271,18 @@ MTS ClassLoader 隔离会导致 ASM 的 `ClassWriter.getCommonSuperClass()` 解�
 如果 `watch`/`trace`/`monitor` 报告 `Type xxx not present` 错误，
 断开客户端连接并重新连接——第二次连接通常能成功完成 retransform。
 
+### Bridge 补全命令
+
+Arthas 3.6.9 较旧，以下命令由 `arthas-bridge` 补充实现：
+
+| 命令 | 说明 |
+|------|------|
+| `classloader-metaspace` | `ClassLoaderMetaspaceCommand` 为较高 Arthas 版本新增，3.6.9 JAR 中无该类。Bridge 通过自定义 `MetaspaceCommand`（JMX `MemoryPoolMXBean`）提供替代实现，已验证可用 |
+
 ### 不支持的 Android 命令
 
 | 命令 | 原因 |
 |------|------|
-| `classloader-metaspace` | Android ART 没有 JDK metaspace |
 | `jfr` | Android JVM 不支持 JDK Flight Recorder |
 | `mc` | Android JRE 缺少 `tools.jar`（JDK 编译器）。替代方案：本地 `javac` → `adb push` → `retransform` |
 | `profiler` | Android 平台缺少 `libasyncProfiler.so`（`perf_event_open` 非所有设备/内核均支持）。替代方案：`dashboard`、`trace`、`heapdump` 代替 |
@@ -349,12 +357,15 @@ game-probe 保留游戏特有的 `OBSERVE` / `EXEC` 功能，Arthas 补充通用
 | `__main__.py` | CLI 接口：`start`、`shell`、`query`、`stop` |
 | `resource/arthas-core.jar` | Arthas 3.6.9 命令引擎 |
 | `resource/arthas-bridge.jar` | 自定义 bridge（源码在 `arthas-bridge/`） |
+| `build-procfs-so.py` | 构建 `libprocfs_cpu.so`（线程 CPU 使用率 `/proc` fallback） |
+| `build-async-profiler-so.py` | 交叉编译 async-profiler 3.0 为 aarch64 `.so`（实验性，`profiler` 命令加载后 crash，待修复） |
 
 ### 设备端模块 (`arthas-bridge/`)
 
 | 文件 | 说明 |
 |------|------|
-| `ArthasCommandBridge.java` | `agentmain` 入口。初始化 Bootstrap，注册命令，启动 ServerSocket |
+| `ArthasCommandBridge.java` | `agentmain` 入口。初始化 Bootstrap，注册命令（含自定义 `MetaspaceCommand`），启动 ServerSocket |
+| `MetaspaceCommand.java` | 自定义 `classloader-metaspace` 命令：通过 JMX `MemoryPoolMXBean` 查询 Metaspace/CompressedClassSpace 使用量。Arthas 3.6.9 不含 `ClassLoaderMetaspaceCommand`（为较高版本新增），由 bridge 提供替代实现 |
 | `ArthasBootstrapCompat.java` | Arthas 源码修改版（Apache 2.0）。`createWithoutNetty()` 跳过 Netty，仅执行 `shellServer.listen()` + `SpyAPI.init()` |
 | `SocketTerm.java` | `Term` 接口的纯 socket 实现。`readline → write(prompt)`、`feed(line) → 触发 handler` |
 | `BridgeSession.java` | 每连接线程。`createShell → init → readline → 读命令 → term.feed → 输出写回 socket` |

@@ -2,6 +2,7 @@ package io.stamethyst.arthas;
 
 import com.taobao.arthas.core.command.BuiltinCommandPack;
 import com.taobao.arthas.core.shell.ShellServer;
+import com.taobao.arthas.core.shell.command.Command;
 import com.taobao.arthas.core.shell.command.CommandResolver;
 
 import java.io.FileWriter;
@@ -39,6 +40,7 @@ public class ArthasCommandBridge {
             inst.addTransformer(new ClassMetaClassWriterTransformer(), true);
 
             CommandResolver resolver = new BuiltinCommandPack(Collections.<String>emptyList());
+            resolver.commands().add(Command.create(MetaspaceCommand.class));
 
             com.taobao.arthas.core.server.ArthasBootstrap bootstrap =
                 com.taobao.arthas.core.server.ArthasBootstrapCompat

@@ -51,6 +51,9 @@ internal object SteamCloudNetworkEnvironment {
 
     private fun isWattAccelerationEnabled(context: Context): Boolean =
         runCatching {
-            LauncherConfig.isSteamCloudWattAccelerationEnabled(context)
+            NetworkAccelerationPolicy.shouldUseAcceleratedLinks(
+                context = context,
+                configuredEnabled = LauncherConfig.isSteamCloudWattAccelerationEnabled(context),
+            )
         }.getOrDefault(false)
 }

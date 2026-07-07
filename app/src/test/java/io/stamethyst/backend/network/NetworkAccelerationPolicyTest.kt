@@ -7,25 +7,65 @@ import org.junit.Test
 
 class NetworkAccelerationPolicyTest {
     @Test
-    fun shouldUseAcceleratedLinks_requiresConfiguredEnabledAndNoVpn() {
+    fun shouldUseAcceleratedLinks_requiresConfiguredEnabledChinaRegionAndNoVpn() {
         assertTrue(
             NetworkAccelerationPolicy.shouldUseAcceleratedLinks(
                 configuredEnabled = true,
                 vpnActiveProvider = { false },
+                chinaRegionProvider = { true },
             ),
         )
         assertFalse(
             NetworkAccelerationPolicy.shouldUseAcceleratedLinks(
                 configuredEnabled = true,
                 vpnActiveProvider = { true },
+                chinaRegionProvider = { true },
+            ),
+        )
+        assertFalse(
+            NetworkAccelerationPolicy.shouldUseAcceleratedLinks(
+                configuredEnabled = true,
+                vpnActiveProvider = { false },
+                chinaRegionProvider = { false },
             ),
         )
         assertFalse(
             NetworkAccelerationPolicy.shouldUseAcceleratedLinks(
                 configuredEnabled = false,
                 vpnActiveProvider = { false },
+                chinaRegionProvider = { true },
             ),
         )
+    }
+
+    @Test
+    fun shouldBypassAcceleratedLinks_usesOfficialLinksOutsideChinaOrWithVpn() {
+        assertFalse(
+            NetworkAccelerationPolicy.shouldBypassAcceleratedLinks(
+                vpnActiveProvider = { false },
+                chinaRegionProvider = { true },
+            ),
+        )
+        assertTrue(
+            NetworkAccelerationPolicy.shouldBypassAcceleratedLinks(
+                vpnActiveProvider = { true },
+                chinaRegionProvider = { true },
+            ),
+        )
+        assertTrue(
+            NetworkAccelerationPolicy.shouldBypassAcceleratedLinks(
+                vpnActiveProvider = { false },
+                chinaRegionProvider = { false },
+            ),
+        )
+    }
+
+    @Test
+    fun isChinaRegion_acceptsOnlyCnCountryCode() {
+        assertTrue(NetworkAccelerationPolicy.isChinaRegion("CN"))
+        assertTrue(NetworkAccelerationPolicy.isChinaRegion("cn"))
+        assertFalse(NetworkAccelerationPolicy.isChinaRegion("US"))
+        assertFalse(NetworkAccelerationPolicy.isChinaRegion(""))
     }
 
     @Test

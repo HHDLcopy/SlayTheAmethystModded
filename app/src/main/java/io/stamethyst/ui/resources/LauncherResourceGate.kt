@@ -165,7 +165,7 @@ fun LauncherResourceGate(
     ResourcePreparationScreen(
         state = gateState,
         selectedMirror = selectedMirror,
-        availableMirrors = remember { UpdateMirrorManager.selectableSources() },
+        availableMirrors = remember(context) { UpdateMirrorManager.selectableSources(context) },
         slowDownloadSwitch = slowDownloadSwitch,
         onMirrorSelected = { source ->
             selectedMirror = source
@@ -175,8 +175,10 @@ fun LauncherResourceGate(
         onSlowDownloadMirrorSwitch = {
             val prompt = slowDownloadSwitch
             if (prompt != null) {
-                selectedMirror = prompt.nextSource
-                UpdateMirrorManager.saveCurrent(context, prompt.nextSource)
+                prompt.nextPreferredMirrorSource?.let { nextMirror ->
+                    selectedMirror = nextMirror
+                    UpdateMirrorManager.saveCurrent(context, nextMirror)
+                }
                 mirrorSwitchController.requestSwitchToNextMirror()
             }
         },

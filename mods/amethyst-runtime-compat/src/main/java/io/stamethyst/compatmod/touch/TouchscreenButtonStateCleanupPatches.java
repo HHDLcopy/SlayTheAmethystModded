@@ -14,6 +14,7 @@ import com.megacrit.cardcrawl.ui.buttons.EndTurnButton;
 import com.megacrit.cardcrawl.ui.buttons.GridSelectConfirmButton;
 import com.megacrit.cardcrawl.ui.buttons.PeekButton;
 import com.megacrit.cardcrawl.ui.buttons.ProceedButton;
+import com.megacrit.cardcrawl.ui.buttons.SkipCardButton;
 import com.megacrit.cardcrawl.ui.buttons.UnlockConfirmButton;
 
 import java.lang.reflect.Field;
@@ -252,6 +253,65 @@ public final class TouchscreenButtonStateCleanupPatches {
         @SpirePostfixPatch
         public static void after(PeekButton __instance) {
             resetHitbox(__instance.hb);
+        }
+    }
+
+    @SpirePatch2(
+        clz = SkipCardButton.class,
+        method = "hide"
+    )
+    public static class SkipCardButtonHidePatch {
+        @SpirePostfixPatch
+        public static void after(SkipCardButton __instance) {
+            resetHitbox(__instance.hb);
+        }
+    }
+
+    @SpirePatch2(
+        clz = SkipCardButton.class,
+        method = "hideInstantly"
+    )
+    public static class SkipCardButtonHideInstantlyPatch {
+        @SpirePostfixPatch
+        public static void after(SkipCardButton __instance) {
+            resetHitbox(__instance.hb);
+        }
+    }
+
+    @SpirePatch2(
+        clz = SkipCardButton.class,
+        method = "show",
+        paramtypez = {}
+    )
+    public static class SkipCardButtonShowPatch {
+        @SpirePostfixPatch
+        public static void after(SkipCardButton __instance) {
+            resetHitbox(__instance.hb);
+        }
+    }
+
+    @SpirePatch2(
+        clz = SkipCardButton.class,
+        method = "show",
+        paramtypez = {boolean.class}
+    )
+    public static class SkipCardButtonShowWithBowlPatch {
+        @SpirePostfixPatch
+        public static void after(SkipCardButton __instance) {
+            resetHitbox(__instance.hb);
+        }
+    }
+
+    @SpirePatch2(
+        clz = SkipCardButton.class,
+        method = "update"
+    )
+    public static class SkipCardButtonUpdatePatch {
+        @SpirePrefixPatch
+        public static void before(SkipCardButton __instance) {
+            if (__instance.screenDisabled) {
+                resetHitbox(__instance.hb);
+            }
         }
     }
 

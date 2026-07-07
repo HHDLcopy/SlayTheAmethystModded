@@ -23,6 +23,8 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("-PollIntervalSeconds", "--poll-interval-seconds", dest="poll_interval_seconds", type=int, default=2)
     parser.add_argument("-ForceJvmCrash", "--force-jvm-crash", dest="force_jvm_crash", action="store_true")
     parser.add_argument("-ForceRuntimeCrash", "--force-runtime-crash", dest="force_runtime_crash", action="store_true")
+    parser.add_argument("-DebugMode", "--debug-mode", dest="debug_mode", action="store_true",
+                        help="Enable game-probe agent for diagnostics (Arthas, tracing, etc.) without autoplay.")
     parser.add_argument("-Autoplay", "--autoplay", dest="autoplay", action="store_true")
     parser.add_argument(
         "-AutoplaySaveMode",
@@ -192,6 +194,7 @@ def main(argv: list[str] | None = None) -> int:
         poll_interval_seconds=args.poll_interval_seconds,
         force_jvm_crash=args.force_jvm_crash,
         force_runtime_crash=args.force_runtime_crash,
+        debug_mode=args.debug_mode,
         autoplay=args.autoplay,
         autoplay_save_mode=args.autoplay_save_mode,
         autoplay_mode=args.autoplay_mode,

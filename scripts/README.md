@@ -77,6 +77,7 @@ Common harness options:
 - `-SingleRoomCharacter <id>` / `-SingleRoomMonster <id>` / `-SingleRoomCards <ids>`: configure the `single-room` command. Card ids are comma- or newline-separated and may include modded cards.
 - `-SingleRoomSpec <path>`: local UTF-8 properties file with `character=`, `monster=`, and `cards=` for single-room tests. Put ad hoc spec files under `agent-tmp/`.
 - `-ForceJvmCrash` and `-ForceRuntimeCrash`: smoke expectations for crash-path validation.
+- `-DebugMode`: enable the game-probe Java agent (port 9099) for diagnostics without enabling autoplay. Required for Arthas, tracing, and OBSERVE/EXEC commands. When omitted, game-probe only starts if one of `-Autoplay`, `-ForceJvmCrash`, `-ForceRuntimeCrash`, or the launcher's performance deep diagnostics is active.
 - `-SkipInstall`: skip APK build/install during `smoke`.
 - `-NoStopAfterSmoke`: leave the app running after `smoke`.
 - `-CacheHitRuns <count>`: for `startup-cache-profile`, number of cache-hit launches after the cache-build launch. Defaults to `1`.
@@ -128,13 +129,16 @@ responsibility:
 | `monitor/` | 日志采集、截图、文件拉取 |
 
 各模块通过 `connector` daemon 访问设备，**不直接调用 adb**，**不直接开 TCP 连接**。
+Connector 使用纯 Python TCP (127.0.0.1)，通过 `STS_CONNECTOR_PORT` / `STS_CONNECTOR_TOKEN` 环境变量发现服务。
 详见各模块目录下的 `README.md`。
 
 ## 环境变量
 
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
-| `STS_TEST_DEVICE` | 集成测试和自动化脚本的默认设备序列号。`scripts/tools/lib/env_device.py` 的 `get_test_device_serial()` 读取该变量，各测试文件和 `HarnessOrchestrator` 通过该函数统一获取设备序列。设为 `"auto"` 时由 connector daemon 自动选择 `adb devices` 中的第一个设备。 | `auto` |
+| `STS_CONNECTOR_PORT` | Connector daemon 的 TCP 端口 | 必填 |
+| `STS_CONNECTOR_TOKEN` | Connector daemon 认证 token | 必填 |
+| `STS_TEST_DEVICE` | 集成测试的默认设备序列号 | `auto` |
 
 ```bash
 export STS_TEST_DEVICE=localhost:15555
@@ -142,16 +146,16 @@ export STS_TEST_DEVICE=localhost:15555
 
 ```
 harness / arthas / autoplay / monitor
-        │
-        ▼
-   ┌─────────────┐
-   │  connector  │  ← Unix socket ~/.sts/connector.sock (daemon)
-   └──────┬──────┘
-          │ adb
-          ▼
-    Android Device
-    ├── game-probe (:9099)   ← OBSERVE / EXEC / LOAD_AGENT
-    └── arthas-bridge    (:8099)  ← ArthasBootstrapCompat (无 Netty)
+         │
+         ▼
+    ┌─────────────┐
+    │  connector  │  ← TCP 127.0.0.1:<port>
+    └──────┬──────┘     STS_CONNECTOR_PORT / STS_CONNECTOR_TOKEN
+           │ adb
+           ▼
+     Android Device
+     ├── game-probe (:9099)   ← OBSERVE / EXEC / LOAD_AGENT
+     └── arthas-bridge    (:8099)  ← ArthasBootstrapCompat (无 Netty)
 ```
 
 Implementation files:

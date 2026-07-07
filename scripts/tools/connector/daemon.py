@@ -1,8 +1,10 @@
 import argparse
 import json
 import os
+import secrets
 import socket as _socket
 import subprocess
+import sys
 import threading
 from typing import Any
 
@@ -31,25 +33,31 @@ def _adb_devices() -> list[dict[str, str]]:
 
 
 class Daemon:
-    def __init__(self, socket_path: str, pid_file: str | None = None) -> None:
-        self._path = socket_path
+    def __init__(self, token: str | None = None, port: int | None = None,
+                 pid_file: str | None = None) -> None:
         self._pid_file = pid_file
+        self._token = token or secrets.token_hex(16)
+        self._port = port
         self._running = True
         self._device_serial: str | None = None
         self._server: _socket.socket | None = None
         if self._pid_file:
+            os.makedirs(os.path.dirname(self._pid_file) or ".", exist_ok=True)
             with open(self._pid_file, "w") as f:
                 f.write(str(os.getpid()))
 
     def start(self) -> None:
-        try:
-            os.unlink(self._path)
-        except OSError:
-            pass
-        self._server = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
-        self._server.bind(self._path)
+        self._server = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+        self._server.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+        bind_port = self._port or 0
+        self._server.bind(("127.0.0.1", bind_port))
         self._server.listen(5)
         self._server.settimeout(1)
+
+        port = self._server.getsockname()[1]
+        print(json.dumps({"port": port, "token": self._token}))
+        sys.stdout.flush()
+
         while self._running:
             try:
                 conn, _ = self._server.accept()
@@ -62,8 +70,18 @@ class Daemon:
 
     def _handle(self, conn: _socket.socket) -> None:
         try:
-            conn.settimeout(30)
+            conn.settimeout(10)
             reader = conn.makefile("r", encoding="utf-8", newline="\n")
+            auth_line = reader.readline()
+            if not auth_line or auth_line.strip() != f"AUTH {self._token}":
+                try:
+                    conn.sendall(b'{"error":{"code":-32005,"message":"auth failed"}}\n')
+                except Exception:
+                    pass
+                conn.close()
+                return
+
+            conn.settimeout(30)
             while self._running:
                 line = reader.readline()
                 if not line:
@@ -78,7 +96,7 @@ class Daemon:
                     continue
                 resp = self._dispatch(req, conn)
                 if resp is None:
-                    return  # passthrough mode takes over
+                    return
                 self._respond(conn, resp)
         except Exception:
             pass
@@ -93,11 +111,11 @@ class Daemon:
         port = params.get("port", 0)
         stream_id = f"s{port}"
 
-        # Setup forward (ignore error if already forwarded)
-        subprocess.run(
-            ["adb", "-s", self._device_serial, "forward",
-             f"tcp:{port}", f"tcp:{port}"],
-            timeout=10, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if self._device_serial:
+            subprocess.run(
+                ["adb", "-s", self._device_serial, "forward",
+                 f"tcp:{port}", f"tcp:{port}"],
+                timeout=10, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         dev_conn = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
         dev_conn.settimeout(10)
@@ -107,16 +125,15 @@ class Daemon:
             self._respond(client_conn, {"error": {"code": -32000, "message": f"connect failed: {e}"}})
             return
 
-        # Only after connection is ready, signal client
         self._respond(client_conn, {"stream_id": stream_id})
-
         self._do_passthrough(client_conn, dev_conn)
         dev_conn.close()
-        subprocess.run(
-            ["adb", "-s", self._device_serial, "forward",
-             "--remove", f"tcp:{port}"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            timeout=5)
+        if self._device_serial:
+            subprocess.run(
+                ["adb", "-s", self._device_serial, "forward",
+                 "--remove", f"tcp:{port}"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                timeout=5)
 
     @staticmethod
     def _do_passthrough(client: _socket.socket, device: _socket.socket) -> None:
@@ -229,6 +246,7 @@ class Daemon:
                 return {"error": {"code": -32000, "message": str(e)}}
         elif method == "connect_stream":
             return self._connect_stream(req, conn)
+        elif method == "quit":
             self._running = False
             return {"ok": True}
         else:
@@ -252,12 +270,13 @@ class Daemon:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--socket", default=os.path.join(
-        os.path.expanduser("~"), ".sts", "connector.sock"))
+    parser.add_argument("--port", type=int, default=None,
+                        help="固定端口（默认随机）")
+    parser.add_argument("--token", default=None,
+                        help="认证 token（默认随机生成）")
     parser.add_argument("--pid-file", default=None)
     args = parser.parse_args()
-    daemon = Daemon(socket_path=args.socket, pid_file=args.pid_file)
-    daemon.start()
+    Daemon(port=args.port, token=args.token, pid_file=args.pid_file).start()
 
 
 if __name__ == "__main__":

@@ -43,6 +43,7 @@ class StsGameActivity : AppCompatActivity() {
         const val EXTRA_MANUAL_DISMISS_BOOT_OVERLAY = "io.stamethyst.manual_dismiss_boot_overlay"
         const val EXTRA_FORCE_JVM_CRASH = "io.stamethyst.force_jvm_crash"
         const val EXTRA_FORCE_RUNTIME_CRASH = "io.stamethyst.force_runtime_crash"
+        const val EXTRA_DEBUG_MODE = "io.stamethyst.debug_mode"
         const val EXTRA_AUTOPLAY = "io.stamethyst.autoplay"
         const val EXTRA_AUTOPLAY_SAVE_MODE = "io.stamethyst.autoplay_save_mode"
         const val EXTRA_AUTOPLAY_MODE = "io.stamethyst.autoplay_mode"
@@ -64,7 +65,8 @@ class StsGameActivity : AppCompatActivity() {
             autoplayMode: AutoplayMode = AutoplayMode.DEFAULT,
             autoplaySingleRoomSpecPath: String = "",
             autoplayChoiceDelayMs: Long = 0L,
-            cardObtainEffectOwnershipCompatEnabled: Boolean = true
+            cardObtainEffectOwnershipCompatEnabled: Boolean = true,
+            debugMode: Boolean = false
         ) {
             val intent = Intent(context, StsGameActivity::class.java)
             intent.putExtra(EXTRA_LAUNCH_MODE, launchMode)
@@ -76,6 +78,7 @@ class StsGameActivity : AppCompatActivity() {
             intent.putExtra(EXTRA_MANUAL_DISMISS_BOOT_OVERLAY, manualDismissBootOverlay)
             intent.putExtra(EXTRA_FORCE_JVM_CRASH, forceJvmCrash)
             intent.putExtra(EXTRA_FORCE_RUNTIME_CRASH, forceRuntimeCrash)
+            intent.putExtra(EXTRA_DEBUG_MODE, debugMode)
             intent.putExtra(EXTRA_AUTOPLAY, autoplay)
             intent.putExtra(EXTRA_AUTOPLAY_SAVE_MODE, autoplaySaveMode.persistedValue)
             intent.putExtra(EXTRA_AUTOPLAY_MODE, autoplayMode.persistedValue)

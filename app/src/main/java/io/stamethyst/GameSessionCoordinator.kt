@@ -144,6 +144,7 @@ internal class GameSessionCoordinator(
     private val jvmLaunchController: JvmLaunchController = JvmLaunchController(
         activity = activity,
         launchMode = config.launchMode,
+        debugMode = config.debugMode,
         rendererDecision = config.rendererDecision,
         renderScale = config.renderScale,
         forceJvmCrash = config.forceJvmCrash,

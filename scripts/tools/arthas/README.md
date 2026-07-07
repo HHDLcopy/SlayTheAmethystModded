@@ -86,6 +86,25 @@ stream.close()
 
 ## 启动
 
+### 前置条件
+
+游戏必须以 `debugMode=true` 启动，这样 game-probe 才会作为 `-javaagent` 加载到游戏 JVM 中。game-probe 是 Arthas 通过 `LOAD_AGENT` 注入的入口。
+
+```bash
+# 通过 Gradle 启动（game-probe 启用，无 autoplay）
+./gradlew :app:stsStart -PlaunchMode=mts -PdebugMode=true
+
+# 通过 harness 启动
+python scripts/tools/main.py sts-harness -Command start -LaunchMode mts -DebugMode
+
+# 直接 am start
+adb shell am start -n io.stamethyst/.LauncherActivity \
+  --es io.stamethyst.debug_launch_mode mts \
+  --ez io.stamethyst.debug_mode true
+```
+
+### 启动 Arthas
+
 ```bash
 # 确保 connector daemon 在运行
 python -m scripts.tools.connector daemon &

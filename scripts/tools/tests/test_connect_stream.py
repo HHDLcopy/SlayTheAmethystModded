@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import time
@@ -9,57 +10,61 @@ from scripts.tools.connector.client import ConnectorClient
 from scripts.tools.lib.env_device import get_test_device_serial
 
 
+def _start_daemon() -> ConnectorClient:
+    proc = subprocess.Popen(
+        ["python3", "-m", "scripts.tools.connector.daemon"],
+        cwd=os.path.join(os.path.dirname(__file__), "..", "..", ".."),
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    info = json.loads(proc.stdout.readline().strip())
+    time.sleep(0.3)
+    client = ConnectorClient(port=info["port"], token=info["token"])
+    client.connect()
+    client._daemon_proc = proc
+    return client
+
+
+def _stop_daemon(conn: ConnectorClient) -> None:
+    try:
+        conn.send_request({"method": "quit"})
+    except Exception:
+        pass
+    conn.close()
+    if hasattr(conn, "_daemon_proc"):
+        conn._daemon_proc.wait(timeout=5)
+
+
 class TestConnectStreamIntegration(unittest.TestCase):
-
-    @classmethod
-    def setUpClass(cls):
-        cls._sock_path = f"/tmp/sts-stream-test-{os.getpid()}.sock"
-        try:
-            os.unlink(cls._sock_path)
-        except OSError:
-            pass
-        cls._daemon = subprocess.Popen(
-            ["python3", "-m", "scripts.tools.connector.daemon",
-             "--socket", cls._sock_path],
-            cwd=os.path.join(os.path.dirname(__file__), "..", "..", ".."),
-        )
-        time.sleep(1)
-
-    @classmethod
-    def tearDownClass(cls):
-        if cls._daemon:
-            cls._daemon.terminate()
-            cls._daemon.wait(timeout=5)
-        try:
-            os.unlink(cls._sock_path)
-        except OSError:
-            pass
 
     def test_connect_stream_handshake(self):
         """Verify daemon responds to connect_stream with stream_id."""
-        conn = ConnectorClient(self._sock_path)
-        conn.connect()
-        conn.select(get_test_device_serial())
+        conn = _start_daemon()
+        try:
+            conn.select(get_test_device_serial())
 
-        resp = conn.send_request({
-            "method": "connect_stream",
-            "params": {"port": 19099},
-        })
-        self.assertIn("stream_id", resp)
-        conn.close()
+            resp = conn.send_request({
+                "method": "connect_stream",
+                "params": {"port": 19099},
+            })
+            self.assertIn("stream_id", resp)
+        finally:
+            _stop_daemon(conn)
 
     def test_passthrough_game_probe_list(self):
         """connect_stream to game-probe :9099 and send LIST."""
-        conn = ConnectorClient(self._sock_path)
-        conn.connect()
-        conn.select(get_test_device_serial())
+        conn = _start_daemon()
+        try:
+            conn.select(get_test_device_serial())
 
-        stream = conn.connect_stream(port=9099)
-        stream.write(b"LIST\n")
-        time.sleep(1)
-        data = stream.read(4096)
-        self.assertIn(b"MONITORS", data, f"Expected MONITORS, got: {data}")
-        stream.close()
+            stream = conn.connect_stream(port=9099)
+            stream.write(b"LIST\n")
+            time.sleep(1)
+            data = stream.read(4096)
+            self.assertIn(b"MONITORS", data, f"Expected MONITORS, got: {data}")
+            stream.close()
+        finally:
+            _stop_daemon(conn)
 
 
 if __name__ == "__main__":

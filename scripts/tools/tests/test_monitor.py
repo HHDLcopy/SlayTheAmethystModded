@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import tempfile
@@ -10,43 +11,40 @@ from scripts.tools.connector.client import ConnectorClient
 from scripts.tools.lib.env_device import get_test_device_serial
 
 
+def _start_daemon() -> ConnectorClient:
+    proc = subprocess.Popen(
+        ["python3", "-m", "scripts.tools.connector.daemon"],
+        cwd=os.path.join(os.path.dirname(__file__), "..", "..", ".."),
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    info = json.loads(proc.stdout.readline().strip())
+    time.sleep(0.3)
+    client = ConnectorClient(port=info["port"], token=info["token"])
+    client.connect()
+    client._daemon_proc = proc
+    return client
+
+
+def _stop_daemon(conn: ConnectorClient) -> None:
+    try:
+        conn.send_request({"method": "quit"})
+    except Exception:
+        pass
+    conn.close()
+    if hasattr(conn, "_daemon_proc"):
+        conn._daemon_proc.wait(timeout=5)
+
+
 class TestDeviceMonitor(unittest.TestCase):
 
-    @classmethod
-    def setUpClass(cls):
-        cls._daemon_proc = None
-        cls._sock_path = f"/tmp/sts-monitor-test-{os.getpid()}.sock"
-        try:
-            os.unlink(cls._sock_path)
-        except OSError:
-            pass
-        cls._daemon_proc = subprocess.Popen(
-            [
-                "python3", "-m", "scripts.tools.connector.daemon",
-                "--socket", cls._sock_path,
-            ],
-            cwd=os.path.join(os.path.dirname(__file__), "..", "..", ".."),
-        )
-        time.sleep(1)
-
-    @classmethod
-    def tearDownClass(cls):
-        if cls._daemon_proc:
-            cls._daemon_proc.terminate()
-            cls._daemon_proc.wait(timeout=5)
-        try:
-            os.unlink(cls._sock_path)
-        except OSError:
-            pass
-
     def setUp(self):
-        client = ConnectorClient(socket_path=self._sock_path)
-        client.connect()
+        client = _start_daemon()
         client.select(get_test_device_serial(), timeout_ms=10000)
         self.client = client
 
     def tearDown(self):
-        self.client.close()
+        _stop_daemon(self.client)
 
     def test_screenshot_captures_png(self):
         from scripts.tools.monitor.monitor import DeviceMonitor

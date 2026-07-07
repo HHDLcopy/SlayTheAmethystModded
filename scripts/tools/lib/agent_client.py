@@ -6,7 +6,7 @@
 使用流程:
     conn = ConnectorClient()
     conn.connect()
-    conn.select(get_test_device_serial())  # or specific serial like "localhost:15555"
+    conn.select(get_test_device_serial())  # 从 STS_CONNECTOR_PORT/TOKEN 或 STS_TEST_DEVICE 读取
     stream = conn.connect_stream(port=9099)
 
     client = AgentClient(stream=stream)

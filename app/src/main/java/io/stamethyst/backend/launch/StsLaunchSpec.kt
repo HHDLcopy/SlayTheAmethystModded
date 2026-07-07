@@ -110,6 +110,7 @@ object StsLaunchSpec {
         renderScaleOverride: Float? = null,
         forceJvmCrash: Boolean = false,
         forceRuntimeCrash: Boolean = false,
+        debugMode: Boolean = false,
         autoplay: Boolean = false,
         autoplaySaveMode: AutoplaySaveMode = AutoplaySaveMode.DEFAULT,
         autoplayMode: AutoplayMode = AutoplayMode.DEFAULT,
@@ -709,6 +710,7 @@ object StsLaunchSpec {
         args.add("-javaagent:${RuntimePaths.lwjgl2InjectorJar(context).absolutePath}")
         if (shouldEnableGameProbe(
                 launchMode = launchMode,
+                debugMode = debugMode,
                 autoplay = autoplay,
                 forceJvmCrash = forceJvmCrash,
                 forceRuntimeCrash = forceRuntimeCrash,
@@ -784,13 +786,14 @@ object StsLaunchSpec {
 
     internal fun shouldEnableGameProbe(
         launchMode: String,
+        debugMode: Boolean = false,
         autoplay: Boolean,
         forceJvmCrash: Boolean,
         forceRuntimeCrash: Boolean,
         performanceDeepDiagnostics: Boolean
     ): Boolean {
         return isMtsLaunchMode(launchMode) &&
-            (autoplay || forceJvmCrash || forceRuntimeCrash || performanceDeepDiagnostics)
+            (debugMode || autoplay || forceJvmCrash || forceRuntimeCrash || performanceDeepDiagnostics)
     }
 
     internal fun resolveTexturePressureDownscaleEnabled(

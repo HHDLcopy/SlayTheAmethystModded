@@ -49,6 +49,7 @@ class LauncherActivity : AppCompatActivity() {
         const val EXTRA_DEBUG_LAUNCH_MODE = "io.stamethyst.debug_launch_mode"
         const val EXTRA_DEBUG_FORCE_JVM_CRASH = "io.stamethyst.debug_force_jvm_crash"
         const val EXTRA_DEBUG_FORCE_RUNTIME_CRASH = "io.stamethyst.debug_force_runtime_crash"
+        const val EXTRA_DEBUG_MODE = "io.stamethyst.debug_mode"
         const val EXTRA_DEBUG_AUTOPLAY = "io.stamethyst.debug_autoplay"
         const val EXTRA_DEBUG_AUTOPLAY_SAVE_MODE = "io.stamethyst.debug_autoplay_save_mode"
         const val EXTRA_DEBUG_AUTOPLAY_MODE = "io.stamethyst.debug_autoplay_mode"
@@ -100,6 +101,7 @@ class LauncherActivity : AppCompatActivity() {
 
     private data class DebugLaunchRequest(
         val launchMode: String,
+        val debugMode: Boolean,
         val forceJvmCrash: Boolean,
         val forceRuntimeCrash: Boolean,
         val autoplay: Boolean,
@@ -301,6 +303,7 @@ class LauncherActivity : AppCompatActivity() {
                         manualDismissBootOverlay = manualDismissBootOverlay,
                         forceJvmCrash = request.forceJvmCrash,
                         forceRuntimeCrash = request.forceRuntimeCrash,
+                        debugMode = request.debugMode,
                         autoplay = request.autoplay,
                         autoplaySaveMode = request.autoplaySaveMode,
                         autoplayMode = request.autoplayMode,
@@ -343,6 +346,7 @@ class LauncherActivity : AppCompatActivity() {
         }
         return DebugLaunchRequest(
             launchMode = launchMode,
+            debugMode = startupIntent.getBooleanExtra(EXTRA_DEBUG_MODE, false),
             forceJvmCrash = startupIntent.getBooleanExtra(EXTRA_DEBUG_FORCE_JVM_CRASH, false),
             forceRuntimeCrash = startupIntent.getBooleanExtra(EXTRA_DEBUG_FORCE_RUNTIME_CRASH, false),
             autoplay = startupIntent.getBooleanExtra(EXTRA_DEBUG_AUTOPLAY, false),

@@ -601,6 +601,7 @@ private fun Project.registerAdbTasks(adb: Provider<String>, packageName: String)
     }
     val forceJvmCrash = readGradleProperty("forceJvmCrash", "false")
     val forceRuntimeCrash = readGradleProperty("forceRuntimeCrash", "false")
+    val debugMode = readGradleProperty("debugMode", "false")
     val autoplay = readGradleProperty("autoplay", "false")
     val autoplaySaveMode = readGradleProperty("autoplaySaveMode", "fresh")
     val autoplayMode = readGradleProperty("autoplayMode", "normal")
@@ -624,6 +625,7 @@ private fun Project.registerAdbTasks(adb: Provider<String>, packageName: String)
 
     fun startLauncherCommand(
         launchMode: String,
+        debugMode: String,
         forceJvmCrash: String,
         forceRuntimeCrash: String,
         autoplay: String,
@@ -642,6 +644,9 @@ private fun Project.registerAdbTasks(adb: Provider<String>, packageName: String)
                 "--es",
                 "io.stamethyst.debug_launch_mode",
                 launchMode,
+                "--ez",
+                "io.stamethyst.debug_mode",
+                debugMode,
                 "--ez",
                 "io.stamethyst.debug_force_jvm_crash",
                 forceJvmCrash,
@@ -675,6 +680,7 @@ private fun Project.registerAdbTasks(adb: Provider<String>, packageName: String)
         commandLine(
             startLauncherCommand(
                 launchMode = launchMode,
+                debugMode = debugMode,
                 forceJvmCrash = forceJvmCrash,
                 forceRuntimeCrash = forceRuntimeCrash,
                 autoplay = autoplay,
@@ -698,6 +704,7 @@ private fun Project.registerAdbTasks(adb: Provider<String>, packageName: String)
         commandLine(
             startLauncherCommand(
                 launchMode = autoplayLaunchMode,
+                debugMode = debugMode,
                 forceJvmCrash = "false",
                 forceRuntimeCrash = "false",
                 autoplay = "true",

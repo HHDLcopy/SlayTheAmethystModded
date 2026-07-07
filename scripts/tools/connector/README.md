@@ -6,10 +6,15 @@
 
 - 常驻后台，管理设备连接生命周期
 - 设备发现与选择（adb devices）
-- 端口转发池管理（引用计数，自动清理）
-- **TCP 透传代理** — 模块不直接建 TCP 连接，通过 connector 的 Unix socket 收发
-- adb 命令代理（shell, push, pull, logcat）
-- 供其他模块通过 Unix socket API 访问设备
+- **TCP 透传代理** — 模块不直接建 TCP 连接，通过 connector 的 TCP channel 收发
+- adb 命令代理（shell, push, pull）
+- 供其他模块通过 TCP API 访问设备
+
+## 跨平台
+
+全部使用 Python `socket` 标准库，TCP 通信，无文件依赖，支持 Linux / macOS / Windows。
+Daemon 启动时在 stdout 打印 `{"port":12345,"token":"abc..."}`；客户端通过环境变量
+`STS_CONNECTOR_PORT` 和 `STS_CONNECTOR_TOKEN` 连接运行中的 daemon。
 
 ## 依赖关系
 
@@ -18,60 +23,65 @@ harness / arthas / autoplay / monitor  (临时进程)
         │
         ▼
    ┌─────────────┐
-   │  connector  │  ← Unix socket ~/.sts/connector.sock
-   │  (daemon)   │     常驻进程
+   │  connector  │  ← TCP 127.0.0.1:<port>
+   │  (daemon)   │     常驻进程，stdout 输出连接信息
    └──────┬──────┘
           │ adb
           ▼
     Android Device
-    ├── game-probe (:9099)
-    └── arthas-bridge    (:8099)
+    ├── game-probe (:9099)     ← 需 -PdebugMode=true 或 -Pautoplay=true 才启动
+    └── arthas-bridge    (:8099)  ← 通过 game-probe 的 LOAD_AGENT 加载
 ```
 
+game-probe 的启动条件为 `launchMode=mts` 且至少满足其一：`debugMode`, `autoplay`, `forceJvmCrash`, `forceRuntimeCrash`, `performanceDeepDiagnostics`。
+
 - 各模块**不直接调用 adb**，所有设备操作通过 connector
-- 各模块**不直接开 TCP 连接**，通过 `connect_stream` 统一走 Unix socket
+- 各模块**不直接开 TCP 连接**，通过 `connect_stream` 统一走 connector channel
 - Connector 启动时自动选择设备，运行中可切换
 
 ## 启动
 
 ```bash
-# 默认：自动选择唯一设备，等待设备就绪
+# 随机端口和 token，输出到 stdout
 python -m scripts.tools.connector daemon
+# stdout: {"port": 12345, "token": "abc123..."}
 
-# 指定设备序列号
-python -m scripts.tools.connector daemon --device localhost:15555
+# 固定端口和 token（便于配置环境变量）
+python -m scripts.tools.connector daemon --port 12345 --token my-secret-token
 
 # 指定 PID 文件便于进程管理
-python -m scripts.tools.connector daemon --device auto --pid-file /tmp/sts-connector.pid
+python -m scripts.tools.connector daemon --pid-file /tmp/sts-connector.pid
+```
+
+启动后将 stdout 输出的 `port` 和 `token` 设为环境变量：
+```bash
+export STS_CONNECTOR_PORT=12345
+export STS_CONNECTOR_TOKEN=my-secret-token
 ```
 
 ## 环境变量
 
-测试和自动化脚本应通过环境变量 `STS_TEST_DEVICE` 统一配置设备序列号，避免硬编码：
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `STS_CONNECTOR_PORT` | Connector daemon 的 TCP 端口 | 必填 |
+| `STS_CONNECTOR_TOKEN` | 认证 token | 必填 |
+| `STS_TEST_DEVICE` | 集成测试的默认设备序列号 | `auto` |
 
-```bash
-export STS_TEST_DEVICE=localhost:15555
-```
+`scripts/tools/lib/env_device.py` 的 `get_test_device_serial()` 读取 `STS_TEST_DEVICE`，所有集成测试文件和 `HarnessOrchestrator` 均通过该函数取值。
 
-`scripts/tools/lib/env_device.py` 的 `get_test_device_serial()` 读取该变量，默认值为 `"auto"`（自动选择 `adb devices` 第一个设备）。所有集成测试文件、`HarnessOrchestrator` 均通过该函数取值。
+## 认证
 
-## API 方法
-
-通过 Unix socket JSON-line 协议调用。
+客户端连接后先发送 `AUTH <token>\n`，Daemon 验证通过后才进入 JSON 协议交互。认证失败返回错误码 `-32005` 并关闭连接。
 
 ## 协议格式
 
-Unix socket，默认路径 `~/.sts/connector.sock`，纯文本 JSON 行协议，请求/响应配对，支持多个并发客户端连接。
+TCP (127.0.0.1)，纯文本 JSON 行协议，请求/响应配对，支持多个并发客户端连接。
 
 ### 请求
 
 ```json
 {"id":"req-1","method":"forward","params":{"port":9099}}
 ```
-
-- `id` — 可选，用于请求跟踪；省略时收到无序响应
-- `method` — 方法名
-- `params` — 参数对象
 
 ### 响应
 
@@ -85,222 +95,73 @@ Unix socket，默认路径 `~/.sts/connector.sock`，纯文本 JSON 行协议，
 {"id":"req-1","error":{"code":-32000,"message":"device offline"}}
 ```
 
-### 流式事件
-
-```json
-{"id":"req-2","event":"log","data":{"tag":"StSGame","message":"..."}}
-```
-
-流式命令（如 `logs`）的响应以多个 event 行推送，结束时连接断开。
-
 ## 方法详述
 
 ### devices
 
-列出可用 adb 设备。
-
-请求：
 ```json
 {"method":"devices"}
+→ {"devices":[{"serial":"localhost:15555","state":"device","model":"Pixel_8"}]}
 ```
-响应：
-```json
-{"devices":[{"serial":"localhost:15555","state":"device","model":"Pixel_8"}]}
-```
-
-`state` 取值: `device`, `offline`, `unauthorized`, `unknown`
 
 ### select
 
-选择目标设备。connector 持有一个 active device，所有命令发往该设备。
-
-请求：
 ```json
 {"method":"select","params":{"serial":"localhost:15555","timeout_ms":10000}}
+→ {"ok":true}
 ```
-- `timeout_ms` — 等待设备就绪的超时时间（可选，默认 5000）
-- `serial` — 设备序列号，或 `"auto"` 自动选择唯一设备
-
-响应：
-```json
-{"ok":true}
-```
-
-错误：如果设备不存在或超时，返回 `-32001`
+`serial` 可用 `"auto"` 自动选择第一个设备。
 
 ### status
 
-返回当前选中设备的状态。
-
-请求：
 ```json
 {"method":"status"}
-```
-响应：
-```json
-{"serial":"localhost:15555","state":"online","model":"Pixel_8","product":"pixel8","battery":85,"sdk":34}
-```
-- `state` — `online` | `offline`
-- `battery` — 电池百分比（-1 表示未知）
-
-### forward
-
-建立 `adb forward tcp:<port> tcp:<port>`。
-
-**已废弃**。模块不应直接 forward 端口然后自建 TCP 连接。
-改用 `connect_stream` 走统一传输。
-
-请求：
-```json
-{"method":"forward","params":{"port":9099}}
-```
-响应：
-```json
-{"ok":true,"port":9099}
+→ {"serial":"localhost:15555","state":"online","model":"Pixel_8"}
 ```
 
-- 引用计数管理：同一 port 被多次 forward 仅创建一条实际转发
-- 连接断开时自动释放该连接持有的所有 forward
+### forward / unforward
 
-### unforward
-
-移除端口转发（减少引用计数）。
-
-请求：
-```json
-{"method":"unforward","params":{"port":9099}}
-```
-响应：
-```json
-{"ok":true}
-```
+已废弃。改用 `connect_stream`。
 
 ### connect_stream
 
-建立到设备端 TCP 服务的双向透传通道。connector 内部自动管理
-adb forward + TCP connect，客户端只需通过当前 Unix socket 收发原始字节。
+建立到设备端 TCP 服务的双向透传通道。响应返回后当前连接进入透传模式。
 
-请求：
 ```json
 {"method":"connect_stream","params":{"port":9099}}
-```
-响应：
-```json
-{"stream_id":"s1"}
+→ {"stream_id":"s1"}
 ```
 
-响应返回后，该 Unix socket 连接进入**透传模式**：
-- 此后所有原始字节直接转发到设备端 TCP 服务
-- 设备端返回的字节直接写回客户端
-- 客户端关闭连接时，connector 自动清理对应的 adb forward
-
-典型用法：
 ```python
-# 给 game-probe 发 LIST 命令
-from scripts.tools.lib.env_device import get_test_device_serial
 conn = ConnectorClient()
-conn.connect(); conn.select(get_test_device_serial())
+conn.connect()
+conn.select(get_test_device_serial())
 stream = conn.connect_stream(port=9099)
 stream.write(b"LIST\n")
-print(stream.readline())  # "MONITORS ..."
+print(stream.readline())
 stream.close()
 ```
 
-```python
-# 给 arthas-bridge 发 thread 命令
-stream = conn.connect_stream(port=8099)
-stream.write(b"thread -n 3\n")
-for line in stream.read_until("END\n"):
-    print(line)
-stream.close()
-```
+### shell / push / pull
 
-注意：`connect_stream` 之后当前连接进入透传模式，不再响应 JSON 请求。
-如需同时维持控制通道和多个透传流，应开多条 Unix socket 连接。
+标准 adb 操作。
 
-### shell
-
-执行 adb shell 命令。
-
-请求：
 ```json
 {"method":"shell","params":{"command":"ps | grep java","timeout_ms":10000}}
-```
-响应：
-```json
-{"exit":0,"stdout":"u0_a142   ...","stderr":""}
-```
+→ {"exit":0,"stdout":"...","stderr":""}
 
-- `timeout_ms` — 超时（可选，默认 30000）
-- `stdout` / `stderr` 合并输出
+{"method":"push","params":{"local":"/tmp/x.jar","remote":"/sdcard/x.jar"}}
+→ {"ok":true}
 
-### push
-
-推送文件到设备。
-
-请求：
-```json
-{"method":"push","params":{"local":"/tmp/arthas-agent.jar","remote":"/sdcard/arthas/arthas-agent.jar"}}
-```
-响应：
-```json
-{"ok":true}
+{"method":"pull","params":{"remote":"/sdcard/log.txt","local":"/tmp/log.txt"}}
+→ {"ok":true}
 ```
 
-### pull
+### ping / quit
 
-从设备拉取文件。
-
-请求：
 ```json
-{"method":"pull","params":{"remote":"/sdcard/log.txt","local":"/tmp/device-log.txt"}}
-```
-响应：
-```json
-{"ok":true}
-```
-
-### logs
-
-流式获取 logcat 输出。
-
-请求：
-```json
-{"method":"logs","params":{"filter":"StSGame","since":"5s"}}
-```
-事件：
-```json
-{"event":"log","data":{"time":"07-05 12:00:00","pid":1234,"tid":5678,"level":"I","tag":"StSGame","message":"game started"}}
-```
-
-- `filter` — logcat tag 过滤
-- `since` — 时间偏移（如 `5s`, `10m`）或空字符串表示从当前开始
-- 断开连接时停止日志流
-
-### ping
-
-健康检查。
-
-请求：
-```json
-{"method":"ping"}
-```
-响应：
-```json
-{"pong":true}
-```
-
-### quit
-
-请求 connector 优雅退出。所有端口转发自动清理。
-
-请求：
-```json
-{"method":"quit"}
-```
-响应：
-```json
-{"ok":true}
+{"method":"ping"} → {"pong":true}
+{"method":"quit"} → {"ok":true}
 ```
 
 ## 错误码
@@ -312,15 +173,7 @@ stream.close()
 | -32002 | 端口转发失败 |
 | -32003 | 命令执行超时 |
 | -32004 | 参数校验失败 |
-
-## 连接生命周期
-
-1. 客户端打开 Unix socket
-2. 发送请求/接收响应
-3. `select` 选择设备（首次需调用）
-4. 使用 `shell` / `push` / `pull` / `logs` 等方法
-5. 或 `connect_stream` 进入透传模式（此时不再响应 JSON 请求）
-6. 关闭连接时 connector 自动释放该连接持有的所有资源
+| -32005 | 认证失败 |
 
 ## 客户端库用法
 
@@ -328,15 +181,11 @@ stream.close()
 from scripts.tools.connector.client import ConnectorClient
 from scripts.tools.lib.env_device import get_test_device_serial
 
-# 控制通道
-c = ConnectorClient()
+c = ConnectorClient()  # 从 STS_CONNECTOR_PORT / STS_CONNECTOR_TOKEN 环境变量读取
 c.connect()
-c.select(serial=get_test_device_serial())  # 从 STS_TEST_DEVICE 环境变量读取
-
-# shell / push / pull
+c.select(serial=get_test_device_serial())
 result = c.shell("ps | grep java")
 
-# 透传通道：给 game-probe 发命令
 stream = c.connect_stream(port=9099)
 stream.write(b"OBSERVE\n")
 print(stream.readline())
@@ -347,13 +196,10 @@ stream.close()
 
 | 文件 | 职责 |
 |------|------|
-| `daemon.py` | 守护进程入口，Unix socket server，请求分发，stream proxy |
-| `device.py` | 设备发现/选择，adb devices 解析，在线状态监控 |
-| `forward.py` | 端口转发池 + TCP connect + 双向透传 |
-| `client.py` | Connector 客户端库，含 Stream 封装 |
+| `daemon.py` | TCP server，请求分发，stream proxy |
+| `client.py` | 客户端库，含 Stream 封装 |
 
 ## 输出目录
 
-- `~/.sts/connector.sock` — Unix socket
-- `~/.sts/connector.log` — 运行时日志
-- `~/.sts/connector.pid` — PID 文件（可选）
+- PID 文件：通过 `--pid-file` 指定
+- 无其他持久化文件

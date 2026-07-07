@@ -201,6 +201,7 @@ class HarnessOptions:
     poll_interval_seconds: int
     force_jvm_crash: bool
     force_runtime_crash: bool
+    debug_mode: bool
     autoplay: bool
     skip_install: bool
     no_stop_after_smoke: bool
@@ -422,6 +423,7 @@ class Harness:
             f"-PlaunchMode={self.options.launch_mode}",
             f"-PforceJvmCrash={str(self.options.force_jvm_crash).lower()}",
             f"-PforceRuntimeCrash={str(self.options.force_runtime_crash).lower()}",
+            f"-PdebugMode={str(self.options.debug_mode).lower()}",
             f"-Pautoplay={str(self.options.autoplay).lower()}",
             f"-PautoplaySaveMode={self.options.autoplay_save_mode}",
             f"-PautoplayMode={self.options.autoplay_mode}",

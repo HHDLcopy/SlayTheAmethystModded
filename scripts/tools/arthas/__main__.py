@@ -40,7 +40,7 @@ def _cmd_start() -> int:
     conn.connect()
     conn.select("auto")
     conn.forward(port=9099)
-    agent = AgentClient(port=9099)
+    agent = AgentClient(connector=conn, port=9099)
     agent.connect()
     mgr = ArthasManager(connector=conn, agent_client=agent)
     mgr.start()

@@ -37,6 +37,19 @@ class TestHarnessOrchestrator(unittest.TestCase):
         self.assertIn("io.stamethyst.debug", cmd)
         self.assertIn("autoplay", cmd.lower())
 
+    def test_start_with_debug_mode(self):
+        from scripts.tools.harness.orchestrator import HarnessOrchestrator
+        self.mock_conn.shell.return_value = {
+            "exit": 0, "stdout": "", "stderr": ""}
+        orch = HarnessOrchestrator(
+            connector=self.mock_conn,
+            application_id="io.stamethyst.debug",
+        )
+        orch.start(mode="mts", debug_mode=True, autoplay=False)
+        cmd = self.mock_conn.shell.call_args[0][0]
+        self.assertIn("io.stamethyst.debug_mode true", cmd)
+        self.assertNotIn("autoplay", cmd.lower())
+
     def test_status_checks_process(self):
         from scripts.tools.harness.orchestrator import HarnessOrchestrator
         self.mock_conn.shell.return_value = {

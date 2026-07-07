@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import tempfile
@@ -11,51 +12,47 @@ from scripts.tools.lib.agent_client import AgentClient
 from scripts.tools.lib.env_device import get_test_device_serial
 
 
+def _start_daemon() -> ConnectorClient:
+    proc = subprocess.Popen(
+        ["python3", "-m", "scripts.tools.connector.daemon"],
+        cwd=os.path.join(os.path.dirname(__file__), "..", "..", ".."),
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    info = json.loads(proc.stdout.readline().strip())
+    time.sleep(0.3)
+    client = ConnectorClient(port=info["port"], token=info["token"])
+    client.connect()
+    client._daemon_proc = proc
+    return client
+
+
+def _stop_daemon(conn: ConnectorClient) -> None:
+    try:
+        conn.send_request({"method": "quit"})
+    except Exception:
+        pass
+    conn.close()
+    if hasattr(conn, "_daemon_proc"):
+        conn._daemon_proc.wait(timeout=5)
+
+
 class TestLoadAgentIntegration(unittest.TestCase):
 
-    @classmethod
-    def setUpClass(cls):
-        cls._sock_path = f"/tmp/sts-loadagent-test-{os.getpid()}.sock"
-        try:
-            os.unlink(cls._sock_path)
-        except OSError:
-            pass
-        cls._daemon_proc = subprocess.Popen(
-            [
-                "python3", "-m", "scripts.tools.connector.daemon",
-                "--socket", cls._sock_path,
-            ],
-            cwd=os.path.join(os.path.dirname(__file__), "..", "..", ".."),
-        )
-        time.sleep(1)
-
-    @classmethod
-    def tearDownClass(cls):
-        if cls._daemon_proc:
-            cls._daemon_proc.terminate()
-            cls._daemon_proc.wait(timeout=5)
-        try:
-            os.unlink(cls._sock_path)
-        except OSError:
-            pass
-
     def setUp(self):
-        self._conn = ConnectorClient(socket_path=self._sock_path)
-        self._conn.connect()
+        self._conn = _start_daemon()
         self._conn.select(get_test_device_serial(), timeout_ms=10000)
 
     def tearDown(self):
-        self._conn.close()
+        _stop_daemon(self._conn)
 
     def test_load_agent_success(self):
         """Verify LOAD_AGENT succeeds with a valid agent JAR on device."""
-        # Build and push a minimal test agent JAR
         test_jar_path = _build_test_agent_jar()
         self._conn.push(
             local=test_jar_path,
             remote="/data/data/io.stamethyst/files/test-agent.jar")
 
-        # Start game with game-probe
         self._conn.shell("am force-stop io.stamethyst")
         time.sleep(1)
         self._conn.shell(
@@ -64,9 +61,7 @@ class TestLoadAgentIntegration(unittest.TestCase):
             " --ez io.stamethyst.debug_autoplay true",
         )
 
-        # Wait for game-probe to come up
-        self._conn.forward(port=9099)
-        agent = AgentClient(port=9099)
+        agent = AgentClient(connector=self._conn, port=9099)
         for _ in range(90):
             try:
                 agent.connect()
@@ -84,12 +79,10 @@ class TestLoadAgentIntegration(unittest.TestCase):
             resp = agent.send("LIST")
             self.assertIn("MONITORS", resp)
 
-            # THE KEY TEST: load the test agent
             agent.load_agent("/data/data/io.stamethyst/files/test-agent.jar")
 
         finally:
             agent.close()
-            self._conn.unforward(port=9099)
             self._conn.shell("am force-stop io.stamethyst")
 
         os.unlink(test_jar_path)
@@ -98,7 +91,6 @@ class TestLoadAgentIntegration(unittest.TestCase):
 
 def _build_test_agent_jar() -> str:
     """Compile and JAR a minimal agent with agentmain(). Returns path."""
-    import subprocess
     java_dir = tempfile.mkdtemp(prefix="test-agent-")
     src = os.path.join(java_dir, "TestAgent.java")
     with open(src, "w") as f:

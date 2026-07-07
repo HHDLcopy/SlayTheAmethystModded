@@ -1,21 +1,21 @@
 import json
 import os
 import socket
-from pathlib import Path
 from typing import Any
 
 
 class ConnectorClient:
 
-    def __init__(self, socket_path: str | None = None) -> None:
-        if socket_path is None:
-            socket_path = os.path.join(Path.home(), ".sts", "connector.sock")
-        self.socket_path = socket_path
-        self._sock: socket.socket | None = None
+    def __init__(self, port: int | None = None, token: str | None = None) -> None:
+        port = port if port is not None else int(os.environ["STS_CONNECTOR_PORT"])
+        token = token if token is not None else os.environ["STS_CONNECTOR_TOKEN"]
+        self._port = port
+        self._token = token
+        self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
     def connect(self) -> None:
-        self._sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self._sock.connect(self.socket_path)
+        self._sock.connect(("127.0.0.1", self._port))
+        self._sock.sendall(f"AUTH {self._token}\n".encode("utf-8"))
 
     def send_request(self, request: dict[str, Any]) -> dict[str, Any]:
         body = json.dumps(request, ensure_ascii=False)
@@ -87,14 +87,13 @@ class ConnectorClient:
             self._sock.close()
         except Exception:
             pass
-        self._sock = None
 
     def connect_stream(self, port: int) -> "Stream":
         resp = self.send_request({
             "method": "connect_stream", "params": {"port": port}})
         stream_id = resp.get("stream_id", "unknown")
         sock = self._sock
-        self._sock = None
+        self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         return Stream(sock=sock, stream_id=stream_id)
 
 

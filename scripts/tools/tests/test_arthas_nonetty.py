@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import time
@@ -7,84 +8,72 @@ import unittest
 
 from scripts.tools.connector.client import ConnectorClient
 from scripts.tools.lib.agent_client import AgentClient
+from scripts.tools.arthas.shell import ArthasShell
 from scripts.tools.lib.env_device import get_test_device_serial
+
+
+def _start_daemon() -> ConnectorClient:
+    proc = subprocess.Popen(
+        ["python3", "-m", "scripts.tools.connector.daemon"],
+        cwd=os.path.join(os.path.dirname(__file__), "..", "..", ".."),
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    info = json.loads(proc.stdout.readline().strip())
+    time.sleep(0.3)
+    client = ConnectorClient(port=info["port"], token=info["token"])
+    client.connect()
+    client._daemon_proc = proc
+    return client
+
+
+def _stop_daemon(conn: ConnectorClient) -> None:
+    try:
+        conn.send_request({"method": "quit"})
+    except Exception:
+        pass
+    conn.close()
+    if hasattr(conn, "_daemon_proc"):
+        conn._daemon_proc.wait(timeout=5)
 
 
 class TestModifiedArthasCommands(unittest.TestCase):
 
-    @classmethod
-    def setUpClass(cls):
-        cls._sock_path = "/tmp/sts-nonetty-test.sock"
-        try:
-            os.unlink(cls._sock_path)
-        except OSError:
-            pass
-        cls._daemon = subprocess.Popen(
-            ["python3", "-m", "scripts.tools.connector.daemon",
-             "--socket", cls._sock_path],
-            cwd=os.path.join(os.path.dirname(__file__), "..", "..", ".."),
-        )
-        time.sleep(1)
-
-    @classmethod
-    def tearDownClass(cls):
-        if cls._daemon:
-            cls._daemon.terminate()
-            cls._daemon.wait(timeout=5)
-        try:
-            os.unlink(cls._sock_path)
-        except OSError:
-            pass
-
     def test_version_command_returns_non_null(self):
         """Load bridge via modified Arthas, send 'version', expect non-null output."""
-        conn = ConnectorClient(self._sock_path)
-        conn.connect()
-        conn.select(get_test_device_serial())
+        conn = _start_daemon()
+        try:
+            conn.select(get_test_device_serial())
 
-        # Wait for JVM and connect agent
-        for _ in range(30):
-            out = conn.shell("pidof io.stamethyst")
-            pid = out.get("stdout", "").strip()
-            if pid:
-                t = conn.shell(f"ls /proc/{pid}/task | wc -l")
-                if int(t.get("stdout", "0").strip()) > 50:
-                    break
+            for _ in range(30):
+                out = conn.shell("pidof io.stamethyst")
+                pid = out.get("stdout", "").strip()
+                if pid:
+                    t = conn.shell(f"ls /proc/{pid}/task | wc -l")
+                    if int(t.get("stdout", "0").strip()) > 50:
+                        break
+                time.sleep(5)
+
+            agent = AgentClient(connector=conn, port=9099)
+            agent.connect()
+
+            agent.send("LOAD_AGENT /data/data/io.stamethyst/files/arthas/arthas-core.jar")
+            resp = agent.send(
+                "LOAD_AGENT /data/data/io.stamethyst/files/arthas/arthas-agent.jar "
+                "port=8099"
+            )
+            self.assertEqual(resp, "OK", f"bridge load failed: {resp}")
+
             time.sleep(5)
 
-        conn.forward(port=9099)
-        agent = AgentClient(port=9099)
-        agent.connect()
+            stream = conn.connect_stream(port=8099)
+            shell = ArthasShell(stream=stream)
+            result = shell.command("version")
 
-        # Load core, then bridge (which internally uses modified ArthasBootstrap)
-        agent.send("LOAD_AGENT /data/data/io.stamethyst/files/arthas/arthas-core.jar")
-        resp = agent.send(
-            "LOAD_AGENT /data/data/io.stamethyst/files/arthas/arthas-agent.jar "
-            "port=8099"
-        )
-        self.assertEqual(resp, "OK", f"bridge load failed: {resp}")
+            self.assertNotIn("null\n", result,
+                             f"Command returned null: {repr(result)}")
 
-        time.sleep(5)
-
-        # Connect to bridge and test version command
-        conn.forward(port=8099)
-        import socket
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(10)
-        s.connect(("127.0.0.1", 8099))
-        time.sleep(1)
-        s.recv(4096)  # consume prompt
-
-        s.sendall(b"version\n")
-        time.sleep(6)
-        data = s.recv(16384).decode("utf-8", errors="replace")
-
-        # Must NOT contain "null\n[arthas@"
-        self.assertNotIn("null\n", data,
-                         f"Command returned null: {repr(data)}")
-
-        s.close()
-        agent.close()
-        conn.unforward(port=9099)
-        conn.unforward(port=8099)
-        conn.close()
+            stream.close()
+            agent.close()
+        finally:
+            _stop_daemon(conn)

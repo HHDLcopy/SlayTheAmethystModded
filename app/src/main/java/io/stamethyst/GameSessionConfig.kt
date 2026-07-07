@@ -22,6 +22,7 @@ internal data class GameSessionConfig(
     val requestedTargetFps: Int,
     val effectiveTargetFps: Int,
     val launchMode: String,
+    val debugMode: Boolean,
     val backBehavior: BackBehavior,
     val manualDismissBootOverlay: Boolean,
     val forceJvmCrash: Boolean,
@@ -87,6 +88,7 @@ internal data class GameSessionConfig(
                 requestedTargetFps = requestedTargetFps,
                 effectiveTargetFps = effectiveTargetFps,
                 launchMode = launchMode,
+                debugMode = intent.getBooleanExtra(StsGameActivity.EXTRA_DEBUG_MODE, false),
                 backBehavior = parseBackBehavior(intent),
                 manualDismissBootOverlay = intent.getBooleanExtra(
                     StsGameActivity.EXTRA_MANUAL_DISMISS_BOOT_OVERLAY,

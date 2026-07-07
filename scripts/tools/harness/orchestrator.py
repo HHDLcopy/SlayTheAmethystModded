@@ -25,11 +25,13 @@ class HarnessOrchestrator:
              "app/build/outputs/apk/debug/app-debug.apk"],
             timeout=60)
 
-    def start(self, mode: str = "mts", autoplay: bool = False) -> None:
+    def start(self, mode: str = "mts", debug_mode: bool = False, autoplay: bool = False) -> None:
         cmd = (
             f"am start -n {self._app_id}/.MainActivity "
             f"--es launchMode {mode}"
         )
+        if debug_mode:
+            cmd += " --ez io.stamethyst.debug_mode true"
         if autoplay:
             cmd += " --ez io.stamethyst.debug_autoplay true"
         self._conn.shell(cmd)

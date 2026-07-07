@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json as _json
 import socket
 import unittest
 from unittest.mock import MagicMock, patch
@@ -7,26 +8,20 @@ from unittest.mock import MagicMock, patch
 
 class TestConnectorClient(unittest.TestCase):
 
-    def test_default_socket_path(self):
+    def test_connect_sends_auth(self):
         from scripts.tools.connector.client import ConnectorClient
-        client = ConnectorClient()
-        self.assertIn(".sts/connector.sock", client.socket_path)
-
-    def test_connect_opens_unix_socket(self):
-        from scripts.tools.connector.client import ConnectorClient
-        client = ConnectorClient(socket_path="/tmp/test.sock")
+        client = ConnectorClient(port=51234, token="abc")
         with patch("socket.socket") as mock_socket_cls:
             mock_sock = MagicMock()
             mock_socket_cls.return_value = mock_sock
+            client._sock = mock_sock
             client.connect()
-            mock_socket_cls.assert_called_once_with(
-                socket.AF_UNIX, socket.SOCK_STREAM)
-            mock_sock.connect.assert_called_once_with("/tmp/test.sock")
+            mock_sock.connect.assert_called_once_with(("127.0.0.1", 51234))
+            mock_sock.sendall.assert_called_once_with(b"AUTH abc\n")
 
     def test_send_request_json_roundtrip(self):
         from scripts.tools.connector.client import ConnectorClient
-        import json as _json
-        client = ConnectorClient(socket_path="/tmp/test.sock")
+        client = ConnectorClient(port=1, token="x")
         mock_sock = MagicMock()
         mock_sock.recv.side_effect = [
             b'{"result":{"ok":true}}\n',
@@ -42,16 +37,15 @@ class TestConnectorClient(unittest.TestCase):
 
     def test_close_shuts_down_socket_and_clears_state(self):
         from scripts.tools.connector.client import ConnectorClient
-        client = ConnectorClient()
         mock_sock = MagicMock()
+        client = ConnectorClient(port=1, token="x")
         client._sock = mock_sock
         client.close()
         mock_sock.close.assert_called_once()
-        self.assertIsNone(client._sock)
 
     def test_devices_returns_device_list(self):
         from scripts.tools.connector.client import ConnectorClient
-        client = ConnectorClient()
+        client = ConnectorClient(port=1, token="x")
         client._sock = MagicMock()
         client._sock.recv.return_value = (
             b'{"devices":[{"serial":"x","state":"device"}]}\n')
@@ -61,7 +55,7 @@ class TestConnectorClient(unittest.TestCase):
 
     def test_select_sends_serial_and_timeout(self):
         from scripts.tools.connector.client import ConnectorClient
-        client = ConnectorClient()
+        client = ConnectorClient(port=1, token="x")
         client._sock = MagicMock()
         client._sock.recv.return_value = b'{"ok":true}\n'
         result = client.select(serial="abc", timeout_ms=5000)
@@ -69,7 +63,7 @@ class TestConnectorClient(unittest.TestCase):
 
     def test_status_returns_dict(self):
         from scripts.tools.connector.client import ConnectorClient
-        client = ConnectorClient()
+        client = ConnectorClient(port=1, token="x")
         client._sock = MagicMock()
         client._sock.recv.return_value = (
             b'{"serial":"abc","state":"online"}\n')
@@ -78,7 +72,7 @@ class TestConnectorClient(unittest.TestCase):
 
     def test_forward_returns_port_info(self):
         from scripts.tools.connector.client import ConnectorClient
-        client = ConnectorClient()
+        client = ConnectorClient(port=1, token="x")
         client._sock = MagicMock()
         client._sock.recv.return_value = (
             b'{"ok":true,"port":9099}\n')
@@ -87,7 +81,7 @@ class TestConnectorClient(unittest.TestCase):
 
     def test_unforward_returns_ok(self):
         from scripts.tools.connector.client import ConnectorClient
-        client = ConnectorClient()
+        client = ConnectorClient(port=1, token="x")
         client._sock = MagicMock()
         client._sock.recv.return_value = b'{"ok":true}\n'
         result = client.unforward(port=9099)
@@ -95,7 +89,7 @@ class TestConnectorClient(unittest.TestCase):
 
     def test_shell_returns_stdout(self):
         from scripts.tools.connector.client import ConnectorClient
-        client = ConnectorClient()
+        client = ConnectorClient(port=1, token="x")
         client._sock = MagicMock()
         client._sock.recv.return_value = (
             b'{"exit":0,"stdout":"hello","stderr":""}\n')
@@ -104,13 +98,12 @@ class TestConnectorClient(unittest.TestCase):
 
     def test_connect_stream_sends_request_and_returns_stream_id(self):
         from scripts.tools.connector.client import ConnectorClient
-        client = ConnectorClient()
+        client = ConnectorClient(port=1, token="x")
         mock_sock = MagicMock()
         mock_sock.recv.return_value = b'{"stream_id":"s1"}\n'
         client._sock = mock_sock
         stream = client.connect_stream(port=8099)
         sent = mock_sock.sendall.call_args[0][0]
-        import json as _json
         req = _json.loads(sent.decode("utf-8"))
         self.assertEqual(req["method"], "connect_stream")
         self.assertEqual(req["params"]["port"], 8099)
@@ -118,7 +111,7 @@ class TestConnectorClient(unittest.TestCase):
 
     def test_stream_raw_io(self):
         from scripts.tools.connector.client import ConnectorClient, Stream
-        client = ConnectorClient()
+        client = ConnectorClient(port=1, token="x")
         mock_sock = MagicMock()
         mock_sock.recv.side_effect = [b'{"stream_id":"st"}\n']
         client._sock = mock_sock

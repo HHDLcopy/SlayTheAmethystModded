@@ -1,0 +1,416 @@
+       line | arthas  
+
+[arthasv4.3.1](/)
+
+[首页](/)
+
+[在线教程在新窗口打开](/doc/arthas-tutorials.html?language=cn&id=arthas-basics)
+
+[文档](/doc/)
+
+[命令列表](/doc/commands.md)
+
+[下载](/doc/download.md)
+
+版本版本
+
+-   [v3.x在新窗口打开](https://arthas.aliyun.com/3.x/)
+
+-   [简体中文](/doc/line.html)
+-   [English](/en/doc/line.html)
+
+[](https://github.com/alibaba/arthas)
+
+[首页](/)
+
+[在线教程在新窗口打开](/doc/arthas-tutorials.html?language=cn&id=arthas-basics)
+
+[文档](/doc/)
+
+[命令列表](/doc/commands.md)
+
+[下载](/doc/download.md)
+
+版本版本
+
+-   [v3.x在新窗口打开](https://arthas.aliyun.com/3.x/)
+
+-   [简体中文](/doc/line.html)
+-   [English](/en/doc/line.html)
+
+[](https://github.com/alibaba/arthas)
+
+-   文档
+    
+    -   [简介](/doc/)
+        
+    -   [快速入门](/doc/quick-start.html)
+        
+    -   [Arthas Install](/doc/install-detail.html)
+        
+    -   [下载](/doc/download.html)
+        
+    -   [表达式核心变量](/doc/advice-class.html)
+        
+    -   [命令列表](/doc/commands.md)
+        
+        -   [auth](/doc/auth.html)
+            
+        -   [base64](/doc/base64.html)
+            
+        -   [cat](/doc/cat.html)
+            
+        -   [classloader](/doc/classloader.html)
+            
+        -   [classloader-metaspace](/doc/classloader-metaspace.html)
+            
+        -   [cls](/doc/cls.html)
+            
+        -   [dashboard](/doc/dashboard.html)
+            
+        -   [dump](/doc/dump.html)
+            
+        -   [echo](/doc/echo.html)
+            
+        -   [getstatic](/doc/getstatic.html)
+            
+        -   [grep](/doc/grep.html)
+            
+        -   [heapdump](/doc/heapdump.html)
+            
+        -   [help](/doc/help.html)
+            
+        -   [history](/doc/history.html)
+            
+        -   [jad](/doc/jad.html)
+            
+        -   [jfr](/doc/jfr.html)
+            
+        -   [jvm](/doc/jvm.html)
+            
+        -   [keymap](/doc/keymap.html)
+            
+        -   [line](/doc/line.html)
+            
+        -   [logger](/doc/logger.html)
+            
+        -   [mbean](/doc/mbean.html)
+            
+        -   [mc](/doc/mc.html)
+            
+        -   [memory](/doc/memory.html)
+            
+        -   [monitor](/doc/monitor.html)
+            
+        -   [ognl](/doc/ognl.html)
+            
+        -   [options](/doc/options.html)
+            
+        -   [perfcounter](/doc/perfcounter.html)
+            
+        -   [profiler](/doc/profiler.html)
+            
+        -   [pwd](/doc/pwd.html)
+            
+        -   [quit](/doc/quit.html)
+            
+        -   [redefine](/doc/redefine.html)
+            
+        -   [reset](/doc/reset.html)
+            
+        -   [retransform](/doc/retransform.html)
+            
+        -   [sc](/doc/sc.html)
+            
+        -   [session](/doc/session.html)
+            
+        -   [sm](/doc/sm.html)
+            
+        -   [stack](/doc/stack.html)
+            
+        -   [stop](/doc/stop.html)
+            
+        -   [sysenv](/doc/sysenv.html)
+            
+        -   [sysprop](/doc/sysprop.html)
+            
+        -   [tee](/doc/tee.html)
+            
+        -   [thread](/doc/thread.html)
+            
+        -   [trace](/doc/trace.html)
+            
+        -   [tt](/doc/tt.html)
+            
+        -   [version](/doc/version.html)
+            
+        -   [vmoption](/doc/vmoption.html)
+            
+        -   [vmtool](/doc/vmtool.html)
+            
+        -   [watch](/doc/watch.html)
+            
+    -   [AI 相关](/doc/ai.md)
+        
+        -   [Arthas MCP Server](/doc/mcp-server.html)
+            
+    -   [其他特性](/doc/advanced-use.md)
+        
+        -   [Arthas 后台异步任务](/doc/async.html)
+            
+        -   [执行结果存日志](/doc/save-log.html)
+            
+        -   [Docker](/doc/docker.html)
+            
+        -   [Web Console](/doc/web-console.html)
+            
+        -   [Arthas Tunnel](/doc/tunnel.html)
+            
+        -   [IDEA Plugin](/doc/idea-plugin.html)
+            
+        -   [Arthas Properties](/doc/arthas-properties.html)
+            
+        -   [以 Java Agent 的方式启动](/doc/agent.html)
+            
+        -   [Arthas Spring Boot Starter](/doc/spring-boot-starter.html)
+            
+        -   [加载外部命令](/doc/external-command.html)
+            
+        -   [Http API](/doc/http-api.html)
+            
+        -   [批处理功能](/doc/batch-support.html)
+            
+    -   [FAQ](/doc/faq.html)
+        
+    -   [用户案例在新窗口打开](https://github.com/alibaba/arthas/issues?q=label%3Auser-case)
+        
+    -   [Star me at github在新窗口打开](https://github.com/alibaba/arthas)
+        
+    -   [编译调试/参与贡献在新窗口打开](https://github.com/alibaba/arthas/blob/master/CONTRIBUTING.md)
+        
+    -   [Release Notes在新窗口打开](https://github.com/alibaba/arthas/releases)
+        
+    -   [QQ 群/钉钉群](/doc/contact-us.md)
+        
+
+目录
+
+# [#](#line) line
+
+提示
+
+在指定源码行观察方法入参、局部变量和表达式结果。
+
+`line` 命令会在目标方法的指定源码行插入探针。当执行到该行时，Arthas 会输出当前线程、耗时、行号以及 OGNL 表达式结果。它适合排查"方法内部某一行变量值不符合预期"的问题。
+
+注意
+
+`line` 通过字节码增强实现。线上或预发环境使用时，请尽量明确 `--class`、`--method`、`--desc` 和 `--line`，并使用 `-n` 限制输出次数。诊断结束后可以执行 `reset` 或 `stop` 还原增强过的类。
+
+## [#](#参数说明) 参数说明
+
+参数名称
+
+参数说明
+
+`--class <class-pattern>`
+
+需要观察的类名，必填，默认通配符匹配
+
+`--method <method-pattern>`
+
+需要观察的方法名，可选，不指定时匹配类里的所有可插桩方法
+
+`--desc <method-desc>`
+
+JVM 方法描述符，可选，用于区分重载方法，比如 `(I)Ljava/util/List;`
+
+`--line <line>`
+
+需要观察的源码行号，支持逗号分隔和重复指定，比如 `--line 51,57 --line 61`
+
+`--express <express>`
+
+观察表达式，默认值是 `{params, localVarMap}`
+
+`--condition <express>`
+
+条件表达式，条件成立时才输出
+
+`--list-lines`
+
+只列出匹配方法的可用行号，不增强类
+
+`[E]`
+
+开启正则表达式匹配，默认是通配符匹配
+
+`[x:]`
+
+输出对象展开层级，默认值为 1
+
+`[M:]`
+
+输出结果大小限制，默认使用 `options` 中的 `object-size-limit`
+
+`[n:]`
+
+执行次数限制，默认值为 100
+
+`[c:]`
+
+指定 ClassLoader hash，只增强该 ClassLoader 加载的类
+
+`[m <arg>]`
+
+指定 Class 最大匹配数量，默认值为 50。长格式为 `[maxMatch <arg>]`
+
+`--stack`
+
+命中行号时输出当前线程栈
+
+`--stack-depth <depth>`
+
+`--stack` 的最大栈深度，默认值为 32，最大值为 256
+
+## [#](#表达式变量) 表达式变量
+
+`line` 命令复用 Arthas 的 OGNL 表达式机制。常用变量如下：
+
+变量
+
+说明
+
+`params`
+
+方法入参数组
+
+`target`
+
+当前对象，静态方法为 `null`
+
+`clazz`
+
+当前类
+
+`method`
+
+当前方法信息
+
+`lineNumber`
+
+当前命中的源码行号
+
+`argNames`
+
+方法参数名数组，依赖目标类保留调试信息
+
+`localVars` / `locals`
+
+当前行可见的局部变量值数组
+
+`localVarNames`
+
+当前行可见的局部变量名数组
+
+`localVarMap`
+
+局部变量名到变量值的映射
+
+`#cost`
+
+从方法入口到当前行的耗时，单位为 ms
+
+局部变量名和值依赖目标类编译时保留 `LocalVariableTable` 调试信息。如果目标类没有调试信息，`localVarMap` 可能为空或不完整。
+
+## [#](#使用示例) 使用示例
+
+### [#](#启动-demo) 启动 Demo
+
+启动[快速入门](/doc/quick-start.html)里的 `math-game`。
+
+### [#](#查看可用行号) 查看可用行号
+
+先使用 `--list-lines` 找到目标方法中可以插桩的源码行：
+
+```
+$ line --list-lines --class demo.MathGame --method primeFactors
+class=demo.MathGame source=MathGame.java
+method=primeFactors(I)Ljava/util/List; lines=[44, 45, 46, 49, 50, 51, 52, 53, 54, 55, 57, 61]
+```
+
+### [#](#观察指定行的入参和局部变量) 观察指定行的入参和局部变量
+
+默认表达式为 `{params, localVarMap}`：
+
+```
+$ line --class demo.MathGame --method primeFactors --line 51 -n 2 -x 2
+Press Q or Ctrl+C to abort.
+Affect(class count: 1 , method count: 1) cost in 32 ms, listenerId: 1
+ts=2026-06-08 01:45:56.111; [thread=main(3) cost=0.937167ms] demo.MathGame.primeFactors(I)Ljava/util/List;:51
+result=@ArrayList[
+    @Object[][
+        @Integer[122542],
+    ],
+    @LinkedHashMap[
+        @String[number]:@Integer[122542],
+        @String[result]:@ArrayList[isEmpty=true;size=0],
+        @String[i]:@Integer[2],
+    ],
+]
+Command execution times exceed limit: 2, so command will exit. You can set it with -n option.
+```
+
+### [#](#一次观察多个行号) 一次观察多个行号
+
+`--line` 支持逗号分隔和重复指定：
+
+```
+line --class demo.MathGame --method primeFactors --line 51,57 --express '{lineNumber, localVarMap}' -n 4 -x 2
+```
+
+第一版只支持精确行号列表，不支持 `51-57` 这类范围语法。
+
+### [#](#使用条件表达式过滤) 使用条件表达式过滤
+
+只在局部变量 `i` 大于 10 时输出：
+
+```
+line --class demo.MathGame --method primeFactors --line 51 \
+  --condition 'localVarMap["i"] != null && localVarMap["i"] > 10' \
+  --express '{params[0], localVarMap["i"], localVarMap["result"]}' -n 1 -x 2
+```
+
+### [#](#指定方法描述符) 指定方法描述符
+
+当方法重载时，建议使用 `--desc` 精确指定 JVM 方法描述符：
+
+```
+line --class demo.MathGame --method primeFactors --desc '(I)Ljava/util/List;' --line 51
+```
+
+可以通过 `sm -d demo.MathGame primeFactors` 查看方法描述符。
+
+### [#](#输出当前线程栈) 输出当前线程栈
+
+命中行号时输出当前线程栈：
+
+```
+line --class demo.MathGame --method primeFactors --line 57 --stack --stack-depth 8 -n 1
+```
+
+## [#](#注意事项) 注意事项
+
+-   `--line` 传入的行号必须大于 0，并且最多指定 256 个不同的行号。
+-   `line` 会跳过构造方法、类初始化方法、native 方法和 abstract 方法。
+-   如果省略 `--method`，同一个类里多个包含目标行号的方法都可能被增强，建议先用 `--list-lines` 和 `--desc` 收敛目标。
+-   如果目标类没有 `LineNumberTable`，`--list-lines` 不会列出可用行号，`line` 也无法在源码行插入探针。
+-   重复执行同一个行号不会重复插入相同探针；新增行号时会尽量只追加缺失的行号探针。
+
+[在 GitHub 上编辑此页在新窗口打开](https://github.com/alibaba/arthas/edit/master/site/docs/doc/line.md)
+
+Last Updated:
+
+贡献者: hengyunabc
+
+[keymap](/doc/keymap.html) [logger](/doc/logger.html)

@@ -346,4 +346,4 @@ game-probe 保留游戏特有的 `OBSERVE` / `EXEC` 功能，Arthas 补充通用
 - [Arthas 官方文档](https://arthas.aliyun.com/doc/commands.html)
 - [OGNL 语言指南](https://commons.apache.org/dormant/commons-ognl/language-guide.html)
 - [Arthas 表达式核心变量](https://arthas.aliyun.com/doc/advice-class.html)
-- 本地离线文档：`agent-tmp/arthas-docs/commands/`（每个命令一个文件，含完整参数说明）
+- 本地离线文档：`docs/commands/`（每个命令一个文件，含完整参数说明）

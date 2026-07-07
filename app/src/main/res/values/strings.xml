@@ -2432,10 +2432,10 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="workshop_change_notes_loading">Loading changelog...</string>
     <string name="workshop_change_notes_empty">No changelog is available for this mod.</string>
     <string name="workshop_change_notes_load_failed">Failed to load changelog: %1$s</string>
-    <string name="workshop_translate_action">Translate title and description</string>
-    <string name="workshop_translate_show_original_action">Show original title and description</string>
+    <string name="workshop_translate_action">Translate title, description, and comments</string>
+    <string name="workshop_translate_show_original_action">Show original title, description, and comments</string>
     <string name="workshop_translate_loading">Translating title and description...</string>
-    <string name="workshop_translate_no_text">This mod has no title or description to translate.</string>
+    <string name="workshop_translate_no_text">This mod has no title, description, or comments to translate.</string>
     <string name="workshop_translate_failed">Translation failed. Please try again later.</string>
     <string name="workshop_translate_missing_app_id_api_key">Baidu AI text translation AppID and API Key are not configured. Configure them in Settings &gt; Market first.</string>
     <string name="workshop_translate_missing_app_id">Baidu AI text translation AppID is not configured.</string>
@@ -2446,6 +2446,8 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="workshop_action_previous_page">Previous page</string>
     <string name="workshop_action_next_page">Next page</string>
     <string name="workshop_comments_loading">Loading comments</string>
+    <string name="workshop_comments_translate_loading">Translating comments</string>
+    <string name="workshop_comments_translate_failed">Failed to translate comments: %1$s</string>
     <string name="workshop_detail_load_failed">Failed to load details</string>
     <string name="workshop_action_retry_detail">Retry loading</string>
     <string name="workshop_detail_loading">Loading mod details</string>

@@ -164,6 +164,10 @@ internal fun WorkshopDetailScreen(
     val selectedTranslationKey = selectedDetailsKey
     val isTranslationMode = selectedTranslationKey != null && state.detailTranslationModeKey == selectedTranslationKey
     val selectedTranslation = selectedTranslationKey?.let { key -> state.detailTranslations[key] }
+    val selectedCommentTranslationKey = selectedDetails?.commentTranslationCacheKey()
+    val isTranslatingComments = isTranslationMode &&
+        selectedCommentTranslationKey != null &&
+        state.commentTranslationLoadingKey == selectedCommentTranslationKey
     val selectedChangeNotes = selectedDetailsKey?.let { key -> state.detailChangeNotes[key] }
         ?: selectedDetails?.takeIf { it.changeNotes.isNotBlank() }?.let { details ->
             WorkshopChangeNotes(
@@ -174,8 +178,10 @@ internal fun WorkshopDetailScreen(
             )
         }
     val isLoadingChangeNotes = state.detailChangeNotesLoadingId == publishedFileId
-    val canTranslateDetails = selectedDetails?.summary?.let { summary ->
-        summary.title.isNotBlank() || summary.description.isNotBlank()
+    val canTranslateDetails = selectedDetails?.let { details ->
+        details.summary.title.isNotBlank() ||
+            details.summary.description.isNotBlank() ||
+            details.comments.any { comment -> comment.content.isNotBlank() }
     } == true
     var showChangeNotesDialog by rememberSaveable(publishedFileId.toString()) { mutableStateOf(false) }
     var showSubscribeConfirmDialog by rememberSaveable(publishedFileId.toString()) { mutableStateOf(false) }
@@ -424,6 +430,9 @@ internal fun WorkshopDetailScreen(
                             details = details,
                             isLoading = state.commentLoadingId == publishedFileId,
                             errorMessage = state.commentErrorMessage,
+                            isTranslationMode = isTranslationMode,
+                            isTranslatingComments = isTranslatingComments,
+                            translationErrorMessage = state.commentTranslationErrorMessage.takeIf { isTranslationMode },
                             onRetry = { viewModel.retryWorkshopCommentsPage(context.applicationContext) },
                             onPreviousPage = { viewModel.loadPreviousWorkshopCommentsPage(context.applicationContext) },
                             onNextPage = { viewModel.loadNextWorkshopCommentsPage(context.applicationContext) },
@@ -1499,6 +1508,9 @@ private fun DetailCommentsCard(
     details: WorkshopItemDetails,
     isLoading: Boolean,
     errorMessage: String?,
+    isTranslationMode: Boolean,
+    isTranslatingComments: Boolean,
+    translationErrorMessage: String?,
     onRetry: () -> Unit,
     onPreviousPage: () -> Unit,
     onNextPage: () -> Unit,
@@ -1549,8 +1561,30 @@ private fun DetailCommentsCard(
                         }
                     }
                 }
+                if (isTranslationMode && isTranslatingComments && details.comments.isNotEmpty()) {
+                    CommentsLoadingIndicator(
+                        text = stringResource(R.string.workshop_comments_translate_loading),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 2.dp),
+                    )
+                }
+                translationErrorMessage?.let { message ->
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                        shape = RoundedCornerShape(16.dp),
+                    ) {
+                        Text(
+                            text = message,
+                            modifier = Modifier.padding(12.dp),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                }
                 if (showInlineLoading) {
                     CommentsLoadingIndicator(
+                        text = stringResource(R.string.workshop_comments_loading),
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 8.dp),
@@ -1577,7 +1611,9 @@ private fun DetailCommentsCard(
                         ) { Text(stringResource(R.string.workshop_action_next_page)) }
                     }
                 }
-                details.comments.forEach { comment -> CommentItemCard(comment = comment) }
+                details.comments.forEach { comment ->
+                    CommentItemCard(comment = comment, isTranslationMode = isTranslationMode)
+                }
             }
 
             if (showOverlayLoading || overlayAlpha > 0f) {
@@ -1591,6 +1627,7 @@ private fun DetailCommentsCard(
                     tonalElevation = 2.dp,
                 ) {
                     CommentsLoadingIndicator(
+                        text = stringResource(R.string.workshop_comments_loading),
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
                     )
                 }
@@ -1600,7 +1637,10 @@ private fun DetailCommentsCard(
 }
 
 @Composable
-private fun CommentsLoadingIndicator(modifier: Modifier = Modifier) {
+private fun CommentsLoadingIndicator(
+    text: String,
+    modifier: Modifier = Modifier,
+) {
     Row(
         modifier = modifier,
         horizontalArrangement = Arrangement.Center,
@@ -1608,7 +1648,7 @@ private fun CommentsLoadingIndicator(modifier: Modifier = Modifier) {
     ) {
         CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
         Text(
-            text = " ${stringResource(R.string.workshop_comments_loading)}",
+            text = " $text",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -1616,7 +1656,15 @@ private fun CommentsLoadingIndicator(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun CommentItemCard(comment: WorkshopComment) {
+private fun CommentItemCard(
+    comment: WorkshopComment,
+    isTranslationMode: Boolean,
+) {
+    val displayedContent = if (isTranslationMode) {
+        comment.translatedContent.ifBlank { comment.content }
+    } else {
+        comment.content
+    }
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = workshopDetailCardColors(),
@@ -1648,7 +1696,7 @@ private fun CommentItemCard(comment: WorkshopComment) {
                 )
             }
             Text(
-                text = comment.content,
+                text = displayedContent,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface,
             )

@@ -170,6 +170,7 @@ data class WorkshopComment(
     val content: String,
     val postedEpochSeconds: Long? = null,
     val postedDisplayText: String = "",
+    val translatedContent: String = "",
 )
 
 data class WorkshopDownloadRequest(

@@ -2431,10 +2431,10 @@
     <string name="workshop_change_notes_loading">正在加载更新日志…</string>
     <string name="workshop_change_notes_empty">暂无更新日志。</string>
     <string name="workshop_change_notes_load_failed">加载更新日志失败：%1$s</string>
-    <string name="workshop_translate_action">翻译标题和简介</string>
-    <string name="workshop_translate_show_original_action">显示原文标题和简介</string>
+    <string name="workshop_translate_action">翻译标题、简介和评论</string>
+    <string name="workshop_translate_show_original_action">显示原文标题、简介和评论</string>
     <string name="workshop_translate_loading">正在翻译标题和简介…</string>
-    <string name="workshop_translate_no_text">当前没有可翻译的标题或简介。</string>
+    <string name="workshop_translate_no_text">当前没有可翻译的标题、简介或评论。</string>
     <string name="workshop_translate_failed">翻译失败，请稍后重试。</string>
     <string name="workshop_translate_missing_app_id_api_key">未配置百度大模型文本翻译的 AppID 和 API Key。请先在设置 &gt; 市场中配置。</string>
     <string name="workshop_translate_missing_app_id">未配置百度大模型文本翻译的 AppID。</string>
@@ -2445,6 +2445,8 @@
     <string name="workshop_action_previous_page">上一页</string>
     <string name="workshop_action_next_page">下一页</string>
     <string name="workshop_comments_loading">正在加载评论</string>
+    <string name="workshop_comments_translate_loading">正在翻译评论</string>
+    <string name="workshop_comments_translate_failed">翻译评论失败：%1$s</string>
     <string name="workshop_detail_load_failed">详情加载失败</string>
     <string name="workshop_action_retry_detail">重试加载</string>
     <string name="workshop_detail_loading">正在加载模组详情</string>

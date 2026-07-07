@@ -21,6 +21,7 @@ import io.stamethyst.backend.workshop.WorkshopBrowseQuery
 import io.stamethyst.backend.workshop.WorkshopBrowseSort
 import io.stamethyst.backend.workshop.WorkshopBrowseTimeFilter
 import io.stamethyst.backend.workshop.WorkshopChangeNotes
+import io.stamethyst.backend.workshop.WorkshopComment
 import io.stamethyst.backend.workshop.WorkshopDownloadBlocklist
 import io.stamethyst.backend.workshop.WorkshopDownloadProcessService
 import io.stamethyst.backend.workshop.WorkshopDownloadTaskStore
@@ -38,6 +39,7 @@ import io.stamethyst.backend.workshop.WorkshopUnsubscriptionVerificationExceptio
 import io.stamethyst.backend.workshop.WorkshopUpdateCheckResult
 import io.stamethyst.backend.workshop.WorkshopUpdateChecker
 import io.stamethyst.backend.workshop.buildBaiduModDescriptionReference
+import io.stamethyst.backend.workshop.buildBaiduWorkshopCommentReference
 import io.stamethyst.backend.workshop.isActiveDownload
 import io.stamethyst.backend.workshop.isRunningDownload
 import io.stamethyst.backend.workshop.mapLocaleLanguageToBaiduLanguage
@@ -69,6 +71,7 @@ internal class WorkshopViewModel : ViewModel() {
     private var refreshDownloadStateJob: Job? = null
     private val detailsCache = mutableMapOf<String, WorkshopItemDetails>()
     private val detailLoadsInFlight = mutableSetOf<String>()
+    private val commentTranslationsInFlight = mutableSetOf<String>()
     private val translationClient = BaiduAiTextTranslationClient()
     private val downloadTaskPersistenceMutex = Mutex()
 
@@ -462,6 +465,8 @@ internal class WorkshopViewModel : ViewModel() {
                     errorMessage = null,
                     commentLoadingId = null,
                     commentErrorMessage = null,
+                    commentTranslationLoadingKey = null,
+                    commentTranslationErrorMessage = null,
                     detailTranslationModeKey = null,
                     detailTranslationLoadingId = null,
                     detailTranslationErrorMessage = null,
@@ -512,6 +517,8 @@ internal class WorkshopViewModel : ViewModel() {
             errorMessage = null,
             commentLoadingId = if (shouldLoadComments) summary.publishedFileId else null,
             commentErrorMessage = details.commentUnavailableMessage(context),
+            commentTranslationLoadingKey = null,
+            commentTranslationErrorMessage = null,
             detailSubscriptionStatusId = summary.publishedFileId,
             detailSubscriptionStatus = if (!steamLoggedIn) {
                 WorkshopDetailSubscriptionStatus.Unknown
@@ -716,7 +723,12 @@ internal class WorkshopViewModel : ViewModel() {
             return
         }
 
-        uiState = uiState.copy(commentLoadingId = publishedFileId, commentErrorMessage = null)
+        uiState = uiState.copy(
+            commentLoadingId = publishedFileId,
+            commentErrorMessage = null,
+            commentTranslationLoadingKey = null,
+            commentTranslationErrorMessage = null,
+        )
         viewModelScope.launch {
             runCatching {
                 withContext(Dispatchers.IO) { currentService.getCommentsPage(detailSnapshot, page) }
@@ -739,7 +751,11 @@ internal class WorkshopViewModel : ViewModel() {
                     selected = updatedDetails ?: uiState.selected,
                     commentLoadingId = null,
                     commentErrorMessage = null,
+                    commentTranslationErrorMessage = null,
                 )
+                updatedDetails
+                    ?.takeIf { updated -> uiState.detailTranslationModeKey == updated.cacheKey() }
+                    ?.let { updated -> translateWorkshopCommentsIfNeeded(context, updated) }
             }.onFailure { error ->
                 uiState = uiState.copy(
                     commentLoadingId = null,
@@ -1020,6 +1036,7 @@ internal class WorkshopViewModel : ViewModel() {
             uiState = uiState.copy(
                 detailTranslationModeKey = null,
                 detailTranslationErrorMessage = null,
+                commentTranslationErrorMessage = null,
             )
             return
         }
@@ -1027,6 +1044,12 @@ internal class WorkshopViewModel : ViewModel() {
             uiState = uiState.copy(
                 detailTranslationModeKey = translationKey,
                 detailTranslationErrorMessage = null,
+                commentTranslationErrorMessage = null,
+            )
+            translateWorkshopCommentsIfNeeded(
+                context = context,
+                details = details,
+                onOpenBaiduTranslationCredentials = onOpenBaiduTranslationCredentials,
             )
             return
         }
@@ -1034,7 +1057,8 @@ internal class WorkshopViewModel : ViewModel() {
 
         val originalTitle = summary.title.trim()
         val originalDescription = summary.description.trim()
-        if (originalTitle.isBlank() && originalDescription.isBlank()) {
+        val hasTranslatableComments = details.comments.any { comment -> comment.content.isNotBlank() }
+        if (originalTitle.isBlank() && originalDescription.isBlank() && !hasTranslatableComments) {
             uiState = uiState.copy(detailTranslationErrorMessage = context.getString(R.string.workshop_translate_no_text))
             return
         }
@@ -1052,6 +1076,13 @@ internal class WorkshopViewModel : ViewModel() {
             detailTranslationModeKey = translationKey,
             detailTranslationLoadingId = publishedFileId,
             detailTranslationErrorMessage = null,
+            commentTranslationErrorMessage = null,
+        )
+        translateWorkshopCommentsIfNeeded(
+            context = context,
+            details = details,
+            credentials = credentials,
+            onOpenBaiduTranslationCredentials = onOpenBaiduTranslationCredentials,
         )
         viewModelScope.launch {
             runCatching {
@@ -1120,6 +1151,117 @@ internal class WorkshopViewModel : ViewModel() {
                     detailTranslationLoadingId = null,
                     detailTranslationErrorMessage = error.message ?: context.getString(R.string.workshop_translate_failed),
                 )
+            }
+        }
+    }
+
+    private fun translateWorkshopCommentsIfNeeded(
+        context: Context,
+        details: WorkshopItemDetails,
+        credentials: BaiduTranslationCredentials? = null,
+        onOpenBaiduTranslationCredentials: (String) -> Unit = {},
+    ) {
+        val detailKey = details.cacheKey()
+        if (uiState.detailTranslationModeKey != detailKey) return
+        val translationKey = details.commentTranslationCacheKey() ?: return
+        val commentsToTranslate = details.commentsNeedingTranslation()
+        if (commentsToTranslate.isEmpty() || translationKey in commentTranslationsInFlight) return
+
+        val resolvedCredentials = credentials ?: BaiduTranslationCredentialsRepository(context).getCredentials()
+        validateBaiduTranslationCredentials(context, resolvedCredentials)?.let { message ->
+            uiState = uiState.copy(
+                commentTranslationLoadingKey = null,
+                commentTranslationErrorMessage = context.getString(R.string.workshop_comments_translate_failed, message),
+            )
+            onOpenBaiduTranslationCredentials(message)
+            return
+        }
+
+        commentTranslationsInFlight += translationKey
+        uiState = uiState.copy(
+            commentTranslationLoadingKey = translationKey,
+            commentTranslationErrorMessage = null,
+        )
+        viewModelScope.launch {
+            try {
+                runCatching {
+                    val targetLanguage = mapLocaleLanguageToBaiduLanguage(Locale.getDefault()) ?: BAIDU_DEFAULT_TARGET_LANGUAGE
+                    val reference = buildBaiduWorkshopCommentReference(
+                        modTitle = details.summary.title,
+                        gameTitle = BAIDU_STS_GAME_TITLE,
+                    )
+                    val translatedByComment = LinkedHashMap<String, String>()
+                    commentsToTranslate.forEach { comment ->
+                        translatedByComment[comment.translationContentKey()] = translateWithBaiduCredentials(
+                            text = comment.content,
+                            targetLanguage = targetLanguage,
+                            credentials = resolvedCredentials,
+                            reference = reference,
+                        )
+                            .trim()
+                            .takeIf(String::isNotBlank)
+                            .orEmpty()
+                    }
+                    translatedByComment
+                }.onSuccess { translatedByComment ->
+                    val current = uiState.selected?.takeIf { selected ->
+                        selected.cacheKey() == detailKey && selected.commentTranslationCacheKey() == translationKey
+                    }
+                    if (current == null) {
+                        if (uiState.commentTranslationLoadingKey == translationKey) {
+                            uiState = uiState.copy(commentTranslationLoadingKey = null)
+                        }
+                        return@onSuccess
+                    }
+                    val translatedComments = current.comments.map { comment ->
+                        val translatedContent = translatedByComment[comment.translationContentKey()]
+                            ?.takeIf(String::isNotBlank)
+                        if (translatedContent == null) {
+                            comment
+                        } else {
+                            comment.copy(translatedContent = translatedContent)
+                        }
+                    }
+                    val updatedDetails = current.copy(comments = translatedComments)
+                    detailsCache[updatedDetails.cacheKey()] = updatedDetails
+                    uiState = uiState.copy(
+                        selected = updatedDetails,
+                        commentTranslationLoadingKey = if (uiState.commentTranslationLoadingKey == translationKey) {
+                            null
+                        } else {
+                            uiState.commentTranslationLoadingKey
+                        },
+                        commentTranslationErrorMessage = null,
+                    )
+                }.onFailure { error ->
+                    val stillSelectedInTranslationMode = uiState.detailTranslationModeKey == detailKey &&
+                        uiState.selected?.let { selected ->
+                            selected.cacheKey() == detailKey && selected.commentTranslationCacheKey() == translationKey
+                        } == true
+                    val nextLoadingKey = if (uiState.commentTranslationLoadingKey == translationKey) {
+                        null
+                    } else {
+                        uiState.commentTranslationLoadingKey
+                    }
+                    if (!stillSelectedInTranslationMode) {
+                        uiState = uiState.copy(commentTranslationLoadingKey = nextLoadingKey)
+                        return@onFailure
+                    }
+                    val message = if (error is BaiduTranslationApiException) {
+                        error.message ?: context.getString(R.string.workshop_translate_invalid_api_credentials)
+                    } else {
+                        error.message ?: context.getString(R.string.workshop_translate_failed)
+                    }
+                    uiState = uiState.copy(
+                        commentTranslationLoadingKey = nextLoadingKey,
+                        commentTranslationErrorMessage = context.getString(R.string.workshop_comments_translate_failed, message),
+                    )
+                    if (error is BaiduTranslationApiException) {
+                        onOpenBaiduTranslationCredentials(message)
+                    }
+                }
+            } finally {
+                commentTranslationsInFlight -= translationKey
             }
         }
     }
@@ -1591,6 +1733,8 @@ internal data class WorkshopUiState(
     val preparingDownloadIds: Set<ULong> = emptySet(),
     val commentLoadingId: ULong? = null,
     val commentErrorMessage: String? = null,
+    val commentTranslationLoadingKey: String? = null,
+    val commentTranslationErrorMessage: String? = null,
     val detailTranslationModeKey: String? = null,
     val detailTranslations: Map<String, WorkshopDetailTranslation> = emptyMap(),
     val detailTranslationLoadingId: ULong? = null,
@@ -1705,6 +1849,22 @@ private fun WorkshopItemDetails.retainDetailStateFrom(current: WorkshopItemDetai
 private fun WorkshopItemDetails.cacheKey(): String = detailsCacheKey(summary.appId, summary.publishedFileId)
 
 private fun detailsCacheKey(appId: UInt, publishedFileId: ULong): String = "$appId:$publishedFileId"
+
+internal fun WorkshopItemDetails.commentTranslationCacheKey(): String? {
+    if (comments.none { comment -> comment.content.isNotBlank() }) return null
+    val contentSignature = comments.joinToString(separator = "|") { comment ->
+        comment.translationContentKey()
+    }
+    return "${detailsCacheKey(summary.appId, summary.publishedFileId)}:comments:$commentPage:$contentSignature"
+}
+
+private fun WorkshopItemDetails.commentsNeedingTranslation(): List<WorkshopComment> =
+    comments.filter { comment ->
+        comment.content.isNotBlank() && comment.translatedContent.isBlank()
+    }
+
+private fun WorkshopComment.translationContentKey(): String =
+    "${id.ifBlank { "anonymous" }}:${content.hashCode()}"
 
 private fun WorkshopInstalledModRecord.toWorkshopItemSummary(): WorkshopItemSummary = WorkshopItemSummary(
     publishedFileId = publishedFileId,

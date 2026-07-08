@@ -285,7 +285,7 @@ Arthas 3.6.9 较旧，以下命令由 `arthas-bridge` 补充实现：
 |------|------|
 | `jfr` | Android JVM 不支持 JDK Flight Recorder |
 | `mc` | Android JRE 缺少 `tools.jar`（JDK 编译器）。替代方案：本地 `javac` → `adb push` → `retransform` |
-| `profiler` | `.so` 可正常加载，`profiler list/version` 可用。`profiler start` 可通过懒初始化 libjvm.so pthread key 修复 VMThread bridge 错误（`tryInitVMThreadFromJvm`），但信号驱动的事件（cpu/ctimer）和输出生成阶段 crash（火焰图符号解析或信号不兼容）。详见 `build-async-profiler-so.py`。替代方案：`dashboard`、`trace`、`heapdump` |
+| `profiler` | `.so` 可正常加载，所有事件（wall/ctimer/itimer/alloc）通过 SA_ONSTACK + 懒 pthread key 修复后可启动不被 crash。输出捕获需进一步验证。详见 `build-async-profiler-so.py`。替代方案：`dashboard`、`trace`、`heapdump` |
 
 ### 线程 CPU 使用率（`/proc/self/task` fallback）
 

@@ -11,15 +11,17 @@ Output: scripts/tools/arthas/resource/async-profiler/libasyncProfiler-linux-arm6
 
 Status (2026-07-08):
 
-Four issues addressed:
+Five issues addressed:
 1. ✓ musl=true → SIGSEGV: Bionic relocates like glibc, fixed with musl=false.
-2. ✓ "VMThread bridge" → solved: lazy init extracts HotSpot's pthread key from
-   libjvm.so data segment (offset 0xb93028) at profiler start time, avoiding
-   JNI_OnLoad crash.  Implemented in tryInitVMThreadFromJvm().
-3. ~ Signal events (cpu/ctimer/itimer): SIGPROF/SIGVTALRM crashes the JVM.
-   Wall clock does not use signals but signal path during output/stop may crash.
-4. ~ Output generation: flamegraph symbol resolution may crash during
-   parseLibraries()'s second call (flameGraph output via dumpFlameGraph).
+2. ✓ "VMThread bridge" → solved: lazy init extracts HotSpot's pthread key.
+3. ✓ Signal crash (cpu/ctimer/itimer): SA_ONSTACK added to OS::installSignalHandler.
+   JVM creates per-thread sigaltstack (32KB), but without SA_ONSTACK the handler
+   runs on normal stack → stack overflow on deep call chains → SIGSEGV.
+4. ✓ _native_libs concurrent access: _parse_lock barrier in Profiler::stop()
+   ensures any in-flight dlopen_hook -> parseLibraries() completes before dump()
+   reads _native_libs via getLibraryName().
+5. ~ Output generation: nc pipe protocol may not capture async output reliably.
+   Profiling runs and sampling works; output capture needs investigation.
 
 Three issues addressed:
 1. ✗ musl=true → SIGSEGV: Bionic relocates like glibc, fixed by musl=false.
@@ -228,6 +230,47 @@ void VMStructs::initThreadBridge(JNIEnv* env) {"""
         pd = pd.replace(old, new)
         pc.write_text(pd)
         print("Patched profiler.cpp: added lazy VMThread init call.")
+
+    # Patch os_linux.cpp: add SA_ONSTACK to signal handler flags
+    oscpp = src_dir / "src" / "os_linux.cpp"
+    osc = oscpp.read_text()
+    if "SA_ONSTACK" not in osc:
+        osc = osc.replace(
+            "sa.sa_flags = SA_SIGINFO | SA_RESTART;",
+            "sa.sa_flags = SA_SIGINFO | SA_RESTART | SA_ONSTACK;",
+        )
+        oscpp.write_text(osc)
+        print("Patched os_linux.cpp: added SA_ONSTACK to signal handler flags.")
+
+    # Patch symbols.h: add lockParseLock/unlockParseLock
+    sh = src_dir / "src" / "symbols.h"
+    sd = sh.read_text()
+    if "lockParseLock" not in sd:
+        sd = sd.replace(
+            "static bool haveKernelSymbols() {\n        return _have_kernel_symbols;\n    }\n",
+            "static bool haveKernelSymbols() {\n        return _have_kernel_symbols;\n    }\n\n"
+            "    static void lockParseLock()   { _parse_lock.lock(); }\n"
+            "    static void unlockParseLock() { _parse_lock.unlock(); }\n",
+        )
+        sh.write_text(sd)
+        print("Patched symbols.h: added lockParseLock/unlockParseLock.")
+
+    # Patch profiler.cpp: add _parse_lock barrier in stop()
+    pfcpp = src_dir / "src" / "profiler.cpp"
+    pfd = pfcpp.read_text()
+    if "Symbols::lockParseLock" not in pfd:
+        pfd = pfd.replace(
+            "switchLibraryTrap(false);\n    switchThreadEvents(JVMTI_DISABLE);",
+            "switchLibraryTrap(false);\n\n"
+            "    // Barrier: block until any in-flight dlopen_hook -> parseLibraries\n"
+            "    // completes, so the _native_libs array is stable for subsequent\n"
+            "    // dump() -> getLibraryName() reads.\n"
+            "    Symbols::lockParseLock();\n"
+            "    Symbols::unlockParseLock();\n\n"
+            "    switchThreadEvents(JVMTI_DISABLE);",
+        )
+        pfcpp.write_text(pfd)
+        print("Patched profiler.cpp: added _parse_lock barrier in stop().")
 
 
 def main() -> int:

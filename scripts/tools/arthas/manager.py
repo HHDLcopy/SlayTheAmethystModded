@@ -19,10 +19,11 @@ _JARS = [
     ("arthas-bridge.jar", True),
 ]
 
-_ASYNC_PROFILER_SO = (
-    "async-profiler/libasyncProfiler-linux-arm64.so",
-    "libasyncProfiler-linux-arm64.so",
-)
+_NATIVE_LIBS = [
+    ("libprocfs_cpu.so", False),
+]
+
+_ASYNC_PROFILER_SO = "libasyncProfiler-linux-arm64.so"
 
 
 class ArthasManager:
@@ -40,19 +41,26 @@ class ArthasManager:
         self._agent = agent_client
 
     def start(self, port: int = 8099) -> None:
-        # 1. Push JARs and native libs to device (idempotent)
+        # 1. Clean up stale .so from old location (migrated to arthas/ dir)
+        self._conn.shell(command=f"rm -f /data/data/io.stamethyst/files/libprocfs_cpu.so")
+
+        # 2. Push JARs and native libs to device (idempotent)
         for jar_name, _has_agent_class in _JARS:
             local = str(_RESOURCE_DIR / jar_name)
             remote = f"{_ARTHAS_DIR}/{jar_name}"
             self._conn.push(local=local, remote=remote)
 
-        so_rel, so_name = _ASYNC_PROFILER_SO
-        local_so = str(_RESOURCE_DIR / so_rel)
-        remote_so = f"{_ARTHAS_DIR}/async-profiler/{so_name}"
-        self._conn.shell(command=f"mkdir -p {_ARTHAS_DIR}/async-profiler")
+        for lib_name, _ in _NATIVE_LIBS:
+            local = str(_RESOURCE_DIR / lib_name)
+            remote = f"{_ARTHAS_DIR}/{lib_name}"
+            self._conn.push(local=local, remote=remote)
+
+        so_name = _ASYNC_PROFILER_SO
+        local_so = str(_RESOURCE_DIR / so_name)
+        remote_so = f"{_ARTHAS_DIR}/{so_name}"
         self._conn.push(local=local_so, remote=remote_so)
 
-        # 2. Load core.jar into system classpath (no Agent-Class),
+        # 3. Load core.jar into system classpath (no Agent-Class),
         #    then load bridge agent via isolated classloader → agentmain
         core_path = f"{_ARTHAS_DIR}/arthas-core.jar"
         agent_path = f"{_ARTHAS_DIR}/arthas-bridge.jar"
@@ -62,7 +70,7 @@ class ArthasManager:
             f"{core_path};port={port}",
         )
 
-        # 3. Forward bridge port
+        # 4. Forward bridge port
         self._conn.forward(port=port)
 
     def stop(self, port: int = 8099) -> None:

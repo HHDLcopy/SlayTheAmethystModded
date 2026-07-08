@@ -4,7 +4,7 @@ public class ProcFSBridge {
     private static volatile boolean loaded = false;
     private static volatile String loadError = null;
     private static final String SO_PATH =
-        "/data/data/io.stamethyst/files/libprocfs_cpu.so";
+        "/data/data/io.stamethyst/files/arthas/libprocfs_cpu.so";
 
     public static synchronized void ensureLoaded() {
         if (loaded) return;

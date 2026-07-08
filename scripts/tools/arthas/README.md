@@ -38,18 +38,22 @@ Python 客户端通过 `connector` daemon 的 `connect_stream` 透传通道收�
    python -m scripts.tools.connector start --port 39999
    ```
 
-3. **设备上已有 Arthas JARs**（由 manager 自动推送，或手动）：
+3. **设备上已有 Arthas 文件**（由 `manager.py` 自动推送，或手动）：
 
    ```
    /data/data/io.stamethyst/files/arthas/
-     arthas-core.jar    # Arthas 命令引擎（13.5 MB）
-     arthas-bridge.jar  # 自定义 SocketTerm + 启动器
+     arthas-core.jar          # Arthas 命令引擎（13.5 MB）
+     arthas-bridge.jar        # 自定义 SocketTerm + 启动器
+     arthas-spy.jar           # Arthas spy 组件
+     arthas-agent.jar         # Arthas agent
+     libprocfs_cpu.so         # 线程 CPU 使用率 /proc fallback（JNI）
+     libasyncProfiler-linux-arm64.so  # async-profiler 3.0 aarch64 .so
    ```
 
 ### 启动 Arthas
 
 ```bash
-# CLI 一步：推送 JARs + 加载 bridge + forward 端口
+# CLI 一步：推送 JARs + .so + 加载 bridge + forward 端口
 python -m scripts.tools.arthas start
 
 # 交互式 shell
@@ -301,12 +305,9 @@ CPU 时间。
 
 **构建 .so**：`python3 scripts/tools/arthas/build-procfs-so.py`（需要 NDK 27+，target aarch64）
 
-**部署**：`.so` 由 bridge
-自动从 `/data/data/io.stamethyst/files/libprocfs_cpu.so` 加载，需通过 `adb push`
-部署一次。
+**部署**：`.so` 由 `manager.py` `start()` 自动推送至 `/data/data/io.stamethyst/files/arthas/libprocfs_cpu.so`，bridge 启动时自动加载。
 
-> 注意：首次 push `.so` 后需要 `chown u0_a81:u0_a81` 和 `chmod 755`，否则
-> `System.load` 会被 SELinux 拒绝。
+> 旧版本 `.so` 存放在 `/data/data/io.stamethyst/files/libprocfs_cpu.so`，`start()` 会自动清理该残留文件。无需手动 `chown`/`chmod`——`connector` 的 push 命令已处理权限。
 
 ### heapdump
 
@@ -355,12 +356,15 @@ game-probe 保留游戏特有的 `OBSERVE` / `EXEC` 功能，Arthas 补充通用
 
 | 文件 | 职责 |
 |------|------|
-| `manager.py` | 生命周期管理：推送 JARs → LOAD_AGENT → forward 端口 |
+| `manager.py` | 生命周期管理：推送 JARs + .so → LOAD_AGENT → forward 端口，自动清理旧版残留 |
 | `shell.py` | `ArthasShell`：prompt drain、命令发送、输出解析 |
 | `cli.py` | `run_shell()` / `run_query()`：Shell/单命令入口 |
 | `__main__.py` | CLI 接口：`start`、`shell`、`query`、`stop` |
 | `resource/arthas-core.jar` | Arthas 3.6.9 命令引擎 |
 | `resource/arthas-bridge.jar` | 自定义 bridge（源码在 `arthas-bridge/`） |
+| `resource/arthas-agent.jar` | Arthas agent |
+| `resource/arthas-spy.jar` | Arthas spy 组件 |
+| `resource/libprocfs_cpu.so` | JNI 库：线程 CPU 时间 `/proc` fallback |
 | `build-procfs-so.py` | 构建 `libprocfs_cpu.so`（线程 CPU 使用率 `/proc` fallback） |
 | `build-async-profiler-so.py` | 交叉编译 async-profiler 3.0 为 aarch64 `.so`（`.so` 可加载，`profiler list/version` 可用，`start` 因 VMThread bridge 缺失不可用） |
 

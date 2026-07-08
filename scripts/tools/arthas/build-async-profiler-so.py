@@ -7,7 +7,7 @@ Requires: Android NDK 27+, JDK 8+ for JVM TI headers.
 Patches symbols_linux.cpp to treat Bionic as glibc for ELF relocation (musl=false)
 since Bionic relocates dynamic section pointers like glibc.
 
-Output: scripts/tools/arthas/resource/async-profiler/libasyncProfiler-linux-arm64.so
+Output: scripts/tools/arthas/resource/libasyncProfiler-linux-arm64.so
 
 Status (2026-07-08):
 
@@ -50,7 +50,7 @@ from pathlib import Path
 
 _SCRIPT = Path(__file__).resolve()
 _PROJECT_ROOT = _SCRIPT.parents[3]
-_RESOURCE_DIR = _SCRIPT.parent / "resource" / "async-profiler"
+_RESOURCE_DIR = _SCRIPT.parent / "resource"
 _TMP_DIR = _PROJECT_ROOT / "agent-tmp" / "async-profiler"
 _LOCAL_PROPS = _PROJECT_ROOT / "local.properties"
 _OUT_SO = _RESOURCE_DIR / "libasyncProfiler-linux-arm64.so"

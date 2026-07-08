@@ -220,13 +220,15 @@ monitor -c 1 com.megacrit.cardcrawl.cards.AbstractCard update -n 5
 
 ### Profiler / 堆分析
 
-> **`profiler list` / `profiler version` 可用**，但 `profiler start` 不可用：pojav OpenJDK 8 缺少 `AsyncGetCallTrace` / VMThread bridge（见下方 [不支持的 Android 命令](#不支持的-android-命令)）。
+> **`profiler list` / `profiler version` 可用**。`profiler start` 已修复（详见下方 [已修复的 profiler 问题](#已修复的-profiler-问题)），所有事件（wall/ctimer/itimer/alloc）均可启动不 crash。`.so` 首次系统级加载在刚启动的游戏实例上偶发 crash（parseLibraries 中的 dyn_ptr 在 Bionic 上的边缘情况），`profiler stop` 输出捕获机制需进一步验证。
 
 | 命令 | 用途 |
 |------|------|
 | `profiler list` | 列出可采样的事件类型（cpu、alloc、lock 等） |
 | `profiler start [--event <type>]` | 开始采样。默认事件：`cpu` |
 | `profiler stop [--format <fmt>]` | 停止采样并输出。输出写入 `arthas-output/` |
+| `profiler status` | 显示 profiler 当前状态（idle / running / stopped） |
+| `profiler version` | 显示 async-profiler 版本（当前为 3.0） |
 | `heapdump <path>` | 堆转储。Android 上路径必须为应用私有目录（如 `/data/data/io.stamethyst/files/heap.hprof`） |
 
 ### 其他命令
@@ -283,17 +285,34 @@ MTS ClassLoader 隔离会导致 ASM 的 `ClassWriter.getCommonSuperClass()` 解�
 
 Arthas 3.6.9 较旧，以下命令由 `arthas-bridge` 补充实现：
 
-| 命令 | 说明 |
-|------|------|
-| `classloader-metaspace` | `ClassLoaderMetaspaceCommand` 为较高 Arthas 版本新增，3.6.9 JAR 中无该类。Bridge 通过自定义 `MetaspaceCommand`（JMX `MemoryPoolMXBean`）提供替代实现，已验证可用 |
+| 命令 | 说明 | 状态 |
+|------|------|------|
+| `classloader-metaspace` | `ClassLoaderMetaspaceCommand` 为较高 Arthas 版本新增，3.6.9 JAR 中无该类。Bridge 通过自定义 `MetaspaceCommand`（JMX `MemoryPoolMXBean`）提供替代实现 | ✅ 已验证可用 |
 
-### 不支持的 Android 命令
+### 已修复的 profiler 问题
+
+async-profiler 3.0 交叉编译为 aarch64 `.so`（`build-async-profiler-so.py`），已解决以下四个根因：
+
+| # | 根因 | 文件 | 修复 | 验证 |
+|---|------|------|------|------|
+| 1 | `.so` 加载 SIGSEGV | `symbols_linux.cpp` | `musl=false`（Bionic ELF 重定位与 glibc 一致，非 musl） | `profiler version` 正常输出 |
+| 2 | "Could not find VMThread bridge" | `vmStructs.cpp` + `profiler.cpp` | 懒初始化：运行时从 libjvm.so 数据段（`*(base+0xb93028)`）读取 HotSpot pthread key | `profiler start` 不再报此错误 |
+| 3 | 信号事件 SIGSEGV | `os_linux.cpp` | `SA_ONSTACK` 加入 signal handler flags（JVM 已分配 32KB sigaltstack，但未使用） | wall/ctimer/itimer/alloc 全部存活 |
+| 4 | `_native_libs` 写读竞态 | `symbols.h` + `profiler.cpp` | `Profiler::stop()` 中加 `_parse_lock` barrier，确保 dump 前 parseLibraries 完成 | stop→dump 链路线程安全 |
+
+**残留问题**：
+
+| 问题 | 表现 | 可能原因 |
+|------|------|----------|
+| 首次 `.so` 加载偶发 crash | 刚启动的游戏实例上 `System.load()` → `JNI_OnLoad` → `VM::init` → `parseLibraries` 崩溃 | `dyn_ptr()` 中 `(char*)dyn->d_un.d_ptr < _base` 启发式对 Bionic 某些偏移有边缘情况；线程竞争 |
+| nc pipe 输出不可靠 | `nc` 标准输出截获的字节流中 profiler 输出丢失 | Arthas bridge 的 `SocketTerm` 在 prompt/command 多路复用中 stderr/output 顺序不确定 |
+
+### 不支持的命令
 
 | 命令 | 原因 |
 |------|------|
-| `jfr` | Android JVM 不支持 JDK Flight Recorder |
-| `mc` | Android JRE 缺少 `tools.jar`（JDK 编译器）。替代方案：本地 `javac` → `adb push` → `retransform` |
-| `profiler` | `.so` 可正常加载，所有事件（wall/ctimer/itimer/alloc）通过 SA_ONSTACK + 懒 pthread key 修复后可启动不被 crash。输出捕获需进一步验证。详见 `build-async-profiler-so.py`。替代方案：`dashboard`、`trace`、`heapdump` |
+| `jfr` | JVM 不支持 JDK Flight Recorder（无 `jdk.jfr.Recording` 类） |
+| `mc` | JRE 缺少 `tools.jar`（JDK 编译器）。替代方案：本地 `javac` → `adb push` → `retransform` |
 
 ### 线程 CPU 使用率（`/proc/self/task` fallback）
 

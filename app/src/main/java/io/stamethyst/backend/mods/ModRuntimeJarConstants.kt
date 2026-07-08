@@ -145,6 +145,10 @@ internal const val STS_PATCH_FREETYPE_GLYPH_FALLBACK_COMPAT_CLASS =
     "com/badlogic/gdx/graphics/g2d/freetype/FreeTypeGlyphFallbackCompat.class"
 internal const val STS_PATCH_FRAGMENT_SHADER_COMPAT_CLASS =
     "io/stamethyst/gdx/FragmentShaderCompat.class"
+internal const val STS_PATCH_FRAGMENT_SHADER_COMPAT_INTEGER_LITERAL_CLASS =
+    $$"io/stamethyst/gdx/FragmentShaderCompat$IntegerLiteral.class"
+internal const val STS_PATCH_FRAGMENT_SHADER_COMPAT_INNER_PREFIX =
+    "io/stamethyst/gdx/FragmentShaderCompat$"
 internal const val STS_PATCH_COLOR_TAB_BAR_CLASS =
     "com/megacrit/cardcrawl/screens/mainMenu/ColorTabBar.class"
 internal const val STS_PATCH_COLOR_TAB_BAR_PREFIX =
@@ -195,6 +199,7 @@ internal val REQUIRED_STS_PATCH_CLASSES: Set<String> = HashSet(
         STS_PATCH_FRAMEBUFFER_OWNER_SUMMARY_CLASS,
         STS_PATCH_FREETYPE_GLYPH_FALLBACK_COMPAT_CLASS,
         STS_PATCH_FRAGMENT_SHADER_COMPAT_CLASS,
+        STS_PATCH_FRAGMENT_SHADER_COMPAT_INTEGER_LITERAL_CLASS,
         STS_PATCH_COLOR_TAB_BAR_CLASS,
         STS_PATCH_DESKTOP_CONTROLLER_MANAGER_CLASS,
         STS_PATCH_DESKTOP_CONTROLLER_MANAGER_DIRECT_CLASS,

@@ -29,9 +29,10 @@ Python 客户端通过 `connector` daemon 的 `connect_stream` 透传通道收�
 2. **Connector daemon 在运行**：
 
    ```bash
-   python -m scripts.tools.connector daemon --token my-token --port 39999
-   # stdout: {"port": 39999, "token": "my-token"}
-   export STS_CONNECTOR_PORT=39999 STS_CONNECTOR_TOKEN=my-token
+   python -m scripts.tools.connector start --port 39999
+   # 或通过环境变量设置默认端口后用简短命令
+   export STS_CONNECTOR_PORT=39999
+   python -m scripts.tools.connector start
    ```
 
 3. **设备上已有 Arthas JARs**（由 manager 自动推送，或手动）：

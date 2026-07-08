@@ -129,7 +129,7 @@ responsibility:
 | `monitor/` | 日志采集、截图、文件拉取 |
 
 各模块通过 `connector` daemon 访问设备，**不直接调用 adb**，**不直接开 TCP 连接**。
-Connector 使用纯 Python TCP (127.0.0.1)，通过 `STS_CONNECTOR_PORT` / `STS_CONNECTOR_TOKEN` 环境变量发现服务。
+Connector 使用纯 Python TCP (127.0.0.1)，通过 `STS_CONNECTOR_PORT` 环境变量发现服务。
 详见各模块目录下的 `README.md`。
 
 ## 环境变量
@@ -137,7 +137,6 @@ Connector 使用纯 Python TCP (127.0.0.1)，通过 `STS_CONNECTOR_PORT` / `STS_
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
 | `STS_CONNECTOR_PORT` | Connector daemon 的 TCP 端口 | 必填 |
-| `STS_CONNECTOR_TOKEN` | Connector daemon 认证 token | 必填 |
 | `STS_TEST_DEVICE` | 集成测试的默认设备序列号 | `auto` |
 
 ```bash
@@ -150,7 +149,7 @@ harness / arthas / autoplay / monitor
          ▼
     ┌─────────────┐
     │  connector  │  ← TCP 127.0.0.1:<port>
-    └──────┬──────┘     STS_CONNECTOR_PORT / STS_CONNECTOR_TOKEN
+    └──────┬──────┘     STS_CONNECTOR_PORT
            │ adb
            ▼
      Android Device

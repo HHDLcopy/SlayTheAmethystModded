@@ -1,10 +1,15 @@
 import json
 import os
 import socket
+import subprocess
+import sys
+import time
 from typing import Any
 
 
 class ConnectorClient:
+
+    _DAEMON_START_TIMEOUT = 5
 
     def __init__(self, port: int | None = None) -> None:
         port = port if port is not None else int(os.environ["STS_CONNECTOR_PORT"])
@@ -12,7 +17,33 @@ class ConnectorClient:
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
     def connect(self) -> None:
-        self._sock.connect(("127.0.0.1", self._port))
+        try:
+            self._sock.connect(("127.0.0.1", self._port))
+        except (ConnectionRefusedError, OSError):
+            self._start_daemon()
+            self._sock.connect(("127.0.0.1", self._port))
+
+    def _start_daemon(self) -> None:
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "scripts.tools.connector", "daemon",
+             "--port", str(self._port)],
+            stdout=subprocess.PIPE,
+            text=True,
+            start_new_session=True,
+        )
+        try:
+            line = proc.stdout.readline()
+            info = json.loads(line.strip())
+            if info.get("port") != self._port:
+                proc.terminate()
+                proc.wait(timeout=5)
+                raise RuntimeError(
+                    f"Daemon started on unexpected port {info.get('port')}")
+        except json.JSONDecodeError:
+            proc.terminate()
+            proc.wait(timeout=5)
+            raise RuntimeError("Failed to read daemon ready signal")
+        time.sleep(0.3)
 
     def send_request(self, request: dict[str, Any]) -> dict[str, Any]:
         body = json.dumps(request, ensure_ascii=False)

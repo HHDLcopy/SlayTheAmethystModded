@@ -26,13 +26,16 @@ Python 客户端通过 `connector` daemon 的 `connect_stream` 透传通道收�
 
    game-probe 的启动条件为 `launchMode=mts` 且至少满足其一：`-DebugMode`、`-Autoplay`、`-ForceJvmCrash`、`-ForceRuntimeCrash` 或 `performanceDeepDiagnostics`（Launcher 设置）。
 
-2. **Connector daemon 在运行**：
+2. **设置 connector 端口** — `ConnectorClient` 会自动拉起 daemon，只需通过环境变量指定端口：
+
+   ```bash
+   export STS_CONNECTOR_PORT=39999
+   ```
+
+   也可手动管理 daemon 生命周期：
 
    ```bash
    python -m scripts.tools.connector start --port 39999
-   # 或通过环境变量设置默认端口后用简短命令
-   export STS_CONNECTOR_PORT=39999
-   python -m scripts.tools.connector start
    ```
 
 3. **设备上已有 Arthas JARs**（由 manager 自动推送，或手动）：

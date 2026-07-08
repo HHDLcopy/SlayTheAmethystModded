@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import secrets
 import socket as _socket
 import subprocess
 import threading
@@ -13,8 +12,8 @@ from scripts.tools.connector.client import ConnectorClient
 from scripts.tools.lib.env_device import get_test_device_serial
 
 
-def _start_fake_connector_daemon(token: str) -> tuple[_socket.socket, int]:
-    """Start a minimal TCP server that mimics the connector auth protocol."""
+def _start_fake_connector_daemon() -> tuple[_socket.socket, int]:
+    """Start a minimal TCP server that mimics the connector protocol."""
     server = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
     server.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
     server.bind(("127.0.0.1", 0))
@@ -27,11 +26,6 @@ def _start_fake_connector_daemon(token: str) -> tuple[_socket.socket, int]:
             conn, _ = server.accept()
             conn.settimeout(5)
             reader = conn.makefile("r", encoding="utf-8", newline="\n")
-            auth = reader.readline().strip()
-            if auth != f"AUTH {token}":
-                conn.sendall(b'{"error":{"code":-32005,"message":"auth failed"}}\n')
-                conn.close()
-                return
             line = reader.readline().strip()
             req = json.loads(line)
             resp = json.dumps({"pong": True}) + "\n"
@@ -54,7 +48,7 @@ def _start_daemon() -> ConnectorClient:
     )
     info = json.loads(proc.stdout.readline().strip())
     time.sleep(0.3)
-    client = ConnectorClient(port=info["port"], token=info["token"])
+    client = ConnectorClient(port=info["port"])
     client.connect()
     client._daemon_proc = proc
     return client
@@ -73,10 +67,9 @@ def _stop_daemon(conn: ConnectorClient) -> None:
 class TestConnectorDaemonIntegration(unittest.TestCase):
 
     def test_ping_pong_over_tcp(self):
-        token = secrets.token_hex(16)
-        server, port, thread = _start_fake_connector_daemon(token)
+        server, port, thread = _start_fake_connector_daemon()
 
-        client = ConnectorClient(port=port, token=token)
+        client = ConnectorClient(port=port)
         client.connect()
         response = client.send_request({"method": "ping"})
         client.close()

@@ -13,8 +13,6 @@
 ## 跨平台
 
 全部使用 Python `socket` 标准库，TCP 通信，无文件依赖，支持 Linux / macOS / Windows。
-Daemon 启动时在 stdout 打印 `{"port":12345,"token":"abc..."}`；客户端通过环境变量
-`STS_CONNECTOR_PORT` 和 `STS_CONNECTOR_TOKEN` 连接运行中的 daemon。
 
 ## 依赖关系
 
@@ -24,7 +22,7 @@ harness / arthas / autoplay / monitor  (临时进程)
         ▼
    ┌─────────────┐
    │  connector  │  ← TCP 127.0.0.1:<port>
-   │  (daemon)   │     常驻进程，stdout 输出连接信息
+   │  (daemon)   │     常驻进程
    └──────┬──────┘
           │ adb
           ▼
@@ -39,39 +37,41 @@ game-probe 的启动条件为 `launchMode=mts` 且至少满足其一：`debugMod
 - 各模块**不直接开 TCP 连接**，通过 `connect_stream` 统一走 connector channel
 - Connector 启动时自动选择设备，运行中可切换
 
-## 启动
+## 管理命令
+
+通过 `__main__.py` 提供的生命周期管理命令控制 daemon：
 
 ```bash
-# 随机端口和 token，输出到 stdout
-python -m scripts.tools.connector daemon
-# stdout: {"port": 12345, "token": "abc123..."}
+# 启动后台 daemon（需指定端口）
+python -m scripts.tools.connector start --port 15555
 
-# 固定端口和 token（便于配置环境变量）
-python -m scripts.tools.connector daemon --port 12345 --token my-secret-token
+# 或通过环境变量设置默认端口
+export STS_CONNECTOR_PORT=15555
+python -m scripts.tools.connector start
 
-# 指定 PID 文件便于进程管理
-python -m scripts.tools.connector daemon --pid-file /tmp/sts-connector.pid
+# 查看运行状态
+python -m scripts.tools.connector status
+
+# 重启
+python -m scripts.tools.connector restart --port 15555
+
+# 停止
+python -m scripts.tools.connector stop
+
+# 前台运行（调试用）
+python -m scripts.tools.connector daemon --port 15555
 ```
 
-启动后将 stdout 输出的 `port` 和 `token` 设为环境变量：
-```bash
-export STS_CONNECTOR_PORT=12345
-export STS_CONNECTOR_TOKEN=my-secret-token
-```
+`start` 命令通过 TCP ping 检查端口是否已占用，已运行则拒绝重复启动。
 
 ## 环境变量
 
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
 | `STS_CONNECTOR_PORT` | Connector daemon 的 TCP 端口 | 必填 |
-| `STS_CONNECTOR_TOKEN` | 认证 token | 必填 |
 | `STS_TEST_DEVICE` | 集成测试的默认设备序列号 | `auto` |
 
 `scripts/tools/lib/env_device.py` 的 `get_test_device_serial()` 读取 `STS_TEST_DEVICE`，所有集成测试文件和 `HarnessOrchestrator` 均通过该函数取值。
-
-## 认证
-
-客户端连接后先发送 `AUTH <token>\n`，Daemon 验证通过后才进入 JSON 协议交互。认证失败返回错误码 `-32005` 并关闭连接。
 
 ## 协议格式
 
@@ -173,7 +173,6 @@ stream.close()
 | -32002 | 端口转发失败 |
 | -32003 | 命令执行超时 |
 | -32004 | 参数校验失败 |
-| -32005 | 认证失败 |
 
 ## 客户端库用法
 
@@ -181,7 +180,7 @@ stream.close()
 from scripts.tools.connector.client import ConnectorClient
 from scripts.tools.lib.env_device import get_test_device_serial
 
-c = ConnectorClient()  # 从 STS_CONNECTOR_PORT / STS_CONNECTOR_TOKEN 环境变量读取
+c = ConnectorClient()  # 从 STS_CONNECTOR_PORT 环境变量读取端口
 c.connect()
 c.select(serial=get_test_device_serial())
 result = c.shell("ps | grep java")
@@ -198,8 +197,4 @@ stream.close()
 |------|------|
 | `daemon.py` | TCP server，请求分发，stream proxy |
 | `client.py` | 客户端库，含 Stream 封装 |
-
-## 输出目录
-
-- PID 文件：通过 `--pid-file` 指定
-- 无其他持久化文件
+| `__main__.py` | CLI 入口，提供 start/stop/restart/status 等管理命令 |

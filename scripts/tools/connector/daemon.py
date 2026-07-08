@@ -1,7 +1,5 @@
 import argparse
 import json
-import os
-import secrets
 import socket as _socket
 import subprocess
 import sys
@@ -33,18 +31,11 @@ def _adb_devices() -> list[dict[str, str]]:
 
 
 class Daemon:
-    def __init__(self, token: str | None = None, port: int | None = None,
-                 pid_file: str | None = None) -> None:
-        self._pid_file = pid_file
-        self._token = token or secrets.token_hex(16)
+    def __init__(self, port: int | None = None) -> None:
         self._port = port
         self._running = True
         self._device_serial: str | None = None
         self._server: _socket.socket | None = None
-        if self._pid_file:
-            os.makedirs(os.path.dirname(self._pid_file) or ".", exist_ok=True)
-            with open(self._pid_file, "w") as f:
-                f.write(str(os.getpid()))
 
     def start(self) -> None:
         self._server = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
@@ -55,7 +46,7 @@ class Daemon:
         self._server.settimeout(1)
 
         port = self._server.getsockname()[1]
-        print(json.dumps({"port": port, "token": self._token}))
+        print(json.dumps({"port": port}))
         sys.stdout.flush()
 
         while self._running:
@@ -70,18 +61,8 @@ class Daemon:
 
     def _handle(self, conn: _socket.socket) -> None:
         try:
-            conn.settimeout(10)
-            reader = conn.makefile("r", encoding="utf-8", newline="\n")
-            auth_line = reader.readline()
-            if not auth_line or auth_line.strip() != f"AUTH {self._token}":
-                try:
-                    conn.sendall(b'{"error":{"code":-32005,"message":"auth failed"}}\n')
-                except Exception:
-                    pass
-                conn.close()
-                return
-
             conn.settimeout(30)
+            reader = conn.makefile("r", encoding="utf-8", newline="\n")
             while self._running:
                 line = reader.readline()
                 if not line:
@@ -261,22 +242,14 @@ class Daemon:
 
     def stop(self) -> None:
         self._running = False
-        if self._pid_file:
-            try:
-                os.unlink(self._pid_file)
-            except OSError:
-                pass
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=None,
-                        help="固定端口（默认随机）")
-    parser.add_argument("--token", default=None,
-                        help="认证 token（默认随机生成）")
-    parser.add_argument("--pid-file", default=None)
+                        help="TCP port (random by default)")
     args = parser.parse_args()
-    Daemon(port=args.port, token=args.token, pid_file=args.pid_file).start()
+    Daemon(port=args.port).start()
 
 
 if __name__ == "__main__":

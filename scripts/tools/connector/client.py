@@ -6,16 +6,13 @@ from typing import Any
 
 class ConnectorClient:
 
-    def __init__(self, port: int | None = None, token: str | None = None) -> None:
+    def __init__(self, port: int | None = None) -> None:
         port = port if port is not None else int(os.environ["STS_CONNECTOR_PORT"])
-        token = token if token is not None else os.environ["STS_CONNECTOR_TOKEN"]
         self._port = port
-        self._token = token
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
     def connect(self) -> None:
         self._sock.connect(("127.0.0.1", self._port))
-        self._sock.sendall(f"AUTH {self._token}\n".encode("utf-8"))
 
     def send_request(self, request: dict[str, Any]) -> dict[str, Any]:
         body = json.dumps(request, ensure_ascii=False)
@@ -95,7 +92,6 @@ class ConnectorClient:
         sock = self._sock
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._sock.connect(("127.0.0.1", self._port))
-        self._sock.sendall(f"AUTH {self._token}\n".encode("utf-8"))
         return Stream(sock=sock, stream_id=stream_id)
 
 

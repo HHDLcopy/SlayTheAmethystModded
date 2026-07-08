@@ -20,7 +20,7 @@ def _start_daemon() -> ConnectorClient:
     )
     info = json.loads(proc.stdout.readline().strip())
     time.sleep(0.3)
-    client = ConnectorClient(port=info["port"], token=info["token"])
+    client = ConnectorClient(port=info["port"])
     client.connect()
     client._daemon_proc = proc
     return client

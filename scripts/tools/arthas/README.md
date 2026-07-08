@@ -212,7 +212,7 @@ monitor -c 1 com.megacrit.cardcrawl.cards.AbstractCard update -n 5
 
 ### Profiler / 堆分析
 
-> **`profiler` 在 Android 上不可用**（缺少 `libasyncProfiler.so`）。见下方 [不支持的 Android 命令](#不支持的-android-命令)。
+> **`profiler list` / `profiler version` 可用**，但 `profiler start` 不可用：pojav OpenJDK 8 缺少 `AsyncGetCallTrace` / VMThread bridge（见下方 [不支持的 Android 命令](#不支持的-android-命令)）。
 
 | 命令 | 用途 |
 |------|------|
@@ -285,7 +285,7 @@ Arthas 3.6.9 较旧，以下命令由 `arthas-bridge` 补充实现：
 |------|------|
 | `jfr` | Android JVM 不支持 JDK Flight Recorder |
 | `mc` | Android JRE 缺少 `tools.jar`（JDK 编译器）。替代方案：本地 `javac` → `adb push` → `retransform` |
-| `profiler` | Android 平台缺少 `libasyncProfiler.so`（`perf_event_open` 非所有设备/内核均支持）。替代方案：`dashboard`、`trace`、`heapdump` 代替 |
+| `profiler` | `.so` 可正常加载，`profiler list/version` 可用。`profiler start` 可通过懒初始化 libjvm.so pthread key 修复 VMThread bridge 错误（`tryInitVMThreadFromJvm`），但信号驱动的事件（cpu/ctimer）和输出生成阶段 crash（火焰图符号解析或信号不兼容）。详见 `build-async-profiler-so.py`。替代方案：`dashboard`、`trace`、`heapdump` |
 
 ### 线程 CPU 使用率（`/proc/self/task` fallback）
 
@@ -358,7 +358,7 @@ game-probe 保留游戏特有的 `OBSERVE` / `EXEC` 功能，Arthas 补充通用
 | `resource/arthas-core.jar` | Arthas 3.6.9 命令引擎 |
 | `resource/arthas-bridge.jar` | 自定义 bridge（源码在 `arthas-bridge/`） |
 | `build-procfs-so.py` | 构建 `libprocfs_cpu.so`（线程 CPU 使用率 `/proc` fallback） |
-| `build-async-profiler-so.py` | 交叉编译 async-profiler 3.0 为 aarch64 `.so`（实验性，`profiler` 命令加载后 crash，待修复） |
+| `build-async-profiler-so.py` | 交叉编译 async-profiler 3.0 为 aarch64 `.so`（`.so` 可加载，`profiler list/version` 可用，`start` 因 VMThread bridge 缺失不可用） |
 
 ### 设备端模块 (`arthas-bridge/`)
 

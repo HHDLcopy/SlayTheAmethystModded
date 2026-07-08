@@ -18,6 +18,11 @@ _JARS = [
     ("arthas-bridge.jar", True),
 ]
 
+_ASYNC_PROFILER_SO = (
+    "async-profiler/libasyncProfiler-linux-arm64.so",
+    "libasyncProfiler-linux-arm64.so",
+)
+
 
 class ArthasManager:
     """Manage Arthas agent lifecycle on the device.
@@ -34,11 +39,17 @@ class ArthasManager:
         self._agent = agent_client
 
     def start(self, port: int = 8099) -> None:
-        # 1. Push JARs to device (idempotent)
-        for jar_name, has_agent_class in _JARS:
+        # 1. Push JARs and native libs to device (idempotent)
+        for jar_name, _has_agent_class in _JARS:
             local = str(_RESOURCE_DIR / jar_name)
             remote = f"{_ARTHAS_DIR}/{jar_name}"
             self._conn.push(local=local, remote=remote)
+
+        so_rel, so_name = _ASYNC_PROFILER_SO
+        local_so = str(_RESOURCE_DIR / so_rel)
+        remote_so = f"{_ARTHAS_DIR}/async-profiler/{so_name}"
+        self._conn.shell(command=f"mkdir -p {_ARTHAS_DIR}/async-profiler")
+        self._conn.push(local=local_so, remote=remote_so)
 
         # 2. Load core.jar into system classpath (no Agent-Class),
         #    then load bridge agent via isolated classloader → agentmain

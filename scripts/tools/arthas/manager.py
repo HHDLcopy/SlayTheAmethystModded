@@ -15,6 +15,7 @@ _RESOURCE_DIR = Path(__file__).resolve().parent / "resource"
 
 _JARS = [
     ("arthas-core.jar", False),
+    ("arthas-spy.jar", False),
     ("arthas-bridge.jar", True),
 ]
 

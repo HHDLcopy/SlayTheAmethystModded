@@ -6,7 +6,7 @@
   简体中文 ｜ <a href="./docs/README.en.md">English</a>
 </p>
 
-<h1 align="center">SlayTheAmethyst</h1>
+<h1 align="center">Slay the Amethyst</h1>
 
 <p align="center">
   一个面向 <strong>模组版 Slay the Spire</strong> 的 Android 启动器项目，在移动端运行大部分桌面版模组

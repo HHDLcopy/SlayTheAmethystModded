@@ -5,9 +5,11 @@ import com.taobao.arthas.core.shell.ShellServer;
 import com.taobao.arthas.core.shell.command.Command;
 import com.taobao.arthas.core.shell.command.CommandResolver;
 
+import java.io.File;
 import java.io.FileWriter;
 import java.io.PrintWriter;
 import java.lang.instrument.Instrumentation;
+import java.lang.reflect.Field;
 import java.util.Collections;
 import java.util.Properties;
 
@@ -56,6 +58,7 @@ public class ArthasCommandBridge {
             log("listening on " + port);
 
             setupProcFSFallback();
+            setupAsyncProfilerFlat();
 
             while (true) {
                 java.net.Socket client = server.accept();
@@ -73,6 +76,38 @@ public class ArthasCommandBridge {
         ProcFSBridge.ensureLoaded();
         if (ProcFSBridge.isLoaded()) {
             ProcFSThreadCpuPatch.install();
+        }
+    }
+
+    private static void setupAsyncProfilerFlat() {
+        try {
+            java.net.URL codeSource = com.taobao.arthas.core.command.monitor200.ProfilerCommand.class
+                .getProtectionDomain().getCodeSource().getLocation();
+            File jarFile = new File(codeSource.toURI().getSchemeSpecificPart());
+            File arthasHome = jarFile.getParentFile();
+
+            File flatSo = new File(arthasHome, "libasyncProfiler-linux-arm64.so");
+            if (!flatSo.isFile()) {
+                log("async-profiler .so not found at " + flatSo + ", skipping");
+                return;
+            }
+
+            String flatPath = flatSo.getAbsolutePath();
+            one.profiler.AsyncProfiler ap = one.profiler.AsyncProfiler.getInstance(flatPath);
+            log("async-profiler loaded, version=" + ap.getVersion());
+
+            Field pcField = com.taobao.arthas.core.command.monitor200.ProfilerCommand.class
+                .getDeclaredField("profiler");
+            pcField.setAccessible(true);
+            pcField.set(null, ap);
+
+            Field apInst = one.profiler.AsyncProfiler.class.getDeclaredField("instance");
+            apInst.setAccessible(true);
+            apInst.set(null, ap);
+
+            log("async-profiler injected into ProfilerCommand.profiler and AsyncProfiler.instance");
+        } catch (Throwable e) {
+            log("setupAsyncProfilerFlat failed: " + e);
         }
     }
 

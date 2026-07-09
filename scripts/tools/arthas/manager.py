@@ -10,6 +10,9 @@ from pathlib import Path
 from typing import Any
 
 _ARTHAS_DIR = "/data/data/io.stamethyst/files/arthas"
+_RUNTIME_LIB_DIR = (
+    "/data/data/io.stamethyst/files/runtimes/Internal/lib/aarch64/server"
+)
 
 _RESOURCE_DIR = Path(__file__).resolve().parent / "resource"
 
@@ -41,6 +44,9 @@ class ArthasManager:
         self._agent = agent_client
 
     def start(self, port: int = 8099) -> None:
+        # 0. Ensure companion file exists
+        self._ensure_companion()
+
         # 1. Clean up stale .so from old location (migrated to arthas/ dir)
         self._conn.shell(command=f"rm -f /data/data/io.stamethyst/files/libprocfs_cpu.so")
 
@@ -60,6 +66,9 @@ class ArthasManager:
         remote_so = f"{_ARTHAS_DIR}/{so_name}"
         self._conn.push(local=local_so, remote=remote_so)
 
+        # 2b. Push companion debug symbols (AllocTracer symbols for libjvm.so)
+        self.push_companion()
+
         # 3. Load core.jar into system classpath (no Agent-Class),
         #    then load bridge agent via isolated classloader → agentmain
         core_path = f"{_ARTHAS_DIR}/arthas-core.jar"
@@ -75,3 +84,27 @@ class ArthasManager:
 
     def stop(self, port: int = 8099) -> None:
         self._conn.unforward(port=port)
+
+    # ── Companion file (AllocTracer symbols for stripped libjvm.so) ───
+
+    @staticmethod
+    def _ensure_companion() -> None:
+        """Download libjvm.debuginfo companion if not present locally."""
+        companion_local = (
+            _RESOURCE_DIR / "jdk-companion" / "aarch64" / "libjvm.debuginfo"
+        )
+        if companion_local.is_file():
+            return
+        from scripts.tools.arthas.download_jvm_companion import download_companion
+        download_companion()
+
+    def push_companion(self) -> None:
+        """Push libjvm.debuginfo beside libjvm.so for debuglink loading."""
+        companion_local = (
+            _RESOURCE_DIR / "jdk-companion" / "aarch64" / "libjvm.debuginfo"
+        )
+        if not companion_local.is_file():
+            print("[warn] libjvm.debuginfo not found, alloc profiling won't work")
+            return
+        remote = f"{_RUNTIME_LIB_DIR}/libjvm.debuginfo"
+        self._conn.push(local=str(companion_local), remote=remote)

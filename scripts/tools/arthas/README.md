@@ -40,15 +40,15 @@ Python 客户端通过 `connector` daemon 的 `connect_stream` 透传通道收�
 
 3. **设备上已有 Arthas 文件**（由 `manager.py` 自动推送，或手动）：
 
-   ```
-   /data/data/io.stamethyst/files/arthas/
-     arthas-core.jar          # Arthas 命令引擎（13.5 MB）
-     arthas-bridge.jar        # 自定义 SocketTerm + 启动器
-     arthas-spy.jar           # Arthas spy 组件
-     arthas-agent.jar         # Arthas agent
-     libprocfs_cpu.so         # 线程 CPU 使用率 /proc fallback（JNI）
-     libasyncProfiler-linux-arm64.so  # async-profiler 3.0 aarch64 .so
-   ```
+    ```
+     /data/data/io.stamethyst/files/arthas/
+       arthas-core.jar          # Arthas 命令引擎（13.5 MB）
+       arthas-bridge.jar        # 自定义 SocketTerm + 启动器
+       arthas-spy.jar           # Arthas spy 组件
+       arthas-agent.jar         # Arthas agent
+       libprocfs_cpu.so         # 线程 CPU 使用率 /proc fallback（JNI）
+       libasyncProfiler-linux-arm64.so  # async-profiler 3.0 aarch64 .so
+    ```
 
 ### 启动 Arthas
 
@@ -220,7 +220,7 @@ monitor -c 1 com.megacrit.cardcrawl.cards.AbstractCard update -n 5
 
 ### Profiler / 堆分析
 
-> **`profiler list` / `profiler version` 可用**。`profiler start` 已修复（详见下方 [已修复的 profiler 问题](#已修复的-profiler-问题)），所有事件（wall/ctimer/itimer/alloc）均可启动不 crash。`.so` 首次系统级加载在刚启动的游戏实例上偶发 crash（parseLibraries 中的 dyn_ptr 在 Bionic 上的边缘情况），`profiler stop` 输出捕获机制需进一步验证。
+> **实测状态 (2026-07-09)**：wall/ctimer/itimer/cpu 均可用，`getSamples` 正常返回，bridge 不死。`profiler stop` 正常工作。`getThreadState()` 直接返回 `THREAD_RUNNING`（避免非 HotSpot 线程信号上下文崩溃）。
 
 | 命令 | 用途 |
 |------|------|
@@ -289,30 +289,51 @@ Arthas 3.6.9 较旧，以下命令由 `arthas-bridge` 补充实现：
 |------|------|------|
 | `classloader-metaspace` | `ClassLoaderMetaspaceCommand` 为较高 Arthas 版本新增，3.6.9 JAR 中无该类。Bridge 通过自定义 `MetaspaceCommand`（JMX `MemoryPoolMXBean`）提供替代实现 | ✅ 已验证可用 |
 
-### 已修复的 profiler 问题
+### profiler 修复
 
-async-profiler 3.0 交叉编译为 aarch64 `.so`（`build-async-profiler-so.py`），已解决以下四个根因：
+async-profiler 3.0 交叉编译为 aarch64 `.so`（`build-async-profiler-so.py`），应用 8 个 patch：
 
-| # | 根因 | 文件 | 修复 | 验证 |
-|---|------|------|------|------|
-| 1 | `.so` 加载 SIGSEGV | `symbols_linux.cpp` | `musl=false`（Bionic ELF 重定位与 glibc 一致，非 musl） | `profiler version` 正常输出 |
-| 2 | "Could not find VMThread bridge" | `vmStructs.cpp` + `profiler.cpp` | 懒初始化：运行时从 libjvm.so 数据段（`*(base+0xb93028)`）读取 HotSpot pthread key | `profiler start` 不再报此错误 |
-| 3 | 信号事件 SIGSEGV | `os_linux.cpp` | `SA_ONSTACK` 加入 signal handler flags（JVM 已分配 32KB sigaltstack，但未使用） | wall/ctimer/itimer/alloc 全部存活 |
-| 4 | `_native_libs` 写读竞态 | `symbols.h` + `profiler.cpp` | `Profiler::stop()` 中加 `_parse_lock` barrier，确保 dump 前 parseLibraries 完成 | stop→dump 链路线程安全 |
+| # | 根因 | 修复 |
+|---|------|------|
+| 1 | Bionic ELF 重定位 | `musl=false` |
+| 2 | VMThread bridge 缺失 (JDK 8 无 pthread TLS) | `tryInitVMThreadFromJvm()` 创建专有 `pthread_key`，读 `eetop` |
+| 3 | 信号 handler 无 sigaltstack | `SA_ONSTACK` |
+| 4 | `_native_libs` 并发写读竞态 | `_parse_lock` barrier |
+| 5 | `libprocfs_cpu.so` ELF 解析 SIGSEGV | 跳过 `parseProgramHeaders` |
+| 6 | `getThreadState` 读非 HotSpot 线程 ucontext crash | 直接返回 `THREAD_RUNNING` |
+| 7 | `.so` 扁平部署与 `ProfilerCommand` 路径不匹配 | `setupAsyncProfilerFlat()` 加载+反射注入 |
+| 8 | SIGSEGV handler 转发 `SIG_DFL` crash | 禁用 `orig_segvHandler` 替换 |
 
-**残留问题**：
+所有 patch 由 `build-async-profiler-so.py` 的 `_patch_source()` 自动应用，git checkout 后 rebuild 即可。
 
-| 问题 | 表现 | 可能原因 |
-|------|------|----------|
-| 首次 `.so` 加载偶发 crash | 刚启动的游戏实例上 `System.load()` → `JNI_OnLoad` → `VM::init` → `parseLibraries` 崩溃 | `dyn_ptr()` 中 `(char*)dyn->d_un.d_ptr < _base` 启发式对 Bionic 某些偏移有边缘情况；线程竞争 |
-| nc pipe 输出不可靠 | `nc` 标准输出截获的字节流中 profiler 输出丢失 | Arthas bridge 的 `SocketTerm` 在 prompt/command 多路复用中 stderr/output 顺序不确定 |
+**实测结论 (2026-07-10)**：
+
+| 命令 | 结果 |
+|------|------|
+| `profiler version / list / status` | ✅ |
+| `profiler start --event wall` | ✅ 17353 samples |
+| `profiler start --event cpu` | ✅ 60 samples |
+| `profiler start --event ctimer` | ✅ 54 samples |
+| `profiler start --event itimer` | ✅ 48 samples |
+| `profiler start --event lock` | ✅ 可用（autoplay 低竞争） |
+| `profiler start --event alloc` | ✅ 12 samples |
+| `profiler stop` | ✅ |
+| `profiler getSamples` | ✅ |
+| `profiler execute 'status'` | ✅ |
+
+### alloc 的修复方式
+
+Pojav JDK 8 的 `libjvm.so` 完全 strip 了符号表。async-profiler 的 `AllocTracer` 需要 `send_allocation_in_new_tlab` / `send_allocation_outside_tlab` 的 C++ mangled 符号来安装二进制断点。
+
+修复：利用 async-profiler 已有的 `.gnu_debuglink` 加载机制——在 CI 构建 JDK 时加 `--with-native-debug-symbols=internal`，提取带 `.symtab` 的 `libjvm.so`（strip DWARF 保留符号表），放置为 `libjvm.debuginfo` 伴生文件。`ElfParser::loadSymbolsUsingDebugLink()` 在 `parseLibraries` 阶段自动加载该文件的符号。
 
 ### 不支持的命令
 
 | 命令 | 原因 |
 |------|------|
-| `jfr` | JVM 不支持 JDK Flight Recorder（无 `jdk.jfr.Recording` 类） |
-| `mc` | JRE 缺少 `tools.jar`（JDK 编译器）。替代方案：本地 `javac` → `adb push` → `retransform` |
+| `jfr` | JDK 8 无 `jdk.jfr.Recording` |
+| `mc` | JRE 缺少 `tools.jar`，替代：本地 `javac` → `adb push` → `retransform` |
+| `alloc / lock` | 需 JDK debug symbols（Pojav JDK 编译时未包含） |
 
 ### 线程 CPU 使用率（`/proc/self/task` fallback）
 
@@ -385,13 +406,13 @@ game-probe 保留游戏特有的 `OBSERVE` / `EXEC` 功能，Arthas 补充通用
 | `resource/arthas-spy.jar` | Arthas spy 组件 |
 | `resource/libprocfs_cpu.so` | JNI 库：线程 CPU 时间 `/proc` fallback |
 | `build-procfs-so.py` | 构建 `libprocfs_cpu.so`（线程 CPU 使用率 `/proc` fallback） |
-| `build-async-profiler-so.py` | 交叉编译 async-profiler 3.0 为 aarch64 `.so`（`.so` 可加载，`profiler list/version` 可用，`start` 因 VMThread bridge 缺失不可用） |
+| `build-async-profiler-so.py` | 交叉编译 async-profiler 3.0 为 aarch64 `.so`（`.so` 可编译，`System.load()` 时 crash，profiler 命令均不可用） |
 
 ### 设备端模块 (`arthas-bridge/`)
 
 | 文件 | 说明 |
 |------|------|
-| `ArthasCommandBridge.java` | `agentmain` 入口。初始化 Bootstrap，注册命令（含自定义 `MetaspaceCommand`），启动 ServerSocket |
+| `ArthasCommandBridge.java` | `agentmain` 入口。初始化 Bootstrap，注册命令（含自定义 `MetaspaceCommand`），启动 ServerSocket，加载扁平 `.so` 并反射注入 `ProfilerCommand` |
 | `MetaspaceCommand.java` | 自定义 `classloader-metaspace` 命令：通过 JMX `MemoryPoolMXBean` 查询 Metaspace/CompressedClassSpace 使用量。Arthas 3.6.9 不含 `ClassLoaderMetaspaceCommand`（为较高版本新增），由 bridge 提供替代实现 |
 | `ArthasBootstrapCompat.java` | Arthas 源码修改版（Apache 2.0）。`createWithoutNetty()` 跳过 Netty，仅执行 `shellServer.listen()` + `SpyAPI.init()` |
 | `SocketTerm.java` | `Term` 接口的纯 socket 实现。`readline → write(prompt)`、`feed(line) → 触发 handler` |

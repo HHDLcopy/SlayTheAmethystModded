@@ -220,11 +220,11 @@ monitor -c 1 com.megacrit.cardcrawl.cards.AbstractCard update -n 5
 
 ### Profiler / 堆分析
 
-> **实测状态 (2026-07-09)**：wall/ctimer/itimer/cpu 均可用，`getSamples` 正常返回，bridge 不死。`profiler stop` 正常工作。`getThreadState()` 直接返回 `THREAD_RUNNING`（避免非 HotSpot 线程信号上下文崩溃）。
+async-profiler 3.0 已集成。`.so` 以扁平结构部署在 `arthas/` 目录，bridge 启动时自动加载并通过反射注入 `ProfilerCommand`。`libjvm.debuginfo` 伴生文件（包含 AllocTracer C++ 符号表）由 `manager.py` 自动下载并推送至设备。
 
 | 命令 | 用途 |
 |------|------|
-| `profiler list` | 列出可采样的事件类型（cpu、alloc、lock 等） |
+| `profiler list` | 列出可采样的事件类型（cpu、alloc、lock、wall、itimer、ctimer 等） |
 | `profiler start [--event <type>]` | 开始采样。默认事件：`cpu` |
 | `profiler stop [--format <fmt>]` | 停止采样并输出。输出写入 `arthas-output/` |
 | `profiler status` | 显示 profiler 当前状态（idle / running / stopped） |
@@ -285,47 +285,36 @@ MTS ClassLoader 隔离会导致 ASM 的 `ClassWriter.getCommonSuperClass()` 解�
 
 Arthas 3.6.9 较旧，以下命令由 `arthas-bridge` 补充实现：
 
-| 命令 | 说明 | 状态 |
-|------|------|------|
-| `classloader-metaspace` | `ClassLoaderMetaspaceCommand` 为较高 Arthas 版本新增，3.6.9 JAR 中无该类。Bridge 通过自定义 `MetaspaceCommand`（JMX `MemoryPoolMXBean`）提供替代实现 | ✅ 已验证可用 |
-
-### profiler 修复
-
-async-profiler 3.0 交叉编译为 aarch64 `.so`（`build-async-profiler-so.py`），应用 8 个 patch：
-
-| # | 根因 | 修复 |
-|---|------|------|
-| 1 | Bionic ELF 重定位 | `musl=false` |
-| 2 | VMThread bridge 缺失 (JDK 8 无 pthread TLS) | `tryInitVMThreadFromJvm()` 创建专有 `pthread_key`，读 `eetop` |
-| 3 | 信号 handler 无 sigaltstack | `SA_ONSTACK` |
-| 4 | `_native_libs` 并发写读竞态 | `_parse_lock` barrier |
-| 5 | `libprocfs_cpu.so` ELF 解析 SIGSEGV | 跳过 `parseProgramHeaders` |
-| 6 | `getThreadState` 读非 HotSpot 线程 ucontext crash | 直接返回 `THREAD_RUNNING` |
-| 7 | `.so` 扁平部署与 `ProfilerCommand` 路径不匹配 | `setupAsyncProfilerFlat()` 加载+反射注入 |
-| 8 | SIGSEGV handler 转发 `SIG_DFL` crash | 禁用 `orig_segvHandler` 替换 |
-
-所有 patch 由 `build-async-profiler-so.py` 的 `_patch_source()` 自动应用，git checkout 后 rebuild 即可。
-
-**实测结论 (2026-07-10)**：
-
-| 命令 | 结果 |
+| 命令 | 说明 |
 |------|------|
-| `profiler version / list / status` | ✅ |
-| `profiler start --event wall` | ✅ 17353 samples |
-| `profiler start --event cpu` | ✅ 60 samples |
-| `profiler start --event ctimer` | ✅ 54 samples |
-| `profiler start --event itimer` | ✅ 48 samples |
-| `profiler start --event lock` | ✅ 可用（autoplay 低竞争） |
-| `profiler start --event alloc` | ✅ 12 samples |
-| `profiler stop` | ✅ |
-| `profiler getSamples` | ✅ |
-| `profiler execute 'status'` | ✅ |
+| `classloader-metaspace` | 通过 JMX `MemoryPoolMXBean` 查询 Metaspace/CompressedClassSpace 使用量。`ClassLoaderMetaspaceCommand` 为较高 Arthas 版本新增，3.6.9 JAR 中无该类，由 bridge 的 `MetaspaceCommand` 提供替代实现 |
 
-### alloc 的修复方式
+### 平台适配
 
-Pojav JDK 8 的 `libjvm.so` 完全 strip 了符号表。async-profiler 的 `AllocTracer` 需要 `send_allocation_in_new_tlab` / `send_allocation_outside_tlab` 的 C++ mangled 符号来安装二进制断点。
+async-profiler 3.0 为 Pojav / Android 环境做了以下适配（由 `build-async-profiler-so.py` 自动应用）：
 
-修复：利用 async-profiler 已有的 `.gnu_debuglink` 加载机制——在 CI 构建 JDK 时加 `--with-native-debug-symbols=internal`，提取带 `.symtab` 的 `libjvm.so`（strip DWARF 保留符号表），放置为 `libjvm.debuginfo` 伴生文件。`ElfParser::loadSymbolsUsingDebugLink()` 在 `parseLibraries` 阶段自动加载该文件的符号。
+| # | 适配项 | 说明 |
+|---|--------|------|
+| 1 | Bionic ELF 重定位 | Bionic 重定位方式与 glibc 一致，强制 `musl=false` |
+| 2 | VMThread bridge | Pojav JDK 8 无 pthread TLS 存储 VMThread，实现 `tryInitVMThreadFromJvm()` 读取 `eetop` 字段创建独立 key |
+| 3 | 信号栈 | 为 signal handler 添加 `SA_ONSTACK` |
+| 4 | `_native_libs` 并发安全 | `Profiler::stop()` 中添加 `_parse_lock` barrier |
+| 5 | `libprocfs_cpu.so` ELF 解析 | 跳过该文件在 `parseProgramHeaders` 中的解析（Bionic `dyn_ptr` 启发式不适用） |
+| 6 | 非 HotSpot 线程安全 | `getThreadState()` 直接返回 `THREAD_RUNNING`，避免桥接线程 ucontext 访问崩溃 |
+| 7 | SIGSEGV handler | 禁用 `orig_segvHandler` 替换（`SIG_DFL` 在 Pojav 上不可调用） |
+
+构建命令：
+```bash
+python3 scripts/tools/arthas/build-async-profiler-so.py
+```
+
+输出文件：`scripts/tools/arthas/resource/libasyncProfiler-linux-arm64.so`
+
+### alloc 符号补全
+
+Pojav JDK 8 的 `libjvm.so` 在编译时 strip 了符号表，导致 `AllocTracer` 二进制断点机制无法定位目标函数。async-profiler 通过 GNU debuglink 机制加载伴生符号文件——`libjvm.debuginfo`（仅含 `.symtab`，无 DWARF）——来补全所需的 C++ mangled 符号。
+
+伴生文件由 `download-jvm-companion.py` 从公开 Release 自动下载，`manager.py` 的 `start()` 在推送 JARs 的同时将其部署至设备 `libjvm.so` 同目录。
 
 ### 不支持的命令
 
@@ -333,7 +322,6 @@ Pojav JDK 8 的 `libjvm.so` 完全 strip 了符号表。async-profiler 的 `Allo
 |------|------|
 | `jfr` | JDK 8 无 `jdk.jfr.Recording` |
 | `mc` | JRE 缺少 `tools.jar`，替代：本地 `javac` → `adb push` → `retransform` |
-| `alloc / lock` | 需 JDK debug symbols（Pojav JDK 编译时未包含） |
 
 ### 线程 CPU 使用率（`/proc/self/task` fallback）
 
@@ -396,7 +384,7 @@ game-probe 保留游戏特有的 `OBSERVE` / `EXEC` 功能，Arthas 补充通用
 
 | 文件 | 职责 |
 |------|------|
-| `manager.py` | 生命周期管理：推送 JARs + .so → LOAD_AGENT → forward 端口，自动清理旧版残留 |
+| `manager.py` | 生命周期管理：推送 JARs + .so + companion → LOAD_AGENT → forward 端口，自动清理旧版残留 |
 | `shell.py` | `ArthasShell`：prompt drain、命令发送、输出解析 |
 | `cli.py` | `run_shell()` / `run_query()`：Shell/单命令入口 |
 | `__main__.py` | CLI 接口：`start`、`shell`、`query`、`stop` |
@@ -406,7 +394,8 @@ game-probe 保留游戏特有的 `OBSERVE` / `EXEC` 功能，Arthas 补充通用
 | `resource/arthas-spy.jar` | Arthas spy 组件 |
 | `resource/libprocfs_cpu.so` | JNI 库：线程 CPU 时间 `/proc` fallback |
 | `build-procfs-so.py` | 构建 `libprocfs_cpu.so`（线程 CPU 使用率 `/proc` fallback） |
-| `build-async-profiler-so.py` | 交叉编译 async-profiler 3.0 为 aarch64 `.so`（`.so` 可编译，`System.load()` 时 crash，profiler 命令均不可用） |
+| `build-async-profiler-so.py` | 交叉编译 async-profiler 3.0 为 aarch64 `.so`（自动应用 Pojav/Android 兼容 patch） |
+| `download-jvm-companion.py` | 从 GitHub Release 下载 `libjvm.debuginfo` 伴生符号文件 |
 
 ### 设备端模块 (`arthas-bridge/`)
 

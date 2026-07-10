@@ -281,13 +281,14 @@ class DecompilRoutingTest(unittest.TestCase):
         out = harness.resolved_out_dir.return_value = MagicMock()
 
         fake_info = {"decompiledClasses": ["Foo.java"]}
-        harness.harness_decompil = MagicMock(
-            return_value=(fake_info, True, "OK", "1 class decompiled")
-        )
-        harness.run_command(out)
-        self.assertEqual(harness.result["decompilInfo"], fake_info)
-        self.assertTrue(harness.result["success"])
-        self.assertEqual(harness.result["status"], "OK")
+        with unittest.mock.patch(
+            "scripts.tools.harness.decompil.run_decompil",
+            return_value=(fake_info, True, "OK", "1 class decompiled"),
+        ):
+            harness.run_command(out)
+            self.assertEqual(harness.result["decompilInfo"], fake_info)
+            self.assertTrue(harness.result["success"])
+            self.assertEqual(harness.result["status"], "OK")
 
 
 class StartupCacheProfileTest(unittest.TestCase):
@@ -321,10 +322,13 @@ class StartupCacheProfileTest(unittest.TestCase):
         out = Path(tempfile.mkdtemp())
         try:
             harness.result = {"artifacts": {}}
-            harness.harness_startup_cache_profile = MagicMock(return_value=0)
-            exit_code = harness.run_command(out)
-            self.assertEqual(exit_code, 0)
-            harness.harness_startup_cache_profile.assert_called_once_with(out)
+            with unittest.mock.patch(
+                "scripts.tools.harness.startup_cache.run_startup_cache_profile",
+                return_value=0,
+            ) as mock_func:
+                exit_code = harness.run_command(out)
+                self.assertEqual(exit_code, 0)
+                mock_func.assert_called_once()
         finally:
             shutil.rmtree(out, ignore_errors=True)
 

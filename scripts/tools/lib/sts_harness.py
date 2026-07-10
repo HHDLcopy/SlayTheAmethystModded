@@ -11,8 +11,10 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-
 from . import device_mods
+
+from scripts.tools.harness._context import HarnessContext
+
 from .agent_bridge import AgentBridge, AgentBridgeError
 from .agent_protocol import AgentProtocol
 from .harness_connection import HarnessConnection
@@ -239,6 +241,20 @@ class Harness:
         self.started_at = datetime.now(timezone.utc)
         self.result: dict[str, Any] = {}
         self._cached_out_dir: Path | None = None
+
+    def _build_context(self) -> HarnessContext:
+        return HarnessContext(
+            options=self.options,
+            repo_root=self.repo_root,
+            gradle_wrapper=self.gradle_wrapper,
+            adb_path=self.adb_path,
+            application_id=self.application_id,
+            resolved_device_serial=self.resolved_device_serial,
+            operations=self.operations,
+            started_at=self.started_at,
+            result=self.result,
+            cached_out_dir=self._cached_out_dir,
+        )
 
     def resolve_repo_path(self, path: str | Path) -> Path:
         path = Path(path)
@@ -1945,83 +1961,94 @@ fi
 
     def run_command(self, resolved_out_dir: Path) -> int:
         command = self.options.command
-        if command == "doctor":
-            status = self.harness_status()
-            self.result["statusSnapshot"] = status
-            self.set_result_success(True, "OK", "Harness prerequisites are available.")
-        elif command == "install":
-            self.harness_install()
-            self.set_result_success(True, "INSTALLED", "Debug APK installed.")
-        elif command == "start":
-            self.harness_start()
-            self.set_result_success(True, "START_REQUESTED", "Launch request was sent through :app:stsStart.")
-        elif command == "stop":
-            self.harness_stop()
-            self.set_result_success(True, "STOPPED", "Application force-stop completed.")
-        elif command == "logs":
-            self.harness_logs(resolved_out_dir)
-            try:
-                logcat_path = self.harness_logcat_dump(resolved_out_dir)
-                logcat_text = read_local_text_tail(logcat_path, max_bytes=262144)
-                self.result["statusSnapshot"] = self.harness_status(logcat_text, str(logcat_path))
-            except Exception as exc:
-                self.result["artifacts"]["harnessLogcatError"] = str(exc)
-            self.set_result_success(True, "LOGS_EXPORTED", "Log export completed.")
-        elif command == "screenshot":
-            self.harness_screenshot(resolved_out_dir)
-            self.set_result_success(True, "SCREENSHOT_CAPTURED", "Screenshot captured.")
-        elif command == "status":
-            status = self.harness_status()
-            self.result["statusSnapshot"] = status
-            self.set_result_success(True, status["observedState"], "Status snapshot captured.")
-        elif command == "mods":
-            mods = self.harness_device_mods()
-            self.result["deviceMods"] = mods
-            counts = mods["counts"]
-            self.set_result_success(
-                True,
-                "MODS_LISTED",
-                f"Listed {counts['optionalInstalled']} optional mods; {counts['optionalEnabled']} enabled.",
-            )
-        elif command == "set-mods":
-            update = self.harness_set_mods()
-            self.result["modSelection"] = {
-                "beforeCounts": update["beforeCounts"],
-                "selection": update["selection"],
-            }
-            self.result["deviceMods"] = update["after"]
-            counts = update["after"]["counts"]
-            self.set_result_success(
-                True,
-                "MODS_SELECTED",
-                f"Selected {counts['optionalEnabled']} of {counts['optionalInstalled']} optional mods.",
-            )
-        elif command == "smoke":
-            return self.run_smoke(resolved_out_dir)
-        elif command == "decompil":
-            info, success, status, message = self.harness_decompil(resolved_out_dir)
-            self.result["decompilInfo"] = info
-            self.set_result_success(success, status, message)
-        elif command == "agent-attach":
-            self.harness_agent_attach(resolved_out_dir)
-        elif command == "agent-detach":
-            self.harness_agent_detach(resolved_out_dir)
-        elif command == "agent-list":
-            self.harness_agent_list(resolved_out_dir)
-        elif command == "agent-status":
-            self.harness_agent_status(resolved_out_dir)
-        elif command == "play":
-            self.harness_play(resolved_out_dir)
-        elif command == "hotreload":
-            self.harness_hotreload(resolved_out_dir)
-        elif command == "perf":
-            self.harness_perf(resolved_out_dir)
-        elif command == "single-room":
-            self.options.autoplay = True
-            self.options.autoplay_mode = "single_room"
-            return self.run_smoke(resolved_out_dir)
-        elif command == "startup-cache-profile":
-            return self.harness_startup_cache_profile(resolved_out_dir)
+        ctx = self._build_context()
+
+        if command in ("doctor", "install", "start", "stop", "logs", "screenshot", "status",
+                       "mods", "set-mods", "smoke", "decompil", "agent-attach", "agent-detach",
+                       "agent-list", "agent-status", "play", "hotreload", "perf", "single-room",
+                       "startup-cache-profile"):
+            if command == "doctor":
+                from scripts.tools.harness.doctor import run_doctor
+                run_doctor(ctx)
+                return 0
+            elif command == "install":
+                from scripts.tools.harness.install import run_install
+                run_install(ctx)
+                return 0
+            elif command == "start":
+                from scripts.tools.harness.run import run_start
+                run_start(ctx)
+                return 0
+            elif command == "stop":
+                from scripts.tools.harness.run import run_stop
+                run_stop(ctx)
+                return 0
+            elif command == "logs":
+                from scripts.tools.harness.logs import run_logs
+                run_logs(ctx, resolved_out_dir)
+                return 0
+            elif command == "screenshot":
+                from scripts.tools.harness.screenshot import run_screenshot
+                run_screenshot(ctx, resolved_out_dir)
+                return 0
+            elif command == "status":
+                from scripts.tools.harness.status import run_status
+                run_status(ctx)
+                return 0
+            elif command == "mods":
+                from scripts.tools.harness.mods import run_mods
+                run_mods(ctx)
+                return 0
+            elif command == "set-mods":
+                from scripts.tools.harness.mods import run_set_mods
+                run_set_mods(ctx)
+                return 0
+            elif command == "decompil":
+                from scripts.tools.harness.decompil import run_decompil
+                info, success, status, message = run_decompil(ctx, resolved_out_dir)
+                self.result["decompilInfo"] = info
+                self.set_result_success(success, status, message)
+                return 0
+            elif command == "agent-attach":
+                from scripts.tools.harness.agent import run_agent_attach
+                run_agent_attach(ctx, resolved_out_dir)
+                return 0
+            elif command == "agent-detach":
+                from scripts.tools.harness.agent import run_agent_detach
+                run_agent_detach(ctx, resolved_out_dir)
+                return 0
+            elif command == "agent-list":
+                from scripts.tools.harness.agent import run_agent_list
+                run_agent_list(ctx, resolved_out_dir)
+                return 0
+            elif command == "agent-status":
+                from scripts.tools.harness.agent import run_agent_status
+                run_agent_status(ctx, resolved_out_dir)
+                return 0
+            elif command == "play":
+                from scripts.tools.harness.play import run_play
+                run_play(ctx, resolved_out_dir)
+                return 0
+            elif command == "hotreload":
+                from scripts.tools.harness.hotreload import run_hotreload
+                run_hotreload(ctx, resolved_out_dir)
+                return 0
+            elif command == "perf":
+                from scripts.tools.harness.perf import run_perf
+                run_perf(ctx, resolved_out_dir)
+                return 0
+            elif command == "smoke":
+                from scripts.tools.harness.smoke import run_smoke
+                return run_smoke(ctx, resolved_out_dir)
+            elif command == "single-room":
+                ctx.options.autoplay = True
+                ctx.options.autoplay_mode = "single_room"
+                from scripts.tools.harness.smoke import run_smoke
+                return run_smoke(ctx, resolved_out_dir)
+            elif command == "startup-cache-profile":
+                from scripts.tools.harness.startup_cache import run_startup_cache_profile
+                return run_startup_cache_profile(ctx, resolved_out_dir)
+
         return 0
 
     def run_smoke(self, resolved_out_dir: Path) -> int:

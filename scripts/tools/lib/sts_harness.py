@@ -238,6 +238,7 @@ class Harness:
         self.operations: list[dict[str, Any]] = []
         self.started_at = datetime.now(timezone.utc)
         self.result: dict[str, Any] = {}
+        self._cached_out_dir: Path | None = None
 
     def resolve_repo_path(self, path: str | Path) -> Path:
         path = Path(path)
@@ -249,9 +250,12 @@ class Harness:
         return self.repo_root / "debug-artifacts" / "harness" / f"{self.options.command}-{file_timestamp()}"
 
     def resolved_out_dir(self) -> Path:
-        if not self.options.out_dir.strip():
-            return self.default_out_dir()
-        return self.resolve_repo_path(self.options.out_dir)
+        if self._cached_out_dir is None:
+            if not self.options.out_dir.strip():
+                self._cached_out_dir = self.default_out_dir()
+            else:
+                self._cached_out_dir = self.resolve_repo_path(self.options.out_dir)
+        return self._cached_out_dir
 
     def resolve_gradle_wrapper(self) -> Path:
         windows_wrapper = self.repo_root / "gradlew.bat"

@@ -7,8 +7,10 @@ from scripts.tools.harness._context import HarnessContext
 from scripts.tools.harness._device import (
     clear_runtime_signals,
     device_logcat_timestamp,
+    harness_logcat_dump,
     parse_remote_path_state_output,
     read_remote_sts_text,
+    remote_sts_path_state,
     remote_sts_root_script,
     resolve_device_sts_root,
 )
@@ -257,3 +259,63 @@ class DeviceLogcatTimestampTest(unittest.TestCase):
         )
         result = device_logcat_timestamp(ctx)
         self.assertEqual(result, "")
+
+
+class RemoteStsPathStateTest(unittest.TestCase):
+    def _make_ctx(self):
+        return HarnessContext(
+            options=HarnessOptions(
+                command="smoke", launch_mode="mts_basemod", device_serial="",
+                out_dir="", timeout_seconds=300, poll_interval_seconds=2,
+                force_jvm_crash=False, force_runtime_crash=False, debug_mode=False,
+                autoplay=False, skip_install=False, no_stop_after_smoke=False,
+                mods=[], mod_list_file="", enable_all_mods=False, disable_all_mods=False,
+            ),
+            repo_root=Path("/fake/repo"),
+            application_id="com.example.app",
+        )
+
+    @patch("scripts.tools.harness._device.remote_sts_root_script")
+    def test_parses_file_state(self, mock_root_script):
+        mock_root_script.return_value = MagicMock(exit_code=0, output=(
+            "exists=1\ntype=file\nbytes=1234\nmtimeEpochSeconds=9999999999"
+        ))
+        ctx = self._make_ctx()
+        result = remote_sts_path_state(ctx, {"root": "/data/sts", "accessMode": "shell"}, "some.file")
+        self.assertTrue(result["exists"])
+        self.assertEqual(result["type"], "file")
+        self.assertEqual(result["bytes"], 1234)
+
+
+class HarnessLogcatDumpTest(unittest.TestCase):
+    def _make_ctx(self, adb_path="/usr/bin/adb"):
+        return HarnessContext(
+            options=HarnessOptions(
+                command="smoke", launch_mode="mts_basemod", device_serial="",
+                out_dir="", timeout_seconds=300, poll_interval_seconds=2,
+                force_jvm_crash=False, force_runtime_crash=False, debug_mode=False,
+                autoplay=False, skip_install=False, no_stop_after_smoke=False,
+                mods=[], mod_list_file="", enable_all_mods=False, disable_all_mods=False,
+            ),
+            repo_root=Path("/fake/repo"),
+            adb_path=adb_path,
+        )
+
+    @patch("scripts.tools.harness._device.adb")
+    def test_dump_returns_path(self, mock_adb):
+        import tempfile
+        mock_adb.return_value = MagicMock(exit_code=0, output="log output")
+        ctx = self._make_ctx()
+        ctx.result["artifacts"] = {}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_dir = Path(tmpdir)
+            result = harness_logcat_dump(ctx, out_dir)
+            self.assertTrue(result.exists())
+            self.assertIn("log output", result.read_text())
+            self.assertIn("harness-logcat-dump", result.name)
+
+    @patch("scripts.tools.harness._device.adb")
+    def test_dump_raises_when_no_adb(self, mock_adb):
+        ctx = self._make_ctx(adb_path=None)
+        with self.assertRaises(RuntimeError):
+            harness_logcat_dump(ctx, Path("/tmp"))

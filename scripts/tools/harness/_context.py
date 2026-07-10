@@ -16,3 +16,9 @@ class HarnessContext:
     started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     result: dict[str, Any] = field(default_factory=dict)
     cached_out_dir: Path | None = None
+
+
+def set_result_success(ctx: HarnessContext, success: bool, status: str, message: str) -> None:
+    ctx.result["success"] = success
+    ctx.result["status"] = status
+    ctx.result["message"] = message

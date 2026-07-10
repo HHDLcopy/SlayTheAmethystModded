@@ -5,6 +5,9 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.os.Build
 import android.os.SystemClock
+import android.webkit.ConsoleMessage
+import android.webkit.WebChromeClient
+import android.webkit.WebView
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -23,6 +26,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -67,6 +71,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
@@ -83,8 +88,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.painter.BitmapPainter
@@ -93,8 +100,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import io.stamethyst.R
@@ -102,6 +111,9 @@ import io.stamethyst.backend.workshop.WorkshopChangeNotes
 import io.stamethyst.backend.workshop.WorkshopComment
 import io.stamethyst.backend.workshop.WorkshopItemDetails
 import io.stamethyst.backend.workshop.WorkshopItemSummary
+import io.stamethyst.backend.workshop.WorkshopPreviewMedia
+import io.stamethyst.backend.workshop.WorkshopPreviewMediaKind
+import io.stamethyst.backend.workshop.WorkshopPreviewVideoSource
 import io.stamethyst.ui.Icons
 import io.stamethyst.ui.LoadingSkeletonBlock
 import io.stamethyst.ui.LoadingSkeletonStyle
@@ -164,6 +176,10 @@ internal fun WorkshopDetailScreen(
     val selectedTranslationKey = selectedDetailsKey
     val isTranslationMode = selectedTranslationKey != null && state.detailTranslationModeKey == selectedTranslationKey
     val selectedTranslation = selectedTranslationKey?.let { key -> state.detailTranslations[key] }
+    val selectedCommentTranslationKey = selectedDetails?.commentTranslationCacheKey()
+    val isTranslatingComments = isTranslationMode &&
+        selectedCommentTranslationKey != null &&
+        state.commentTranslationLoadingKey == selectedCommentTranslationKey
     val selectedChangeNotes = selectedDetailsKey?.let { key -> state.detailChangeNotes[key] }
         ?: selectedDetails?.takeIf { it.changeNotes.isNotBlank() }?.let { details ->
             WorkshopChangeNotes(
@@ -174,8 +190,10 @@ internal fun WorkshopDetailScreen(
             )
         }
     val isLoadingChangeNotes = state.detailChangeNotesLoadingId == publishedFileId
-    val canTranslateDetails = selectedDetails?.summary?.let { summary ->
-        summary.title.isNotBlank() || summary.description.isNotBlank()
+    val canTranslateDetails = selectedDetails?.let { details ->
+        details.summary.title.isNotBlank() ||
+            details.summary.description.isNotBlank() ||
+            details.comments.any { comment -> comment.content.isNotBlank() }
     } == true
     var showChangeNotesDialog by rememberSaveable(publishedFileId.toString()) { mutableStateOf(false) }
     var showSubscribeConfirmDialog by rememberSaveable(publishedFileId.toString()) { mutableStateOf(false) }
@@ -189,18 +207,19 @@ internal fun WorkshopDetailScreen(
         selectedDetails != null -> DetailPrimaryContentState.Content
         else -> DetailPrimaryContentState.Loading
     }
-    val selectedGalleryImageUrls = remember(selectedDetails?.previewImageUrls) {
-        selectedDetails?.previewImageUrls.orEmpty()
-            .filter(String::isNotBlank)
-            .distinct()
+    val selectedGalleryMediaItems = remember(selectedDetails?.previewMedia, selectedDetails?.previewImageUrls) {
+        selectedDetails?.galleryMediaItems().orEmpty()
+    }
+    val selectedGalleryBitmapKeys = remember(selectedGalleryMediaItems) {
+        selectedGalleryMediaItems.mapNotNull(WorkshopPreviewMedia::previewBitmapCacheKey).toSet()
     }
     val galleryBitmapCache = remember { mutableStateMapOf<String, Bitmap>() }
-    LaunchedEffect(selectedGalleryImageUrls) {
-        if (fullscreenGalleryStartIndex > selectedGalleryImageUrls.lastIndex) {
+    LaunchedEffect(selectedGalleryMediaItems, selectedGalleryBitmapKeys) {
+        if (fullscreenGalleryStartIndex > selectedGalleryMediaItems.lastIndex) {
             fullscreenGalleryVisible = false
             fullscreenGalleryStartIndex = -1
         }
-        galleryBitmapCache.keys.retainAll(selectedGalleryImageUrls.toSet())
+        galleryBitmapCache.keys.retainAll(selectedGalleryBitmapKeys)
     }
     LaunchedEffect(fullscreenGalleryVisible, fullscreenGalleryStartIndex) {
         if (!fullscreenGalleryVisible && fullscreenGalleryStartIndex >= 0) {
@@ -369,18 +388,18 @@ internal fun WorkshopDetailScreen(
                         downloadTasks = WorkshopDownloadCenterStore.tasks,
                         preparingDownloadIds = state.preparingDownloadIds,
                     )
-                    if (selectedGalleryImageUrls.isNotEmpty()) {
+                    if (selectedGalleryMediaItems.isNotEmpty()) {
                         item(key = "workshop-detail-preview-gallery") {
                             DetailPreviewGalleryCard(
                                 title = details.summary.title,
-                                imageUrls = selectedGalleryImageUrls,
+                                mediaItems = selectedGalleryMediaItems,
                                 loadedBitmaps = galleryBitmapCache,
                                 isFullscreenOpen = fullscreenGalleryStartIndex >= 0,
                                 onImageLoaded = { url, bitmap ->
                                     galleryBitmapCache[url] = bitmap
                                 },
                                 onOpenFullscreen = { page ->
-                                    fullscreenGalleryStartIndex = page.coerceIn(0, selectedGalleryImageUrls.lastIndex)
+                                    fullscreenGalleryStartIndex = page.coerceIn(0, selectedGalleryMediaItems.lastIndex)
                                     fullscreenGalleryVisible = true
                                 },
                             )
@@ -424,6 +443,9 @@ internal fun WorkshopDetailScreen(
                             details = details,
                             isLoading = state.commentLoadingId == publishedFileId,
                             errorMessage = state.commentErrorMessage,
+                            isTranslationMode = isTranslationMode,
+                            isTranslatingComments = isTranslatingComments,
+                            translationErrorMessage = state.commentTranslationErrorMessage.takeIf { isTranslationMode },
                             onRetry = { viewModel.retryWorkshopCommentsPage(context.applicationContext) },
                             onPreviousPage = { viewModel.loadPreviousWorkshopCommentsPage(context.applicationContext) },
                             onNextPage = { viewModel.loadNextWorkshopCommentsPage(context.applicationContext) },
@@ -494,7 +516,7 @@ internal fun WorkshopDetailScreen(
             )
         }
 
-        if (fullscreenGalleryStartIndex >= 0 && selectedGalleryImageUrls.isNotEmpty()) {
+        if (fullscreenGalleryStartIndex >= 0 && selectedGalleryMediaItems.isNotEmpty()) {
             AnimatedVisibility(
                 visible = fullscreenGalleryVisible,
                 modifier = Modifier
@@ -514,7 +536,7 @@ internal fun WorkshopDetailScreen(
             ) {
                 WorkshopGalleryFullscreenBrowser(
                     title = selectedDetails?.summary?.title.orEmpty(),
-                    imageUrls = selectedGalleryImageUrls,
+                    mediaItems = selectedGalleryMediaItems,
                     loadedBitmaps = galleryBitmapCache,
                     initialPage = fullscreenGalleryStartIndex,
                     modifier = Modifier.fillMaxSize(),
@@ -532,38 +554,40 @@ internal fun WorkshopDetailScreen(
 private fun DetailPreviewGalleryCard(
     modifier: Modifier = Modifier,
     title: String,
-    imageUrls: List<String>,
+    mediaItems: List<WorkshopPreviewMedia>,
     loadedBitmaps: Map<String, Bitmap>,
     isFullscreenOpen: Boolean,
     onImageLoaded: (String, Bitmap) -> Unit,
     onOpenFullscreen: (Int) -> Unit,
 ) {
-    val distinctImageUrls = remember(imageUrls) { imageUrls.filter(String::isNotBlank).distinct() }
-    if (distinctImageUrls.isEmpty()) return
-    val pagerState = rememberPagerState { distinctImageUrls.size }
-    val displayedPage = pagerState.currentPage.coerceIn(0, distinctImageUrls.lastIndex)
-    var userPausedUntilElapsedMs by rememberSaveable(distinctImageUrls) { mutableLongStateOf(0L) }
+    val distinctMediaItems = remember(mediaItems) { mediaItems.filter(WorkshopPreviewMedia::isGalleryRenderable) }
+    if (distinctMediaItems.isEmpty()) return
+    val pagerState = rememberPagerState { distinctMediaItems.size }
+    val displayedPage = pagerState.currentPage.coerceIn(0, distinctMediaItems.lastIndex)
+    var userPausedUntilElapsedMs by rememberSaveable(distinctMediaItems) { mutableLongStateOf(0L) }
     var autoScrollInProgress by remember { mutableStateOf(false) }
-    var segmentPreviousPage by remember(distinctImageUrls) { mutableIntStateOf(displayedPage) }
-    var segmentCurrentPage by remember(distinctImageUrls) { mutableIntStateOf(displayedPage) }
-    var segmentTransitionDirection by remember(distinctImageUrls) {
+    var segmentPreviousPage by remember(distinctMediaItems) { mutableIntStateOf(displayedPage) }
+    var segmentCurrentPage by remember(distinctMediaItems) { mutableIntStateOf(displayedPage) }
+    var segmentTransitionDirection by remember(distinctMediaItems) {
         mutableStateOf(GallerySegmentTransitionDirection.Forward)
     }
+    val displayedMedia = distinctMediaItems[displayedPage]
+
     fun pauseAutoRotationForUserInteraction() {
         userPausedUntilElapsedMs = SystemClock.elapsedRealtime() + GalleryUserInteractionPauseMs
     }
-    LaunchedEffect(displayedPage, distinctImageUrls.size) {
+    LaunchedEffect(displayedPage, distinctMediaItems.size) {
         if (displayedPage != segmentCurrentPage) {
             segmentPreviousPage = segmentCurrentPage
             segmentTransitionDirection = resolveGallerySegmentTransitionDirection(
                 from = segmentCurrentPage,
                 to = displayedPage,
-                pageCount = distinctImageUrls.size,
+                pageCount = distinctMediaItems.size,
             )
             segmentCurrentPage = displayedPage
         }
     }
-    LaunchedEffect(pagerState, distinctImageUrls.size) {
+    LaunchedEffect(pagerState, distinctMediaItems.size) {
         snapshotFlow { pagerState.isScrollInProgress }
             .collect { scrolling ->
                 if (scrolling && !autoScrollInProgress) {
@@ -571,20 +595,28 @@ private fun DetailPreviewGalleryCard(
                 }
             }
     }
-    LaunchedEffect(pagerState, distinctImageUrls.size, userPausedUntilElapsedMs, isFullscreenOpen) {
-        if (distinctImageUrls.size <= 1) return@LaunchedEffect
+    LaunchedEffect(pagerState, distinctMediaItems.size, userPausedUntilElapsedMs, isFullscreenOpen, displayedMedia.kind) {
+        if (distinctMediaItems.size <= 1) return@LaunchedEffect
         while (true) {
             val now = SystemClock.elapsedRealtime()
             val pauseRemaining = userPausedUntilElapsedMs - now
-            if (isFullscreenOpen || pauseRemaining > 0L) {
-                delay(if (isFullscreenOpen) 120L else pauseRemaining.coerceAtMost(250L))
+            val currentPageIsVideo = distinctMediaItems
+                .getOrNull(pagerState.currentPage)
+                ?.isVideoMedia() == true
+            if (isFullscreenOpen || currentPageIsVideo || pauseRemaining > 0L) {
+                delay(
+                    when {
+                        isFullscreenOpen || currentPageIsVideo -> 120L
+                        else -> pauseRemaining.coerceAtMost(250L).coerceAtLeast(1L)
+                    },
+                )
                 continue
             }
             delay(GalleryAutoRotationIntervalMs)
             if (isFullscreenOpen || userPausedUntilElapsedMs > SystemClock.elapsedRealtime()) {
                 continue
             }
-            val nextPage = (pagerState.currentPage + 1) % distinctImageUrls.size
+            val nextPage = (pagerState.currentPage + 1) % distinctMediaItems.size
             autoScrollInProgress = true
             try {
                 pagerState.animateScrollToPage(nextPage)
@@ -610,12 +642,12 @@ private fun DetailPreviewGalleryCard(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
-                if (distinctImageUrls.size > 1) {
+                if (distinctMediaItems.size > 1) {
                     Text(
                         text = stringResource(
                             R.string.workshop_preview_gallery_counter,
                             displayedPage + 1,
-                            distinctImageUrls.size,
+                            distinctMediaItems.size,
                         ),
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -630,28 +662,26 @@ private fun DetailPreviewGalleryCard(
                     .aspectRatio(16f / 9f),
                 pageSpacing = 10.dp,
             ) { page ->
-                DetailGalleryImage(
-                    url = distinctImageUrls[page],
-                    cachedBitmap = loadedBitmaps[distinctImageUrls[page]],
-                    contentDescription = stringResource(
-                        R.string.workshop_preview_gallery_image_content_description,
-                        title.ifBlank { stringResource(R.string.workshop_unnamed_mod) },
-                        page + 1,
-                        distinctImageUrls.size,
-                    ),
+                val media = distinctMediaItems[page]
+                DetailGalleryMediaPage(
+                    media = media,
+                    cachedBitmap = media.previewBitmapCacheKey()?.let(loadedBitmaps::get),
+                    title = title,
+                    page = page,
+                    totalPages = distinctMediaItems.size,
                     modifier = Modifier.fillMaxSize(),
                     onClick = {
                         pauseAutoRotationForUserInteraction()
                         onOpenFullscreen(page)
                     },
-                    onLoaded = { bitmap ->
-                        onImageLoaded(distinctImageUrls[page], bitmap)
+                    onImageLoaded = { cacheKey, bitmap ->
+                        onImageLoaded(cacheKey, bitmap)
                     },
                 )
             }
-            if (distinctImageUrls.size > 1) {
+            if (distinctMediaItems.size > 1) {
                 GallerySegmentedProgressBar(
-                    pageCount = distinctImageUrls.size,
+                    pageCount = distinctMediaItems.size,
                     previousPage = segmentPreviousPage,
                     currentPage = segmentCurrentPage,
                     transitionDirection = segmentTransitionDirection,
@@ -659,6 +689,59 @@ private fun DetailPreviewGalleryCard(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun DetailGalleryMediaPage(
+    media: WorkshopPreviewMedia,
+    cachedBitmap: Bitmap?,
+    title: String,
+    page: Int,
+    totalPages: Int,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+    onImageLoaded: (String, Bitmap) -> Unit,
+) {
+    val contentDescription = stringResource(
+        if (media.isVideoMedia()) {
+            R.string.workshop_preview_gallery_video_content_description
+        } else {
+            R.string.workshop_preview_gallery_image_content_description
+        },
+        title.ifBlank { stringResource(R.string.workshop_unnamed_mod) },
+        page + 1,
+        totalPages,
+    )
+    when (media.kind) {
+        WorkshopPreviewMediaKind.Image -> DetailGalleryImage(
+            url = media.imageUrl,
+            cachedBitmap = cachedBitmap,
+            contentDescription = contentDescription,
+            modifier = modifier,
+            onClick = onClick,
+            onLoaded = { bitmap ->
+                media.previewBitmapCacheKey()?.let { cacheKey ->
+                    onImageLoaded(cacheKey, bitmap)
+                }
+            },
+        )
+
+        WorkshopPreviewMediaKind.YouTubeVideo -> GalleryVideoPoster(
+            media = media,
+            cachedBitmap = cachedBitmap,
+            contentDescription = contentDescription,
+            modifier = modifier,
+            fullscreen = false,
+            onClick = onClick,
+            onLoaded = { bitmap ->
+                media.previewBitmapCacheKey()?.let { cacheKey ->
+                    onImageLoaded(cacheKey, bitmap)
+                }
+            },
+        )
+
+        WorkshopPreviewMediaKind.SteamVideo -> Unit
     }
 }
 
@@ -706,40 +789,51 @@ private fun GallerySegmentedProgressBar(
 @Composable
 private fun WorkshopGalleryFullscreenBrowser(
     title: String,
-    imageUrls: List<String>,
+    mediaItems: List<WorkshopPreviewMedia>,
     loadedBitmaps: Map<String, Bitmap>,
     initialPage: Int,
     modifier: Modifier = Modifier,
     onImageLoaded: (String, Bitmap) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val distinctImageUrls = remember(imageUrls) { imageUrls.filter(String::isNotBlank).distinct() }
-    if (distinctImageUrls.isEmpty()) return
+    val distinctMediaItems = remember(mediaItems) { mediaItems.filter(WorkshopPreviewMedia::isGalleryRenderable) }
+    if (distinctMediaItems.isEmpty()) return
     BackHandler(onBack = onDismiss)
-    val initialSafePage = initialPage.coerceIn(0, distinctImageUrls.lastIndex)
-    val pagerState = rememberPagerState(initialPage = initialSafePage) { distinctImageUrls.size }
-    val displayedPage = pagerState.currentPage.coerceIn(0, distinctImageUrls.lastIndex)
-    var segmentPreviousPage by remember(distinctImageUrls) { mutableIntStateOf(displayedPage) }
-    var segmentCurrentPage by remember(distinctImageUrls) { mutableIntStateOf(displayedPage) }
-    var segmentTransitionDirection by remember(distinctImageUrls) {
+    val initialSafePage = initialPage.coerceIn(0, distinctMediaItems.lastIndex)
+    val pagerState = rememberPagerState(initialPage = initialSafePage) { distinctMediaItems.size }
+    val displayedPage = pagerState.currentPage.coerceIn(0, distinctMediaItems.lastIndex)
+    var segmentPreviousPage by remember(distinctMediaItems) { mutableIntStateOf(displayedPage) }
+    var segmentCurrentPage by remember(distinctMediaItems) { mutableIntStateOf(displayedPage) }
+    var segmentTransitionDirection by remember(distinctMediaItems) {
         mutableStateOf(GallerySegmentTransitionDirection.Forward)
+    }
+    val initialPlayingVideoKey = remember(distinctMediaItems, initialSafePage) {
+        distinctMediaItems.getOrNull(initialSafePage)
+            ?.videoPlaybackKey()
+    }
+    var playingVideoKey by rememberSaveable(distinctMediaItems, initialSafePage) {
+        mutableStateOf(initialPlayingVideoKey)
     }
     val resolvedTitle = title.ifBlank { stringResource(R.string.workshop_unnamed_mod) }
 
-    LaunchedEffect(initialSafePage, distinctImageUrls.size) {
+    LaunchedEffect(initialSafePage, distinctMediaItems.size) {
         if (pagerState.currentPage != initialSafePage) {
             pagerState.scrollToPage(initialSafePage)
         }
     }
-    LaunchedEffect(displayedPage, distinctImageUrls.size) {
+    LaunchedEffect(displayedPage, distinctMediaItems.size) {
         if (displayedPage != segmentCurrentPage) {
             segmentPreviousPage = segmentCurrentPage
             segmentTransitionDirection = resolveGallerySegmentTransitionDirection(
                 from = segmentCurrentPage,
                 to = displayedPage,
-                pageCount = distinctImageUrls.size,
+                pageCount = distinctMediaItems.size,
             )
             segmentCurrentPage = displayedPage
+        }
+        val displayedMedia = distinctMediaItems[displayedPage]
+        if (!displayedMedia.isVideoMedia() || displayedMedia.videoPlaybackKey() != playingVideoKey) {
+            playingVideoKey = null
         }
     }
 
@@ -753,18 +847,30 @@ private fun WorkshopGalleryFullscreenBrowser(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize(),
             ) { page ->
-                val imageUrl = distinctImageUrls[page]
-                FullscreenGalleryImage(
-                    url = imageUrl,
-                    cachedBitmap = loadedBitmaps[imageUrl],
+                val media = distinctMediaItems[page]
+                FullscreenGalleryMediaPage(
+                    media = media,
+                    cachedBitmap = media.previewBitmapCacheKey()?.let(loadedBitmaps::get),
                     contentDescription = stringResource(
-                        R.string.workshop_preview_gallery_image_content_description,
+                        if (media.isVideoMedia()) {
+                            R.string.workshop_preview_gallery_video_content_description
+                        } else {
+                            R.string.workshop_preview_gallery_image_content_description
+                        },
                         resolvedTitle,
                         page + 1,
-                        distinctImageUrls.size,
+                        distinctMediaItems.size,
                     ),
                     modifier = Modifier.fillMaxSize(),
-                    onLoaded = { bitmap -> onImageLoaded(imageUrl, bitmap) },
+                    isPlaying = media.isVideoMedia() &&
+                        media.videoPlaybackKey() == playingVideoKey &&
+                        page == displayedPage,
+                    onPlayVideo = {
+                        playingVideoKey = media.videoPlaybackKey()
+                    },
+                    onLoaded = { cacheKey, bitmap ->
+                        onImageLoaded(cacheKey, bitmap)
+                    },
                 )
             }
             Surface(
@@ -792,7 +898,7 @@ private fun WorkshopGalleryFullscreenBrowser(
                         text = stringResource(
                             R.string.workshop_preview_gallery_counter,
                             displayedPage + 1,
-                            distinctImageUrls.size,
+                            distinctMediaItems.size,
                         ),
                         modifier = Modifier.weight(1f),
                         style = MaterialTheme.typography.titleMedium,
@@ -802,9 +908,9 @@ private fun WorkshopGalleryFullscreenBrowser(
                     )
                 }
             }
-            if (distinctImageUrls.size > 1) {
+            if (distinctMediaItems.size > 1) {
                 GallerySegmentedProgressBar(
-                    pageCount = distinctImageUrls.size,
+                    pageCount = distinctMediaItems.size,
                     previousPage = segmentPreviousPage,
                     currentPage = segmentCurrentPage,
                     transitionDirection = segmentTransitionDirection,
@@ -818,6 +924,56 @@ private fun WorkshopGalleryFullscreenBrowser(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun FullscreenGalleryMediaPage(
+    media: WorkshopPreviewMedia,
+    cachedBitmap: Bitmap?,
+    contentDescription: String,
+    modifier: Modifier = Modifier,
+    isPlaying: Boolean,
+    onPlayVideo: () -> Unit,
+    onLoaded: (String, Bitmap) -> Unit,
+) {
+    when (media.kind) {
+        WorkshopPreviewMediaKind.Image -> FullscreenGalleryImage(
+            url = media.imageUrl,
+            cachedBitmap = cachedBitmap,
+            contentDescription = contentDescription,
+            modifier = modifier,
+            onLoaded = { bitmap ->
+                media.previewBitmapCacheKey()?.let { cacheKey ->
+                    onLoaded(cacheKey, bitmap)
+                }
+            },
+        )
+
+        WorkshopPreviewMediaKind.YouTubeVideo -> {
+            if (isPlaying && media.youtubeVideoId.isNotBlank()) {
+                FullscreenGalleryVideoPlayer(
+                    youtubeVideoId = media.youtubeVideoId,
+                    modifier = modifier,
+                )
+            } else {
+                GalleryVideoPoster(
+                    media = media,
+                    cachedBitmap = cachedBitmap,
+                    contentDescription = contentDescription,
+                    modifier = modifier,
+                    fullscreen = true,
+                    onClick = onPlayVideo,
+                    onLoaded = { bitmap ->
+                        media.previewBitmapCacheKey()?.let { cacheKey ->
+                            onLoaded(cacheKey, bitmap)
+                        }
+                    },
+                )
+            }
+        }
+
+        WorkshopPreviewMediaKind.SteamVideo -> Unit
     }
 }
 
@@ -910,6 +1066,233 @@ private fun FullscreenGalleryImage(
 }
 
 @Composable
+private fun GalleryVideoPoster(
+    media: WorkshopPreviewMedia,
+    cachedBitmap: Bitmap?,
+    contentDescription: String,
+    modifier: Modifier = Modifier,
+    fullscreen: Boolean,
+    onClick: () -> Unit,
+    onLoaded: (Bitmap) -> Unit = {},
+) {
+    val posterUrl = media.previewBitmapCacheKey().orEmpty()
+    val imageState by rememberGalleryImageState(
+        url = posterUrl,
+        cachedBitmap = cachedBitmap,
+        onLoaded = onLoaded,
+    )
+    val sourceLabel = workshopVideoSourceLabel(media.videoSource)
+    val overlayHorizontalPadding = if (fullscreen) 18.dp else 14.dp
+    val overlayVerticalPadding = if (fullscreen) 14.dp else 10.dp
+    val overlayIconSize = if (fullscreen) 28.dp else 24.dp
+
+    Surface(
+        modifier = modifier,
+        color = if (fullscreen) Color.Black else MaterialTheme.colorScheme.surface.copy(alpha = 0.58f),
+        shape = if (fullscreen) RoundedCornerShape(0.dp) else RoundedCornerShape(18.dp),
+        border = if (fullscreen) {
+            null
+        } else {
+            BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
+        },
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(if (fullscreen) Color.Black else MaterialTheme.colorScheme.surface)
+                .clickable(onClick = onClick),
+            contentAlignment = Alignment.Center,
+        ) {
+            when (val current = imageState) {
+                GalleryImageState.Loading -> CircularProgressIndicator(
+                    modifier = Modifier.size(28.dp),
+                    color = if (fullscreen) Color.White.copy(alpha = 0.82f) else MaterialTheme.colorScheme.primary,
+                    strokeWidth = 2.dp,
+                )
+                GalleryImageState.Failed -> Text(
+                    text = stringResource(R.string.workshop_preview_gallery_video_failed),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (fullscreen) Color.White.copy(alpha = 0.72f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                is GalleryImageState.Loaded -> Image(
+                    bitmap = current.bitmap.asImageBitmap(),
+                    contentDescription = contentDescription,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = if (fullscreen) ContentScale.Fit else ContentScale.Crop,
+                )
+            }
+            Surface(
+                color = Color.Black.copy(alpha = 0.62f),
+                contentColor = Color.White,
+                shape = RoundedCornerShape(999.dp),
+            ) {
+                Column(
+                    modifier = Modifier.padding(
+                        horizontal = overlayHorizontalPadding,
+                        vertical = overlayVerticalPadding,
+                    ),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    WorkshopVideoSourceIcon(
+                        source = media.videoSource,
+                        modifier = Modifier.size(overlayIconSize),
+                    )
+                    Text(
+                        text = sourceLabel,
+                        style = if (fullscreen) MaterialTheme.typography.titleSmall else MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WorkshopVideoSourceIcon(
+    source: WorkshopPreviewVideoSource,
+    modifier: Modifier = Modifier,
+) {
+    when (source) {
+        WorkshopPreviewVideoSource.YouTube -> Canvas(modifier) {
+            val corner = size.height * 0.22f
+            drawRoundRect(
+                color = Color(0xFFFF0033),
+                size = size,
+                cornerRadius = CornerRadius(corner, corner),
+            )
+            val triangle = Path().apply {
+                moveTo(size.width * 0.42f, size.height * 0.32f)
+                lineTo(size.width * 0.42f, size.height * 0.68f)
+                lineTo(size.width * 0.70f, size.height * 0.50f)
+                close()
+            }
+            drawPath(triangle, Color.White)
+        }
+
+        WorkshopPreviewVideoSource.Steam -> Unit
+    }
+}
+
+@Composable
+private fun workshopVideoSourceLabel(source: WorkshopPreviewVideoSource): String = when (source) {
+    WorkshopPreviewVideoSource.YouTube -> stringResource(R.string.workshop_preview_gallery_video_source_youtube)
+    WorkshopPreviewVideoSource.Steam -> stringResource(R.string.workshop_preview_gallery_video_source_steam)
+}
+
+@Composable
+private fun FullscreenGalleryVideoPlayer(
+    youtubeVideoId: String,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier.background(Color.Black),
+        contentAlignment = Alignment.Center,
+    ) {
+        WorkshopYouTubePlayer(
+            youtubeVideoId = youtubeVideoId,
+            modifier = Modifier.fillMaxSize(),
+        )
+    }
+}
+
+@Composable
+private fun WorkshopYouTubePlayer(
+    youtubeVideoId: String,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    val embedHtml = remember(youtubeVideoId) { buildWorkshopYouTubeEmbedHtml(youtubeVideoId) }
+    val loadKey = remember(youtubeVideoId) { "youtube:$youtubeVideoId" }
+    var playbackState by remember(youtubeVideoId) { mutableStateOf(WorkshopYouTubePlaybackState.Loading) }
+    val webChromeClient = remember(youtubeVideoId) {
+        object : WebChromeClient() {
+            override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean {
+                when (consoleMessage.message()) {
+                    WORKSHOP_YOUTUBE_PLAYING_CONSOLE_MESSAGE -> playbackState = WorkshopYouTubePlaybackState.Playing
+                    else -> {
+                        if (consoleMessage.message().startsWith(WORKSHOP_YOUTUBE_ERROR_CONSOLE_PREFIX)) {
+                            playbackState = WorkshopYouTubePlaybackState.Failed
+                        }
+                    }
+                }
+                return true
+            }
+        }
+    }
+    val webView = remember(context, youtubeVideoId, webChromeClient) {
+        WebView(context).apply {
+            configureWorkshopYouTubeWebView(webChromeClient = webChromeClient)
+        }
+    }
+
+    LaunchedEffect(youtubeVideoId) {
+        delay(WorkshopYouTubePlaybackTimeoutMs)
+        if (playbackState != WorkshopYouTubePlaybackState.Playing) {
+            playbackState = WorkshopYouTubePlaybackState.Failed
+        }
+    }
+
+    Box(
+        modifier = modifier.background(Color.Black),
+        contentAlignment = Alignment.Center,
+    ) {
+        AndroidView(
+            factory = { webView },
+            modifier = Modifier.fillMaxSize(),
+            update = { view ->
+                if (view.tag != loadKey) {
+                    playbackState = WorkshopYouTubePlaybackState.Loading
+                    view.tag = loadKey
+                    view.loadDataWithBaseURL(
+                        WORKSHOP_YOUTUBE_EMBED_BASE_URL,
+                        embedHtml,
+                        "text/html",
+                        "utf-8",
+                        null,
+                    )
+                }
+                view.onResume()
+            },
+        )
+        when (playbackState) {
+            WorkshopYouTubePlaybackState.Loading -> CircularProgressIndicator(
+                modifier = Modifier.size(28.dp),
+                color = Color.White.copy(alpha = 0.82f),
+                strokeWidth = 2.dp,
+            )
+
+            WorkshopYouTubePlaybackState.Failed -> Text(
+                text = stringResource(R.string.workshop_preview_gallery_video_unplayable),
+                modifier = Modifier.padding(horizontal = 24.dp),
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.White.copy(alpha = 0.86f),
+                textAlign = TextAlign.Center,
+            )
+
+            WorkshopYouTubePlaybackState.Playing -> Unit
+        }
+    }
+    DisposableEffect(webView) {
+        onDispose {
+            webView.onPause()
+            webView.stopLoading()
+            webView.loadUrl("about:blank")
+            webView.destroy()
+        }
+    }
+}
+
+private const val WorkshopYouTubePlaybackTimeoutMs = 12_000L
+
+private enum class WorkshopYouTubePlaybackState {
+    Loading,
+    Playing,
+    Failed,
+}
+
+@Composable
 private fun rememberGalleryImageState(
     url: String,
     cachedBitmap: Bitmap?,
@@ -936,6 +1319,43 @@ private fun rememberGalleryImageState(
             } ?: GalleryImageState.Failed
         }
     }
+}
+
+private fun WorkshopItemDetails.galleryMediaItems(): List<WorkshopPreviewMedia> =
+    previewMedia
+        .filter(WorkshopPreviewMedia::isGalleryRenderable)
+        .ifEmpty {
+            previewImageUrls
+                .filter(String::isNotBlank)
+                .distinct()
+                .mapIndexed { index, url ->
+                    WorkshopPreviewMedia(
+                        id = "legacy-image:$index",
+                        kind = WorkshopPreviewMediaKind.Image,
+                        imageUrl = url,
+                        thumbnailUrl = url,
+                    )
+                }
+        }
+
+private fun WorkshopPreviewMedia.previewBitmapCacheKey(): String? = when (kind) {
+    WorkshopPreviewMediaKind.Image -> imageUrl.takeIf(String::isNotBlank)
+    WorkshopPreviewMediaKind.YouTubeVideo -> thumbnailUrl.takeIf(String::isNotBlank)
+    WorkshopPreviewMediaKind.SteamVideo -> null
+}
+
+private fun WorkshopPreviewMedia.isGalleryRenderable(): Boolean = when (kind) {
+    WorkshopPreviewMediaKind.Image -> imageUrl.isNotBlank()
+    WorkshopPreviewMediaKind.YouTubeVideo -> youtubeVideoId.isNotBlank()
+    WorkshopPreviewMediaKind.SteamVideo -> false
+}
+
+private fun WorkshopPreviewMedia.isVideoMedia(): Boolean = kind == WorkshopPreviewMediaKind.YouTubeVideo
+
+private fun WorkshopPreviewMedia.videoPlaybackKey(): String? = when (kind) {
+    WorkshopPreviewMediaKind.YouTubeVideo -> youtubeVideoId.takeIf(String::isNotBlank)
+    WorkshopPreviewMediaKind.SteamVideo -> null
+    WorkshopPreviewMediaKind.Image -> null
 }
 
 private sealed interface GalleryImageState {
@@ -1499,6 +1919,9 @@ private fun DetailCommentsCard(
     details: WorkshopItemDetails,
     isLoading: Boolean,
     errorMessage: String?,
+    isTranslationMode: Boolean,
+    isTranslatingComments: Boolean,
+    translationErrorMessage: String?,
     onRetry: () -> Unit,
     onPreviousPage: () -> Unit,
     onNextPage: () -> Unit,
@@ -1549,8 +1972,30 @@ private fun DetailCommentsCard(
                         }
                     }
                 }
+                if (isTranslationMode && isTranslatingComments && details.comments.isNotEmpty()) {
+                    CommentsLoadingIndicator(
+                        text = stringResource(R.string.workshop_comments_translate_loading),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 2.dp),
+                    )
+                }
+                translationErrorMessage?.let { message ->
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                        shape = RoundedCornerShape(16.dp),
+                    ) {
+                        Text(
+                            text = message,
+                            modifier = Modifier.padding(12.dp),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                }
                 if (showInlineLoading) {
                     CommentsLoadingIndicator(
+                        text = stringResource(R.string.workshop_comments_loading),
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 8.dp),
@@ -1577,7 +2022,9 @@ private fun DetailCommentsCard(
                         ) { Text(stringResource(R.string.workshop_action_next_page)) }
                     }
                 }
-                details.comments.forEach { comment -> CommentItemCard(comment = comment) }
+                details.comments.forEach { comment ->
+                    CommentItemCard(comment = comment, isTranslationMode = isTranslationMode)
+                }
             }
 
             if (showOverlayLoading || overlayAlpha > 0f) {
@@ -1591,6 +2038,7 @@ private fun DetailCommentsCard(
                     tonalElevation = 2.dp,
                 ) {
                     CommentsLoadingIndicator(
+                        text = stringResource(R.string.workshop_comments_loading),
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
                     )
                 }
@@ -1600,7 +2048,10 @@ private fun DetailCommentsCard(
 }
 
 @Composable
-private fun CommentsLoadingIndicator(modifier: Modifier = Modifier) {
+private fun CommentsLoadingIndicator(
+    text: String,
+    modifier: Modifier = Modifier,
+) {
     Row(
         modifier = modifier,
         horizontalArrangement = Arrangement.Center,
@@ -1608,7 +2059,7 @@ private fun CommentsLoadingIndicator(modifier: Modifier = Modifier) {
     ) {
         CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
         Text(
-            text = " ${stringResource(R.string.workshop_comments_loading)}",
+            text = " $text",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -1616,7 +2067,15 @@ private fun CommentsLoadingIndicator(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun CommentItemCard(comment: WorkshopComment) {
+private fun CommentItemCard(
+    comment: WorkshopComment,
+    isTranslationMode: Boolean,
+) {
+    val displayedContent = if (isTranslationMode) {
+        comment.translatedContent.ifBlank { comment.content }
+    } else {
+        comment.content
+    }
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = workshopDetailCardColors(),
@@ -1648,7 +2107,7 @@ private fun CommentItemCard(comment: WorkshopComment) {
                 )
             }
             Text(
-                text = comment.content,
+                text = displayedContent,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface,
             )

@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.os.ResultReceiver
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import io.stamethyst.LauncherActivity
 import io.stamethyst.R
@@ -19,6 +20,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 class SteamCloudSyncProcessService : Service() {
     companion object {
+        private const val TAG = "SteamCloudSyncProcessService"
+
         const val ACTION_CHECK_AND_SYNC = "io.stamethyst.action.STEAM_CLOUD_CHECK_AND_SYNC"
         const val ACTION_USE_LOCAL = "io.stamethyst.action.STEAM_CLOUD_USE_LOCAL"
         const val ACTION_USE_CLOUD = "io.stamethyst.action.STEAM_CLOUD_USE_CLOUD"
@@ -96,11 +99,37 @@ class SteamCloudSyncProcessService : Service() {
                 putExtra(EXTRA_RESULT_RECEIVER, receiver)
                 configure()
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                appContext.startForegroundService(intent)
-            } else {
-                appContext.startService(intent)
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    appContext.startForegroundService(intent)
+                } else {
+                    appContext.startService(intent)
+                }
+            } catch (error: IllegalStateException) {
+                if (!isForegroundServiceStartRejected(error)) {
+                    throw error
+                }
+                reportServiceStartRejected(appContext, receiver, error)
             }
+        }
+
+        private fun isForegroundServiceStartRejected(error: IllegalStateException): Boolean {
+            return Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                error.javaClass.name == "android.app.ForegroundServiceStartNotAllowedException"
+        }
+
+        private fun reportServiceStartRejected(
+            context: Context,
+            receiver: ResultReceiver?,
+            error: IllegalStateException,
+        ) {
+            val summary = context.getString(R.string.main_steam_cloud_service_start_blocked)
+            Log.w(TAG, summary, error)
+            SteamCloudAuthStore.recordFailure(context, summary)
+            receiver?.send(RESULT_FAILURE, Bundle().apply {
+                putString(EXTRA_ERROR_SUMMARY, summary)
+                putLong(EXTRA_CHECKED_AT_MS, System.currentTimeMillis())
+            })
         }
     }
 

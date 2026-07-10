@@ -8,9 +8,9 @@ import android.content.res.Resources
 import io.stamethyst.backend.mods.ImportedModPatchRegistry
 import io.stamethyst.backend.mods.importing.ModImportPlanner
 import io.stamethyst.backend.mods.importing.ModImportPlanningOptions
-import io.stamethyst.backend.mods.importing.patches.AtlasFilterPatchModule
-import io.stamethyst.backend.mods.importing.patches.AtlasOfflineDownscalePatchModule
-import io.stamethyst.backend.mods.importing.patches.DownfallImportPatchModule
+import io.stamethyst.backend.mods.importing.patches.mods.downfall.DownfallImportPatchModule
+import io.stamethyst.backend.mods.importing.patches.texture.AtlasFilterPatchModule
+import io.stamethyst.backend.mods.importing.patches.texture.AtlasOfflineDownscalePatchModule
 import java.io.File
 import java.nio.file.Files
 import java.util.zip.ZipEntry

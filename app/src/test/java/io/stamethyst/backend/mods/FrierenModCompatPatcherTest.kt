@@ -1,5 +1,6 @@
 package io.stamethyst.backend.mods
 
+import io.stamethyst.backend.mods.importing.patches.mods.frieren.FrierenModCompatPatcher
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.lang.reflect.InvocationTargetException

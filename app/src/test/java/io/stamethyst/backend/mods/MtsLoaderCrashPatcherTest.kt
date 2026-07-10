@@ -40,12 +40,18 @@ class MtsLoaderCrashPatcherTest {
                 "com/evacipated/cardcrawl/modthespire/PackageJar.class"
             )
             requireNotNull(patchedPackageJarBytes)
+            val patchedPatcherBytes = JarFileIoUtils.readJarEntryBytes(
+                tempJar,
+                "com/evacipated/cardcrawl/modthespire/Patcher.class"
+            )
+            requireNotNull(patchedPatcherBytes)
             val patchedPrepackagedLauncherBytes = JarFileIoUtils.readJarEntryBytes(
                 tempJar,
                 "com/evacipated/cardcrawl/modthespire/PackageJar\$PrepackagedLauncher.class"
             )
             requireNotNull(patchedPrepackagedLauncherBytes)
             assertTrue(MtsLoaderCrashPatcher.isPatchedLoaderClass(patchedLoaderBytes))
+            assertTrue(MtsLoaderCrashPatcher.isPatchedPatcherClass(patchedPatcherBytes))
             assertTrue(MtsLoaderCrashPatcher.isPatchedPackageJarClass(patchedPackageJarBytes))
             assertTrue(MtsLoaderCrashPatcher.hasPackageDirOverride(patchedPackageJarBytes))
             assertTrue(MtsLoaderCrashPatcher.hasPackageJarFastPathHook(patchedPackageJarBytes))
@@ -62,6 +68,8 @@ class MtsLoaderCrashPatcherTest {
 
             val patchedAgainBytes = MtsLoaderCrashPatcher.patchLoaderBytes(patchedLoaderBytes)
             assertTrue(patchedAgainBytes.contentEquals(patchedLoaderBytes))
+            val patchedPatcherAgainBytes = MtsLoaderCrashPatcher.patchPatcherBytes(patchedPatcherBytes)
+            assertTrue(patchedPatcherAgainBytes.contentEquals(patchedPatcherBytes))
             val patchedPackageAgainBytes = MtsLoaderCrashPatcher.patchPackageJarBytes(patchedPackageJarBytes)
             assertTrue(patchedPackageAgainBytes.contentEquals(patchedPackageJarBytes))
             val patchedPrepackagedAgainBytes =
@@ -100,12 +108,18 @@ class MtsLoaderCrashPatcherTest {
                 "com/evacipated/cardcrawl/modthespire/PackageJar\$PrepackagedLauncher.class"
             )
             requireNotNull(patchedPrepackagedLauncherBytes)
+            val patchedPatcherBytes = JarFileIoUtils.readJarEntryBytes(
+                tempJar,
+                "com/evacipated/cardcrawl/modthespire/Patcher.class"
+            )
+            requireNotNull(patchedPatcherBytes)
             val patchedPackageJarBytes = JarFileIoUtils.readJarEntryBytes(
                 tempJar,
                 "com/evacipated/cardcrawl/modthespire/PackageJar.class"
             )
             requireNotNull(patchedPackageJarBytes)
             assertTrue(MtsLoaderCrashPatcher.isPatchedLoaderClass(patchedLoaderBytes))
+            assertTrue(MtsLoaderCrashPatcher.isPatchedPatcherClass(patchedPatcherBytes))
             assertTrue(MtsLoaderCrashPatcher.isPatchedPackageJarClass(patchedPackageJarBytes))
             assertTrue(MtsLoaderCrashPatcher.hasPackageDirOverride(patchedPackageJarBytes))
             assertTrue(MtsLoaderCrashPatcher.hasPackageJarFastPathHook(patchedPackageJarBytes))
@@ -155,6 +169,25 @@ class MtsLoaderCrashPatcherTest {
 
         val patchedLoaderBytes = MtsLoaderCrashPatcher.patchLoaderBytes(originalLoaderBytes)
         assertTrue(MtsLoaderCrashPatcher.hasOutJarPrimingHook(patchedLoaderBytes))
+    }
+
+    @Test
+    fun patchPatcherBytes_skipsOptionalMissingMethodFailures() {
+        val sourceJar = sequenceOf(
+            File("src/main/assets/components/mods/ModTheSpire.jar"),
+            File("app/src/main/assets/components/mods/ModTheSpire.jar")
+        ).firstOrNull { it.isFile }
+            ?: error("Missing test fixture jar: ModTheSpire.jar")
+
+        val originalPatcherBytes = JarFileIoUtils.readJarEntryBytes(
+            sourceJar,
+            "com/evacipated/cardcrawl/modthespire/Patcher.class"
+        )
+        requireNotNull(originalPatcherBytes)
+        assertFalse(MtsLoaderCrashPatcher.isPatchedPatcherClass(originalPatcherBytes))
+
+        val patchedPatcherBytes = MtsLoaderCrashPatcher.patchPatcherBytes(originalPatcherBytes)
+        assertTrue(MtsLoaderCrashPatcher.isPatchedPatcherClass(patchedPatcherBytes))
     }
 
     @Test

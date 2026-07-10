@@ -37,6 +37,7 @@ internal data class WattToolkitRouteProfile(
     val cacheFileName: String,
     val supportedHosts: Set<String>,
     val bootstrapForwardTargets: List<String>,
+    val supportedProxyTypes: Set<Int> = setOf(WATT_PROXY_TYPE_DIRECT),
 )
 
 internal val GithubApiWattToolkitRouteProfile = WattToolkitRouteProfile(
@@ -514,7 +515,7 @@ internal class WattToolkitGithubRouteResolver(
                 ?: throw IOException(
                     "Watt Toolkit route was not found for hosts=${normalizedSupportedHosts.joinToString(";")}",
                 )
-            if (matchedProject.proxyType != 0) {
+            if (matchedProject.proxyType !in routeProfile.supportedProxyTypes) {
                 throw IOException(
                     "Unsupported Watt Toolkit route type for hosts=${matchedProject.logicalHosts.joinToString(";")}: ${matchedProject.proxyType}",
                 )
@@ -794,6 +795,8 @@ private const val WATT_LISTEN_DOMAIN_NAMES_KEY = "ListenDomainNames"
 private const val WATT_FORWARD_DOMAIN_NAMES_KEY = "ForwardDomainNames"
 private const val WATT_PROXY_TYPE_KEY = "ProxyType"
 private const val WATT_IGNORE_SSL_CERT_KEY = "IgnoreSSLCertVerification"
+internal const val WATT_PROXY_TYPE_DIRECT = 0
+internal const val WATT_PROXY_TYPE_REVERSE_PROXY = 1
 private const val DEFAULT_CONNECT_TIMEOUT_MS = 8_000L
 private const val DEFAULT_READ_TIMEOUT_MS = 18_000L
 private const val MAX_FOLLOW_UPS = 10

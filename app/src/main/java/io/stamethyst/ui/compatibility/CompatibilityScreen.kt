@@ -60,6 +60,7 @@ fun LauncherCompatibilityScreen(
         onFrierenModCompatToggled = { enabled -> viewModel.onFrierenModCompatToggled(context, enabled) },
         onDownfallImportCompatToggled = { enabled -> viewModel.onDownfallImportCompatToggled(context, enabled) },
         onVupShionModCompatToggled = { enabled -> viewModel.onVupShionModCompatToggled(context, enabled) },
+        onChaofanModCompatToggled = { enabled -> viewModel.onChaofanModCompatToggled(context, enabled) },
         onFragmentShaderPrecisionCompatToggled = { enabled ->
             viewModel.onFragmentShaderPrecisionCompatToggled(context, enabled)
         },
@@ -172,6 +173,7 @@ private fun LauncherCompatibilityScreenPreview() {
             frierenModCompatEnabled = true,
             downfallImportCompatEnabled = true,
             vupShionModCompatEnabled = true,
+            chaofanModCompatEnabled = true,
             fragmentShaderPrecisionCompatEnabled = true,
             runtimeTextureCompatEnabled = false,
             mainMenuPreviewReuseCompatEnabled = true,
@@ -203,6 +205,7 @@ private fun LauncherCompatibilityScreenContent(
     onFrierenModCompatToggled: (Boolean) -> Unit = {},
     onDownfallImportCompatToggled: (Boolean) -> Unit = {},
     onVupShionModCompatToggled: (Boolean) -> Unit = {},
+    onChaofanModCompatToggled: (Boolean) -> Unit = {},
     onFragmentShaderPrecisionCompatToggled: (Boolean) -> Unit = {},
     onRuntimeTextureCompatToggled: (Boolean) -> Unit = {},
     onMainMenuPreviewReuseCompatToggled: (Boolean) -> Unit = {},
@@ -626,6 +629,14 @@ private fun LauncherCompatibilityScreenContent(
                     checked = uiState.vupShionModCompatEnabled,
                     enabled = !uiState.busy,
                     onCheckedChange = onVupShionModCompatToggled
+                )
+
+                CompatibilitySwitchRow(
+                    title = stringResource(R.string.compat_chaofanmod_compat_title),
+                    description = stringResource(R.string.compat_chaofanmod_compat_desc),
+                    checked = uiState.chaofanModCompatEnabled,
+                    enabled = !uiState.busy,
+                    onCheckedChange = onChaofanModCompatToggled
                 )
 
             }

@@ -4,6 +4,15 @@
     "wsUrl": "wss://heartbeat.nas.apricityx.top:23163/api/presence/ws"
   },
   "qqGroup": {
-    "number": "1029305387"
+    "number": "1051836431"
+  },
+  "steam": {
+    "depotKeys": [
+      {
+        "appId": 646570,
+        "depotId": 646571,
+        "keyHex": "af36e1914da16f3e4556bedf7e46a76646b670c91bb6e1d3cca380e16ceb2df6"
+      }
+    ]
   }
 }

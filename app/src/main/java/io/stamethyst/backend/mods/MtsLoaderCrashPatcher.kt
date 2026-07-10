@@ -24,6 +24,7 @@ import java.util.zip.ZipOutputStream
 
 internal object MtsLoaderCrashPatcher {
     private const val LOADER_CLASS_ENTRY = "com/evacipated/cardcrawl/modthespire/Loader.class"
+    private const val PATCHER_CLASS_ENTRY = "com/evacipated/cardcrawl/modthespire/Patcher.class"
     private const val PACKAGE_JAR_CLASS_ENTRY = "com/evacipated/cardcrawl/modthespire/PackageJar.class"
     private const val PREPACKAGED_LAUNCHER_CLASS_ENTRY =
         "com/evacipated/cardcrawl/modthespire/PackageJar\$PrepackagedLauncher.class"
@@ -47,6 +48,12 @@ internal object MtsLoaderCrashPatcher {
     private const val MTS_CLASS_POOL_OWNER = "com/evacipated/cardcrawl/modthespire/MTSClassPool"
     private const val GET_OUT_JAR_CLASSES_METHOD_NAME = "getOutJarClasses"
     private const val GET_OUT_JAR_CLASSES_METHOD_DESC = "()Ljava/util/Set;"
+    private const val INJECT_PATCHES_METHOD_NAME = "injectPatches"
+    private const val INJECT_PATCHES_ITERABLE_METHOD_DESC =
+        "(Ljava/lang/ClassLoader;Ljavassist/ClassPool;Ljava/lang/Iterable;)V"
+    private const val SPIRE_PATCH_OWNER = "com/evacipated/cardcrawl/modthespire/lib/SpirePatch"
+    private const val SPIRE_PATCH_OPTIONAL_METHOD_NAME = "optional"
+    private const val SPIRE_PATCH_OPTIONAL_METHOD_DESC = "()Z"
     private const val FILE_LIST_OVERRIDE_CLASS = "io/stamethyst/bridge/MtsModFileListOverride"
     private const val FILE_LIST_OVERRIDE_METHOD_NAME = "resolve"
     private const val FILE_LIST_OVERRIDE_METHOD_DESC = "([Ljava/io/File;)[Ljava/io/File;"
@@ -102,6 +109,8 @@ internal object MtsLoaderCrashPatcher {
 
     private const val AMETHYST_PATCH_MARKER_METHOD_NAME_V3 = "amethyst\$loaderPatchV3"
     private const val AMETHYST_PATCH_MARKER_METHOD_NAME_V4 = "amethyst\$loaderPatchV4"
+    private const val AMETHYST_PATCHER_PATCH_MARKER_METHOD_NAME = "amethyst\$patcherPatchV1"
+    private const val AMETHYST_PATCHER_PATCH_MARKER_METHOD_DESC = "()I"
 
     private val SWALLOWED_FAILURE_TYPES = setOf(
         "com/evacipated/cardcrawl/modthespire/MissingDependencyException",
@@ -118,14 +127,18 @@ internal object MtsLoaderCrashPatcher {
 
         val originalLoaderBytes = JarFileIoUtils.readJarEntryBytes(mtsJar, LOADER_CLASS_ENTRY)
             ?: throw IOException("Invalid ModTheSpire.jar: missing $LOADER_CLASS_ENTRY")
+        val originalPatcherBytes = JarFileIoUtils.readJarEntryBytes(mtsJar, PATCHER_CLASS_ENTRY)
+            ?: throw IOException("Invalid ModTheSpire.jar: missing $PATCHER_CLASS_ENTRY")
         val originalPackageJarBytes = JarFileIoUtils.readJarEntryBytes(mtsJar, PACKAGE_JAR_CLASS_ENTRY)
             ?: throw IOException("Invalid ModTheSpire.jar: missing $PACKAGE_JAR_CLASS_ENTRY")
         val originalPrepackagedLauncherBytes = JarFileIoUtils.readJarEntryBytes(mtsJar, PREPACKAGED_LAUNCHER_CLASS_ENTRY)
             ?: throw IOException("Invalid ModTheSpire.jar: missing $PREPACKAGED_LAUNCHER_CLASS_ENTRY")
         val patchedLoaderBytes = patchLoaderBytes(originalLoaderBytes)
+        val patchedPatcherBytes = patchPatcherBytes(originalPatcherBytes)
         val patchedPackageJarBytes = patchPackageJarBytes(originalPackageJarBytes)
         val patchedPrepackagedLauncherBytes = patchPrepackagedLauncherBytes(originalPrepackagedLauncherBytes)
         if (patchedLoaderBytes.contentEquals(originalLoaderBytes) &&
+            patchedPatcherBytes.contentEquals(originalPatcherBytes) &&
             patchedPackageJarBytes.contentEquals(originalPackageJarBytes) &&
             patchedPrepackagedLauncherBytes.contentEquals(originalPrepackagedLauncherBytes)
         ) {
@@ -152,6 +165,8 @@ internal object MtsLoaderCrashPatcher {
                             zipOut.putNextEntry(outEntry)
                             if (name == LOADER_CLASS_ENTRY) {
                                 zipOut.write(patchedLoaderBytes)
+                            } else if (name == PATCHER_CLASS_ENTRY) {
+                                zipOut.write(patchedPatcherBytes)
                             } else if (name == PACKAGE_JAR_CLASS_ENTRY) {
                                 zipOut.write(patchedPackageJarBytes)
                             } else if (name == PREPACKAGED_LAUNCHER_CLASS_ENTRY) {
@@ -186,6 +201,16 @@ internal object MtsLoaderCrashPatcher {
                 tempJar.delete()
             }
             throw IOException("Failed to patch ModTheSpire package cache handling")
+        }
+        if (!isPatchedPatcherClass(
+                JarFileIoUtils.readJarEntryBytes(tempJar, PATCHER_CLASS_ENTRY)
+                    ?: throw IOException("Patched MTS jar is missing Patcher.class")
+            )
+        ) {
+            if (tempJar.exists()) {
+                tempJar.delete()
+            }
+            throw IOException("Failed to patch ModTheSpire optional patch handling")
         }
         if (!isPatchedPrepackagedLauncherClass(
                 JarFileIoUtils.readJarEntryBytes(tempJar, PREPACKAGED_LAUNCHER_CLASS_ENTRY)
@@ -367,6 +392,39 @@ internal object MtsLoaderCrashPatcher {
         return classWriter.toByteArray()
     }
 
+    internal fun isPatchedPatcherClass(patcherBytes: ByteArray): Boolean {
+        val classNode = readClassNode(patcherBytes)
+        val injectPatchesMethod = classNode.methods.firstOrNull { method ->
+            method.name == INJECT_PATCHES_METHOD_NAME &&
+                method.desc == INJECT_PATCHES_ITERABLE_METHOD_DESC
+        } ?: return false
+        return hasPatcherPatchMarker(classNode) && hasOptionalMissingMethodSkipGuards(injectPatchesMethod)
+    }
+
+    internal fun patchPatcherBytes(patcherBytes: ByteArray): ByteArray {
+        val classNode = readClassNode(patcherBytes)
+        val injectPatchesMethod = classNode.methods.firstOrNull { method ->
+            method.name == INJECT_PATCHES_METHOD_NAME &&
+                method.desc == INJECT_PATCHES_ITERABLE_METHOD_DESC
+        } ?: throw IOException("Unsupported ModTheSpire.jar: Patcher.injectPatches(Iterable) not found")
+
+        val alreadyHasOptionalSkipGuards = hasOptionalMissingMethodSkipGuards(injectPatchesMethod)
+        val alreadyHasPatchMarker = hasPatcherPatchMarker(classNode)
+        if (!alreadyHasOptionalSkipGuards) {
+            insertOptionalMissingMethodSkipGuards(injectPatchesMethod)
+        }
+        if (!alreadyHasPatchMarker) {
+            insertPatcherPatchMarker(classNode)
+        }
+        if (alreadyHasOptionalSkipGuards && alreadyHasPatchMarker) {
+            return patcherBytes
+        }
+
+        val classWriter = ClassWriter(0)
+        classNode.accept(classWriter)
+        return classWriter.toByteArray()
+    }
+
     internal fun patchPackageJarBytes(packageJarBytes: ByteArray): ByteArray {
         val classNode = readClassNode(packageJarBytes)
         if (hasPackagePatchMarker(classNode)) {
@@ -394,6 +452,63 @@ internal object MtsLoaderCrashPatcher {
         val classWriter = ClassWriter(0)
         classNode.accept(classWriter)
         return classWriter.toByteArray()
+    }
+
+    private fun insertOptionalMissingMethodSkipGuards(method: MethodNode) {
+        val skipTarget = findOptionalMethodMissingSkipTarget(method)
+            ?: throw IOException("Unsupported ModTheSpire.jar: Patcher.injectPatches skip target not found")
+        val missingMethodMessages = setOf(
+            "Patch %s:\nNo method named [%s] found on\nclass [%s]",
+            "Patch %s:\nNo method [%s(%s)] found on\nclass [%s]"
+        )
+        val newInstructions = mutableListOf<org.objectweb.asm.tree.TypeInsnNode>()
+        val iterator = method.instructions.iterator()
+        while (iterator.hasNext()) {
+            val instruction = iterator.next()
+            if (instruction is LdcInsnNode &&
+                instruction.cst is String &&
+                missingMethodMessages.contains(instruction.cst as String)
+            ) {
+                var candidate = previousMeaningful(instruction)
+                while (candidate != null &&
+                    candidate !is org.objectweb.asm.tree.TypeInsnNode
+                ) {
+                    candidate = previousMeaningful(candidate)
+                }
+                if (candidate is org.objectweb.asm.tree.TypeInsnNode &&
+                    candidate.opcode == Opcodes.NEW &&
+                    candidate.desc == "java/lang/NoSuchMethodException"
+                ) {
+                    newInstructions += candidate
+                }
+            }
+        }
+        if (newInstructions.size != 2) {
+            throw IOException(
+                "Unsupported ModTheSpire.jar: expected 2 optional missing-method throw sites, found ${newInstructions.size}"
+            )
+        }
+        newInstructions.forEach { noSuchMethodNew ->
+            val continueToThrow = LabelNode()
+            val instructions = InsnList()
+            instructions.add(VarInsnNode(Opcodes.ALOAD, 11))
+            instructions.add(
+                MethodInsnNode(
+                    Opcodes.INVOKEINTERFACE,
+                    SPIRE_PATCH_OWNER,
+                    SPIRE_PATCH_OPTIONAL_METHOD_NAME,
+                    SPIRE_PATCH_OPTIONAL_METHOD_DESC,
+                    true
+                )
+            )
+            instructions.add(JumpInsnNode(Opcodes.IFEQ, continueToThrow))
+            instructions.add(InsnNode(Opcodes.ACONST_NULL))
+            instructions.add(VarInsnNode(Opcodes.ASTORE, 13))
+            instructions.add(JumpInsnNode(Opcodes.GOTO, skipTarget))
+            instructions.add(continueToThrow)
+            method.instructions.insertBefore(noSuchMethodNew, instructions)
+        }
+        method.maxStack = maxOf(method.maxStack, 1)
     }
 
     internal fun patchPrepackagedLauncherBytes(prepackagedLauncherBytes: ByteArray): ByteArray {
@@ -575,6 +690,25 @@ internal object MtsLoaderCrashPatcher {
             null
         )
         marker.instructions.add(InsnNode(Opcodes.ICONST_4))
+        marker.instructions.add(InsnNode(Opcodes.IRETURN))
+        marker.maxStack = 1
+        marker.maxLocals = 0
+        classNode.methods.add(marker)
+    }
+
+    private fun insertPatcherPatchMarker(classNode: ClassNode) {
+        classNode.methods.removeAll { method ->
+            method.name == AMETHYST_PATCHER_PATCH_MARKER_METHOD_NAME &&
+                method.desc == AMETHYST_PATCHER_PATCH_MARKER_METHOD_DESC
+        }
+        val marker = MethodNode(
+            Opcodes.ACC_PRIVATE or Opcodes.ACC_STATIC or Opcodes.ACC_SYNTHETIC,
+            AMETHYST_PATCHER_PATCH_MARKER_METHOD_NAME,
+            AMETHYST_PATCHER_PATCH_MARKER_METHOD_DESC,
+            null,
+            null
+        )
+        marker.instructions.add(InsnNode(Opcodes.ICONST_1))
         marker.instructions.add(InsnNode(Opcodes.IRETURN))
         marker.maxStack = 1
         marker.maxLocals = 0
@@ -882,6 +1016,57 @@ internal object MtsLoaderCrashPatcher {
         }
     }
 
+    private fun hasPatcherPatchMarker(classNode: ClassNode): Boolean {
+        return classNode.methods.any { method ->
+            method.name == AMETHYST_PATCHER_PATCH_MARKER_METHOD_NAME &&
+                method.desc == AMETHYST_PATCHER_PATCH_MARKER_METHOD_DESC
+        }
+    }
+
+    private fun hasOptionalMissingMethodSkipGuards(method: MethodNode): Boolean {
+        var guardCount = 0
+        val iterator = method.instructions.iterator()
+        while (iterator.hasNext()) {
+            val instruction = iterator.next() as? MethodInsnNode ?: continue
+            if (instruction.opcode != Opcodes.INVOKEINTERFACE ||
+                instruction.owner != SPIRE_PATCH_OWNER ||
+                instruction.name != SPIRE_PATCH_OPTIONAL_METHOD_NAME ||
+                instruction.desc != SPIRE_PATCH_OPTIONAL_METHOD_DESC
+            ) {
+                continue
+            }
+            val jump = nextMeaningful(instruction) as? JumpInsnNode ?: continue
+            val nullInstruction = nextMeaningful(jump) as? InsnNode ?: continue
+            val storeInstruction = nextMeaningful(nullInstruction) as? VarInsnNode ?: continue
+            if (jump.opcode == Opcodes.IFEQ &&
+                nullInstruction.opcode == Opcodes.ACONST_NULL &&
+                storeInstruction.opcode == Opcodes.ASTORE &&
+                storeInstruction.`var` == 13
+            ) {
+                guardCount++
+            }
+        }
+        return guardCount >= 2
+    }
+
+    private fun findOptionalMethodMissingSkipTarget(method: MethodNode): LabelNode? {
+        val iterator = method.instructions.iterator()
+        while (iterator.hasNext()) {
+            val instruction = iterator.next()
+            val loadTargetMethod = instruction as? VarInsnNode ?: continue
+            if (loadTargetMethod.opcode != Opcodes.ALOAD || loadTargetMethod.`var` != 13) {
+                continue
+            }
+            val jump = nextMeaningful(loadTargetMethod) as? JumpInsnNode ?: continue
+            if (jump.opcode == Opcodes.IFNONNULL) {
+                val skipTarget = LabelNode()
+                method.instructions.insertBefore(loadTargetMethod, skipTarget)
+                return skipTarget
+            }
+        }
+        return null
+    }
+
     private fun hasCloseWindowNullGuard(classNode: ClassNode): Boolean {
         val closeWindowMethod = classNode.methods.firstOrNull { method ->
             method.name == CLOSE_WINDOW_METHOD_NAME && method.desc == CLOSE_WINDOW_METHOD_DESC
@@ -1115,5 +1300,25 @@ internal object MtsLoaderCrashPatcher {
         return classNode.methods.firstOrNull { method ->
             method.name == RUN_MODS_METHOD_NAME && method.desc == RUN_MODS_METHOD_DESC
         }
+    }
+
+    private fun nextMeaningful(
+        instruction: org.objectweb.asm.tree.AbstractInsnNode?
+    ): org.objectweb.asm.tree.AbstractInsnNode? {
+        var current = instruction?.next
+        while (current != null && current.opcode < 0) {
+            current = current.next
+        }
+        return current
+    }
+
+    private fun previousMeaningful(
+        instruction: org.objectweb.asm.tree.AbstractInsnNode?
+    ): org.objectweb.asm.tree.AbstractInsnNode? {
+        var current = instruction?.previous
+        while (current != null && current.opcode < 0) {
+            current = current.previous
+        }
+        return current
     }
 }

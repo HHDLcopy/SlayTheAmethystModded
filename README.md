@@ -6,7 +6,7 @@
   简体中文 ｜ <a href="./docs/README.en.md">English</a>
 </p>
 
-<h1 align="center">SlayTheAmethyst</h1>
+<h1 align="center">Slay the Amethyst</h1>
 
 <p align="center">
   一个面向 <strong>模组版 Slay the Spire</strong> 的 Android 启动器项目，在移动端运行大部分桌面版模组
@@ -26,6 +26,8 @@
 
 <p align="center">
   <img alt="Android API 26+" src="https://img.shields.io/badge/Android-API%2026%2B-34A853?style=flat-square&logo=android&logoColor=white" />
+  <img alt="Closed Issues" src="https://img.shields.io/github/issues-closed/ModinMobileSTS/SlayTheAmethystModded?label=Closed%20Issues&color=success)](https://github.com/ModinMobileSTS/SlayTheAmethystModded/issues?q=is%3Aissue+is%3Aclosed" />
+  <img alt="Stars" src="https://img.shields.io/github/stars/ModinMobileSTS/SlayTheAmethystModded?style=social)](https://github.com/ModinMobileSTS/SlayTheAmethystModded/stargazers" />
   <img alt="Runtime Java 8 Bridge" src="https://img.shields.io/badge/Runtime-Java%208%20Bridge-5b4638?style=flat-square&logo=openjdk&logoColor=white" />
   <img alt="ABI arm64-v8a" src="https://img.shields.io/badge/ABI-arm64--v8a-f97316?style=flat-square" />
   <img alt="CI GitHub Release Workflow" src="https://img.shields.io/badge/CI-GitHub%20Release%20Workflow-24292f?style=flat-square&logo=githubactions&logoColor=white" />

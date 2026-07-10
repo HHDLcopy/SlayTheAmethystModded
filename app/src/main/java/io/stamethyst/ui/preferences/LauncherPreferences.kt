@@ -2,6 +2,7 @@ package io.stamethyst.ui.preferences
 
 import android.content.Context
 import io.stamethyst.backend.mods.AtlasOfflineDownscaleStrategy
+import io.stamethyst.backend.network.NetworkAccelerationPolicy
 import io.stamethyst.backend.render.MobileGluesAnglePolicy
 import io.stamethyst.backend.render.MobileGluesAngleDepthClearFixMode
 import io.stamethyst.backend.render.MobileGluesCustomGlVersion
@@ -590,7 +591,10 @@ object LauncherPreferences {
     }
 
     fun isSteamCloudWattAccelerationEnabled(context: Context): Boolean {
-        return LauncherConfig.isSteamCloudWattAccelerationEnabled(context)
+        return NetworkAccelerationPolicy.shouldUseAcceleratedLinks(
+            context = context,
+            configuredEnabled = LauncherConfig.isSteamCloudWattAccelerationEnabled(context),
+        )
     }
 
     fun setSteamCloudWattAccelerationEnabled(context: Context, enabled: Boolean) {
@@ -614,7 +618,10 @@ object LauncherPreferences {
     }
 
     fun isWorkshopWattAccelerationEnabled(context: Context): Boolean {
-        return LauncherConfig.isWorkshopWattAccelerationEnabled(context)
+        return NetworkAccelerationPolicy.shouldUseAcceleratedLinks(
+            context = context,
+            configuredEnabled = LauncherConfig.isWorkshopWattAccelerationEnabled(context),
+        )
     }
 
     fun setWorkshopWattAccelerationEnabled(context: Context, enabled: Boolean) {

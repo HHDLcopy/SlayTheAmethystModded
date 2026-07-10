@@ -35,6 +35,62 @@ import org.lwjgl.glfw.CallbackBridge
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
+internal data class FloatingMouseStoredPosition(
+    val leftFraction: Float,
+    val topFraction: Float,
+)
+
+internal data class FloatingMouseResolvedPosition(
+    val left: Int,
+    val top: Int,
+)
+
+internal fun captureFloatingMouseStoredPosition(
+    leftMargin: Int,
+    topMargin: Int,
+    maxLeft: Int,
+    maxTop: Int,
+): FloatingMouseStoredPosition {
+    return FloatingMouseStoredPosition(
+        leftFraction = captureFloatingMousePositionFraction(leftMargin, maxLeft),
+        topFraction = captureFloatingMousePositionFraction(topMargin, maxTop),
+    )
+}
+
+internal fun restoreFloatingMouseResolvedPosition(
+    leftFraction: Float?,
+    topFraction: Float?,
+    maxLeft: Int,
+    maxTop: Int,
+    defaultLeft: Int,
+    defaultTop: Int,
+): FloatingMouseResolvedPosition {
+    return FloatingMouseResolvedPosition(
+        left = restoreFloatingMousePositionMargin(leftFraction, maxLeft, defaultLeft),
+        top = restoreFloatingMousePositionMargin(topFraction, maxTop, defaultTop),
+    )
+}
+
+private fun captureFloatingMousePositionFraction(margin: Int, maxMargin: Int): Float {
+    if (maxMargin <= 0) {
+        return 0f
+    }
+    return margin.coerceIn(0, maxMargin).toFloat() / maxMargin.toFloat()
+}
+
+private fun restoreFloatingMousePositionMargin(
+    fraction: Float?,
+    maxMargin: Int,
+    defaultMargin: Int,
+): Int {
+    if (maxMargin <= 0) {
+        return 0
+    }
+    val boundedDefault = defaultMargin.coerceIn(0, maxMargin)
+    val boundedFraction = fraction?.takeIf(Float::isFinite)?.coerceIn(0f, 1f) ?: return boundedDefault
+    return (maxMargin * boundedFraction).roundToInt().coerceIn(0, maxMargin)
+}
+
 internal class FloatingMouseOverlayController(
     private val activity: AppCompatActivity,
     private val isNativeInputDispatchReady: () -> Boolean,
@@ -100,6 +156,9 @@ internal class FloatingMouseOverlayController(
         private const val FLOATING_MENU_ANIM_OFFSET_DP = 10
         private const val FLOATING_MOUSE_SIDE_INSET_DP = 18
         private const val FLOATING_MENU_ANCHOR_GAP_DP = 8
+        private const val FLOATING_MOUSE_LAYOUT_PREFS_NAME = "floating_mouse_layout"
+        private const val FLOATING_MOUSE_LEFT_FRACTION_KEY = "floating_mouse_left_fraction"
+        private const val FLOATING_MOUSE_TOP_FRACTION_KEY = "floating_mouse_top_fraction"
         private const val CUSTOM_KEY_PREFS_NAME = "floating_mouse_custom_keys"
         private const val CUSTOM_KEY_TUTORIAL_SHOWN_KEY = "custom_key_tutorial_shown"
         private const val CUSTOM_KEY_DRAG_LONG_PRESS_MS = 1000L
@@ -226,6 +285,9 @@ internal class FloatingMouseOverlayController(
     private val toggleSpecialKeyButtons = mutableMapOf<Int, View>()
     private val activeToggleSoftKeys = mutableMapOf<Int, SoftKeyboardTarget>()
     private val customSoftKeyButtons = mutableListOf<CustomSoftKeyButtonState>()
+    private val floatingMouseLayoutPrefs by lazy {
+        activity.getSharedPreferences(FLOATING_MOUSE_LAYOUT_PREFS_NAME, Context.MODE_PRIVATE)
+    }
     private val customSoftKeyPrefs by lazy {
         activity.getSharedPreferences(CUSTOM_KEY_PREFS_NAME, Context.MODE_PRIVATE)
     }
@@ -393,7 +455,7 @@ internal class FloatingMouseOverlayController(
                 topMargin = 0
             }
         )
-        placeFloatingButtonAtRightCenter(host, button, buttonSize)
+        placeFloatingButtonAtSavedOrDefaultPosition(host, button, buttonSize)
 
         floatingMouseMainIcon = icon
         floatingMouseButton = button
@@ -964,6 +1026,9 @@ internal class FloatingMouseOverlayController(
 
             MotionEvent.ACTION_UP -> {
                 cancelFloatingMouseLongPress()
+                if (floatingMouseDragging) {
+                    saveFloatingMouseButtonPosition()
+                }
                 if (!floatingMouseDragging && !floatingMouseLongPressTriggered) {
                     handleFloatingMouseTap(button)
                 }
@@ -975,6 +1040,9 @@ internal class FloatingMouseOverlayController(
 
             MotionEvent.ACTION_CANCEL -> {
                 cancelFloatingMouseLongPress()
+                if (floatingMouseDragging) {
+                    saveFloatingMouseButtonPosition()
+                }
                 floatingMouseDragging = false
                 floatingMouseLongPressTriggered = false
                 scheduleFloatingMouseIdle()
@@ -2611,14 +2679,53 @@ internal class FloatingMouseOverlayController(
         return (activity.resources.displayMetrics.density * dp).roundToInt()
     }
 
-    private fun placeFloatingButtonAtRightCenter(host: FrameLayout, button: FrameLayout, buttonSize: Int) {
+    private fun readFloatingMousePositionFraction(key: String): Float? {
+        if (!floatingMouseLayoutPrefs.contains(key)) {
+            return null
+        }
+        return floatingMouseLayoutPrefs.getFloat(key, 0f)
+    }
+
+    private fun saveFloatingMouseButtonPosition() {
+        val host = hostView ?: return
+        val button = floatingMouseButton ?: return
+        val params = button.layoutParams as? FrameLayout.LayoutParams ?: return
+        val maxLeft = (host.width - button.width).coerceAtLeast(0)
+        val maxTop = (host.height - button.height).coerceAtLeast(0)
+        val storedPosition = captureFloatingMouseStoredPosition(
+            leftMargin = params.leftMargin,
+            topMargin = params.topMargin,
+            maxLeft = maxLeft,
+            maxTop = maxTop
+        )
+        floatingMouseLayoutPrefs.edit()
+            .putFloat(FLOATING_MOUSE_LEFT_FRACTION_KEY, storedPosition.leftFraction)
+            .putFloat(FLOATING_MOUSE_TOP_FRACTION_KEY, storedPosition.topFraction)
+            .apply()
+    }
+
+    private fun placeFloatingButtonAtSavedOrDefaultPosition(
+        host: FrameLayout,
+        button: FrameLayout,
+        buttonSize: Int
+    ) {
         val inset = dpToPx(FLOATING_MOUSE_SIDE_INSET_DP)
         host.post {
             val params = button.layoutParams as? FrameLayout.LayoutParams ?: return@post
             val maxLeft = (host.width - buttonSize).coerceAtLeast(0)
             val maxTop = (host.height - buttonSize).coerceAtLeast(0)
-            params.leftMargin = (maxLeft - inset).coerceAtLeast(0)
-            params.topMargin = (maxTop / 2).coerceAtLeast(0)
+            val defaultLeft = (maxLeft - inset).coerceAtLeast(0)
+            val defaultTop = (maxTop / 2).coerceAtLeast(0)
+            val restoredPosition = restoreFloatingMouseResolvedPosition(
+                leftFraction = readFloatingMousePositionFraction(FLOATING_MOUSE_LEFT_FRACTION_KEY),
+                topFraction = readFloatingMousePositionFraction(FLOATING_MOUSE_TOP_FRACTION_KEY),
+                maxLeft = maxLeft,
+                maxTop = maxTop,
+                defaultLeft = defaultLeft,
+                defaultTop = defaultTop
+            )
+            params.leftMargin = restoredPosition.left
+            params.topMargin = restoredPosition.top
             button.layoutParams = params
             updateFloatingMouseExpandedMenuPosition()
         }

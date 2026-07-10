@@ -5,6 +5,8 @@ import org.junit.Assert.assertNotNull
 import org.junit.Test
 
 class CloudControlConfigTest {
+    private val stsDepotKeyHex = "af36e1914da16f3e4556bedf7e46a76646b670c91bb6e1d3cca380e16ceb2df6"
+
     @Test
     fun parseSettings_readsCompactNestedHeartbeatConfig() {
         val defaults = CloudControlSettings(
@@ -119,6 +121,52 @@ class CloudControlConfigTest {
 
         assertNotNull(parsed)
         assertEquals(defaults.qqGroupNumber, parsed?.qqGroupNumber)
+    }
+
+    @Test
+    fun parseSettings_readsNestedSteamDepotKeyHex() {
+        val parsed = CloudControlConfig.parseSettings(
+            """
+            {
+              "steam": {
+                "depotKeys": [
+                  {
+                    "appId": 646570,
+                    "depotId": 646571,
+                    "keyHex": "$stsDepotKeyHex"
+                  }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        assertNotNull(parsed)
+        assertEquals(1, parsed?.steamDepotKeys?.size)
+        assertEquals(646570L, parsed?.steamDepotKeys?.first()?.appId)
+        assertEquals(646571L, parsed?.steamDepotKeys?.first()?.depotId)
+        assertEquals(stsDepotKeyHex, parsed?.steamDepotKeys?.first()?.keyHex)
+        assertEquals(32, parsed?.steamDepotKeyBytes(646570u, 646571u)?.size)
+    }
+
+    @Test
+    fun parseSettings_acceptsSteamDepotKeyBase64Alias() {
+        val parsed = CloudControlConfig.parseSettings(
+            """
+            {
+              "steamDepotKeys": [
+                {
+                  "app_id": "646570",
+                  "depot_id": "646571",
+                  "depotKeyBase64": "rzbhkU2hbz5FVr7ffkanZka2cMkbtuHTzKOA4WzrLfY="
+                }
+              ]
+            }
+            """.trimIndent()
+        )
+
+        assertNotNull(parsed)
+        assertEquals(stsDepotKeyHex, parsed?.steamDepotKeys?.single()?.keyHex)
     }
 
     @Test

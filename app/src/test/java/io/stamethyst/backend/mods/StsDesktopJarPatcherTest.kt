@@ -27,6 +27,16 @@ class StsDesktopJarPatcherTest {
     }
 
     @Test
+    fun requiredPatchClasses_includeFragmentShaderCompatSupportClasses() {
+        assertTrue(REQUIRED_STS_PATCH_CLASSES.contains(STS_PATCH_FRAGMENT_SHADER_COMPAT_CLASS))
+        assertTrue(
+            REQUIRED_STS_PATCH_CLASSES.contains(
+                STS_PATCH_FRAGMENT_SHADER_COMPAT_INTEGER_LITERAL_CLASS
+            )
+        )
+    }
+
+    @Test
     fun requiredPatchClasses_doNotRequireOptionsPanelFromPatchJar() {
         assertFalse(REQUIRED_STS_PATCH_CLASSES.contains(STS_PATCH_OPTIONS_PANEL_CLASS))
     }
@@ -87,6 +97,27 @@ class StsDesktopJarPatcherTest {
         assertTrue(guardianIncluded)
         assertTrue(injectorIncluded)
         assertTrue(guardianInnerIncluded)
+    }
+
+    @Test
+    fun shouldPatchStsEntry_acceptsFragmentShaderCompatInnerClasses() {
+        val method = StsDesktopJarPatcher::class.java.getDeclaredMethod(
+            "shouldPatchStsEntry",
+            String::class.java
+        )
+        method.isAccessible = true
+
+        val namedInnerIncluded = method.invoke(
+            StsDesktopJarPatcher,
+            STS_PATCH_FRAGMENT_SHADER_COMPAT_INTEGER_LITERAL_CLASS
+        ) as Boolean
+        val anonymousInnerIncluded = method.invoke(
+            StsDesktopJarPatcher,
+            "io/stamethyst/gdx/FragmentShaderCompat\$1.class"
+        ) as Boolean
+
+        assertTrue(namedInnerIncluded)
+        assertTrue(anonymousInnerIncluded)
     }
 
     @Test

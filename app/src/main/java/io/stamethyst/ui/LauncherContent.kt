@@ -115,6 +115,7 @@ import io.stamethyst.ui.workshop.WorkshopDetailScreen
 import io.stamethyst.ui.workshop.WorkshopSubscriptionsScreen
 import io.stamethyst.ui.workshop.WorkshopViewModel
 import io.stamethyst.ui.quickstart.QuickStartScreen
+import io.stamethyst.ui.quickstart.QuickStartAutomaticImportScreen
 import io.stamethyst.ui.quickstart.QuickStartJarImportScreen
 import io.stamethyst.ui.quickstart.QuickStartSteamDownloadScreen
 import io.stamethyst.ui.settings.first_run.LauncherFirstRunSetupScreen
@@ -135,6 +136,7 @@ import io.stamethyst.ui.settings.steamcloud.LauncherSteamCloudSaveSettingsScreen
 import io.stamethyst.ui.settings.steamcloud.LauncherSteamCloudSyncBlacklistSettingsScreen
 import io.stamethyst.ui.settings.core.SettingsEffectsHandler
 import io.stamethyst.ui.settings.core.SettingsScreenViewModel
+import io.stamethyst.ui.settings.core.StsJarIntegrityDialogHost
 import io.stamethyst.ui.preferences.LauncherPreferences
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -200,6 +202,7 @@ fun LauncherContent(
     val shouldShowBlockingBusyWindow =
         isBlockingBusyInteractionLocked &&
             currentRoute != Route.QuickStart &&
+            currentRoute != Route.QuickStartAutoImport &&
             currentRoute != Route.QuickStartJarImport &&
             currentRoute != Route.QuickStartSteamDownload
     val blockingBusyMessage = when {
@@ -471,9 +474,32 @@ fun LauncherContent(
                             QuickStartScreen(
                                 viewModel = settingsViewModel,
                                 modifier = Modifier.fillMaxSize(),
+                                onOpenAutoImport = { navigator.push(Route.QuickStartAutoImport) },
                                 onOpenSteamLogin = { navigator.push(Route.QuickStartSteamLogin) },
                                 onOpenJarImport = { navigator.push(Route.QuickStartJarImport) },
                                 onOpenSteamDownload = { navigator.push(Route.QuickStartSteamDownload) },
+                                onImportSuccess = {
+                                    navigator.resetRoot(
+                                        if (LauncherPreferences.isFirstRunSetupCompleted(activity)) {
+                                            Route.Main
+                                        } else {
+                                            Route.FirstRunSetup
+                                        }
+                                    )
+                                }
+                            )
+                        }
+
+                        entry<Route.QuickStartAutoImport> {
+                            QuickStartAutomaticImportScreen(
+                                viewModel = settingsViewModel,
+                                modifier = Modifier.fillMaxSize(),
+                                onOpenSteamLogin = {
+                                    navigator.resetRoot(Route.QuickStartSteamLogin)
+                                },
+                                onChooseAnotherImportMode = {
+                                    navigator.resetRoot(Route.QuickStart)
+                                },
                                 onImportSuccess = {
                                     navigator.resetRoot(
                                         if (LauncherPreferences.isFirstRunSetupCompleted(activity)) {
@@ -1011,6 +1037,15 @@ fun LauncherContent(
                         )
                     }
                 }
+                settingsUiState.stsJarIntegrityDialogState?.let { dialogState ->
+                    StsJarIntegrityDialogHost(
+                        dialogState = dialogState,
+                        onDismiss = settingsViewModel::dismissStsJarIntegrityDialog,
+                        onRequestForceImport = settingsViewModel::requestStsJarForceImportConfirmation,
+                        onDismissForceConfirm = settingsViewModel::dismissStsJarForceImportConfirmation,
+                        onConfirmForceImport = { settingsViewModel.confirmPendingStsJarForceImport(activity) }
+                    )
+                }
             feedbackInboxState.pendingNotice?.let { notice ->
                 AlertDialog(
                     onDismissRequest = FeedbackInboxCoordinator::dismissUnreadNotice,
@@ -1380,6 +1415,7 @@ private fun Route?.launcherDockRoute(): Route? {
         Route.Compatibility,
         Route.MobileGluesSettings,
         Route.QuickStart,
+        Route.QuickStartAutoImport,
         Route.QuickStartSteamLogin,
         Route.QuickStartSteamGuard,
         Route.QuickStartSteamDownload,

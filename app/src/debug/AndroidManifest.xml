@@ -10,6 +10,11 @@
         <activity
             android:name=".ui.main.ModPageTransitionBenchmarkActivity"
             android:exported="true" />
+        <activity
+            android:name=".ui.workshop.WorkshopYouTubeTestActivity"
+            android:exported="true"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true" />
 
         <receiver
             android:name=".backend.steamcloud.SteamCloudPhase0DebugReceiver"

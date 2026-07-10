@@ -13,6 +13,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
+import java.net.InetAddress;
 import java.net.SocketTimeoutException;
 
 public final class SteamCloudClientTest {
@@ -152,6 +153,39 @@ public final class SteamCloudClientTest {
         Assert.assertEquals(5_000L, invokeDownloadRetryDelayMs(2));
         Assert.assertEquals(10_000L, invokeDownloadRetryDelayMs(3));
         Assert.assertEquals(10_000L, invokeDownloadRetryDelayMs(10));
+    }
+
+    @Test
+    public void selectPreferredAddress_prefersIpv4AndRejectsIpv6Only() throws Exception {
+        InetAddress ipv6 = InetAddress.getByAddress(new byte[] {
+            0x24, 0x06, (byte) 0xcb, 0x42,
+            0, 0, 0x0f, 0x0e,
+            0, 0, 0, 0,
+            0, 0, 0x49, (byte) 0xbd,
+        });
+        InetAddress ipv4 = InetAddress.getByAddress(new byte[] {
+            (byte) 185, 25, (byte) 183, 52,
+        });
+
+        Assert.assertEquals(
+            "185.25.183.52",
+            SteamCloudClient.selectPreferredAddress(new InetAddress[] { ipv6, ipv4 })
+        );
+        Assert.assertEquals(
+            "",
+            SteamCloudClient.selectPreferredAddress(new InetAddress[] { ipv6 })
+        );
+    }
+
+    @Test
+    public void isWebSocketEndpointParserSafe_rejectsIpv6Literals() {
+        Assert.assertTrue(SteamCloudClient.isWebSocketEndpointParserSafe("185.25.183.52:27021"));
+        Assert.assertFalse(
+            SteamCloudClient.isWebSocketEndpointParserSafe("[2406:cb42:0:f00e::49bd]:27021")
+        );
+        Assert.assertFalse(
+            SteamCloudClient.isWebSocketEndpointParserSafe("2406:cb42:0:f00e::49bd")
+        );
     }
 
     @Test

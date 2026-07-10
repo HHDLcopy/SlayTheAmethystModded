@@ -154,6 +154,7 @@ internal object ModImportFlowCoordinator {
                         showFrierenPatchSummaryDialog(host, patchedResults)
                         showDownfallPatchSummaryDialog(host, patchedResults)
                         showVupShionPatchSummaryDialog(host, patchedResults)
+                        showChaofanModPatchSummaryDialog(host, patchedResults)
                         showJacketNoAnoKoPatchSummaryDialog(host, patchedResults)
                         showOriPatchSummaryDialog(host, patchedResults)
                     }
@@ -474,6 +475,25 @@ internal object ModImportFlowCoordinator {
             return
         }
         VupShionPatchedDialog.show(host)
+    }
+
+    private fun showChaofanModPatchSummaryDialog(
+        host: Activity,
+        patchedResults: List<ModImportResult>
+    ) {
+        if (patchedResults.none { it.wasChaofanModPatched }) {
+            return
+        }
+        AlertDialog.Builder(host)
+            .setTitle(R.string.mod_import_dialog_chaofanmod_patched_title)
+            .setMessage(
+                SettingsFileService.buildChaofanModPatchImportSummaryMessage(
+                    context = host,
+                    patchedResults = patchedResults
+                )
+            )
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
     }
 
     private fun showJacketNoAnoKoPatchSummaryDialog(

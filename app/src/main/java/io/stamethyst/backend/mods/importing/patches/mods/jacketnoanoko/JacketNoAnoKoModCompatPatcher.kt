@@ -1,5 +1,6 @@
-package io.stamethyst.backend.mods
+package io.stamethyst.backend.mods.importing.patches.mods.jacketnoanoko
 
+import io.stamethyst.backend.mods.JarFileIoUtils
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException

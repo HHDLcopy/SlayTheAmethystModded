@@ -8,6 +8,7 @@ import android.net.NetworkCapabilities
 import io.stamethyst.config.LauncherConfig
 import java.io.File
 import java.nio.file.Files
+import java.util.Locale
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -80,9 +81,25 @@ class SteamCloudNetworkEnvironmentTest {
     fun isProxyOrAcceleratorActive_usesWattAccelerationSetting() {
         val roots = TestRoots.create("steam-cloud-proxy-active-watt")
         try {
-            LauncherConfig.setSteamCloudWattAccelerationEnabled(roots.context, true)
+            withDefaultLocale(Locale.CHINA) {
+                LauncherConfig.setSteamCloudWattAccelerationEnabled(roots.context, true)
 
-            assertTrue(SteamCloudNetworkEnvironment.isProxyOrAcceleratorActive(roots.context))
+                assertTrue(SteamCloudNetworkEnvironment.isProxyOrAcceleratorActive(roots.context))
+            }
+        } finally {
+            roots.rootDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun isProxyOrAcceleratorActive_ignoresWattAccelerationOutsideChinaRegion() {
+        val roots = TestRoots.create("steam-cloud-proxy-active-watt-outside-cn")
+        try {
+            withDefaultLocale(Locale.US) {
+                LauncherConfig.setSteamCloudWattAccelerationEnabled(roots.context, true)
+
+                assertFalse(SteamCloudNetworkEnvironment.isProxyOrAcceleratorActive(roots.context))
+            }
         } finally {
             roots.rootDir.deleteRecursively()
         }
@@ -100,6 +117,16 @@ class SteamCloudNetworkEnvironmentTest {
                 transport == NetworkCapabilities.TRANSPORT_WIFI
             }
         )
+    }
+
+    private fun withDefaultLocale(locale: Locale, block: () -> Unit) {
+        val previousLocale = Locale.getDefault()
+        try {
+            Locale.setDefault(locale)
+            block()
+        } finally {
+            Locale.setDefault(previousLocale)
+        }
     }
 
     private class TestRoots private constructor(

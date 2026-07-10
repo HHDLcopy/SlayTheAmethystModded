@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
+import java.util.Locale
 
 object NetworkAccelerationPolicy {
     @JvmStatic
@@ -13,10 +14,20 @@ object NetworkAccelerationPolicy {
     ): Boolean = shouldUseAcceleratedLinks(
         configuredEnabled = configuredEnabled,
         vpnActiveProvider = { isVpnActive(context) },
+        chinaRegionProvider = { isChinaRegion(context) },
     )
 
     @JvmStatic
-    fun shouldBypassAcceleratedLinks(context: Context): Boolean = isVpnActive(context)
+    fun shouldBypassAcceleratedLinks(context: Context): Boolean =
+        shouldBypassAcceleratedLinks(
+            vpnActiveProvider = { isVpnActive(context) },
+            chinaRegionProvider = { isChinaRegion(context) },
+        )
+
+    @JvmStatic
+    @Suppress("UNUSED_PARAMETER")
+    fun isChinaRegion(context: Context): Boolean =
+        isChinaRegion(Locale.getDefault().country)
 
     @JvmStatic
     fun isVpnActive(context: Context): Boolean =
@@ -31,7 +42,16 @@ object NetworkAccelerationPolicy {
     internal fun shouldUseAcceleratedLinks(
         configuredEnabled: Boolean,
         vpnActiveProvider: () -> Boolean,
-    ): Boolean = configuredEnabled && !vpnActiveProvider()
+        chinaRegionProvider: () -> Boolean = { true },
+    ): Boolean = configuredEnabled && chinaRegionProvider() && !vpnActiveProvider()
+
+    internal fun shouldBypassAcceleratedLinks(
+        vpnActiveProvider: () -> Boolean,
+        chinaRegionProvider: () -> Boolean,
+    ): Boolean = !chinaRegionProvider() || vpnActiveProvider()
+
+    internal fun isChinaRegion(countryCode: String): Boolean =
+        countryCode.trim().equals(CHINA_COUNTRY_CODE, ignoreCase = true)
 
     @Suppress("DEPRECATION")
     internal fun hasVpnTransport(
@@ -54,4 +74,6 @@ object NetworkAccelerationPolicy {
 
     internal fun hasVpnTransport(hasTransport: (Int) -> Boolean): Boolean =
         hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+
+    private const val CHINA_COUNTRY_CODE = "CN"
 }

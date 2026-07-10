@@ -1,5 +1,6 @@
 package io.stamethyst.backend.mods
 
+import io.stamethyst.backend.mods.importing.patches.mods.jacketnoanoko.JacketNoAnoKoModCompatPatcher
 import java.io.File
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files

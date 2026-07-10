@@ -322,7 +322,7 @@ internal object SettingsRepository {
         return UpdateStateSnapshot(
             autoCheckUpdatesEnabled = LauncherPreferences.isAutoCheckUpdatesEnabled(context),
             preferredUpdateMirror = UpdateMirrorManager.current(context),
-            availableUpdateMirrors = UpdateMirrorManager.selectableSources(),
+            availableUpdateMirrors = UpdateMirrorManager.selectableSources(context),
             currentVersionText = BuildConfig.VERSION_NAME,
             statusSummary = buildUpdateStatusSummary(context)
         )

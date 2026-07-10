@@ -5,6 +5,8 @@ import io.stamethyst.backend.github.ExperimentalGithubDirectAccessRuntime
 import io.stamethyst.backend.github.ExperimentalGithubDirectAccessInterceptor
 import io.stamethyst.backend.github.FileBackedWattToolkitGithubRouteStore
 import io.stamethyst.backend.github.GithubDirectHostnameVerifier
+import io.stamethyst.backend.github.WATT_PROXY_TYPE_DIRECT
+import io.stamethyst.backend.github.WATT_PROXY_TYPE_REVERSE_PROXY
 import io.stamethyst.backend.github.WattToolkitGithubRouteResolver
 import io.stamethyst.backend.github.WattToolkitRouteProfile
 import io.stamethyst.backend.github.trustWattToolkitForwardCertificates
@@ -58,11 +60,27 @@ internal val SteamMediaWattToolkitRouteProfile = WattToolkitRouteProfile(
     bootstrapForwardTargets = listOf("steammedia.rmbgame.net"),
 )
 
+internal val SteamContentCdnWattToolkitRouteProfile = WattToolkitRouteProfile(
+    name = "steam-content-cdn",
+    cacheFileName = "watt-steam-content-cdn-route-cache.json",
+    supportedHosts = setOf(
+        "shared.st.dl.eccdnx.com",
+        "clan.st.dl.eccdnx.com",
+        "store.st.dl.eccdnx.com",
+        "avatars.st.dl.eccdnx.com",
+        "media.st.dl.eccdnx.com",
+        "video.st.dl.eccdnx.com",
+    ),
+    bootstrapForwardTargets = emptyList(),
+    supportedProxyTypes = setOf(WATT_PROXY_TYPE_DIRECT, WATT_PROXY_TYPE_REVERSE_PROXY),
+)
+
 private val defaultSteamCloudWattToolkitRouteProfiles = listOf(
     SteamCommunityWattToolkitRouteProfile,
     SteamStoreWattToolkitRouteProfile,
     SteamImageCdnWattToolkitRouteProfile,
     SteamMediaWattToolkitRouteProfile,
+    SteamContentCdnWattToolkitRouteProfile,
 )
 
 object SteamCloudAcceleratedHttp {
@@ -70,7 +88,10 @@ object SteamCloudAcceleratedHttp {
 
     @JvmStatic
     fun isEnabled(context: Context): Boolean =
-        LauncherConfig.isSteamCloudWattAccelerationEnabled(context)
+        NetworkAccelerationPolicy.shouldUseAcceleratedLinks(
+            context = context,
+            configuredEnabled = LauncherConfig.isSteamCloudWattAccelerationEnabled(context),
+        )
 
     @JvmStatic
     @JvmOverloads

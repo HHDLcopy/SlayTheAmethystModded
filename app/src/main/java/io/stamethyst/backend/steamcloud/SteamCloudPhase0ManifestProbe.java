@@ -8,6 +8,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Proxy;
 import java.net.URI;
@@ -81,6 +82,16 @@ public final class SteamCloudPhase0ManifestProbe {
         String refreshToken,
         String proxyUrl
     ) throws Exception {
+        return run(context, accountName, refreshToken, proxyUrl, true);
+    }
+
+    private static Result run(
+        Context context,
+        String accountName,
+        String refreshToken,
+        String proxyUrl,
+        boolean allowReconnectRetry
+    ) throws Exception {
         File outputDir = new File(RuntimePaths.storageRoot(context), OUTPUT_DIR_NAME);
         if (!outputDir.isDirectory() && !outputDir.mkdirs()) {
             throw new IOException("Failed to create Phase 0 output directory: " + outputDir.getAbsolutePath());
@@ -148,6 +159,14 @@ public final class SteamCloudPhase0ManifestProbe {
                 completedAtMs
             );
         } catch (Throwable error) {
+            if (allowReconnectRetry && isManifestReconnectRetryCandidate(error, stage, runner)) {
+                SteamCloudNetworkEnvironment.INSTANCE.clearNetworkCache(context);
+                if (runner != null) {
+                    runner.close();
+                    runner = null;
+                }
+                return run(context, accountName, refreshToken, proxyUrl, false);
+            }
             long completedAtMs = System.currentTimeMillis();
             String effectiveStage = stage;
             String summary = buildUserFailureSummary(effectiveStage, proxySettings, runner, error);
@@ -497,6 +516,29 @@ public final class SteamCloudPhase0ManifestProbe {
         return prefix + separator + filename;
     }
 
+    private static boolean isManifestReconnectRetryCandidate(
+        Throwable error,
+        String stage,
+        Runner runner
+    ) {
+        boolean sawManifestStage = sanitizeSingleLine(stage).toLowerCase(Locale.US).contains("getappfilechangelist");
+        boolean sawReconnectFailure = runner != null
+            && sanitizeSingleLine(runner.getDisconnectedDescription()).toLowerCase(Locale.US).contains("unexpected");
+        Throwable current = error;
+        while (current != null) {
+            String normalized = sanitizeSingleLine(current.getMessage()).toLowerCase(Locale.US);
+            if (normalized.contains("getappfilechangelist")) {
+                sawManifestStage = true;
+            }
+            if ((normalized.contains("steam disconnected") && normalized.contains("unexpected"))
+                || normalized.contains("client or session is no longer active")) {
+                sawReconnectFailure = true;
+            }
+            current = current.getCause() != current ? current.getCause() : null;
+        }
+        return sawManifestStage && sawReconnectFailure;
+    }
+
     @SuppressWarnings("unchecked")
     private static <T> T waitForEither(
         CompletableFuture<T> future,
@@ -821,11 +863,7 @@ public final class SteamCloudPhase0ManifestProbe {
                     + ", proxy="
                     + (proxySettings == null ? "none" : proxySettings.describe())
             );
-            ServerRecord serverRecord = steamClient.getServers().getNextServerCandidate(protocolTypes);
-            candidateSourceDescription = "Steam server list";
-            if (serverRecord == null) {
-                serverRecord = resolveFallbackWebSocketServer();
-            }
+            ServerRecord serverRecord = selectWebSocketServerRecord();
             if (serverRecord == null) {
                 throw new IllegalStateException(
                     "Steam server list returned no websocket CM candidate, and no fallback websocket endpoint was available."
@@ -938,6 +976,49 @@ public final class SteamCloudPhase0ManifestProbe {
             return javaSteamLogCollector.describeLastError();
         }
 
+        private ServerRecord selectWebSocketServerRecord() throws IOException {
+            List<PreparedServerRecord> candidates = new ArrayList<>();
+
+            ServerRecord serverListRecord = steamClient.getServers().getNextServerCandidate(protocolTypes);
+            if (serverListRecord != null) {
+                candidates.add(new PreparedServerRecord(serverListRecord, "Steam server list"));
+            }
+
+            addWebSocketAddressCandidate(candidates, readOptionalTextFile(lastCmEndpointFile), "Fallback cache");
+            addWebSocketAddressCandidate(candidates, SmartCMServerList.getDefaultServerWebSocket(), "JavaSteam default websocket CM");
+
+            IOException lastResolutionError = null;
+            List<String> attemptedKeys = new ArrayList<>();
+            for (PreparedServerRecord candidate : candidates) {
+                String dedupeKey = buildServerRecordKey(candidate.serverRecord);
+                if (attemptedKeys.contains(dedupeKey)) {
+                    continue;
+                }
+                attemptedKeys.add(dedupeKey);
+                try {
+                    PreparedServerRecord prepared = materializeWebSocketServerRecord(candidate);
+                    candidateSourceDescription = prepared.candidateSourceDescription;
+                    return prepared.serverRecord;
+                } catch (IOException error) {
+                    lastResolutionError = error;
+                    Log.w(
+                        TAG,
+                        "Skipping Phase 0 websocket CM candidate source="
+                            + candidate.candidateSourceDescription
+                            + " because endpoint pre-resolution failed: "
+                            + sanitizeSingleLine(error.getMessage()),
+                        error
+                    );
+                }
+            }
+
+            if (lastResolutionError != null) {
+                throw lastResolutionError;
+            }
+            candidateSourceDescription = "Fallback unavailable";
+            return null;
+        }
+
         private void appendJavaSteamDiagnostics(List<String> lines) {
             javaSteamLogCollector.appendSummaryLines(lines);
         }
@@ -951,23 +1032,115 @@ public final class SteamCloudPhase0ManifestProbe {
                 + "]";
         }
 
-        private ServerRecord resolveFallbackWebSocketServer() {
-            String cachedAddress = readOptionalTextFile(lastCmEndpointFile);
-            if (!isBlank(cachedAddress)) {
-                candidateSourceDescription = "Fallback cache";
-                Log.i(TAG, "Using cached websocket CM fallback: " + cachedAddress);
-                return ServerRecord.createWebSocketServer(cachedAddress);
+        private PreparedServerRecord materializeWebSocketServerRecord(PreparedServerRecord candidate) throws IOException {
+            ServerRecord serverRecord = candidate.serverRecord;
+            if (serverRecord == null || serverRecord.getEndpoint() == null) {
+                return candidate;
+            }
+            if (!serverRecord.getProtocolTypes().contains(ProtocolTypes.WEB_SOCKET)) {
+                return candidate;
             }
 
-            String defaultAddress = SmartCMServerList.getDefaultServerWebSocket();
-            if (!isBlank(defaultAddress)) {
-                candidateSourceDescription = "JavaSteam default websocket CM";
-                Log.i(TAG, "Using default websocket CM fallback: " + defaultAddress);
-                return ServerRecord.createWebSocketServer(defaultAddress);
+            InetSocketAddress endpoint = serverRecord.getEndpoint();
+            String host = sanitizeSingleLine(endpoint.getHostString());
+            int port = endpoint.getPort();
+            if (isBlank(host)) {
+                return candidate;
             }
 
-            candidateSourceDescription = "Fallback unavailable";
-            return null;
+            InetAddress resolvedAddress = endpoint.getAddress();
+            if (resolvedAddress != null) {
+                String literalAddress = sanitizeSingleLine(resolvedAddress.getHostAddress());
+                if (!isBlank(literalAddress)) {
+                    if (isIpv6Literal(literalAddress)) {
+                        String preferredAddress = !isIpLiteral(host)
+                            ? SteamCloudClient.selectPreferredAddress(InetAddress.getAllByName(host))
+                            : "";
+                        if (!isBlank(preferredAddress)) {
+                            return createWebSocketServerCandidate(
+                                formatHostPort(preferredAddress, port),
+                                candidate.candidateSourceDescription + " (pre-resolved " + host + " -> " + preferredAddress + ")"
+                            );
+                        }
+                        throw new IOException(
+                            "Skipping IPv6-only Phase 0 websocket CM endpoint because JavaSteam cannot parse IPv6 websocket literals on Android: "
+                                + formatHostPort(literalAddress, port)
+                        );
+                    }
+                    return createWebSocketServerCandidate(
+                        formatHostPort(literalAddress, port),
+                        candidate.candidateSourceDescription + " (pre-resolved " + host + " -> " + literalAddress + ")"
+                    );
+                }
+                return candidate;
+            }
+
+            if (isIpLiteral(host)) {
+                if (isIpv6Literal(host)) {
+                    throw new IOException(
+                        "Skipping IPv6 Phase 0 websocket CM endpoint because JavaSteam cannot parse IPv6 websocket literals on Android: "
+                            + formatHostPort(host, port)
+                    );
+                }
+                return candidate;
+            }
+
+            InetAddress[] addresses = InetAddress.getAllByName(host);
+            if (addresses == null || addresses.length == 0) {
+                throw new IOException("Failed to resolve Phase 0 websocket CM hostname: " + host);
+            }
+            String preferredAddress = SteamCloudClient.selectPreferredAddress(addresses);
+            if (isBlank(preferredAddress)) {
+                throw new IOException(
+                    "Resolved Phase 0 websocket CM hostname had no IPv4 address usable by JavaSteam websocket parsing: " + host
+                );
+            }
+
+            Log.i(TAG, "Pre-resolved Phase 0 websocket CM hostname " + host + " -> " + preferredAddress + '.');
+            return createWebSocketServerCandidate(
+                formatHostPort(preferredAddress, port),
+                candidate.candidateSourceDescription + " (pre-resolved " + host + " -> " + preferredAddress + ")"
+            );
+        }
+
+        private void addWebSocketAddressCandidate(
+            List<PreparedServerRecord> candidates,
+            String address,
+            String source
+        ) {
+            if (isBlank(address)) {
+                return;
+            }
+            try {
+                candidates.add(createWebSocketServerCandidate(address, source));
+            } catch (IOException error) {
+                Log.w(
+                    TAG,
+                    "Skipping Phase 0 websocket CM candidate source="
+                        + source
+                        + ": "
+                        + sanitizeSingleLine(error.getMessage()),
+                    error
+                );
+            }
+        }
+
+        private PreparedServerRecord createWebSocketServerCandidate(
+            String address,
+            String source
+        ) throws IOException {
+            String normalizedAddress = sanitizeSingleLine(address);
+            if (!SteamCloudClient.isWebSocketEndpointParserSafe(normalizedAddress)) {
+                throw new IOException("Phase 0 websocket CM endpoint is not safe for JavaSteam parser: " + normalizedAddress);
+            }
+            try {
+                return new PreparedServerRecord(
+                    ServerRecord.createWebSocketServer(normalizedAddress),
+                    source
+                );
+            } catch (RuntimeException error) {
+                throw new IOException("Invalid Phase 0 websocket CM endpoint: " + normalizedAddress, error);
+            }
         }
 
         private void persistResolvedWebSocketEndpoint(ServerRecord serverRecord) {
@@ -977,12 +1150,65 @@ public final class SteamCloudPhase0ManifestProbe {
             if (lastCmEndpointFile == null) {
                 return;
             }
-            String address = serverRecord.getEndpoint().getHostString() + ":" + serverRecord.getEndpoint().getPort();
+            String address = serverRecord.getEndpoint().getHostString();
+            if (serverRecord.getEndpoint().getAddress() != null
+                && !isBlank(serverRecord.getEndpoint().getAddress().getHostAddress())) {
+                address = serverRecord.getEndpoint().getAddress().getHostAddress();
+            }
+            if (isIpv6Literal(address)) {
+                Log.i(TAG, "Skipping Phase 0 websocket CM cache write for IPv6 literal endpoint: " + address);
+                return;
+            }
+            address = formatHostPort(address, serverRecord.getEndpoint().getPort());
             try {
                 writeTextFile(lastCmEndpointFile, address + "\n");
             } catch (IOException error) {
                 Log.w(TAG, "Failed to persist websocket CM endpoint cache.", error);
             }
+        }
+
+        private String buildServerRecordKey(ServerRecord serverRecord) {
+            if (serverRecord == null || serverRecord.getEndpoint() == null) {
+                return "<null>";
+            }
+            return sanitizeSingleLine(serverRecord.getEndpoint().getHostString()).toLowerCase(Locale.ROOT)
+                + ':'
+                + serverRecord.getEndpoint().getPort()
+                + '|'
+                + describeProtocolTypes(serverRecord.getProtocolTypes());
+        }
+
+        private String formatHostPort(String host, int port) {
+            String sanitizedHost = sanitizeSingleLine(host);
+            if (sanitizedHost.indexOf(':') >= 0 && !sanitizedHost.startsWith("[") && !sanitizedHost.endsWith("]")) {
+                sanitizedHost = '[' + sanitizedHost + ']';
+            }
+            return sanitizedHost + ':' + port;
+        }
+
+        private boolean isIpLiteral(String host) {
+            String value = sanitizeSingleLine(host);
+            if (value.isEmpty()) {
+                return false;
+            }
+            if (value.indexOf(':') >= 0) {
+                return true;
+            }
+            for (int index = 0; index < value.length(); index++) {
+                char c = value.charAt(index);
+                if ((c < '0' || c > '9') && c != '.') {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private boolean isIpv6Literal(String host) {
+            String value = sanitizeSingleLine(host);
+            if (value.startsWith("[") && value.endsWith("]") && value.length() > 2) {
+                value = value.substring(1, value.length() - 1);
+            }
+            return value.indexOf(':') >= 0;
         }
 
         private String runWebSocketPreflight(ServerRecord serverRecord) {
@@ -1079,6 +1305,16 @@ public final class SteamCloudPhase0ManifestProbe {
                 }
             }
             applyProxySystemProperties(null);
+        }
+
+        private static final class PreparedServerRecord {
+            private final ServerRecord serverRecord;
+            private final String candidateSourceDescription;
+
+            private PreparedServerRecord(ServerRecord serverRecord, String candidateSourceDescription) {
+                this.serverRecord = serverRecord;
+                this.candidateSourceDescription = candidateSourceDescription;
+            }
         }
     }
 

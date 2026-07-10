@@ -120,6 +120,8 @@
     <string name="compat_downfall_import_compat_desc">When enabled, importing downfall automatically patches merchant drawX to use a Settings.WIDTH/xScale-aware position, scales Hexaghost MyBody render offsets with Settings.scale, and reanchors the boss mechanic popup to the active boss so it renders to the right of the boss only while that boss is hovered. This targets wide-screen drift and boss-obscuring UI on mobile. If disabled, newly imported Downfall jars are left untouched.</string>
     <string name="compat_vupshion_mod_compat_title">VUPShionMod import compatibility patch</string>
     <string name="compat_vupshion_mod_compat_desc">When enabled, importing vupshionmod automatically patches VUPShionMod/ui/WebButton to remove the Steam workshop subscription gate that can break main-menu background initialization. If disabled, newly imported VUPShionMod jars are left untouched.</string>
+    <string name="compat_chaofanmod_compat_title">Chaofan Mod import compatibility patch</string>
+    <string name="compat_chaofanmod_compat_desc">When enabled, importing chaofanmod automatically removes the SteamworksHelper initialization and subscription in ChaofanMod.receivePostInitialize(), avoiding the Steamworks native callback crash on Android. If disabled, newly imported Chaofan Mod jars are left untouched.</string>
     <string name="compat_fragment_shader_precision_compat_title">Shader source compatibility patch</string>
     <string name="compat_fragment_shader_precision_compat_desc">When enabled, shaders launched through the patched desktop jar automatically strip desktop GLSL version headers and fragment shaders receive missing default precision declarations on GLES/ANGLE paths, reducing errors like \"shader version mismatch\" and \"no default precision defined for variable\".</string>
     <string name="compat_runtime_texture_compat_title">Runtime texture compatibility patch</string>
@@ -548,6 +550,7 @@ Do you still want to continue?</string>
     <string name="main_mod_patch_section_frieren_title">FrierenMod startup compatibility</string>
     <string name="main_mod_patch_section_downfall_title">Downfall layout compatibility</string>
     <string name="main_mod_patch_section_vupshion_title">VUPShionMod startup compatibility</string>
+    <string name="main_mod_patch_section_chaofanmod_title">Chaofan Mod Steamworks compatibility</string>
     <string name="main_mod_patch_section_jacketnoanoko_title">JacketNoAnoKo shader compatibility</string>
     <string name="main_mod_patch_section_ori_title">Ori render shader optimization</string>
     <string name="main_mod_priority_adjust">Adjust load priority</string>
@@ -610,6 +613,7 @@ Do you still want to continue?</string>
     <string name="mod_import_dialog_frieren_patched_title">FrierenMod auto-patched</string>
     <string name="mod_import_dialog_downfall_patched_title">Downfall auto-patched</string>
     <string name="mod_import_dialog_vupshion_patched_title">VUPShionMod</string>
+    <string name="mod_import_dialog_chaofanmod_patched_title">Chaofan Mod auto-patched</string>
     <string name="mod_import_dialog_jacketnoanoko_patched_title">JacketNoAnoKo auto-patched</string>
     <string name="mod_import_dialog_ori_patched_title">Ori auto-patched</string>
     <string name="mod_import_dialog_vupshion_special_message">VUPShionMod is extremely well made!\n\nThe developer also provided separate authorization for launcher support so this mod can run on the launcher.\n\nIf you are able, please subscribe to the mod on Steam Workshop or support the author on Afdian. Thank you very much!!</string>
@@ -700,6 +704,12 @@ Patch rule: merchant drawX now uses Settings.WIDTH/xScale-aware positioning, Hex
     <string name="mod_import_vupshion_message_item_detail">  Removed the Steam workshop subscription guard in VUPShionMod/ui/WebButton so the main-menu background can initialize without Steam ownership checks</string>
     <string name="mod_import_vupshion_message_rule">
 Patch rule: strip the SteamApps.isSubscribedApp(646570) gate from VUPShionMod/ui/WebButton while leaving the rest of the class behavior intact.</string>
+    <string name="mod_import_chaofanmod_message_none">No Chaofan Mod Steamworks startup fixes needed patching in this import.</string>
+    <string name="mod_import_chaofanmod_message_intro">The following mods had Chaofan Mod Steamworks startup logic auto-patched during import:
+</string>
+    <string name="mod_import_chaofanmod_message_item_detail">  Removed ChaofanMod.receivePostInitialize() SteamworksHelper initialization and BaseMod subscription so startup does not require Steamworks native callbacks</string>
+    <string name="mod_import_chaofanmod_message_rule">
+Patch rule: remove only the SteamworksHelper construction, static assignment, and BaseMod.subscribe(steamworksHelper) sequence; all other Chaofan Mod post-initialize registrations are preserved.</string>
     <string name="mod_import_jacketnoanoko_message_none">No JacketNoAnoKo shader compatibility fixes needed patching in this import.</string>
     <string name="mod_import_jacketnoanoko_message_intro">The following mods had JacketNoAnoKo shader compatibility logic auto-patched during import:
 </string>
@@ -829,6 +839,11 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="mod_import_patch_vupshion_applied">Patched VUPShionMod startup compatibility.</string>
     <string name="mod_import_patch_vupshion_noop">VUPShionMod startup compatibility did not need patching.</string>
     <string name="mod_import_patch_vupshion_detail">Any patch applied: %1$s</string>
+    <string name="mod_import_patch_chaofanmod_title">Chaofan Mod Steamworks compatibility</string>
+    <string name="mod_import_patch_chaofanmod_summary">Remove the Android-incompatible SteamworksHelper startup registration.</string>
+    <string name="mod_import_patch_chaofanmod_applied">Patched Chaofan Mod Steamworks startup compatibility.</string>
+    <string name="mod_import_patch_chaofanmod_noop">Chaofan Mod Steamworks startup compatibility did not need patching.</string>
+    <string name="mod_import_patch_chaofanmod_detail">SteamworksHelper startup sequence patched: %1$s</string>
     <string name="mod_import_patch_jacketnoanoko_title">JacketNoAnoKo shader compatibility</string>
     <string name="mod_import_patch_jacketnoanoko_summary">Rewrite desktop shader headers for GLES compatibility.</string>
     <string name="mod_import_patch_jacketnoanoko_applied">Patched JacketNoAnoKo shader compatibility.</string>
@@ -856,6 +871,18 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="sts_jar_external_import_notice_title">Imported desktop-1.0.jar</string>
     <string name="sts_jar_external_import_notice_message">The launcher detected that you opened the base game jar from another app and completed the normal desktop-1.0.jar import flow.\n\nSource file: %1$s</string>
     <string name="settings_reimport_sts_jar_title">Re-import desktop-1.0.jar</string>
+    <string name="sts_jar_integrity_warning_title">desktop-1.0.jar SHA-1 mismatch</string>
+    <string name="sts_jar_integrity_warning_message">The selected base-game jar does not match the launcher’s built-in desktop-1.0.jar reference. Continuing the import may leave the game unable to start.</string>
+    <string name="sts_jar_integrity_file_label">Selected file</string>
+    <string name="sts_jar_integrity_expected_sha1_label">Expected SHA-1</string>
+    <string name="sts_jar_integrity_actual_sha1_label">Actual SHA-1</string>
+    <string name="sts_jar_integrity_force_action">Force import anyway</string>
+    <string name="sts_jar_integrity_force_action_countdown">Force import anyway (%1$ds)</string>
+    <string name="sts_jar_integrity_cancel_action">Cancel import</string>
+    <string name="sts_jar_integrity_force_confirm_title">Continue importing this jar?</string>
+    <string name="sts_jar_integrity_force_confirm_message">This desktop-1.0.jar still does not match the built-in SHA-1 reference. If you force the import, the game will very likely fail to start.</string>
+    <string name="sts_jar_integrity_force_confirm_action">Continue import</string>
+    <string name="sts_jar_integrity_force_confirm_back_action">Go back</string>
     <string name="settings_reimport_sts_jar_desc">Do not touch this when the game has no problems</string>
     <string name="settings_player_name_title">Player name</string>
     <string name="settings_player_name_desc">Changes the Slay the Spire profile name. Takes effect after you enter the game again.</string>
@@ -1421,6 +1448,7 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="main_steam_cloud_bar_summary_conflict_missing">Conflict details are temporarily unavailable. Refresh once and try again.</string>
     <string name="main_steam_cloud_bar_summary_syncing">Steam Cloud sync is running.</string>
     <string name="main_steam_cloud_bar_summary_failed">Steam Cloud check failed. Retry to reconnect.</string>
+    <string name="main_steam_cloud_service_start_blocked">Android blocked Steam Cloud background sync startup. Return to the launcher and retry while it is in the foreground.</string>
     <string name="main_steam_cloud_action_recheck">Check again</string>
     <string name="main_steam_cloud_action_retry">Retry</string>
     <string name="main_steam_cloud_action_retry_auto">Retry (%1$ds)</string>
@@ -1943,10 +1971,20 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="quick_start_subtitle">On first launch, import the game files first</string>
     <string name="quick_start_welcome_title">Welcome</string>
     <string name="quick_start_welcome_subtitle">Choose how to install Slay the Spire</string>
+    <string name="quick_start_auto_import_title">Automatic import (recommended)</string>
+    <string name="quick_start_auto_import_subtitle">Try to automatically import game files.</string>
     <string name="quick_start_start_from_file_title">Start with game file</string>
     <string name="quick_start_start_from_file_subtitle">Install the game by importing a local desktop-1.0.jar first. Later, you can configure Steam sign-in in Settings to use advanced features.</string>
     <string name="quick_start_start_from_steam_title">Start with Steam login</string>
     <string name="quick_start_start_from_steam_subtitle">After sign-in, download game files from Steam and enable full cloud save and Workshop support. Steam credentials are saved locally and are not uploaded to a server.</string>
+    <string name="quick_start_auto_import_page_title">Automatically importing. Please wait</string>
+    <string name="quick_start_auto_import_page_subtitle">Trying to download game files from Steam without account authorization, then import them. You can return to choose another method.</string>
+    <string name="quick_start_auto_import_requires_login">Steam anonymous access cannot download this encrypted game depot. Use Steam sign-in import, or manually import a local desktop-1.0.jar.\n\nDetails: %1$s</string>
+    <string name="quick_start_auto_import_use_steam_login">Use Steam sign-in import</string>
+    <string name="quick_start_auto_import_choose_other_mode">Choose another import method</string>
+    <string name="quick_start_auto_import_exit_confirm_title">Leave automatic import?</string>
+    <string name="quick_start_auto_import_exit_confirm_message">The current automatic import will stop, and downloaded temporary files will be deleted.</string>
+    <string name="quick_start_auto_import_exit_confirm_action">Leave and clean up</string>
     <string name="quick_start_steam_download_connecting">Connecting to Steam...</string>
     <string name="quick_start_steam_download_resolving">Preparing Steam game file download...</string>
     <string name="quick_start_steam_downloading_with_total">Downloading desktop-1.0.jar from Steam</string>
@@ -1957,7 +1995,7 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="quick_start_steam_download_page_subtitle">Do not leave this page</string>
     <string name="quick_start_steam_acceleration_enabled_title">Steam acceleration link: On</string>
     <string name="quick_start_steam_acceleration_disabled_title">Steam acceleration link: Off</string>
-    <string name="quick_start_steam_acceleration_desc">Changing this during download pauses the current request, switches source, then resumes downloading.</string>
+    <string name="quick_start_steam_acceleration_desc">如果你不在中国地区，请关闭该加速链路！</string>
     <string name="quick_start_steam_acceleration_confirm_title">Switch Steam download link?</string>
     <string name="quick_start_steam_acceleration_confirm_enable_message">The current download will be paused, then resumed through the acceleration link.</string>
     <string name="quick_start_steam_acceleration_confirm_disable_message">The current download will be paused, then resumed through the official Steam source.</string>
@@ -2271,6 +2309,12 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="workshop_preview_gallery_counter">%1$d/%2$d</string>
     <string name="workshop_preview_gallery_image_content_description">%1$s promotional image %2$d of %3$d</string>
     <string name="workshop_preview_gallery_failed">Image unavailable</string>
+    <string name="workshop_preview_gallery_video_content_description">%1$s video %2$d of %3$d</string>
+    <string name="workshop_preview_gallery_video_failed">Video preview unavailable</string>
+    <string name="workshop_preview_gallery_video_unplayable">This video can\'t be played. Make sure your network can access YouTube.</string>
+    <string name="workshop_preview_gallery_play_video">Play video</string>
+    <string name="workshop_preview_gallery_video_source_youtube">YouTube</string>
+    <string name="workshop_preview_gallery_video_source_steam">Steam</string>
     <string name="workshop_open_detail_hint">Tap to view details</string>
     <string name="workshop_rating_score_format">%1$d/%2$d</string>
     <string name="workshop_rating_unrated_score">No rating</string>
@@ -2432,10 +2476,10 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="workshop_change_notes_loading">Loading changelog...</string>
     <string name="workshop_change_notes_empty">No changelog is available for this mod.</string>
     <string name="workshop_change_notes_load_failed">Failed to load changelog: %1$s</string>
-    <string name="workshop_translate_action">Translate title and description</string>
-    <string name="workshop_translate_show_original_action">Show original title and description</string>
+    <string name="workshop_translate_action">Translate title, description, and comments</string>
+    <string name="workshop_translate_show_original_action">Show original title, description, and comments</string>
     <string name="workshop_translate_loading">Translating title and description...</string>
-    <string name="workshop_translate_no_text">This mod has no title or description to translate.</string>
+    <string name="workshop_translate_no_text">This mod has no title, description, or comments to translate.</string>
     <string name="workshop_translate_failed">Translation failed. Please try again later.</string>
     <string name="workshop_translate_missing_app_id_api_key">Baidu AI text translation AppID and API Key are not configured. Configure them in Settings &gt; Market first.</string>
     <string name="workshop_translate_missing_app_id">Baidu AI text translation AppID is not configured.</string>
@@ -2446,6 +2490,8 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="workshop_action_previous_page">Previous page</string>
     <string name="workshop_action_next_page">Next page</string>
     <string name="workshop_comments_loading">Loading comments</string>
+    <string name="workshop_comments_translate_loading">Translating comments</string>
+    <string name="workshop_comments_translate_failed">Failed to translate comments: %1$s</string>
     <string name="workshop_detail_load_failed">Failed to load details</string>
     <string name="workshop_action_retry_detail">Retry loading</string>
     <string name="workshop_detail_loading">Loading mod details</string>

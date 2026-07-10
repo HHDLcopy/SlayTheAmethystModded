@@ -734,20 +734,19 @@ class LauncherActivity : AppCompatActivity() {
     }
 
     private fun importExternalStsJar(target: IncomingJarIntentTarget.StsJar) {
+        // Close the native loading layer first so Compose integrity dialogs stay visible.
+        dismissImportLoadingDialog()
         settingsViewModel.onJarPicked(this, target.uri, showSuccessToast = false) { success ->
             if (!success) {
-                dismissImportLoadingDialog()
                 finishPendingJarIntentFlow()
                 return@onJarPicked
             }
             if (launchedWithoutImportedStsJar) {
-                dismissImportLoadingDialog()
                 intent.putExtra(EXTRA_EXTERNAL_STS_IMPORT_NOTICE, true)
                 intent.putExtra(EXTRA_EXTERNAL_STS_IMPORT_FILE_NAME, target.displayName)
                 recreate()
                 return@onJarPicked
             }
-            dismissImportLoadingDialog()
             mainViewModel.refresh(this)
             showExternalStsImportNoticeDialog(target.displayName)
         }

@@ -14,11 +14,12 @@ import io.stamethyst.backend.mods.importing.ModImportPlanningOptions
 import io.stamethyst.backend.mods.importing.ModImportPlanningProgress
 import io.stamethyst.backend.mods.importing.ModImportPlanner
 import io.stamethyst.backend.mods.importing.ModImportPlan
+import io.stamethyst.backend.mods.importing.patches.texture.AtlasOfflineDownscalePatchModule
 import io.stamethyst.ui.preferences.LauncherPreferences
 import java.io.File
 
 internal object WorkshopAutoImporter {
-    private const val ATLAS_OFFLINE_DOWNSCALE_PATCH_ID = "texture.atlas_offline_downscale"
+    private val ATLAS_OFFLINE_DOWNSCALE_PATCH_ID = AtlasOfflineDownscalePatchModule.id
 
     fun importDownloadedJar(
         context: Context,

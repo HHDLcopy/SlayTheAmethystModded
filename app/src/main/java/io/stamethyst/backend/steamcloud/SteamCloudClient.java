@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Proxy;
@@ -1036,24 +1037,10 @@ public final class SteamCloudClient implements AutoCloseable {
         }
 
         String cachedAddress = readOptionalTextFile(lastCmEndpointFile);
-        if (!isBlank(cachedAddress)) {
-            candidates.add(
-                new PreparedServerRecord(
-                    ServerRecord.createWebSocketServer(cachedAddress),
-                    "Cached websocket CM fallback"
-                )
-            );
-        }
+        addWebSocketAddressCandidate(candidates, cachedAddress, "Cached websocket CM fallback");
 
         String defaultAddress = SmartCMServerList.getDefaultServerWebSocket();
-        if (!isBlank(defaultAddress)) {
-            candidates.add(
-                new PreparedServerRecord(
-                    ServerRecord.createWebSocketServer(defaultAddress),
-                    "JavaSteam default websocket CM"
-                )
-            );
-        }
+        addWebSocketAddressCandidate(candidates, defaultAddress, "JavaSteam default websocket CM");
 
         IOException lastResolutionError = null;
         List<String> attemptedKeys = new ArrayList<>();
@@ -1104,8 +1091,23 @@ public final class SteamCloudClient implements AutoCloseable {
         if (resolvedAddress != null) {
             String literalAddress = sanitizeSingleLine(resolvedAddress.getHostAddress());
             if (!isBlank(literalAddress)) {
-                return new PreparedServerRecord(
-                    ServerRecord.createWebSocketServer(formatHostPort(literalAddress, port)),
+                if (isIpv6Literal(literalAddress)) {
+                    String preferredAddress = !isIpLiteral(host)
+                        ? selectPreferredAddress(InetAddress.getAllByName(host))
+                        : "";
+                    if (!isBlank(preferredAddress)) {
+                        return createWebSocketServerCandidate(
+                            formatHostPort(preferredAddress, port),
+                            candidate.candidateSourceDescription + " (pre-resolved " + host + " -> " + preferredAddress + ")"
+                        );
+                    }
+                    throw new IOException(
+                        "Skipping IPv6-only Steam websocket CM endpoint because JavaSteam cannot parse IPv6 websocket literals on Android: "
+                            + formatHostPort(literalAddress, port)
+                    );
+                }
+                return createWebSocketServerCandidate(
+                    formatHostPort(literalAddress, port),
                     candidate.candidateSourceDescription + " (pre-resolved " + host + " -> " + literalAddress + ")"
                 );
             }
@@ -1113,6 +1115,12 @@ public final class SteamCloudClient implements AutoCloseable {
         }
 
         if (isIpLiteral(host)) {
+            if (isIpv6Literal(host)) {
+                throw new IOException(
+                    "Skipping IPv6 Steam websocket CM endpoint because JavaSteam cannot parse IPv6 websocket literals on Android: "
+                        + formatHostPort(host, port)
+                );
+            }
             return candidate;
         }
 
@@ -1122,14 +1130,64 @@ public final class SteamCloudClient implements AutoCloseable {
         }
         String preferredAddress = selectPreferredAddress(addresses);
         if (isBlank(preferredAddress)) {
-            throw new IOException("Resolved Steam websocket CM hostname had no usable address: " + host);
+            throw new IOException(
+                "Resolved Steam websocket CM hostname had no IPv4 address usable by JavaSteam websocket parsing: " + host
+            );
         }
 
         Log.i(TAG, "Pre-resolved Steam websocket CM hostname " + host + " -> " + preferredAddress + '.');
-        return new PreparedServerRecord(
-            ServerRecord.createWebSocketServer(formatHostPort(preferredAddress, port)),
+        return createWebSocketServerCandidate(
+            formatHostPort(preferredAddress, port),
             candidate.candidateSourceDescription + " (pre-resolved " + host + " -> " + preferredAddress + ")"
         );
+    }
+
+    private void addWebSocketAddressCandidate(
+        List<PreparedServerRecord> candidates,
+        String address,
+        String source
+    ) {
+        if (isBlank(address)) {
+            return;
+        }
+        try {
+            candidates.add(createWebSocketServerCandidate(address, source));
+        } catch (IOException error) {
+            recordDiagnosticEvent(
+                "cm_candidate_skipped source="
+                    + sanitizeSingleLine(source)
+                    + " reason="
+                    + sanitizeSingleLine(error.getMessage())
+            );
+            Log.w(
+                TAG,
+                "Skipping Steam websocket CM candidate source="
+                    + source
+                    + ": "
+                    + sanitizeSingleLine(error.getMessage()),
+                error
+            );
+        }
+    }
+
+    private static PreparedServerRecord createWebSocketServerCandidate(
+        String address,
+        String source
+    ) throws IOException {
+        String normalizedAddress = sanitizeSingleLine(address);
+        if (!isWebSocketEndpointParserSafe(normalizedAddress)) {
+            throw new IOException(
+                "Steam websocket CM endpoint is not safe for JavaSteam parser: " + normalizedAddress
+            );
+        }
+        try {
+            return new PreparedServerRecord(
+                ServerRecord.createWebSocketServer(normalizedAddress),
+                source
+            );
+        } catch (RuntimeException error) {
+            throw new IOException("Invalid Steam websocket CM endpoint: " + normalizedAddress, error);
+        }
     }
 
     private void persistResolvedWebSocketEndpoint(ServerRecord serverRecord) {
@@ -1143,6 +1201,12 @@ public final class SteamCloudClient implements AutoCloseable {
         String address = endpoint.getHostString();
         if (endpoint.getAddress() != null && !isBlank(endpoint.getAddress().getHostAddress())) {
             address = endpoint.getAddress().getHostAddress();
+        }
+        if (isIpv6Literal(address)) {
+            recordDiagnosticEvent(
+                "cm_connect endpoint_not_persisted reason=ipv6_literal endpoint=" + formatHostPort(address, endpoint.getPort())
+            );
+            return;
         }
         address = formatHostPort(address, endpoint.getPort());
         try {
@@ -1372,19 +1436,13 @@ public final class SteamCloudClient implements AutoCloseable {
             + describeProtocolTypes(serverRecord.getProtocolTypes());
     }
 
-    private static String selectPreferredAddress(InetAddress[] addresses) {
+    static String selectPreferredAddress(InetAddress[] addresses) {
         if (addresses == null || addresses.length == 0) {
             return "";
         }
         for (InetAddress address : addresses) {
             String literal = address == null ? "" : sanitizeSingleLine(address.getHostAddress());
-            if (!isBlank(literal) && literal.indexOf(':') < 0) {
-                return literal;
-            }
-        }
-        for (InetAddress address : addresses) {
-            String literal = address == null ? "" : sanitizeSingleLine(address.getHostAddress());
-            if (!isBlank(literal)) {
+            if (address instanceof Inet4Address && !isBlank(literal)) {
                 return literal;
             }
         }
@@ -1397,6 +1455,21 @@ public final class SteamCloudClient implements AutoCloseable {
             sanitizedHost = '[' + sanitizedHost + ']';
         }
         return sanitizedHost + ':' + port;
+    }
+
+    static boolean isWebSocketEndpointParserSafe(String endpoint) {
+        String host = extractHostFromEndpoint(endpoint);
+        return !isBlank(host) && !isIpv6Literal(host);
+    }
+
+    private static String extractHostFromEndpoint(String endpoint) {
+        String value = sanitizeSingleLine(endpoint);
+        if (value.startsWith("[")) {
+            int end = value.indexOf(']');
+            return end > 1 ? value.substring(1, end) : value;
+        }
+        int separator = value.lastIndexOf(':');
+        return separator > 0 ? value.substring(0, separator) : value;
     }
 
     private static boolean isIpLiteral(String host) {
@@ -1414,6 +1487,14 @@ public final class SteamCloudClient implements AutoCloseable {
             }
         }
         return true;
+    }
+
+    private static boolean isIpv6Literal(String host) {
+        String value = sanitizeSingleLine(host);
+        if (value.startsWith("[") && value.endsWith("]") && value.length() > 2) {
+            value = value.substring(1, value.length() - 1);
+        }
+        return value.indexOf(':') >= 0;
     }
 
     private boolean commitHttpUpload(

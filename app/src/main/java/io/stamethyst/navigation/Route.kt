@@ -8,6 +8,8 @@ sealed interface Route : NavKey {
     @Serializable
     data object QuickStart : Route
     @Serializable
+    data object QuickStartAutoImport : Route
+    @Serializable
     data object QuickStartSteamLogin : Route
     @Serializable
     data object QuickStartSteamGuard : Route

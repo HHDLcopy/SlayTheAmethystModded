@@ -14,6 +14,49 @@
 - 主 launcher 接入
 - Android app 运行时集成
 
+## 获取 Depot Key
+
+`depotKey` 任务会用用户自己的 Steam 登录态请求 depot decryption key。默认目标是 `appId=646570`、`depotId=877621`，也就是当前自动导入路径遇到加密文件名时需要的桌面 depot key。
+
+推荐直接运行 PowerShell 脚本，按提示输入账号密码；结果会回显到终端，不写本地 key 文件：
+
+```powershell
+.\tools\steam-cloud-spike\get-depot-key.ps1
+```
+
+如果需要 Steam Guard，可以直接按提示输入手机令牌动态码；也可以提前设置环境变量：
+
+```powershell
+$env:STEAM_USERNAME="your_steam_account"
+$env:STEAM_PASSWORD="your_password"
+$env:STEAM_2FA_CODE="12345"
+.\tools\steam-cloud-spike\get-depot-key.ps1
+```
+
+也可以通过脚本参数传入账号，密码仍会由脚本隐藏输入：
+
+```powershell
+.\tools\steam-cloud-spike\get-depot-key.ps1 -Username "your_steam_account"
+```
+
+如果你已有之前保存的 refresh token/env 文件，可以让脚本读取后直接回显 depot key：
+
+```powershell
+.\tools\steam-cloud-spike\get-depot-key.ps1 -EnvFile "agent-tmp\steam-depot-key-646570-877621.env"
+```
+
+如果本机需要代理连接 Steam CM：
+
+```powershell
+.\tools\steam-cloud-spike\get-depot-key.ps1 -ProxyUrl "http://127.0.0.1:7897"
+```
+
+底层 Gradle 任务仍然可直接调用；如果要直接写本地凭据文件，可以不用脚本，改用：
+
+```powershell
+.\gradlew.bat :tools:steam-cloud-spike:depotKey --args="--app-id 646570 --depot-id 877621"
+```
+
 ## 运行
 
 先看帮助：

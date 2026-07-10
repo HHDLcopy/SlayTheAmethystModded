@@ -11,17 +11,18 @@ import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.backend.mods.ModManifestNameRewriter
 import io.stamethyst.backend.mods.MtsLaunchManifestValidator
 import io.stamethyst.backend.mods.OptionalModStorageCoordinator
-import io.stamethyst.backend.mods.importing.patches.AtlasFilterPatchModule
-import io.stamethyst.backend.mods.importing.patches.AtlasOfflineDownscalePatchModule
-import io.stamethyst.backend.mods.importing.patches.DownfallImportPatchModule
-import io.stamethyst.backend.mods.importing.patches.DuplicateZipEntryPatchModule
-import io.stamethyst.backend.mods.importing.patches.FrierenImportPatchModule
 import io.stamethyst.backend.mods.importing.patches.ImportPatchModule
 import io.stamethyst.backend.mods.importing.patches.ImportPatchRegistry
-import io.stamethyst.backend.mods.importing.patches.JacketNoAnoKoImportPatchModule
-import io.stamethyst.backend.mods.importing.patches.ManifestRootPatchModule
-import io.stamethyst.backend.mods.importing.patches.OriImportPatchModule
-import io.stamethyst.backend.mods.importing.patches.VupShionImportPatchModule
+import io.stamethyst.backend.mods.importing.patches.mods.chaofanmod.ChaofanModImportPatchModule
+import io.stamethyst.backend.mods.importing.patches.mods.downfall.DownfallImportPatchModule
+import io.stamethyst.backend.mods.importing.patches.mods.frieren.FrierenImportPatchModule
+import io.stamethyst.backend.mods.importing.patches.mods.jacketnoanoko.JacketNoAnoKoImportPatchModule
+import io.stamethyst.backend.mods.importing.patches.mods.ori.OriImportPatchModule
+import io.stamethyst.backend.mods.importing.patches.mods.vupshion.VupShionImportPatchModule
+import io.stamethyst.backend.mods.importing.patches.structure.DuplicateZipEntryPatchModule
+import io.stamethyst.backend.mods.importing.patches.structure.ManifestRootPatchModule
+import io.stamethyst.backend.mods.importing.patches.texture.AtlasFilterPatchModule
+import io.stamethyst.backend.mods.importing.patches.texture.AtlasOfflineDownscalePatchModule
 import io.stamethyst.backend.workshop.WorkshopMetadataStore
 import io.stamethyst.ui.main.MainFolderAssignmentHandoffStore
 import io.stamethyst.ui.main.MainFolderStateStore
@@ -584,6 +585,7 @@ internal object ModImportExecutor {
         var patchedDownfallHexaghost = 0
         var patchedDownfallBossPanel = 0
         var patchedVupShion = false
+        var patchedChaofanMod = false
         var patchedJacketShaderEntries = 0
         var patchedJacketVersionDirectives = 0
         var patchedJacketPrecisionBlocks = 0
@@ -617,6 +619,7 @@ internal object ModImportExecutor {
                     patchedDownfallBossPanel += result.metrics["patchedBossMechanicPanelClassEntries"] ?: 0
                 }
                 VupShionImportPatchModule.id -> patchedVupShion = true
+                ChaofanModImportPatchModule.id -> patchedChaofanMod = true
                 JacketNoAnoKoImportPatchModule.id -> {
                     patchedJacketShaderEntries += result.metrics["patchedShaderEntries"] ?: 0
                     patchedJacketVersionDirectives += result.metrics["removedDesktopVersionDirectives"] ?: 0
@@ -657,6 +660,7 @@ internal object ModImportExecutor {
             patchedDownfallHexaghostBodyClassEntries = patchedDownfallHexaghost,
             patchedDownfallBossMechanicPanelClassEntries = patchedDownfallBossPanel,
             patchedVupShionWebButtonConstructor = patchedVupShion,
+            patchedChaofanModSteamworksHelperInitialization = patchedChaofanMod,
             patchedJacketNoAnoKoShaderEntries = patchedJacketShaderEntries,
             patchedJacketNoAnoKoDesktopVersionDirectives = patchedJacketVersionDirectives,
             patchedJacketNoAnoKoFragmentPrecisionBlocks = patchedJacketPrecisionBlocks,

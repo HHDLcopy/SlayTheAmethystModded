@@ -15,10 +15,10 @@ import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.backend.mods.ModManifestRootCompatPatcher
 import io.stamethyst.backend.mods.MtsLaunchManifestValidator
 import io.stamethyst.backend.mods.ReservedCoreModComponents
-import io.stamethyst.backend.mods.importing.patches.AtlasFilterPatchModule
-import io.stamethyst.backend.mods.importing.patches.DuplicateZipEntryPatchModule
 import io.stamethyst.backend.mods.importing.patches.ImportPatchRegistry
-import io.stamethyst.backend.mods.importing.patches.ManifestRootPatchModule
+import io.stamethyst.backend.mods.importing.patches.structure.DuplicateZipEntryPatchModule
+import io.stamethyst.backend.mods.importing.patches.structure.ManifestRootPatchModule
+import io.stamethyst.backend.mods.importing.patches.texture.AtlasFilterPatchModule
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.ui.main.MainFolderStateStore
 import io.stamethyst.ui.main.resolveAssignedFolderId

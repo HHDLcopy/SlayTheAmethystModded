@@ -16,6 +16,7 @@ internal data class ImportedModPatchInfo(
     val patchedDownfallHexaghostBodyClassEntries: Int = 0,
     val patchedDownfallBossMechanicPanelClassEntries: Int = 0,
     val patchedVupShionWebButtonConstructor: Boolean = false,
+    val patchedChaofanModSteamworksHelperInitialization: Boolean = false,
     val patchedJacketNoAnoKoShaderEntries: Int = 0,
     val patchedJacketNoAnoKoDesktopVersionDirectives: Int = 0,
     val patchedJacketNoAnoKoFragmentPrecisionBlocks: Int = 0,
@@ -37,6 +38,8 @@ internal data class ImportedModPatchInfo(
         get() = patchedDownfallClassEntries > 0
     val wasVupShionPatched: Boolean
         get() = patchedVupShionWebButtonConstructor
+    val wasChaofanModPatched: Boolean
+        get() = patchedChaofanModSteamworksHelperInitialization
     val wasJacketNoAnoKoPatched: Boolean
         get() = patchedJacketNoAnoKoShaderEntries > 0
     val wasOriRenderShaderPatched: Boolean
@@ -48,6 +51,7 @@ internal data class ImportedModPatchInfo(
             wasFrierenAntiPiratePatched ||
             wasDownfallPatched ||
             wasVupShionPatched ||
+            wasChaofanModPatched ||
             wasJacketNoAnoKoPatched ||
             wasOriRenderShaderPatched
 }

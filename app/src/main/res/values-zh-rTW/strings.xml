@@ -120,6 +120,8 @@
     <string name="compat_downfall_import_compat_desc">開啟後，匯入 downfall 時會自動修補商人的 drawX 站位，使其改為基於 Settings.WIDTH/xScale 計算，並把 Hexaghost MyBody 渲染裡的 270/256 偏移改為隨 Settings.scale 縮放，同時把 Boss 機制彈窗改為以當前 boss 為參照、只在懸停該 boss 時顯示在其右側，用於修復手機寬屏下的站位、材質偏移和擋住 Boss 的提示框。關閉後不會修補新匯入的 Downfall。</string>
     <string name="compat_vupshion_mod_compat_title">紫音模組相容</string>
     <string name="compat_vupshion_mod_compat_desc">開啟後，匯入 vupshionmod 時會自動修補 VUPShionMod/ui/WebButton，移除其中會攔住主選單背景初始化的 Steam 創意工坊訂閱校驗。關閉後不會修補新匯入的 VUPShionMod。</string>
+    <string name="compat_chaofanmod_compat_title">Chaofan Mod 匯入相容補丁</string>
+    <string name="compat_chaofanmod_compat_desc">開啟後，匯入 chaofanmod 時會自動移除 ChaofanMod.receivePostInitialize() 中的 SteamworksHelper 初始化和訂閱，避免 Android 上因 Steamworks native callback 缺失而啟動崩潰。關閉後不會修補新匯入的 Chaofan Mod。</string>
     <string name="compat_fragment_shader_precision_compat_title">Shader 原始碼相容補丁</string>
     <string name="compat_fragment_shader_precision_compat_desc">開啟後，透過已修補 desktop jar 執行的 shader 會自動移除桌面 GLSL 版本頭，併為缺少預設 precision 宣告的 fragment shader 補上 GLES/ANGLE 相容宣告，用於減少 “shader version mismatch” 和 “no default precision defined for variable” 這類編譯錯誤。</string>
     <string name="compat_runtime_texture_compat_title">執行時紋理相容補丁</string>
@@ -548,6 +550,7 @@
     <string name="main_mod_patch_section_frieren_title">FrierenMod 啟動相容修補</string>
     <string name="main_mod_patch_section_downfall_title">Downfall 佈局相容修補</string>
     <string name="main_mod_patch_section_vupshion_title">紫音模組啟動相容修補</string>
+    <string name="main_mod_patch_section_chaofanmod_title">Chaofan Mod Steamworks 啟動相容修補</string>
     <string name="main_mod_patch_section_jacketnoanoko_title">夾克子模組 shader 相容修補</string>
     <string name="main_mod_patch_section_ori_title">Ori 渲染 shader 優化</string>
     <string name="main_mod_priority_adjust">調整載入優先順序</string>
@@ -610,6 +613,7 @@
     <string name="mod_import_dialog_frieren_patched_title">FrierenMod 已自動修補</string>
     <string name="mod_import_dialog_downfall_patched_title">Downfall 已自動修補</string>
     <string name="mod_import_dialog_vupshion_patched_title">紫音模組</string>
+    <string name="mod_import_dialog_chaofanmod_patched_title">Chaofan Mod 已自動修補</string>
     <string name="mod_import_dialog_jacketnoanoko_patched_title">夾克子模組已自動修補</string>
     <string name="mod_import_dialog_ori_patched_title">Ori 已自動優化</string>
     <string name="mod_import_dialog_vupshion_special_message">紫音是一個製作非常精良的模組。\n\n開發者單獨提供了對啟動器的授權，讓該模組可以在啟動器上執行。\n\n請有能力的玩家在創意工坊對該模組進行訂閱或在愛發電支援作者，非常感謝！！</string>
@@ -700,6 +704,12 @@
     <string name="mod_import_vupshion_message_item_detail">  已移除 VUPShionMod/ui/WebButton 中會阻塞主選單背景初始化的 Steam 創意工坊訂閱校驗</string>
     <string name="mod_import_vupshion_message_rule">
 修補規則：刪除 VUPShionMod/ui/WebButton 裡的 SteamApps.isSubscribedApp(646570) 守衛，其餘類行為保持不變。</string>
+    <string name="mod_import_chaofanmod_message_none">本次匯入沒有發現需要修補的 Chaofan Mod Steamworks 啟動邏輯。</string>
+    <string name="mod_import_chaofanmod_message_intro">以下模組在匯入時已自動修補 Chaofan Mod Steamworks 啟動邏輯：
+</string>
+    <string name="mod_import_chaofanmod_message_item_detail">  已移除 ChaofanMod.receivePostInitialize() 中的 SteamworksHelper 初始化和 BaseMod 訂閱，啟動時不再依賴 Steamworks native callback</string>
+    <string name="mod_import_chaofanmod_message_rule">
+修補規則：只刪除 SteamworksHelper 構造、靜態欄位賦值和 BaseMod.subscribe(steamworksHelper) 這一段，其餘 Chaofan Mod 後初始化註冊邏輯保持不變。</string>
     <string name="mod_import_jacketnoanoko_message_none">本次匯入沒有發現需要修補的夾克子模組 shader 相容問題。</string>
     <string name="mod_import_jacketnoanoko_message_intro">以下模組在匯入時已自動修補夾克子模組 shader 相容邏輯：
 </string>
@@ -829,6 +839,11 @@
     <string name="mod_import_patch_vupshion_applied">已修補 VUPShionMod 啟動相容。</string>
     <string name="mod_import_patch_vupshion_noop">VUPShionMod 啟動相容無需修補。</string>
     <string name="mod_import_patch_vupshion_detail">有修補生效：%1$s</string>
+    <string name="mod_import_patch_chaofanmod_title">Chaofan Mod Steamworks 啟動相容</string>
+    <string name="mod_import_patch_chaofanmod_summary">移除 Android 不相容的 SteamworksHelper 啟動註冊。</string>
+    <string name="mod_import_patch_chaofanmod_applied">已修補 Chaofan Mod Steamworks 啟動相容。</string>
+    <string name="mod_import_patch_chaofanmod_noop">Chaofan Mod Steamworks 啟動相容無需修補。</string>
+    <string name="mod_import_patch_chaofanmod_detail">SteamworksHelper 啟動序列已修補：%1$s</string>
     <string name="mod_import_patch_jacketnoanoko_title">JacketNoAnoKo Shader 相容</string>
     <string name="mod_import_patch_jacketnoanoko_summary">為 GLES 相容性改寫桌面 shader 頭。</string>
     <string name="mod_import_patch_jacketnoanoko_applied">已修補 JacketNoAnoKo shader 相容。</string>
@@ -856,6 +871,18 @@
     <string name="sts_jar_external_import_notice_title">已匯入 desktop-1.0.jar</string>
     <string name="sts_jar_external_import_notice_message">檢測到你從其他應用開啟的是遊戲本體 jar，啟動器已按正式匯入流程完成匯入。\n\n原始檔：%1$s</string>
     <string name="settings_reimport_sts_jar_title">重新匯入 desktop-1.0.jar</string>
+    <string name="sts_jar_integrity_warning_title">desktop-1.0.jar SHA-1 不匹配</string>
+    <string name="sts_jar_integrity_warning_message">目前選取的基礎遊戲 jar 與啟動器內建的 desktop-1.0.jar 基準不一致。繼續匯入後，遊戲可能無法啟動。</string>
+    <string name="sts_jar_integrity_file_label">目前檔案</string>
+    <string name="sts_jar_integrity_expected_sha1_label">期望 SHA-1</string>
+    <string name="sts_jar_integrity_actual_sha1_label">實際 SHA-1</string>
+    <string name="sts_jar_integrity_force_action">仍要強制匯入</string>
+    <string name="sts_jar_integrity_force_action_countdown">仍要強制匯入（%1$d 秒）</string>
+    <string name="sts_jar_integrity_cancel_action">取消匯入</string>
+    <string name="sts_jar_integrity_force_confirm_title">確定繼續匯入？</string>
+    <string name="sts_jar_integrity_force_confirm_message">這個 desktop-1.0.jar 的 SHA-1 仍然與基準不一致。強制匯入後，遊戲大概率無法啟動。</string>
+    <string name="sts_jar_integrity_force_confirm_action">繼續匯入</string>
+    <string name="sts_jar_integrity_force_confirm_back_action">返回</string>
     <string name="settings_reimport_sts_jar_desc">遊戲沒出問題時，不需要動這一項</string>
     <string name="settings_player_name_title">玩家名字</string>
     <string name="settings_player_name_desc">修改 Slay the Spire 檔案名，重新進入遊戲後生效。</string>
@@ -1419,6 +1446,7 @@
     <string name="main_steam_cloud_bar_summary_conflict_missing">暫時拿不到衝突詳情，請先重新檢查一次。</string>
     <string name="main_steam_cloud_bar_summary_syncing">Steam Cloud 同步正在進行中。</string>
     <string name="main_steam_cloud_bar_summary_failed">Steam Cloud 檢查失敗，請重試連線。</string>
+    <string name="main_steam_cloud_service_start_blocked">Android 攔截了 Steam Cloud 背景同步啟動。請回到啟動器前台後重試。</string>
     <string name="main_steam_cloud_action_recheck">重新檢查</string>
     <string name="main_steam_cloud_action_retry">重試</string>
     <string name="main_steam_cloud_action_retry_auto">重試（%1$d 秒）</string>
@@ -1798,10 +1826,20 @@
     <string name="quick_start_subtitle">首次啟動需要先匯入遊戲本體</string>
     <string name="quick_start_welcome_title">歡迎</string>
     <string name="quick_start_welcome_subtitle">選擇安裝《殺戮尖塔》的方法</string>
+    <string name="quick_start_auto_import_title">自動匯入（推薦）</string>
+    <string name="quick_start_auto_import_subtitle">嘗試自動匯入遊戲檔案。</string>
     <string name="quick_start_start_from_file_title">透過遊戲本體檔案開始</string>
     <string name="quick_start_start_from_file_subtitle">先透過匯入本地 desktop-1.0.jar 安裝遊戲，後續可以在設定中配置登入 Steam 來使用高階功能</string>
     <string name="quick_start_start_from_steam_title">透過登入 Steam 開始</string>
     <string name="quick_start_start_from_steam_subtitle">登入後從 Steam 下載遊戲檔案，並提供雲存檔和創意工坊完整功能的支援，Steam 憑據本機儲存，不會上傳伺服器</string>
+    <string name="quick_start_auto_import_page_title">正在自動匯入，請稍候</string>
+    <string name="quick_start_auto_import_page_subtitle">正在嘗試從 Steam 無鑑權下載遊戲檔案並匯入。你也可以返回選擇其他匯入方式</string>
+    <string name="quick_start_auto_import_requires_login">Steam 無鑑權無法下載此加密遊戲 depot。請改用 Steam 登入匯入，或手動匯入本地 desktop-1.0.jar。\n\n詳細原因：%1$s</string>
+    <string name="quick_start_auto_import_use_steam_login">使用 Steam 登入匯入</string>
+    <string name="quick_start_auto_import_choose_other_mode">選擇其他匯入方式</string>
+    <string name="quick_start_auto_import_exit_confirm_title">退出自動匯入？</string>
+    <string name="quick_start_auto_import_exit_confirm_message">目前自動匯入會停止，已下載的暫存內容會被刪除。</string>
+    <string name="quick_start_auto_import_exit_confirm_action">退出並清理</string>
     <string name="quick_start_steam_download_connecting">正在連接 Steam…</string>
     <string name="quick_start_steam_download_resolving">正在準備 Steam 遊戲檔案下載…</string>
     <string name="quick_start_steam_downloading_with_total">正在從 Steam 下載 desktop-1.0.jar</string>
@@ -1812,7 +1850,7 @@
     <string name="quick_start_steam_download_page_subtitle">請勿退出該頁面</string>
     <string name="quick_start_steam_acceleration_enabled_title">Steam 加速鏈路：已開啟</string>
     <string name="quick_start_steam_acceleration_disabled_title">Steam 加速鏈路：已關閉</string>
-    <string name="quick_start_steam_acceleration_desc">下載過程中切換會先暫停目前請求，切換來源後繼續下載。</string>
+    <string name="quick_start_steam_acceleration_desc">如果你不在中国地区，请关闭该加速链路！</string>
     <string name="quick_start_steam_acceleration_confirm_title">切換 Steam 下載鏈路？</string>
     <string name="quick_start_steam_acceleration_confirm_enable_message">將先暫停目前下載，然後切換到加速鏈路繼續下載。</string>
     <string name="quick_start_steam_acceleration_confirm_disable_message">將先暫停目前下載，然後切換到 Steam 官方源繼續下載。</string>
@@ -2269,6 +2307,12 @@
     <string name="workshop_preview_gallery_counter">%1$d/%2$d</string>
     <string name="workshop_preview_gallery_image_content_description">%1$s 宣傳圖，第 %2$d 張，共 %3$d 張</string>
     <string name="workshop_preview_gallery_failed">圖片暫不可用</string>
+    <string name="workshop_preview_gallery_video_content_description">%1$s 影片，第 %2$d 個，共 %3$d 個</string>
+    <string name="workshop_preview_gallery_video_failed">影片預覽暫不可用</string>
+    <string name="workshop_preview_gallery_video_unplayable">無法播放該影片，請確認你的網路環境可以存取 YouTube</string>
+    <string name="workshop_preview_gallery_play_video">播放影片</string>
+    <string name="workshop_preview_gallery_video_source_youtube">YouTube</string>
+    <string name="workshop_preview_gallery_video_source_steam">Steam</string>
     <string name="workshop_open_detail_hint">點選檢視詳情</string>
     <string name="workshop_rating_score_format">%1$d/%2$d</string>
     <string name="workshop_rating_unrated_score">無評分</string>
@@ -2430,10 +2474,10 @@
     <string name="workshop_change_notes_loading">正在載入更新日誌…</string>
     <string name="workshop_change_notes_empty">暫無更新日誌。</string>
     <string name="workshop_change_notes_load_failed">載入更新日誌失敗：%1$s</string>
-    <string name="workshop_translate_action">翻譯標題和簡介</string>
-    <string name="workshop_translate_show_original_action">顯示原文標題和簡介</string>
+    <string name="workshop_translate_action">翻譯標題、簡介和評論</string>
+    <string name="workshop_translate_show_original_action">顯示原文標題、簡介和評論</string>
     <string name="workshop_translate_loading">正在翻譯標題和簡介…</string>
-    <string name="workshop_translate_no_text">目前沒有可翻譯的標題或簡介。</string>
+    <string name="workshop_translate_no_text">目前沒有可翻譯的標題、簡介或評論。</string>
     <string name="workshop_translate_failed">翻譯失敗，請稍後重試。</string>
     <string name="workshop_translate_missing_app_id_api_key">未配置百度大模型文字翻譯的 AppID 和 API Key。請先在設定 &gt; 市場中配置。</string>
     <string name="workshop_translate_missing_app_id">未配置百度大模型文字翻譯的 AppID。</string>
@@ -2444,6 +2488,8 @@
     <string name="workshop_action_previous_page">上一頁</string>
     <string name="workshop_action_next_page">下一頁</string>
     <string name="workshop_comments_loading">正在載入評論</string>
+    <string name="workshop_comments_translate_loading">正在翻譯評論</string>
+    <string name="workshop_comments_translate_failed">翻譯評論失敗：%1$s</string>
     <string name="workshop_detail_load_failed">詳情載入失敗</string>
     <string name="workshop_action_retry_detail">重試載入</string>
     <string name="workshop_detail_loading">正在載入模組詳情</string>

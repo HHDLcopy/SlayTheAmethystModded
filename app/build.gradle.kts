@@ -33,18 +33,36 @@ fun readReleaseSigningProperty(envName: String, gradlePropertyName: String): Str
 fun String?.toBuildConfigStringLiteral(): String =
     "\"" + (this ?: "").replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
+fun Iterable<String>.toBuildConfigStringArrayLiteral(): String =
+    joinToString(
+        prefix = "new String[]{",
+        postfix = "}"
+    ) { value ->
+        value.toBuildConfigStringLiteral()
+    }
+
 val releaseStoreFilePath = readReleaseSigningProperty("RELEASE_STORE_FILE", "release.storeFile")
 val releaseStorePassword = readReleaseSigningProperty("RELEASE_STORE_PASSWORD", "release.storePassword")
 val releaseKeyAlias = readReleaseSigningProperty("RELEASE_KEY_ALIAS", "release.keyAlias")
 val releaseKeyPassword = readReleaseSigningProperty("RELEASE_KEY_PASSWORD", "release.keyPassword")
 val defaultResourcePackDownloadUrl =
     "https://github.com/ModinMobileSTS/SlayTheAmethystResource/releases/download/v1.1/resources.zip"
+val defaultResourcePackDownloadFallbackUrls = listOf(
+    "https://gitee.com/apricityx/SlayTheAmethystResource/releases/download/v1.1/resources.zip"
+)
 val defaultCloudControlConfigUrl =
     "https://github.com/ModinMobileSTS/SlayTheAmethystResource/releases/download/Resource/cloud-control.json"
-val resourcePackDownloadUrl = readGradleProperty(
+val configuredResourcePackDownloadUrl = readGradleProperty(
     "resourcePack.downloadUrl",
     readLocalProperty("resourcePack.downloadUrl").ifEmpty { defaultResourcePackDownloadUrl }
 )
+val resourcePackDownloadUrls = buildList {
+    add(configuredResourcePackDownloadUrl)
+    addAll(defaultResourcePackDownloadFallbackUrls)
+}.map(String::trim)
+    .filter(String::isNotEmpty)
+    .distinct()
+val resourcePackDownloadUrl = resourcePackDownloadUrls.firstOrNull().orEmpty()
 val resourcePackVersion = readGradleProperty(
     "resourcePack.version",
     readLocalProperty("resourcePack.version").ifEmpty { "resources-v1.1" }
@@ -91,6 +109,7 @@ android {
         buildConfigField("String", "FEEDBACK_GITHUB_OWNER", "\"ModinMobileSTS\"")
         buildConfigField("String", "FEEDBACK_GITHUB_REPO", "\"SlayTheAmethystModded\"")
         buildConfigField("String", "RESOURCE_PACK_DOWNLOAD_URL", resourcePackDownloadUrl.toBuildConfigStringLiteral())
+        buildConfigField("String[]", "RESOURCE_PACK_DOWNLOAD_URLS", resourcePackDownloadUrls.toBuildConfigStringArrayLiteral())
         buildConfigField("String", "RESOURCE_PACK_VERSION", resourcePackVersion.toBuildConfigStringLiteral())
         buildConfigField("String", "CLOUD_CONTROL_CONFIG_URL", cloudControlConfigUrl.toBuildConfigStringLiteral())
 

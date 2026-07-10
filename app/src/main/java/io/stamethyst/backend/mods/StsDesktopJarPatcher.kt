@@ -301,7 +301,8 @@ internal object StsDesktopJarPatcher {
             entryName.startsWith(STS_PATCH_GL_FRAMEBUFFER_INNER_PREFIX) ||
             STS_PATCH_FRAMEBUFFER_OWNER_SUMMARY_CLASS == entryName ||
             STS_PATCH_FREETYPE_GLYPH_FALLBACK_COMPAT_CLASS == entryName ||
-            STS_PATCH_FRAGMENT_SHADER_COMPAT_CLASS == entryName ||
+            (STS_PATCH_FRAGMENT_SHADER_COMPAT_CLASS == entryName ||
+                entryName.startsWith(STS_PATCH_FRAGMENT_SHADER_COMPAT_INNER_PREFIX)) ||
             STS_PATCH_COLOR_TAB_BAR_CLASS == entryName ||
             entryName.startsWith(STS_PATCH_DESKTOP_CONTROLLER_MANAGER_PREFIX) ||
             entryName.startsWith(STS_PATCH_LWJGL_APPLICATION_PREFIX) ||

@@ -1633,9 +1633,11 @@ internal class MainModManagementController(
             val importPatchDetails = if (mod.required) {
                 null
             } else {
-                importedPatchInfoByPath[mod.jarFile.absolutePath]?.let { patchInfo ->
-                    SettingsFileService.buildModImportPatchDetailMessage(host, patchInfo)
-                }
+                ImportedModPatchRegistry.lookupKey(host, mod.jarFile.absolutePath)
+                    ?.let(importedPatchInfoByPath::get)
+                    ?.let { patchInfo ->
+                        SettingsFileService.buildModImportPatchDetailMessage(host, patchInfo)
+                    }
             }
             ModItemUi(
                 modId = mod.modId,

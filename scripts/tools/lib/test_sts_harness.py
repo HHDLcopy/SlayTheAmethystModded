@@ -126,7 +126,7 @@ class DecompilCommandTest(unittest.TestCase):
             mod_list_file="",
             enable_all_mods=False,
             disable_all_mods=False,
-            decompil_targets=["com.megacrit.cardcrawl.cards.AbstractCard"],
+            decompil_targets=[],
         )
         harness = Harness(options)
         harness.initialize = MagicMock()

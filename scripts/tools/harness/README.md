@@ -87,15 +87,15 @@ analyze: startup duration trend, cache hit rate
 
 ## 文件结构
 
-| 文件 | 职责 |
-|------|------|
-| `orchestrator.py` | HarnessOrchestrator 主类 |
-| `doctor.py` | 环境检查 |
-| `install.py` | 构建安装 |
-| `run.py` | 启动/停止 |
-| `smoke.py` | 冒烟测试 |
-| `single_room.py` | 单房间战斗 |
-| `startup_cache.py` | 启动缓存分析 |
+| 文件 | 职责 | 状态 |
+|------|------|------|
+| `orchestrator.py` | HarnessOrchestrator 主类 | 已实现 |
+| `doctor.py` | 环境检查 | 待迁移 |
+| `install.py` | 构建安装 | 待迁移 |
+| `run.py` | 启动/停止 | 待迁移 |
+| `smoke.py` | 冒烟测试 | 待迁移 |
+| `single_room.py` | 单房间战斗 | 待迁移 |
+| `startup_cache.py` | 启动缓存分析 | 待迁移 |
 
 ## 输出
 

@@ -89,13 +89,26 @@ analyze: startup duration trend, cache hit rate
 
 | 文件 | 职责 | 状态 |
 |------|------|------|
-| `orchestrator.py` | HarnessOrchestrator 主类 | 已实现 |
-| `doctor.py` | 环境检查 | 待迁移 |
-| `install.py` | 构建安装 | 待迁移 |
-| `run.py` | 启动/停止 | 待迁移 |
-| `smoke.py` | 冒烟测试 | 待迁移 |
-| `single_room.py` | 单房间战斗 | 待迁移 |
-| `startup_cache.py` | 启动缓存分析 | 待迁移 |
+| `_context.py` | HarnessContext dataclass + set_result_success | 已完成 |
+| `_runner.py` | run_native, CommandResult, adb, adb_shell_script, gradle, build_adb_args | 已完成 |
+| `_device.py` | resolve_device_sts_root, read_remote_sts_text, remote_sts_root_script, remote_sts_path_state, parse_remote_path_state_output, clear_runtime_signals, harness_logcat_dump, start/stop_logcat_capture, logcat lifecycle | 已完成 |
+| `_status.py` | harness_status, parse_boot_bridge_events, find_crash_marker, find_single_room_result, find_harness_logcat_crash, last_non_blank_line, extract_startup_cache_log_evidence, process_pid_text, package_version_info, desktop_jar_patch_snapshot, wait_harness_status, update_status_harness_logcat | 已完成 |
+| `orchestrator.py` | HarnessOrchestrator 主类 (独立，不影响迁移) | 已有 |
+| `doctor.py` | doctor 命令 | 已完成 |
+| `install.py` | install 命令 | 已完成 |
+| `run.py` | start + stop 命令 | 已完成 |
+| `logs.py` | logs 命令 | 已完成 |
+| `screenshot.py` | screenshot 命令 | 已完成 |
+| `status.py` | status 命令 | 已完成 |
+| `mods.py` | mods + set-mods 命令 | 已完成 |
+| `decompil.py` | decompil 命令 | 已完成 |
+| `agent.py` | agent-attach/detach/list/status 命令 | 已完成 |
+| `play.py` | play 命令 | 已完成 |
+| `hotreload.py` | hotreload 命令 | 已完成 |
+| `perf.py` | perf 命令 | 已完成 |
+| `smoke.py` | smoke 命令 | 已完成 |
+| `single_room.py` | single-room spec 构建 + 设备推送 | 已完成 |
+| `startup_cache.py` | startup-cache-profile 命令 | 已完成 |
 
 ## 输出
 
@@ -150,8 +163,37 @@ logs/             — logcat 日志
 
 ## 迁移状态
 
-当前 `scripts/tools/lib/sts_harness.py` 中的功能按命令粒度逐步迁移到此模块。
-迁移完成前，`sts_harness.py` 保持向后兼容。
+迁移已完成：`Harness.run_command()` 已将全部 21 个命令分发到 `scripts/tools/harness/` 下的独立模块中。
+`scripts/tools/lib/sts_harness.py` 中的旧方法保留作为向后兼容，后续逐步移除。
+
+### 架构
+
+```
+Harness.run_command()
+  ├── [doctor]            → harness/doctor.run_doctor(ctx)
+  ├── [install]           → harness/install.run_install(ctx)
+  ├── [start]             → harness/run.run_start(ctx)
+  ├── [stop]              → harness/run.run_stop(ctx)
+  ├── [logs]              → harness/logs.run_logs(ctx, out_dir)
+  ├── [screenshot]        → harness/screenshot.run_screenshot(ctx, out_dir)
+  ├── [status]            → harness/status.run_status(ctx)
+  ├── [mods]              → harness/mods.run_mods(ctx)
+  ├── [set-mods]          → harness/mods.run_set_mods(ctx)
+  ├── [smoke]             → harness/smoke.run_smoke(ctx, out_dir)
+  ├── [decompil]          → harness/decompil.run_decompil(ctx, out_dir)
+  ├── [agent-attach]      → harness/agent.run_agent_attach(ctx, out_dir)
+  ├── [agent-detach]      → harness/agent.run_agent_detach(ctx, out_dir)
+  ├── [agent-list]        → harness/agent.run_agent_list(ctx, out_dir)
+  ├── [agent-status]      → harness/agent.run_agent_status(ctx, out_dir)
+  ├── [play]              → harness/play.run_play(ctx, out_dir)
+  ├── [hotreload]         → harness/hotreload.run_hotreload(ctx, out_dir)
+  ├── [perf]              → harness/perf.run_perf(ctx, out_dir)
+  ├── [single-room]       → harness/smoke.run_smoke(ctx, out_dir) [autoplay_mode=single_room]
+  └── [startup-cache-profile] → harness/startup_cache.run_startup_cache_profile(ctx, out_dir)
+```
+
+每个命令函数签名为 `(ctx: HarnessContext, ...) -> None` 或返回 `int`。
+`HarnessContext` 封装全部可变状态，通过共享引用与 `Harness` 互通。
 
 ## 错误处理
 

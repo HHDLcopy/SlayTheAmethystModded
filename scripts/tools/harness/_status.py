@@ -1,4 +1,5 @@
 import re
+from pathlib import Path
 from typing import Any
 
 from scripts.tools.lib.sts_harness import (
@@ -314,3 +315,78 @@ def harness_status(
         },
         "harnessLogcat": harness_logcat,
     }
+
+
+def update_status_harness_logcat(ctx: HarnessContext, status: dict[str, Any] | None, logcat_path: Path | str) -> None:
+    import time as _time
+    from scripts.tools.lib.sts_harness import read_local_text_tail
+    if status is None or not str(logcat_path).strip():
+        return
+    previous_crash = None
+    if status.get("harnessLogcat") is not None:
+        previous_crash = status["harnessLogcat"].get("crash")
+    logcat_text = read_local_text_tail(logcat_path, max_bytes=262144)
+    crash = find_harness_logcat_crash(logcat_text, ctx.application_id or "")
+    if crash is None and previous_crash is not None:
+        crash = previous_crash
+    status["harnessLogcat"] = {
+        "artifact": str(logcat_path),
+        "lastNonBlankLine": last_non_blank_line(logcat_text),
+        "crash": crash,
+    }
+    if crash is not None and status.get("observedState") not in ("READY", "FAIL", "CRASH_MARKER", "LOGCAT_CRASH"):
+        status["observedState"] = "LOGCAT_CRASH"
+        status["runtimeSignalState"] = "LOGCAT_CRASH"
+    elif crash is not None and status.get("runtimeSignalState") is None:
+        status["runtimeSignalState"] = "LOGCAT_CRASH"
+
+
+def wait_harness_status(
+    ctx: HarnessContext,
+    logcat_capture: Any = None,
+    *,
+    timeout_seconds: int = 300,
+    poll_interval_seconds: int = 2,
+    autoplay_mode: str = "normal",
+) -> dict[str, Any]:
+    import time as _time
+    from scripts.tools.lib.sts_harness import read_local_text_tail
+    safe_timeout = max(1, timeout_seconds)
+    safe_poll = max(0.25, poll_interval_seconds)
+    deadline = _time.monotonic() + safe_timeout
+    latest_status = None
+    saw_game_process = False
+    game_exit_first_seen = None
+    while True:
+        logcat_text = None
+        logcat_path = ""
+        if logcat_capture is not None:
+            logcat_path = str(logcat_capture.log_path)
+            logcat_text = read_local_text_tail(logcat_capture.log_path, max_bytes=262144)
+        latest_status = harness_status(ctx, logcat_text, logcat_path)
+        terminal_states = (
+            ("SINGLE_ROOM_COMPLETE", "FAIL", "CRASH_MARKER")
+            if autoplay_mode == "single_room"
+            else ("READY", "FAIL", "CRASH_MARKER")
+        )
+        if latest_status["observedState"] in terminal_states:
+            return latest_status
+        if latest_status.get("harnessLogcat") is not None and latest_status["harnessLogcat"].get("crash") is not None:
+            latest_status["observedState"] = "LOGCAT_CRASH"
+            latest_status["runtimeSignalState"] = "LOGCAT_CRASH"
+            return latest_status
+        if latest_status["processes"]["game"].strip():
+            saw_game_process = True
+            game_exit_first_seen = None
+        elif saw_game_process:
+            now = _time.monotonic()
+            if game_exit_first_seen is None:
+                game_exit_first_seen = now
+            elif now - game_exit_first_seen >= safe_poll:
+                latest_status["observedState"] = "PROCESS_EXITED"
+                if latest_status.get("runtimeSignalState") is None:
+                    latest_status["runtimeSignalState"] = "PROCESS_EXITED"
+                return latest_status
+        if _time.monotonic() >= deadline:
+            return latest_status
+        _time.sleep(safe_poll)

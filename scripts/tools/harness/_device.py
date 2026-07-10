@@ -1,13 +1,20 @@
 from typing import Any
 import re
+import subprocess
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 from scripts.tools.lib.sts_harness import (
     file_timestamp,
+    format_command_for_log,
+    limit_text,
     quote_android_shell,
+    read_local_text_tail,
+    utc_timestamp,
 )
 from scripts.tools.harness._context import HarnessContext
-from scripts.tools.harness._runner import CommandResult, adb, adb_shell_script
+from scripts.tools.harness._runner import CommandResult, build_adb_args, adb, adb_shell_script
 
 
 def resolve_device_sts_root(ctx: HarnessContext) -> dict[str, Any]:
@@ -197,3 +204,82 @@ def harness_logcat_dump(ctx: HarnessContext, output_directory: Path, since_times
     log_path.write_text(result.output, encoding="utf-8", errors="replace")
     ctx.result["artifacts"]["harnessLogcatDump"] = str(log_path)
     return log_path
+
+
+@dataclass
+class LogcatCapture:
+    process: subprocess.Popen
+    stdout_stream: Any
+    stderr_stream: Any
+    log_path: Path
+    stderr_path: Path
+    started_at: datetime
+    command: str
+
+
+def start_logcat_capture(ctx: HarnessContext, output_directory: Path, since_timestamp: str = "") -> LogcatCapture:
+    if not ctx.adb_path:
+        raise RuntimeError("adb is not initialized.")
+    output_directory.mkdir(parents=True, exist_ok=True)
+    timestamp = file_timestamp()
+    log_path = output_directory / f"harness-logcat-{timestamp}.txt"
+    stderr_path = output_directory / f"harness-logcat-{timestamp}.stderr.txt"
+    logcat_args = ["logcat", "-v", "threadtime", "-b", "main", "-b", "system", "-b", "crash"]
+    logcat_args.extend(["-T", since_timestamp if since_timestamp.strip() else "1"])
+    adb_args = build_adb_args(ctx, logcat_args)
+    stdout_stream = log_path.open("wb")
+    stderr_stream = stderr_path.open("wb")
+    try:
+        process = subprocess.Popen(
+            [ctx.adb_path, *adb_args],
+            cwd=str(ctx.repo_root),
+            stdout=stdout_stream,
+            stderr=stderr_stream,
+        )
+    except Exception:
+        stdout_stream.close()
+        stderr_stream.close()
+        raise
+    ctx.result.setdefault("artifacts", {})["harnessLogcat"] = str(log_path)
+    ctx.result.setdefault("artifacts", {})["harnessLogcatStderr"] = str(stderr_path)
+    return LogcatCapture(
+        process=process,
+        stdout_stream=stdout_stream,
+        stderr_stream=stderr_stream,
+        log_path=log_path,
+        stderr_path=stderr_path,
+        started_at=datetime.now(timezone.utc),
+        command=format_command_for_log(ctx.adb_path, adb_args),
+    )
+
+
+def stop_logcat_capture(ctx: HarnessContext, capture: Any | None) -> None:
+    if capture is None:
+        return
+    ended = datetime.now(timezone.utc)
+    stopped_by_harness = False
+    exit_code: int | None = None
+    try:
+        if capture.process.poll() is None:
+            stopped_by_harness = True
+            capture.process.kill()
+        try:
+            capture.process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            pass
+        if capture.process.poll() is not None:
+            exit_code = capture.process.returncode
+    finally:
+        capture.stdout_stream.close()
+        capture.stderr_stream.close()
+    stderr_tail = read_local_text_tail(capture.stderr_path, max_bytes=4000)
+    ctx.operations.append({
+        "command": capture.command,
+        "exitCode": exit_code,
+        "startedAt": utc_timestamp(capture.started_at),
+        "endedAt": utc_timestamp(ended),
+        "durationMs": int((ended - capture.started_at).total_seconds() * 1000),
+        "timedOut": False,
+        "outputTail": limit_text(stderr_tail),
+        "stopped_by_harness": stopped_by_harness,
+    })

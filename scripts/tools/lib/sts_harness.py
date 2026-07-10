@@ -79,7 +79,7 @@ def utc_timestamp(value: datetime | None = None) -> str:
 
 
 def file_timestamp() -> str:
-    return datetime.now().strftime("%Y%m%d-%H%M%S")
+    return datetime.now().strftime("%Y%m%d-%H%M%S-%f")
 
 
 def limit_text(text: str | None, max_length: int = 6000) -> str:

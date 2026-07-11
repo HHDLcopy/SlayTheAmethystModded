@@ -99,6 +99,7 @@ public class LwjglApplication implements Application {
 	private static final String FRAME_PROFILER_SLOW_MS_PROP = "amethyst.gdx.frame_profiler.slow_ms";
 	private static final String FRAME_PROFILER_SUMMARY_FRAMES_PROP = "amethyst.gdx.frame_profiler.summary_frames";
 	private static final String FRAME_PROFILER_STACK_PROP = "amethyst.gdx.frame_profiler.stack";
+	private static boolean audioCommandBridgeUnavailable;
 	private static final boolean FRAME_PROFILER_ENABLED = readBooleanSystemProperty(FRAME_PROFILER_ENABLED_PROP, false);
 	private static final int FRAME_PROFILER_SLOW_MS =
 		readIntSystemProperty(FRAME_PROFILER_SLOW_MS_PROP, 33, 1, 10000);
@@ -266,15 +267,6 @@ public class LwjglApplication implements Application {
 
 		if (config.title == null) config.title = listener.getClass().getSimpleName();
 		this.graphics = graphics;
-		if (!LwjglApplicationConfiguration.disableAudio) {
-			try {
-				audio = new OpenALAudio(config.audioDeviceSimultaneousSources, config.audioDeviceBufferCount,
-					config.audioDeviceBufferSize);
-			} catch (Throwable t) {
-				log("LwjglApplication", "Couldn't initialize audio, disabling audio", t);
-				LwjglApplicationConfiguration.disableAudio = true;
-			}
-		}
 		files = new LwjglFiles();
 		input = new LwjglInput();
 		net = new LwjglNet();
@@ -289,6 +281,23 @@ public class LwjglApplication implements Application {
 		Gdx.input = input;
 		Gdx.net = net;
 		initialize();
+	}
+
+	private void initializeAudioOnMainLoop () {
+		if (LwjglApplicationConfiguration.disableAudio) {
+			Gdx.audio = null;
+			return;
+		}
+		try {
+			audio = new OpenALAudio(graphics.config.audioDeviceSimultaneousSources,
+				graphics.config.audioDeviceBufferCount, graphics.config.audioDeviceBufferSize);
+			Gdx.audio = audio;
+		} catch (Throwable t) {
+			audio = null;
+			Gdx.audio = null;
+			log("LwjglApplication", "Couldn't initialize audio, disabling audio", t);
+			LwjglApplicationConfiguration.disableAudio = true;
+		}
 	}
 
 	private static void installNoContextDiagnostics () {
@@ -1986,6 +1995,8 @@ public class LwjglApplication implements Application {
 		} catch (LWJGLException e) {
 			throw new GdxRuntimeException(e);
 		}
+		initializeAudioOnMainLoop();
+		if (audio != null) processQueuedAudioCommands();
 		if (HOT_LOOP_NOOP_TRIM_ENABLED) {
 			System.out.println("[gdx-patch] Hot-loop no-op trim enabled");
 		}
@@ -2099,7 +2110,10 @@ public class LwjglApplication implements Application {
 			input.update();
 			shouldRender |= graphics.shouldRender();
 			input.processEvents();
-			if (audio != null) audio.update();
+			if (audio != null) {
+				processQueuedAudioCommands();
+				audio.update();
+			}
 
 			if (!runtimeForeground) {
 				shouldRender = false;
@@ -2293,6 +2307,23 @@ public class LwjglApplication implements Application {
 		}
 		return readBooleanSystemProperty(GPU_RESOURCE_DIAG_ENABLED_PROP, false)
 			|| readBooleanSystemProperty(GPU_RESOURCE_SUMMARY_ENABLED_PROP, false);
+	}
+
+	private static void processQueuedAudioCommands () {
+		if (audioCommandBridgeUnavailable) return;
+		try {
+			if (!CallbackBridge.nativeHasQueuedAudioCommands()) return;
+			// This loop owns OpenAL's context; releasing it breaks synchronous music playback.
+			CallbackBridge.nativeProcessQueuedAudioCommands();
+		} catch (Throwable error) {
+			markAudioCommandBridgeUnavailable(error);
+		}
+	}
+
+	private static void markAudioCommandBridgeUnavailable (Throwable error) {
+		if (audioCommandBridgeUnavailable) return;
+		audioCommandBridgeUnavailable = true;
+		System.out.println("[amethyst-audio-route] event=audio_command_bridge_unavailable error=" + error);
 	}
 
 	private static String consumeSpriteBatchFrameDiagnostics () {

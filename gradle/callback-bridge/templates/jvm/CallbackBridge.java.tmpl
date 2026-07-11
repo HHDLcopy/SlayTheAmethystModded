@@ -8,6 +8,15 @@ __CALLBACK_BRIDGE_CONSTANTS__
 
     public static boolean sGamepadDirectEnabled;
 
+    static {
+        try {
+            // The game runs in a separate JVM, so it needs its own native-library association.
+            System.loadLibrary("pojavexec");
+        } catch (Throwable ignored) {
+            // Keep game startup viable when an older runtime does not provide the bridge.
+        }
+    }
+
     public static void enableGamepadDirectInput() {
         if (sGamepadDirectEnabled) {
             return;

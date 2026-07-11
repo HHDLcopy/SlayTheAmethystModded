@@ -19,6 +19,7 @@
 #include <string.h>
 #include <stdatomic.h>
 #include <math.h>
+#include <pthread.h>
 
 #define TAG __FILE_NAME__
 #include "utils.h"
@@ -45,6 +46,10 @@ do {                                                                       \
 #define AL_GAIN 0x100A
 #define MIN_VALID_SCREEN_SIZE 1
 #define MAX_VALID_SCREEN_SIZE 32768
+#define AUDIO_ROUTE_LOG_PREFIX "[amethyst-audio-route-native]"
+#define AUDIO_COMMAND_QUEUE_SIZE 64
+#define AUDIO_COMMAND_SET_MUTED 1
+#define AUDIO_COMMAND_RECOVER_OUTPUT 2
 
 static bool isValidScreenSize(int width, int height) {
     return width >= MIN_VALID_SCREEN_SIZE &&
@@ -62,6 +67,12 @@ typedef void (*POJAV_alcProcessContext_fn)(void* context);
 typedef void (*POJAV_alListenerf_fn)(int param, float value);
 typedef void (*POJAV_alGetListenerf_fn)(int param, float* value);
 
+typedef struct {
+    int type;
+    bool muted;
+    int recoveryGeneration;
+} PojavAudioCommand;
+
 static POJAV_alcGetCurrentContext_fn pojav_alcGetCurrentContext = NULL;
 static POJAV_alcGetContextsDevice_fn pojav_alcGetContextsDevice = NULL;
 static POJAV_alcResetDeviceSOFT_fn pojav_alcResetDeviceSOFT = NULL;
@@ -72,10 +83,25 @@ static POJAV_alListenerf_fn pojav_alListenerf = NULL;
 static POJAV_alGetListenerf_fn pojav_alGetListenerf = NULL;
 static void* pojav_openal_handle = NULL;
 static bool pojav_openal_resolved = false;
+static bool pojav_openal_resolution_attempted = false;
 static bool pojav_openal_no_context_logged = false;
+static bool pojav_openal_symbols_unavailable_logged = false;
+static bool pojav_openal_reset_failed_logged = false;
 static bool pojav_audio_force_muted = false;
 static float pojav_saved_listener_gain = 1.0f;
 static bool pojav_saved_listener_gain_valid = false;
+static pthread_mutex_t pojav_audio_command_lock = PTHREAD_MUTEX_INITIALIZER;
+static PojavAudioCommand pojav_audio_command_queue[AUDIO_COMMAND_QUEUE_SIZE];
+static int pojav_audio_command_head = 0;
+static int pojav_audio_command_tail = 0;
+static int pojav_audio_command_count = 0;
+static atomic_bool pojav_audio_command_pending = false;
+static bool pojav_audio_command_context_unavailable_logged = false;
+static bool pojav_audio_command_queue_full_logged = false;
+static atomic_int pojav_audio_recovery_requested_generation = 0;
+static atomic_int pojav_audio_recovery_completed_generation = 0;
+static atomic_int pojav_audio_recovery_reported_generation = 0;
+static atomic_bool pojav_audio_recovery_last_result = false;
 
 static void resolveOpenalSymbolsFromHandle(void* handle) {
     if (handle == NULL) {
@@ -111,6 +137,10 @@ static bool resolveOpenalSymbols(void) {
     if (pojav_openal_resolved) {
         return true;
     }
+    if (pojav_openal_resolution_attempted) {
+        return false;
+    }
+    pojav_openal_resolution_attempted = true;
 
     resolveOpenalSymbolsFromHandle(RTLD_DEFAULT);
 
@@ -129,7 +159,11 @@ static bool resolveOpenalSymbols(void) {
     }
 
     if (pojav_alcGetCurrentContext == NULL || pojav_alListenerf == NULL) {
-        ;
+        if (!pojav_openal_symbols_unavailable_logged) {
+            printf("%s event=openal_symbols_unavailable\n", AUDIO_ROUTE_LOG_PREFIX);
+            fflush(stdout);
+            pojav_openal_symbols_unavailable_logged = true;
+        }
         return false;
     }
 
@@ -137,7 +171,252 @@ static bool resolveOpenalSymbols(void) {
     return true;
 }
 
+static bool enqueueAudioCommand(PojavAudioCommand command) {
+    bool queued = false;
+    pthread_mutex_lock(&pojav_audio_command_lock);
+    if (pojav_audio_command_count < AUDIO_COMMAND_QUEUE_SIZE) {
+        pojav_audio_command_queue[pojav_audio_command_tail] = command;
+        pojav_audio_command_tail = (pojav_audio_command_tail + 1) % AUDIO_COMMAND_QUEUE_SIZE;
+        pojav_audio_command_count++;
+        atomic_store_explicit(&pojav_audio_command_pending, true, memory_order_release);
+        queued = true;
+    }
+    pthread_mutex_unlock(&pojav_audio_command_lock);
+    return queued;
+}
+
+static bool dequeueAudioCommand(PojavAudioCommand* command) {
+    bool hasCommand = false;
+    pthread_mutex_lock(&pojav_audio_command_lock);
+    if (pojav_audio_command_count > 0) {
+        *command = pojav_audio_command_queue[pojav_audio_command_head];
+        pojav_audio_command_head = (pojav_audio_command_head + 1) % AUDIO_COMMAND_QUEUE_SIZE;
+        pojav_audio_command_count--;
+        if (pojav_audio_command_count == 0) {
+            atomic_store_explicit(&pojav_audio_command_pending, false, memory_order_release);
+        }
+        hasCommand = true;
+    }
+    pthread_mutex_unlock(&pojav_audio_command_lock);
+    return hasCommand;
+}
+
+static void completeAudioRecoveryCommand(int generation, bool result) {
+    int completedGeneration = atomic_load_explicit(
+            &pojav_audio_recovery_completed_generation,
+            memory_order_acquire
+    );
+    if (generation >= completedGeneration) {
+        atomic_store_explicit(&pojav_audio_recovery_last_result, result, memory_order_release);
+        atomic_store_explicit(
+                &pojav_audio_recovery_completed_generation,
+                generation,
+                memory_order_release
+        );
+    }
+}
+
+static bool queueAudioRecoveryCommand(void) {
+    int generation = atomic_fetch_add_explicit(
+            &pojav_audio_recovery_requested_generation,
+            1,
+            memory_order_acq_rel
+    ) + 1;
+    PojavAudioCommand command = {
+            .type = AUDIO_COMMAND_RECOVER_OUTPUT,
+            .muted = false,
+            .recoveryGeneration = generation
+    };
+    if (!enqueueAudioCommand(command)) {
+        if (!pojav_audio_command_queue_full_logged) {
+            printf("%s event=audio_command_queue_full\n", AUDIO_ROUTE_LOG_PREFIX);
+            fflush(stdout);
+            pojav_audio_command_queue_full_logged = true;
+        }
+        completeAudioRecoveryCommand(generation, false);
+        return false;
+    }
+    return true;
+}
+
+static void logNoOpenalContextOnce(void) {
+    if (pojav_openal_no_context_logged) {
+        return;
+    }
+    printf("%s event=openal_context_unavailable\n", AUDIO_ROUTE_LOG_PREFIX);
+    fflush(stdout);
+    pojav_openal_no_context_logged = true;
+}
+
+static void applyAudioMutedOnCurrentThread(bool muted) {
+    if (!resolveOpenalSymbols()) {
+        return;
+    }
+
+    if (pojav_alcGetCurrentContext() == NULL) {
+        logNoOpenalContextOnce();
+        return;
+    }
+    pojav_openal_no_context_logged = false;
+
+    if (muted) {
+        if (pojav_audio_force_muted) {
+            return;
+        }
+        if (pojav_alGetListenerf != NULL) {
+            float currentGain = 1.0f;
+            pojav_alGetListenerf(AL_GAIN, &currentGain);
+            if (currentGain >= 0.0f && currentGain <= 16.0f) {
+                pojav_saved_listener_gain = currentGain;
+                pojav_saved_listener_gain_valid = true;
+            }
+        }
+        pojav_alListenerf(AL_GAIN, 0.0f);
+        pojav_audio_force_muted = true;
+        return;
+    }
+
+    if (!pojav_audio_force_muted) {
+        return;
+    }
+    float restoredGain = pojav_saved_listener_gain_valid ? pojav_saved_listener_gain : 1.0f;
+    pojav_alListenerf(AL_GAIN, restoredGain);
+    pojav_audio_force_muted = false;
+}
+
+static bool recoverAudioOutputOnCurrentThread(void) {
+    if (!resolveOpenalSymbols()) {
+        return false;
+    }
+
+    if (pojav_alcGetCurrentContext == NULL || pojav_alcGetContextsDevice == NULL) {
+        return false;
+    }
+
+    void* currentContext = pojav_alcGetCurrentContext();
+    if (currentContext == NULL) {
+        logNoOpenalContextOnce();
+        return false;
+    }
+
+    void* device = pojav_alcGetContextsDevice(currentContext);
+    if (device == NULL) {
+        return false;
+    }
+
+    if (pojav_alcDevicePauseSOFT != NULL) {
+        pojav_alcDevicePauseSOFT(device);
+    }
+
+    bool resetSucceeded = true;
+    if (pojav_alcResetDeviceSOFT != NULL) {
+        resetSucceeded = pojav_alcResetDeviceSOFT(device, NULL) != 0;
+    }
+
+    if (pojav_alcDeviceResumeSOFT != NULL) {
+        pojav_alcDeviceResumeSOFT(device);
+    }
+    if (pojav_alcProcessContext != NULL) {
+        pojav_alcProcessContext(currentContext);
+    }
+
+    if (resetSucceeded) {
+        pojav_openal_no_context_logged = false;
+        pojav_openal_reset_failed_logged = false;
+        return true;
+    }
+    if (!pojav_openal_reset_failed_logged) {
+        printf("%s event=openal_device_reset_failed\n", AUDIO_ROUTE_LOG_PREFIX);
+        fflush(stdout);
+        pojav_openal_reset_failed_logged = true;
+    }
+    return false;
+}
+
+static void processQueuedAudioCommandsOnCurrentThread(void) {
+    if (!atomic_load_explicit(&pojav_audio_command_pending, memory_order_acquire)) {
+        return;
+    }
+    if (!resolveOpenalSymbols()) {
+        return;
+    }
+    if (pojav_alcGetCurrentContext == NULL || pojav_alcGetCurrentContext() == NULL) {
+        if (!pojav_audio_command_context_unavailable_logged) {
+            printf("%s event=queued_audio_commands_skipped reason=no_current_context\n", AUDIO_ROUTE_LOG_PREFIX);
+            fflush(stdout);
+            pojav_audio_command_context_unavailable_logged = true;
+        }
+        return;
+    }
+    pojav_audio_command_context_unavailable_logged = false;
+    PojavAudioCommand command;
+    while (dequeueAudioCommand(&command)) {
+        if (command.type == AUDIO_COMMAND_SET_MUTED) {
+            applyAudioMutedOnCurrentThread(command.muted);
+        } else if (command.type == AUDIO_COMMAND_RECOVER_OUTPUT) {
+            bool recovered = recoverAudioOutputOnCurrentThread();
+            completeAudioRecoveryCommand(command.recoveryGeneration, recovered);
+        }
+    }
+}
+
 static void registerFunctions(JNIEnv *env);
+
+JNIEXPORT jboolean JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeHasQueuedAudioCommands(
+        JNIEnv* env,
+        jclass clazz
+);
+JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeProcessQueuedAudioCommands(
+        JNIEnv* env,
+        jclass clazz
+);
+
+static const JNINativeMethod jvm_audio_bridge_fcns[] = {
+        {
+                "nativeHasQueuedAudioCommands",
+                "()Z",
+                Java_org_lwjgl_glfw_CallbackBridge_nativeHasQueuedAudioCommands
+        },
+        {
+                "nativeProcessQueuedAudioCommands",
+                "()V",
+                Java_org_lwjgl_glfw_CallbackBridge_nativeProcessQueuedAudioCommands
+        }
+};
+
+static bool registerJvmAudioBridgeFunctions(JNIEnv *env) {
+    jclass bridgeClass = (*env)->FindClass(env, "org/lwjgl/glfw/CallbackBridge");
+    if (bridgeClass == NULL) {
+        if ((*env)->ExceptionCheck(env)) {
+            (*env)->ExceptionClear(env);
+        }
+        printf("%s event=game_jvm_audio_bridge_registration_failed reason=callback_bridge_not_found\n", AUDIO_ROUTE_LOG_PREFIX);
+        fflush(stdout);
+        return false;
+    }
+
+    jint registrationResult = (*env)->RegisterNatives(
+            env,
+            bridgeClass,
+            jvm_audio_bridge_fcns,
+            sizeof(jvm_audio_bridge_fcns) / sizeof(jvm_audio_bridge_fcns[0])
+    );
+    (*env)->DeleteLocalRef(env, bridgeClass);
+    if (registrationResult != JNI_OK) {
+        if ((*env)->ExceptionCheck(env)) {
+            (*env)->ExceptionClear(env);
+        }
+        printf(
+                "%s event=game_jvm_audio_bridge_registration_failed reason=register_natives result=%d\n",
+                AUDIO_ROUTE_LOG_PREFIX,
+                registrationResult
+        );
+        fflush(stdout);
+        return false;
+    }
+
+    return true;
+}
 
 jint JNI_OnLoad(JavaVM* vm, __attribute__((unused)) void* reserved) {
     if (pojav_environ->dalvikJavaVMPtr == NULL) {
@@ -156,6 +435,7 @@ jint JNI_OnLoad(JavaVM* vm, __attribute__((unused)) void* reserved) {
         pojav_environ->runtimeJavaVMPtr = vm;
         JNIEnv *vmEnv;
         (*vm)->GetEnv(vm, (void**) &vmEnv, JNI_VERSION_1_4);
+        registerJvmAudioBridgeFunctions(vmEnv);
         pojav_environ->vmGlfwClass = (*vmEnv)->NewGlobalRef(vmEnv, (*vmEnv)->FindClass(vmEnv, "org/lwjgl/glfw/GLFW"));
         pojav_environ->method_glftSetWindowAttrib = (*vmEnv)->GetStaticMethodID(vmEnv, pojav_environ->vmGlfwClass, "glfwSetWindowAttrib", "(JII)V");
         pojav_environ->method_glfwSetWindowShouldClose = (*vmEnv)->GetStaticMethodID(vmEnv, pojav_environ->vmGlfwClass, "glfwSetWindowShouldClose", "(JZ)V");
@@ -709,92 +989,73 @@ JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeSetAudioMuted(
         __attribute__((unused)) jclass clazz,
         jboolean muted
 ) {
-    if (!resolveOpenalSymbols()) {
-        return;
+    PojavAudioCommand command = {
+            .type = AUDIO_COMMAND_SET_MUTED,
+            .muted = muted == JNI_TRUE,
+            .recoveryGeneration = 0
+    };
+    if (!enqueueAudioCommand(command) && !pojav_audio_command_queue_full_logged) {
+        printf("%s event=audio_command_queue_full\n", AUDIO_ROUTE_LOG_PREFIX);
+        fflush(stdout);
+        pojav_audio_command_queue_full_logged = true;
     }
+}
 
-    if (pojav_alcGetCurrentContext() == NULL) {
-        if (!pojav_openal_no_context_logged) {
-            ;
-            pojav_openal_no_context_logged = true;
-        }
-        return;
-    }
-    pojav_openal_no_context_logged = false;
+JNIEXPORT jboolean JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeHasQueuedAudioCommands(
+        __attribute__((unused)) JNIEnv* env,
+        __attribute__((unused)) jclass clazz
+) {
+    return atomic_load_explicit(&pojav_audio_command_pending, memory_order_acquire)
+            ? JNI_TRUE
+            : JNI_FALSE;
+}
 
-    if (muted) {
-        if (pojav_audio_force_muted) {
-            return;
-        }
-        if (pojav_alGetListenerf != NULL) {
-            float currentGain = 1.0f;
-            pojav_alGetListenerf(AL_GAIN, &currentGain);
-            if (currentGain >= 0.0f && currentGain <= 16.0f) {
-                pojav_saved_listener_gain = currentGain;
-                pojav_saved_listener_gain_valid = true;
-            }
-        }
-        pojav_alListenerf(AL_GAIN, 0.0f);
-        pojav_audio_force_muted = true;
-        ;
-        return;
-    }
-
-    if (!pojav_audio_force_muted) {
-        return;
-    }
-    pojav_alListenerf(AL_GAIN, pojav_saved_listener_gain_valid ? pojav_saved_listener_gain : 1.0f);
-    pojav_audio_force_muted = false;
-    ;
+JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeProcessQueuedAudioCommands(
+        __attribute__((unused)) JNIEnv* env,
+        __attribute__((unused)) jclass clazz
+) {
+    processQueuedAudioCommandsOnCurrentThread();
 }
 
 JNIEXPORT jboolean JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeRecoverAudioOutput(
         __attribute__((unused)) JNIEnv* env,
         __attribute__((unused)) jclass clazz
 ) {
-    if (!resolveOpenalSymbols()) {
+    int completedGeneration = atomic_load_explicit(
+            &pojav_audio_recovery_completed_generation,
+            memory_order_acquire
+    );
+    int reportedGeneration = atomic_load_explicit(
+            &pojav_audio_recovery_reported_generation,
+            memory_order_acquire
+    );
+    if (completedGeneration > reportedGeneration) {
+        bool result = atomic_load_explicit(
+                &pojav_audio_recovery_last_result,
+                memory_order_acquire
+        );
+        atomic_store_explicit(
+                &pojav_audio_recovery_reported_generation,
+                completedGeneration,
+                memory_order_release
+        );
+        if (!result) {
+            queueAudioRecoveryCommand();
+        }
+        return result ? JNI_TRUE : JNI_FALSE;
+    }
+
+    int requestedGeneration = atomic_load_explicit(
+            &pojav_audio_recovery_requested_generation,
+            memory_order_acquire
+    );
+    if (completedGeneration < requestedGeneration) {
         return JNI_FALSE;
     }
 
-    if (pojav_alcGetCurrentContext == NULL || pojav_alcGetContextsDevice == NULL) {
-        return JNI_FALSE;
-    }
-
-    void* currentContext = pojav_alcGetCurrentContext();
-    if (currentContext == NULL) {
-        return JNI_FALSE;
-    }
-
-    void* device = pojav_alcGetContextsDevice(currentContext);
-    if (device == NULL) {
-        return JNI_FALSE;
-    }
-
-    if (pojav_alcDevicePauseSOFT != NULL) {
-        pojav_alcDevicePauseSOFT(device);
-    }
-
-    bool hadResetFunction = false;
-    bool resetSucceeded = false;
-    if (pojav_alcResetDeviceSOFT != NULL) {
-        hadResetFunction = true;
-        resetSucceeded = pojav_alcResetDeviceSOFT(device, NULL) != 0;
-    }
-
-    if (pojav_alcDeviceResumeSOFT != NULL) {
-        pojav_alcDeviceResumeSOFT(device);
-    }
-    if (pojav_alcProcessContext != NULL) {
-        pojav_alcProcessContext(currentContext);
-    }
-
-    if (resetSucceeded) {
-        pojav_openal_no_context_logged = false;
-        return JNI_TRUE;
-    }
-    return hadResetFunction ? JNI_FALSE : JNI_TRUE;
+    queueAudioRecoveryCommand();
+    return JNI_FALSE;
 }
-
 const static JNINativeMethod critical_fcns[] = {
         {"nativeSetUseInputStackQueue", "(Z)V", critical_set_stackqueue},
         {"nativeSendChar", "(C)Z", critical_send_char},

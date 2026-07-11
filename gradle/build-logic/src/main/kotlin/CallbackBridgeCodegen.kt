@@ -203,6 +203,18 @@ object CallbackBridgeCodegen {
             androidVisibility = "public"
         ),
         CallbackBridgeMethod(
+            name = "nativeHasQueuedAudioCommands",
+            returnType = "boolean",
+            parameters = emptyList(),
+            jvmVisibility = "public"
+        ),
+        CallbackBridgeMethod(
+            name = "nativeProcessQueuedAudioCommands",
+            returnType = "void",
+            parameters = emptyList(),
+            jvmVisibility = "public"
+        ),
+        CallbackBridgeMethod(
             name = "nativeEnableGamepadDirectInput",
             returnType = "boolean",
             parameters = emptyList(),

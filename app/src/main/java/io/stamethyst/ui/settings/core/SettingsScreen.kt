@@ -411,10 +411,6 @@ fun LauncherDeveloperSettingsScreen(
         onClearJunkFiles = {
             viewModel.onClearJunkFiles(activity)
         },
-        onOpenCloudControlConfig = {
-            viewModel.onOpenCloudControlConfig(activity)
-        },
-        onDismissCloudControlConfigDialog = viewModel::dismissCloudControlConfigDialog,
         onResetLauncherSettingsToDefaults = {
             viewModel.onResetLauncherSettingsToDefaults(activity)
         },

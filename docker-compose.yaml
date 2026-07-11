@@ -12,6 +12,9 @@ services:
     environment:
       HOST: 0.0.0.0
       PORT: 3001
+      # Set to true only when every public request reaches this container through a trusted proxy
+      # that rewrites X-Forwarded-For. Keep false for direct port forwarding.
+      TRUST_PROXY: ${TRUST_PROXY:-false}
       PRESENCE_DB_PATH: /app/data/presence.sqlite
       PRESENCE_HEARTBEAT_INTERVAL_SECONDS: 30
       PRESENCE_OFFLINE_TIMEOUT_SECONDS: 90

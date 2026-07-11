@@ -10,6 +10,7 @@ const WebSocket = require('ws');
 const { buildServer } = require('../src/server/app');
 const { loadConfig } = require('../src/server/config');
 const { openDatabase } = require('../src/server/db');
+const { LanStore } = require('../src/server/lan');
 const { PresenceStore } = require('../src/server/presence');
 const { buildComponentSpec } = require('../src/server/runtime');
 
@@ -53,6 +54,38 @@ test('presence config reads easytier single-server cloud-control options', () =>
   assert.equal(config.easyTierSessionTtlSeconds, 2700);
   assert.equal(config.easyTierAllowSharedCommunityNetwork, true);
   assert.equal(config.easyTierDefaultMode, 'community');
+});
+
+test('sqlite transactions use an isolated connection', async (t) => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-presence-'));
+  const database = await openDatabase(path.join(tmpDir, 'presence.sqlite'));
+  t.after(async () => {
+    await database.close();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+  await database.exec('CREATE TABLE transaction_evidence (value TEXT NOT NULL)');
+
+  let releaseTransaction;
+  let transactionEntered;
+  const entered = new Promise((resolve) => { transactionEntered = resolve; });
+  const gate = new Promise((resolve) => { releaseTransaction = resolve; });
+  const transaction = database.transaction(async (transactionDatabase) => {
+    await transactionDatabase.run('INSERT INTO transaction_evidence(value) VALUES (?)', ['inside']);
+    transactionEntered();
+    await gate;
+    throw new Error('rollback transaction');
+  }).catch(() => {});
+
+  await entered;
+  const outsideWrite = database.run('INSERT INTO transaction_evidence(value) VALUES (?)', ['outside']);
+  releaseTransaction();
+  await transaction;
+  await outsideWrite;
+
+  assert.deepEqual(
+    await database.all('SELECT value FROM transaction_evidence ORDER BY value'),
+    [{ value: 'outside' }]
+  );
 });
 
 test('presence config reads managed easytier runtime options', () => {
@@ -165,9 +198,11 @@ test('lan room session api issues status and room members for easytier room mode
   assert.ok(started.json().networkSecret.length >= 16);
   assert.ok(Number.isInteger(started.json().expiresAt));
 
-  const sessionStatus = await server.inject(
-    `/api/lan/session/status?sessionId=${started.json().sessionId}`
-  );
+  const sessionStatus = await server.inject({
+    method: 'GET',
+    url: `/api/lan/session/status?sessionId=${started.json().sessionId}`,
+    headers: { authorization: `Bearer ${started.json().sessionToken}` }
+  });
   assert.equal(sessionStatus.statusCode, 200);
   assert.deepEqual(sessionStatus.json(), {
     ok: true,
@@ -236,6 +271,7 @@ test('lan room runtime report updates session status and room member ip', async 
   const runtime = await server.inject({
     method: 'POST',
     url: '/api/lan/session/runtime',
+    headers: { authorization: `Bearer ${started.json().sessionToken}` },
     payload: {
       sessionId: started.json().sessionId,
       assignedIpv4Cidr: '10.144.0.1/24',
@@ -265,6 +301,83 @@ test('lan room runtime report updates session status and room member ip', async 
       assignedIpv4Cidr: '10.144.0.1/24'
     }
   ]);
+});
+
+test('lan runtime reports renew a session lease and expiry releases its credentials', async (t) => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-presence-'));
+  const database = await openDatabase(path.join(tmpDir, 'presence.sqlite'));
+  const lanStore = new LanStore(database, loadConfig({
+    LOG_LEVEL: 'silent',
+    EASYTIER_ENABLED: 'true',
+    EASYTIER_SESSION_TTL_SECONDS: '1800'
+  }));
+  t.after(async () => {
+    await database.close();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  const started = await lanStore.startSession({
+    roomId: 'lease-room',
+    playerId: 'alice',
+    displayName: 'Alice'
+  }, {
+    nowMs: 1_000,
+    easyTier: {
+      enabled: true,
+      entryNodeUrl: 'tcp://online.example.com:11010',
+      configServerUrl: 'udp://online.example.com:22020'
+    }
+  });
+  const initialSession = await lanStore.findSession(started.sessionId);
+  assert.equal(initialSession.expiresAtMs, 1_801_000);
+
+  await lanStore.reportSessionRuntime({
+    sessionId: started.sessionId,
+    sessionToken: started.sessionToken,
+    assignedIpv4Cidr: '10.144.0.1/24'
+  }, { nowMs: 10_000 });
+  const renewedSession = await lanStore.findSession(started.sessionId);
+  assert.equal(renewedSession.expiresAtMs, 1_810_000);
+
+  await lanStore.expireSessions(1_810_001);
+  const expiredSession = await lanStore.findSession(started.sessionId);
+  assert.equal(expiredSession, null);
+  assert.equal(await lanStore.findRoom('lease-room'), null);
+});
+
+test('lan room limits active sessions from one source network', async (t) => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-presence-'));
+  const database = await openDatabase(path.join(tmpDir, 'presence.sqlite'));
+  const lanStore = new LanStore(database, loadConfig({ LOG_LEVEL: 'silent', EASYTIER_ENABLED: 'true' }));
+  t.after(async () => {
+    await database.close();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+  const easyTier = {
+    enabled: true,
+    entryNodeUrl: 'tcp://online.example.com:11010',
+    configServerUrl: 'udp://online.example.com:22020'
+  };
+  await lanStore.startSession({ roomId: 'quota-room', playerId: 'owner' }, {
+    nowMs: 1_000,
+    sourceIp: '198.51.100.7',
+    easyTier
+  });
+  for (let index = 0; index < 7; index += 1) {
+    await lanStore.startSession({ roomId: 'quota-room', playerId: `member-${index}` }, {
+      nowMs: 2_000 + index,
+      sourceIp: '198.51.100.7',
+      easyTier
+    });
+  }
+  await assert.rejects(
+    lanStore.startSession({ roomId: 'quota-room', playerId: 'member-overflow' }, {
+      nowMs: 3_000,
+      sourceIp: '198.51.100.7',
+      easyTier
+    }),
+    (error) => error && error.statusCode === 429
+  );
 });
 
 test('lan room session api supersedes previous session and supports stop', async (t) => {
@@ -297,6 +410,7 @@ test('lan room session api supersedes previous session and supports stop', async
   const second = await server.inject({
     method: 'POST',
     url: '/api/lan/session/start',
+    headers: { 'x-lan-owner-token': first.json().ownerToken },
     payload: {
       roomId: 'reconnect-room',
       playerId: 'alice',
@@ -309,9 +423,11 @@ test('lan room session api supersedes previous session and supports stop', async
   assert.notEqual(first.json().sessionId, second.json().sessionId);
   assert.equal(second.json().roomId, 'reconnect-room');
 
-  const firstStatus = await server.inject(
-    `/api/lan/session/status?sessionId=${first.json().sessionId}`
-  );
+  const firstStatus = await server.inject({
+    method: 'GET',
+    url: `/api/lan/session/status?sessionId=${first.json().sessionId}`,
+    headers: { authorization: `Bearer ${first.json().sessionToken}` }
+  });
   assert.equal(firstStatus.statusCode, 200);
   assert.equal(firstStatus.json().sessionState, 'superseded');
   assert.equal(firstStatus.json().peerCount, 1);
@@ -319,6 +435,7 @@ test('lan room session api supersedes previous session and supports stop', async
   const stop = await server.inject({
     method: 'POST',
     url: '/api/lan/session/stop',
+    headers: { authorization: `Bearer ${second.json().sessionToken}` },
     payload: {
       sessionId: second.json().sessionId
     }
@@ -331,29 +448,18 @@ test('lan room session api supersedes previous session and supports stop', async
     sessionState: 'stopped'
   });
 
-  const secondStatus = await server.inject(
-    `/api/lan/session/status?sessionId=${second.json().sessionId}`
-  );
-  assert.equal(secondStatus.statusCode, 200);
-  assert.equal(secondStatus.json().sessionState, 'stopped');
-  assert.equal(secondStatus.json().roomState, 'idle');
-  assert.equal(secondStatus.json().peerCount, 0);
+  const secondStatus = await server.inject({
+    method: 'GET',
+    url: `/api/lan/session/status?sessionId=${second.json().sessionId}`,
+    headers: { authorization: `Bearer ${second.json().sessionToken}` }
+  });
+  assert.equal(secondStatus.statusCode, 404);
 
   const roomInfo = await server.inject('/api/lan/rooms/reconnect-room');
-  assert.equal(roomInfo.statusCode, 200);
-  assert.equal(roomInfo.json().ownerDisplayName, 'Alice-2');
-  assert.deepEqual(roomInfo.json().members, [
-    {
-      playerId: 'alice',
-      displayName: 'Alice-2',
-      role: 'owner',
-      online: false,
-      assignedIpv4Cidr: ''
-    }
-  ]);
+  assert.equal(roomInfo.statusCode, 404);
 });
 
-test('lan room api supports explicit room creation and listing', async (t) => {
+test('lan room session start creates a joined room and preserves its join policy', async (t) => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-presence-'));
   const server = await buildServer({
     ...loadConfig({
@@ -373,7 +479,7 @@ test('lan room api supports explicit room creation and listing', async (t) => {
 
   const created = await server.inject({
     method: 'POST',
-    url: '/api/lan/rooms',
+    url: '/api/lan/session/start',
     payload: {
       roomId: 'alpha-room',
       playerId: 'alice',
@@ -382,36 +488,7 @@ test('lan room api supports explicit room creation and listing', async (t) => {
     }
   });
   assert.equal(created.statusCode, 200);
-  assert.deepEqual(created.json(), {
-    ok: true,
-    roomId: 'alpha-room',
-    ownerPlayerId: 'alice',
-    ownerDisplayName: 'Alice',
-    mode: 'room',
-    allowNewJoins: false,
-    closedAtMs: 0,
-    memberCount: 1,
-    members: [
-      {
-        playerId: 'alice',
-        displayName: 'Alice',
-        role: 'owner',
-        online: false,
-        assignedIpv4Cidr: ''
-      }
-    ]
-  });
-
-  const started = await server.inject({
-    method: 'POST',
-    url: '/api/lan/session/start',
-    payload: {
-      roomId: 'alpha-room',
-      playerId: 'alice',
-      displayName: 'Alice'
-    }
-  });
-  assert.equal(started.statusCode, 200);
+  assert.equal(created.json().roomId, 'alpha-room');
 
   await server.inject({
     method: 'POST',
@@ -447,7 +524,7 @@ test('lan room api supports explicit room creation and listing', async (t) => {
   assert.equal(betaRoom.onlineMemberCount, 1);
 });
 
-test('lan room api rejects conflicting owner on explicit create', async (t) => {
+test('lan room api rejects ownerless room creation', async (t) => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-presence-'));
   const server = await buildServer({
     ...loadConfig({
@@ -465,7 +542,7 @@ test('lan room api rejects conflicting owner on explicit create', async (t) => {
   });
   await server.ready();
 
-  const first = await server.inject({
+  const created = await server.inject({
     method: 'POST',
     url: '/api/lan/rooms',
     payload: {
@@ -474,19 +551,11 @@ test('lan room api rejects conflicting owner on explicit create', async (t) => {
       displayName: 'Alice'
     }
   });
-  assert.equal(first.statusCode, 200);
+  assert.equal(created.statusCode, 409);
+  assert.match(created.json().message, /owner starting a session/);
 
-  const second = await server.inject({
-    method: 'POST',
-    url: '/api/lan/rooms',
-    payload: {
-      roomId: 'conflict-room',
-      playerId: 'bob',
-      displayName: 'Bob'
-    }
-  });
-  assert.equal(second.statusCode, 409);
-  assert.match(second.json().message, /already exists/);
+  const listing = await server.inject('/api/lan/rooms?limit=10');
+  assert.deepEqual(listing.json().rooms, []);
 });
 
 test('lan room api supports owner lock unlock and close lifecycle', async (t) => {
@@ -509,7 +578,7 @@ test('lan room api supports owner lock unlock and close lifecycle', async (t) =>
 
   const created = await server.inject({
     method: 'POST',
-    url: '/api/lan/rooms',
+    url: '/api/lan/session/start',
     payload: {
       roomId: 'owner-room',
       playerId: 'alice',
@@ -521,8 +590,8 @@ test('lan room api supports owner lock unlock and close lifecycle', async (t) =>
   const locked = await server.inject({
     method: 'POST',
     url: '/api/lan/rooms/owner-room/action',
+    headers: { 'x-lan-owner-token': created.json().ownerToken },
     payload: {
-      playerId: 'alice',
       action: 'lock'
     }
   });
@@ -545,8 +614,8 @@ test('lan room api supports owner lock unlock and close lifecycle', async (t) =>
   const unlocked = await server.inject({
     method: 'POST',
     url: '/api/lan/rooms/owner-room/action',
+    headers: { 'x-lan-owner-token': created.json().ownerToken },
     payload: {
-      playerId: 'alice',
       action: 'unlock'
     }
   });
@@ -567,15 +636,15 @@ test('lan room api supports owner lock unlock and close lifecycle', async (t) =>
   const closed = await server.inject({
     method: 'POST',
     url: '/api/lan/rooms/owner-room/action',
+    headers: { 'x-lan-owner-token': created.json().ownerToken },
     payload: {
-      playerId: 'alice',
       action: 'close'
     }
   });
   assert.equal(closed.statusCode, 200);
   assert.equal(closed.json().allowNewJoins, false);
   assert.ok(closed.json().closedAtMs > 0);
-  assert.equal(closed.json().memberCount, 2);
+  assert.equal(closed.json().memberCount, 1);
 
   const afterCloseInfo = await server.inject('/api/lan/rooms/owner-room');
   assert.equal(afterCloseInfo.statusCode, 404);
@@ -594,41 +663,18 @@ test('lan room api supports owner lock unlock and close lifecycle', async (t) =>
       displayName: 'Charlie'
     }
   });
-  assert.equal(joinAfterClose.statusCode, 403);
-  assert.match(joinAfterClose.json().message, /has been closed/);
+  assert.equal(joinAfterClose.statusCode, 200);
+  assert.equal(joinAfterClose.json().roomId, 'owner-room');
 
   const unlockAfterClose = await server.inject({
     method: 'POST',
     url: '/api/lan/rooms/owner-room/action',
+    headers: { 'x-lan-owner-token': 'A'.repeat(43) },
     payload: {
-      playerId: 'alice',
       action: 'unlock'
     }
   });
-  assert.equal(unlockAfterClose.statusCode, 410);
-
-  const recreated = await server.inject({
-    method: 'POST',
-    url: '/api/lan/rooms',
-    payload: {
-      roomId: 'owner-room',
-      playerId: 'alice',
-      displayName: 'Alice',
-      allowNewJoins: true
-    }
-  });
-  assert.equal(recreated.statusCode, 200);
-  assert.equal(recreated.json().closedAtMs, 0);
-  assert.equal(recreated.json().memberCount, 1);
-  assert.deepEqual(recreated.json().members, [
-    {
-      playerId: 'alice',
-      displayName: 'Alice',
-      role: 'owner',
-      online: false,
-      assignedIpv4Cidr: ''
-    }
-  ]);
+  assert.equal(unlockAfterClose.statusCode, 403);
 
   const restarted = await server.inject({
     method: 'POST',
@@ -665,7 +711,7 @@ test('lan room api blocks non-owner room mutations', async (t) => {
 
   await server.inject({
     method: 'POST',
-    url: '/api/lan/rooms',
+    url: '/api/lan/session/start',
     payload: {
       roomId: 'guard-room',
       playerId: 'alice',
@@ -676,13 +722,111 @@ test('lan room api blocks non-owner room mutations', async (t) => {
   const response = await server.inject({
     method: 'POST',
     url: '/api/lan/rooms/guard-room/action',
+    headers: { 'x-lan-owner-token': 'A'.repeat(43) },
     payload: {
-      playerId: 'bob',
       action: 'lock'
     }
   });
   assert.equal(response.statusCode, 403);
   assert.match(response.json().message, /Only the room owner/);
+});
+
+test('lan room credentials prevent player id spoofing and tokenless session access', async (t) => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-presence-'));
+  const server = await buildServer({
+    ...loadConfig({ LOG_LEVEL: 'silent', EASYTIER_ENABLED: 'true' }),
+    dbPath: path.join(tmpDir, 'presence.sqlite'),
+    publicBaseUrl: 'https://online.example.com',
+    presencePanelToken: 'panel-secret',
+    logLevel: 'silent'
+  });
+  t.after(async () => {
+    await server.close();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+  await server.ready();
+
+  const owner = await server.inject({
+    method: 'POST',
+    url: '/api/lan/session/start',
+    payload: { roomId: 'secure-room', playerId: 'alice', displayName: 'Alice' }
+  });
+  assert.equal(owner.statusCode, 200);
+  assert.match(owner.json().sessionToken, /^[A-Za-z0-9_-]{32,}$/);
+  assert.match(owner.json().ownerToken, /^[A-Za-z0-9_-]{32,}$/);
+
+  const spoofedReconnect = await server.inject({
+    method: 'POST',
+    url: '/api/lan/session/start',
+    payload: { roomId: 'secure-room', playerId: 'alice', displayName: 'Mallory' }
+  });
+  assert.equal(spoofedReconnect.statusCode, 403);
+
+  const spoofedClose = await server.inject({
+    method: 'POST',
+    url: '/api/lan/rooms/secure-room/action',
+    headers: { 'x-lan-owner-token': 'A'.repeat(43) },
+    payload: { action: 'close' }
+  });
+  assert.equal(spoofedClose.statusCode, 403);
+
+  const tokenlessStatus = await server.inject({
+    method: 'GET',
+    url: `/api/lan/session/status?sessionId=${owner.json().sessionId}`
+  });
+  assert.equal(tokenlessStatus.statusCode, 400);
+  const sessionInfo = await server.inject({
+    method: 'GET',
+    url: `/api/lan/session/status?sessionId=${owner.json().sessionId}`,
+    headers: { authorization: `Bearer ${owner.json().sessionToken}` }
+  });
+  assert.equal(sessionInfo.statusCode, 200);
+});
+
+test('lan room is deleted when its owner leaves', async (t) => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-presence-'));
+  const server = await buildServer({
+    ...loadConfig({ LOG_LEVEL: 'silent', EASYTIER_ENABLED: 'true' }),
+    dbPath: path.join(tmpDir, 'presence.sqlite'),
+    publicBaseUrl: 'https://online.example.com',
+    presencePanelToken: 'panel-secret',
+    logLevel: 'silent'
+  });
+  t.after(async () => {
+    await server.close();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+  await server.ready();
+
+  const owner = await server.inject({
+    method: 'POST',
+    url: '/api/lan/session/start',
+    payload: { roomId: 'owner-leaves-room', playerId: 'alice', displayName: 'Alice' }
+  });
+  const member = await server.inject({
+    method: 'POST',
+    url: '/api/lan/session/start',
+    payload: { roomId: 'owner-leaves-room', playerId: 'bob', displayName: 'Bob' }
+  });
+  assert.equal(owner.statusCode, 200);
+  assert.equal(member.statusCode, 200);
+
+  const left = await server.inject({
+    method: 'POST',
+    url: '/api/lan/session/stop',
+    headers: { authorization: `Bearer ${owner.json().sessionToken}` },
+    payload: { sessionId: owner.json().sessionId }
+  });
+  assert.equal(left.statusCode, 200);
+
+  const room = await server.inject('/api/lan/rooms/owner-leaves-room');
+  assert.equal(room.statusCode, 404);
+  const memberSession = await server.inject({
+    method: 'GET',
+    url: `/api/lan/session/status?sessionId=${member.json().sessionId}`,
+    headers: { authorization: `Bearer ${member.json().sessionToken}` }
+  });
+  assert.equal(memberSession.statusCode, 404);
 });
 
 test('lan room session api returns service unavailable when easytier is disabled', async (t) => {

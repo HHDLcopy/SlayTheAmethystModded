@@ -3,4 +3,5 @@
     <exclude domain="sharedpref" path="baidu_translation_credentials.xml" />
     <exclude domain="sharedpref" path="baidu_translation_credentials_fallback.xml" />
     <exclude domain="sharedpref" path="steam_cloud_auth.xml" />
+    <exclude domain="sharedpref" path="easytier_credentials.xml" />
 </full-backup-content>

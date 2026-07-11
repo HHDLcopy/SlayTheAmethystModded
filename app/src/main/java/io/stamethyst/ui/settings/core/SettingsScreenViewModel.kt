@@ -29,16 +29,18 @@ import io.stamethyst.BuildConfig
 import io.stamethyst.backend.diag.LogcatCaptureProcessClient
 import io.stamethyst.backend.diag.LauncherLogcatCaptureProcessClient
 import io.stamethyst.backend.fs.LauncherJunkFileCleaner
+import io.stamethyst.backend.easytier.EasyTierConfigRepository
+import io.stamethyst.backend.easytier.EasyTierNetworkMode
 import io.stamethyst.backend.network.NetworkAccelerationPolicy
-import io.stamethyst.backend.steamcloud.STEAM_CLOUD_APP_ID
-import io.stamethyst.backend.steamcloud.SteamCloudAuthCoordinator
 import io.stamethyst.backend.steam.SteamAccountLogoutCoordinator
-import io.stamethyst.backend.steamcloud.SteamCloudAuthStore
+import io.stamethyst.backend.steamcloud.STEAM_CLOUD_APP_ID
 import io.stamethyst.backend.steamcloud.SteamAuthenticationCircuitBreaker
-import io.stamethyst.backend.steamcloud.SteamCloudAvatarCacheStore
-import io.stamethyst.backend.steamcloud.SteamCloudBaselineStore
+import io.stamethyst.backend.steamcloud.SteamCloudAuthCoordinator
+import io.stamethyst.backend.steamcloud.SteamCloudAuthStore
 import io.stamethyst.backend.steamcloud.SteamCloudFailureCategory
 import io.stamethyst.backend.steamcloud.SteamCloudFailureClassifier
+import io.stamethyst.backend.steamcloud.SteamCloudAvatarCacheStore
+import io.stamethyst.backend.steamcloud.SteamCloudBaselineStore
 import io.stamethyst.backend.steamcloud.SteamCloudClient
 import io.stamethyst.backend.steamcloud.SteamCloudDiagnosticsStore
 import io.stamethyst.backend.steamcloud.SteamCloudLoginChallenge
@@ -117,7 +119,6 @@ import io.stamethyst.config.BootOverlayImageMode
 import io.stamethyst.config.BootOverlayImageSlot
 import io.stamethyst.config.BootOverlayStyle
 import io.stamethyst.config.CardPlayOptimizationMode
-import io.stamethyst.config.CloudControlConfig
 import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.config.LauncherIconController
 import io.stamethyst.config.LauncherIconMode
@@ -220,8 +221,8 @@ class SettingsScreenViewModel : ViewModel() {
         data object OpenCompatibility : Effect
         data object OpenMobileGluesSettings : Effect
         data object OpenFeedback : Effect
-    }
         data class ShowDialog(val title: String, val message: String) : Effect
+    }
 
     data class UpdateDownloadOptionState(
         val source: UpdateSource,
@@ -250,10 +251,17 @@ class SettingsScreenViewModel : ViewModel() {
         val entries: List<UpdateHistoryEntryState>,
     )
 
-    data class CloudControlConfigDialogState(
-        val sourceDisplayName: String,
-        val requestUrl: String,
-        val rawText: String,
+    data class EasyTierSettingsUiState(
+        val enabled: Boolean = false,
+        val canConnect: Boolean = false,
+        val defaultMode: EasyTierNetworkMode = EasyTierNetworkMode.Room,
+        val allowSharedCommunityNetwork: Boolean = false,
+        val roomApiBaseUrl: String = "",
+        val webConsoleApiBaseUrl: String = "",
+        val configServerUrl: String = "",
+        val entryNodeUrl: String = "",
+        val connectTimeoutSeconds: Int = 0,
+        val statusPollIntervalSeconds: Int = 0,
     )
 
     data class StsJarIntegrityDialogState(
@@ -408,8 +416,6 @@ class SettingsScreenViewModel : ViewModel() {
         val updatePromptState: UpdatePromptState? = null,
         val releaseHistoryLoading: Boolean = false,
         val releaseHistoryDialogState: UpdateHistoryDialogState? = null,
-        val cloudControlConfigLoading: Boolean = false,
-        val cloudControlConfigDialogState: CloudControlConfigDialogState? = null,
         val stsJarIntegrityDialogState: StsJarIntegrityDialogState? = null,
         val nativeLibraryMarketPackages: List<NativeLibraryMarketPackageState> = emptyList(),
         val nativeLibraryMarketLoading: Boolean = false,
@@ -454,6 +460,7 @@ class SettingsScreenViewModel : ViewModel() {
         val steamCloudPhase0ProxyUrl: String = "",
         val steamCloudPhase0CredentialsSummary: String = "",
         val steamCloudPhase0StatusText: String = "",
+        val easyTierSettings: EasyTierSettingsUiState = EasyTierSettingsUiState(),
     )
 
     private data class CoreDependencyStatus(
@@ -751,46 +758,6 @@ class SettingsScreenViewModel : ViewModel() {
     fun dismissReleaseHistoryDialog() {
         if (uiState.releaseHistoryDialogState != null) {
             uiState = uiState.copy(releaseHistoryDialogState = null)
-        }
-    }
-
-    fun onOpenCloudControlConfig(host: Activity) {
-        if (uiState.busy || uiState.cloudControlConfigLoading) {
-            return
-        }
-        uiState = uiState.copy(cloudControlConfigLoading = true)
-        executor.execute {
-            try {
-                val remoteConfig = CloudControlConfig.fetchRemoteConfigText(host)
-                host.runOnUiThread {
-                    uiState = uiState.copy(
-                        cloudControlConfigLoading = false,
-                        cloudControlConfigDialogState = CloudControlConfigDialogState(
-                            sourceDisplayName = remoteConfig.sourceDisplayName,
-                            requestUrl = remoteConfig.requestUrl,
-                            rawText = remoteConfig.rawText
-                        )
-                    )
-                }
-            } catch (error: Throwable) {
-                host.runOnUiThread {
-                    uiState = uiState.copy(cloudControlConfigLoading = false)
-                    showToast(
-                        host,
-                        host.getString(
-                            R.string.settings_developer_cloud_control_load_failed,
-                            GithubMirrorFallback.summarize(error)
-                        ),
-                        Toast.LENGTH_LONG
-                    )
-                }
-            }
-        }
-    }
-
-    fun dismissCloudControlConfigDialog() {
-        if (uiState.cloudControlConfigDialogState != null) {
-            uiState = uiState.copy(cloudControlConfigDialogState = null)
         }
     }
 
@@ -1347,6 +1314,7 @@ class SettingsScreenViewModel : ViewModel() {
                     host,
                     steamCloudPhase0Snapshot
                 )
+                val easyTierSettings = buildEasyTierSettingsUiState()
 
                 host.runOnUiThread {
                     applySnapshot(host, snapshot)
@@ -1391,6 +1359,7 @@ class SettingsScreenViewModel : ViewModel() {
                             steamCloudPhase0Snapshot
                         ),
                         steamCloudPhase0StatusText = steamCloudPhase0StatusText,
+                        easyTierSettings = easyTierSettings,
                     )
                 }
             } catch (_: Throwable) {
@@ -1466,7 +1435,6 @@ class SettingsScreenViewModel : ViewModel() {
                         cancellationHandle = cancellationHandle,
                     )
                 }
-                SteamAuthenticationCircuitBreaker.reset()
                 val hadIncompleteAuth = runCatching {
                     val snapshot = SteamCloudAuthStore.readSnapshot(host)
                     snapshot.refreshTokenConfigured && !snapshot.isComplete
@@ -1498,6 +1466,7 @@ class SettingsScreenViewModel : ViewModel() {
                     authResult.guardData,
                     authResult.steamId64,
                 )
+                SteamAuthenticationCircuitBreaker.reset()
                 val loginDiagnosticsExtraLines = mutableListOf(
                     "Refresh token received: ${authResult.refreshToken.length} chars",
                     "Guard data returned: ${if (authResult.guardData.isBlank()) "no" else "yes"}",
@@ -1552,22 +1521,6 @@ class SettingsScreenViewModel : ViewModel() {
                         extraLines = loginDiagnosticsExtraLines,
                     )
                 }
-                val failureCategory = if (loginCancelled) {
-                    SteamCloudFailureCategory.CANCELLED
-                } else {
-                    SteamCloudFailureClassifier.classify(error)
-                }
-                val circuitTripped = SteamAuthenticationCircuitBreaker.trip(failureCategory)
-                val circuitLogoutFailure = if (circuitTripped) {
-                    runCatching {
-                        SteamAccountLogoutCoordinator.logout(
-                            context = host,
-                            clearDiagnostics = false,
-                        )
-                    }.exceptionOrNull()
-                } else {
-                    null
-                }
                 SteamCloudManifestStore.clear(host)
                 SteamCloudBaselineStore.clear(host)
                 val shouldPromptSteamCloudSaveModeSwitch =
@@ -1599,6 +1552,22 @@ class SettingsScreenViewModel : ViewModel() {
             } catch (error: Throwable) {
                 val summary = summarizeSteamCloudError(host, error)
                 val loginCancelled = cancellationHandle.isCancelled || isSteamCloudLoginCancellation(error)
+                val failureCategory = if (loginCancelled) {
+                    SteamCloudFailureCategory.CANCELLED
+                } else {
+                    SteamCloudFailureClassifier.classify(error)
+                }
+                val circuitTripped = SteamAuthenticationCircuitBreaker.trip(failureCategory)
+                val circuitLogoutFailure = if (circuitTripped) {
+                    runCatching {
+                        SteamAccountLogoutCoordinator.logout(
+                            context = host,
+                            clearDiagnostics = false,
+                        )
+                    }.exceptionOrNull()
+                } else {
+                    null
+                }
                 if (!loginCancelled) {
                     runCatching { SteamCloudAuthStore.recordFailure(host, summary) }
                 }
@@ -3908,6 +3877,22 @@ class SettingsScreenViewModel : ViewModel() {
             workshopAutoImportAtlasDownscaleEnabled = market.workshopAutoImportAtlasDownscaleEnabled,
             workshopAutoImportAtlasDownscaleMaxEdgePx = market.workshopAutoImportAtlasDownscaleMaxEdgePx,
             baiduTranslationCredentialsConfigured = market.baiduTranslationCredentialsConfigured,
+        )
+    }
+
+    private fun buildEasyTierSettingsUiState(): EasyTierSettingsUiState {
+        val config = EasyTierConfigRepository.current()
+        return EasyTierSettingsUiState(
+            enabled = config.enabled,
+            canConnect = config.canConnect,
+            defaultMode = config.defaultMode,
+            allowSharedCommunityNetwork = config.allowSharedCommunityNetwork,
+            roomApiBaseUrl = config.roomApiBaseUrl,
+            webConsoleApiBaseUrl = config.webConsoleApiBaseUrl,
+            configServerUrl = config.configServerUrl,
+            entryNodeUrl = config.entryNodeUrl,
+            connectTimeoutSeconds = config.connectTimeoutSeconds,
+            statusPollIntervalSeconds = config.statusPollIntervalSeconds,
         )
     }
 

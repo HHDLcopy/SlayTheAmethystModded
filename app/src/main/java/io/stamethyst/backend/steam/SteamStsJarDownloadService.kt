@@ -117,6 +117,7 @@ internal class SteamStsJarDownloadService(
                 sessionConnector = { downloadSession, servers ->
                     connectSession(downloadSession, servers, account)
                 },
+                maxConcurrentChunks = LauncherPreferences.readWorkshopDownloadThreads(context),
             )
             var lastError: Throwable? = null
             var anonymousAccessError: Throwable? = null

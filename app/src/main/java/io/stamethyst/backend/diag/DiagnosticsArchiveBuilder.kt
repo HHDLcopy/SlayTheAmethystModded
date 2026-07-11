@@ -4,6 +4,9 @@ import android.content.Context
 import android.net.Uri
 import android.os.Build
 import io.stamethyst.backend.crash.LatestLogCrashDetector
+import io.stamethyst.backend.easytier.EasyTierConfigRepository
+import io.stamethyst.backend.easytier.EasyTierDiagnosticsStore
+import io.stamethyst.backend.easytier.EasyTierStateStore
 import io.stamethyst.backend.crash.ProcessExitInfoCapture
 import io.stamethyst.backend.crash.SignalCrashDumpReader
 import io.stamethyst.backend.launch.JvmLogRotationManager
@@ -238,6 +241,7 @@ internal object DiagnosticsArchiveBuilder {
 
             exportedCount += writeWorkshopDownloadDiagnostics(zipOutput, context)
             exportedCount += writeWorkshopAutoImportPatchLogsForArchive(zipOutput, context)
+            exportedCount += writeEasyTierDiagnosticsForArchive(zipOutput, context)
 
             val histogramFiles = collectHistogramFiles(context)
             writeTextEntry(
@@ -474,6 +478,35 @@ internal object DiagnosticsArchiveBuilder {
         return exportedCount
     }
 
+    @Throws(IOException::class)
+    internal fun writeEasyTierDiagnosticsForArchive(
+        zipOutput: ZipOutputStream,
+        context: Context
+    ): Int {
+        val config = EasyTierConfigRepository.current()
+        val exportedConfigEntry = writeTextEntryAndCount(
+            zipOutput,
+            "sts/easytier/config_snapshot.txt",
+            buildEasyTierConfigSnapshot(context, config)
+        )
+        val stateCount = writeOptionalFile(
+            zipOutput,
+            EasyTierStateStore.stateFile(context),
+            "sts/easytier/${EasyTierStateStore.stateFile(context).name}"
+        )
+        val summaryCount = writeOptionalFile(
+            zipOutput,
+            EasyTierDiagnosticsStore.summaryFile(context),
+            "sts/easytier/${EasyTierDiagnosticsStore.summaryFile(context).name}"
+        )
+        val historyCount = writeOptionalDirectoryFiles(
+            zipOutput,
+            EasyTierDiagnosticsStore.eventHistoryDir(context),
+            "sts/easytier/events"
+        )
+        return exportedConfigEntry + stateCount + summaryCount + historyCount
+    }
+
     private fun buildLauncherCrashReportIndex(context: Context, reportFiles: List<File>): String = buildString {
         append("Launcher crash reports\n")
         append("Directory: ").append(RuntimePaths.launcherCrashReportsDir(context).absolutePath).append('\n')
@@ -522,6 +555,27 @@ internal object DiagnosticsArchiveBuilder {
             append('\n')
         }
     }
+
+    private fun buildEasyTierConfigSnapshot(
+        context: Context,
+        config: io.stamethyst.backend.easytier.EasyTierResolvedConfig
+    ): String =
+        buildString {
+            append("EasyTier config snapshot\n")
+            append("enabled=").append(config.enabled).append('\n')
+            append("canConnect=").append(config.canConnect).append('\n')
+            append("defaultMode=").append(config.defaultMode.cloudControlValue).append('\n')
+            append("allowSharedCommunityNetwork=").append(config.allowSharedCommunityNetwork).append('\n')
+            append("roomApiBaseUrl=").append(config.roomApiBaseUrl.ifBlank { "<empty>" }).append('\n')
+            append("webConsoleApiBaseUrl=").append(config.webConsoleApiBaseUrl.ifBlank { "<empty>" }).append('\n')
+            append("configServerUrl=").append(config.configServerUrl.ifBlank { "<empty>" }).append('\n')
+            append("entryNodeUrl=").append(config.entryNodeUrl.ifBlank { "<empty>" }).append('\n')
+            append("connectTimeoutSeconds=").append(config.connectTimeoutSeconds).append('\n')
+            append("statusPollIntervalSeconds=").append(config.statusPollIntervalSeconds).append('\n')
+            append("stateFile=").append(EasyTierStateStore.stateFile(context).absolutePath).append('\n')
+            append("summaryFile=").append(EasyTierDiagnosticsStore.summaryFile(context).absolutePath).append('\n')
+            append("eventHistoryDir=").append(EasyTierDiagnosticsStore.eventHistoryDir(context).absolutePath).append('\n')
+        }
 
     private fun rawWorkshopDownloadLogFile(context: Context, task: WorkshopDownloadTaskRecord): File {
         return File(
@@ -632,6 +686,15 @@ internal object DiagnosticsArchiveBuilder {
         zipOutput.putNextEntry(entry)
         zipOutput.write(content.toByteArray(StandardCharsets.UTF_8))
         zipOutput.closeEntry()
+    }
+
+    private fun writeTextEntryAndCount(
+        zipOutput: ZipOutputStream,
+        entryName: String,
+        content: String
+    ): Int {
+        writeTextEntry(zipOutput, entryName, content)
+        return 1
     }
 
     @Throws(IOException::class)

@@ -94,6 +94,20 @@
             android:foregroundServiceType="dataSync"
             android:process=":steamcloud" />
 
+        <service
+            android:name="io.stamethyst.backend.easytier.EasyTierProcessService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <service
+            android:name="io.stamethyst.backend.easytier.StsEasyTierVpnService"
+            android:exported="true"
+            android:permission="android.permission.BIND_VPN_SERVICE">
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+        </service>
+
         <activity
             android:name="net.kdt.pojavlaunch.ExitActivity"
             android:exported="false"

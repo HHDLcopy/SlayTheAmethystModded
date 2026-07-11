@@ -1,9 +1,11 @@
 package io.stamethyst.ui.main
 
 import android.app.Activity
+import android.content.Intent
 import androidx.activity.result.ActivityResultLauncher
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import io.stamethyst.backend.easytier.EasyTierPermissionCoordinator
 import io.stamethyst.model.ModItemUi
 
 internal enum class LaunchRequestAction {
@@ -76,6 +78,14 @@ internal data class MainScreenActions(
     val onUseCloudSteamCloudProgress: () -> Unit = {},
     val shouldPromptSteamCloudDirectMode: () -> Boolean = { false },
     val onSwitchSteamCloudDirectMode: () -> Unit = {},
+    val onConnectEasyTier: () -> Unit = {},
+    val onDisconnectEasyTier: () -> Unit = {},
+    val onRefreshEasyTierRooms: () -> Unit = {},
+    val onSelectEasyTierRoom: (String) -> Unit = {},
+    val onCreateEasyTierRoom: (String, Boolean) -> Unit = { _, _ -> },
+    val onLockEasyTierRoom: () -> Unit = {},
+    val onUnlockEasyTierRoom: () -> Unit = {},
+    val onCloseEasyTierRoom: () -> Unit = {},
 )
 
 @Composable
@@ -83,10 +93,18 @@ internal fun rememberMainScreenActions(
     viewModel: MainScreenViewModel,
     hostActivity: Activity?,
     importModsLauncher: ActivityResultLauncher<Array<String>>,
+    easyTierVpnPermissionLauncher: ActivityResultLauncher<Intent>,
     onOpenWorkshop: () -> Unit = {},
     onOpenWorkshopDetails: (ModItemUi) -> Unit = {},
 ): MainScreenActions {
-    return remember(viewModel, hostActivity, importModsLauncher, onOpenWorkshop, onOpenWorkshopDetails) {
+    return remember(
+        viewModel,
+        hostActivity,
+        importModsLauncher,
+        easyTierVpnPermissionLauncher,
+        onOpenWorkshop,
+        onOpenWorkshopDetails,
+    ) {
         val activity = hostActivity
         if (activity == null) {
             MainScreenActions(isHostAvailable = false)
@@ -191,6 +209,43 @@ internal fun rememberMainScreenActions(
                 },
                 onSwitchSteamCloudDirectMode = {
                     viewModel.switchSteamCloudDirectMode(activity)
+                },
+                onConnectEasyTier = {
+                    val permissionIntent = EasyTierPermissionCoordinator.prepareVpnPermissionIntent(activity)
+                    if (permissionIntent != null) {
+                        viewModel.onEasyTierVpnPermissionRequired(activity)
+                        easyTierVpnPermissionLauncher.launch(permissionIntent)
+                    } else {
+                        viewModel.onConnectEasyTier(activity)
+                    }
+                },
+                onDisconnectEasyTier = {
+                    viewModel.onDisconnectEasyTier(activity)
+                },
+                onRefreshEasyTierRooms = {
+                    viewModel.refreshEasyTierRooms(activity, forceRoomInfoReload = true)
+                },
+                onSelectEasyTierRoom = { roomId ->
+                    viewModel.selectEasyTierRoom(activity, roomId)
+                },
+                onCreateEasyTierRoom = { roomId, allowNewJoins ->
+                    val permissionIntent = EasyTierPermissionCoordinator.prepareVpnPermissionIntent(activity)
+                    if (permissionIntent != null) {
+                        viewModel.queueEasyTierRoomCreation(roomId, allowNewJoins)
+                        viewModel.onEasyTierVpnPermissionRequired(activity)
+                        easyTierVpnPermissionLauncher.launch(permissionIntent)
+                    } else {
+                        viewModel.createEasyTierRoom(activity, roomId, allowNewJoins)
+                    }
+                },
+                onLockEasyTierRoom = {
+                    viewModel.lockEasyTierRoom(activity)
+                },
+                onUnlockEasyTierRoom = {
+                    viewModel.unlockEasyTierRoom(activity)
+                },
+                onCloseEasyTierRoom = {
+                    viewModel.closeEasyTierRoom(activity)
                 },
             )
         }

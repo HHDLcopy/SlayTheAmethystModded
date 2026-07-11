@@ -16,15 +16,11 @@ import android.view.HapticFeedbackConstants
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
@@ -44,7 +40,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.stamethyst.R
@@ -61,8 +56,6 @@ internal data class DeveloperRuntimeSettingsActions(
     val onManualDismissBootOverlayChanged: (Boolean) -> Unit,
     val onSustainedPerformanceModeChanged: (Boolean) -> Unit,
     val onCompendiumUpgradeTouchFixEnabledChanged: (Boolean) -> Unit,
-    val onOpenCloudControlConfig: () -> Unit,
-    val onDismissCloudControlConfigDialog: () -> Unit,
 )
 
 
@@ -123,8 +116,6 @@ internal fun LauncherDeveloperSettingsScreenContent(
     onGdxPadCursorDebugChanged: (Boolean) -> Unit = {},
     onGlBridgeSwapHeartbeatDebugChanged: (Boolean) -> Unit = {},
     onClearJunkFiles: () -> Unit = {},
-    onOpenCloudControlConfig: () -> Unit = {},
-    onDismissCloudControlConfigDialog: () -> Unit = {},
     onResetLauncherSettingsToDefaults: () -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -158,10 +149,14 @@ internal fun LauncherDeveloperSettingsScreenContent(
                         onSustainedPerformanceModeChanged = onSustainedPerformanceModeChanged,
                         onCompendiumUpgradeTouchFixEnabledChanged =
                             onCompendiumUpgradeTouchFixEnabledChanged,
-                        onOpenCloudControlConfig = onOpenCloudControlConfig,
-                        onDismissCloudControlConfigDialog = onDismissCloudControlConfigDialog,
                     ),
                 )
+            }
+        }
+
+        item {
+            SettingsSectionCard(title = stringResource(R.string.settings_easytier_title)) {
+                SettingsEasyTierSection(uiState = uiState)
             }
         }
 
@@ -506,23 +501,6 @@ internal fun SettingsDeveloperRuntimeSection(
         )
     )
 
-    if (uiState.cloudControlConfigLoading) {
-        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-    }
-
-    SettingsActionListItem(
-        title = stringResource(
-            if (uiState.cloudControlConfigLoading) {
-                R.string.settings_developer_cloud_control_loading
-            } else {
-                R.string.settings_developer_cloud_control_title
-            }
-        ),
-        supportingText = stringResource(R.string.settings_developer_cloud_control_desc),
-        enabled = !uiState.busy && !uiState.cloudControlConfigLoading,
-        onClick = actions.onOpenCloudControlConfig
-    )
-
     if (showGameModeDialog) {
         AlertDialog(
             onDismissRequest = { showGameModeDialog = false },
@@ -544,54 +522,6 @@ internal fun SettingsDeveloperRuntimeSection(
             confirmButton = {
                 TextButton(onClick = { showGameModeDialog = false }) {
                     Text(stringResource(R.string.settings_system_game_mode_acknowledge))
-                }
-            }
-        )
-    }
-
-    uiState.cloudControlConfigDialogState?.let { dialogState ->
-        AlertDialog(
-            onDismissRequest = actions.onDismissCloudControlConfigDialog,
-            title = { Text(stringResource(R.string.settings_developer_cloud_control_dialog_title)) },
-            text = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 480.dp)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        text = stringResource(
-                            R.string.settings_developer_cloud_control_dialog_source,
-                            dialogState.sourceDisplayName
-                        ),
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    SelectionContainer {
-                        Text(
-                            text = stringResource(
-                                R.string.settings_developer_cloud_control_dialog_url,
-                                dialogState.requestUrl
-                            ),
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                    HorizontalDivider()
-                    SelectionContainer {
-                        Text(
-                            text = dialogState.rawText.ifBlank {
-                                stringResource(R.string.settings_developer_cloud_control_empty)
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily = FontFamily.Monospace
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                HapticTextButton(onClick = actions.onDismissCloudControlConfigDialog) {
-                    Text(stringResource(R.string.common_action_close))
                 }
             }
         )

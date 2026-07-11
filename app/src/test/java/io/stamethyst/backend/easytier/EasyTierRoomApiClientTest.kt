@@ -1,0 +1,555 @@
+package io.stamethyst.backend.easytier
+
+import android.app.Application
+import android.content.Context
+import android.content.ContextWrapper
+import java.io.File
+import java.nio.file.Files
+import okhttp3.Headers
+import okhttp3.OkHttpClient
+import mockwebserver3.MockResponse
+import mockwebserver3.MockWebServer
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import io.stamethyst.config.CloudControlConfig
+import io.stamethyst.config.CloudControlEasyTierSettings
+import io.stamethyst.config.CloudControlSettings
+
+class EasyTierRoomApiClientTest {
+    @Test
+    fun parseStartSessionResponse_mapsRoomSessionFields() {
+        val roots = TestRoots.create("easytier-room-api-parse-start")
+        try {
+            val client = EasyTierRoomApiClient(roots.context, OkHttpClient())
+            val parsed = client.parseStartSessionResponse(
+                """
+                {
+                  "sessionId": "sess-1",
+                  "roomId": "room-alpha",
+                  "mode": "community",
+                  "entryNodeUrl": "tcp://online.example.com:11010",
+                  "configServerUrl": "udp://online.example.com:22020",
+                  "aclGroup": "player",
+                  "networkSecret": "short-secret",
+                  "expiresAt": 1720000000
+                }
+                """.trimIndent()
+            )
+
+            assertEquals("sess-1", parsed.sessionId)
+            assertEquals("room-alpha", parsed.roomId)
+            assertEquals(EasyTierNetworkMode.Community, parsed.mode)
+            assertEquals("tcp://online.example.com:11010", parsed.entryNodeUrl)
+            assertEquals("udp://online.example.com:22020", parsed.configServerUrl)
+            assertEquals("player", parsed.aclGroup)
+            assertEquals("short-secret", parsed.networkSecret)
+            assertEquals(1720000000L, parsed.expiresAtEpochSeconds)
+        } finally {
+            roots.rootDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun parseRoomInfoResponse_mapsMembers() {
+        val roots = TestRoots.create("easytier-room-api-parse-room")
+        try {
+            val client = EasyTierRoomApiClient(roots.context, OkHttpClient())
+            val parsed = client.parseRoomInfoResponse(
+                """
+                {
+                  "roomId": "room-alpha",
+                  "ownerPlayerId": "host-1",
+                  "ownerDisplayName": "Host",
+                  "mode": "room",
+                  "allowNewJoins": true,
+                  "closedAtMs": 0,
+                  "memberCount": 2,
+                  "members": [
+                    { "playerId": "host-1", "displayName": "Host", "role": "owner", "online": true, "assignedIpv4Cidr": "10.144.0.1/24" },
+                    { "playerId": "player-2", "displayName": "Player 2", "role": "member", "online": false, "assignedIpv4Cidr": "10.144.0.2/24" }
+                  ]
+                }
+                """.trimIndent()
+            )
+
+            assertEquals("room-alpha", parsed.roomId)
+            assertEquals("host-1", parsed.ownerPlayerId)
+            assertEquals("Host", parsed.ownerDisplayName)
+            assertEquals(EasyTierNetworkMode.Room, parsed.mode)
+            assertTrue(parsed.allowNewJoins)
+            assertEquals(0L, parsed.closedAtMs)
+            assertEquals(2, parsed.memberCount)
+            assertEquals(2, parsed.members.size)
+            assertEquals("member", parsed.members[1].role)
+            assertEquals("10.144.0.1/24", parsed.members[0].assignedIpv4Cidr)
+            assertEquals("10.144.0.2/24", parsed.members[1].assignedIpv4Cidr)
+        } finally {
+            roots.rootDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun startSession_postsRequestAndParsesResponse() {
+        val roots = TestRoots.create("easytier-room-api-http")
+        val server = MockWebServer()
+        try {
+            server.enqueue(
+                MockResponse(
+                    200,
+                    Headers.headersOf("Content-Type", "application/json"),
+                    """
+                    {
+                      "sessionId": "sess-http",
+                      "roomId": "room-http",
+                      "mode": "room",
+                      "entryNodeUrl": "tcp://127.0.0.1:11010",
+                      "configServerUrl": "udp://127.0.0.1:22020",
+                      "aclGroup": "player",
+                      "networkSecret": "temporary-key",
+                      "expiresAt": 1800000000
+                    }
+                    """.trimIndent()
+                )
+            )
+            server.start()
+
+            val client = EasyTierRoomApiClient(
+                context = roots.context,
+                client = OkHttpClient(),
+            )
+            roots.overrideBaseUrl(server.url("/").toString().removeSuffix("/"))
+
+            val session = client.startSession(
+                roomId = "room-http",
+                playerId = "player-a",
+                displayName = "Player A",
+            )
+
+            val request = server.takeRequest()
+            assertEquals("/api/lan/session/start", request.target)
+            assertEquals("POST", request.method)
+            val body = request.body?.utf8().orEmpty()
+            assertTrue(body.contains("\"roomId\":\"room-http\""))
+            assertTrue(body.contains("\"playerId\":\"player-a\""))
+            assertTrue(body.contains("\"displayName\":\"Player A\""))
+            assertEquals("sess-http", session.sessionId)
+            assertEquals("room-http", session.roomId)
+            assertEquals("temporary-key", session.networkSecret)
+        } finally {
+            server.close()
+            roots.restoreDefaults()
+            roots.rootDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun fetchSessionStatus_parsesServerSnapshot() {
+        val roots = TestRoots.create("easytier-room-api-status")
+        val server = MockWebServer()
+        try {
+            server.enqueue(
+                MockResponse(
+                    200,
+                    Headers.headersOf("Content-Type", "application/json"),
+                    """
+                    {
+                      "sessionId": "sess-2",
+                      "roomId": "room-status",
+                      "sessionState": "connected",
+                      "roomState": "open",
+                      "peerCount": 3,
+                      "assignedIpv4Cidr": "10.144.0.2/24",
+                      "relayServerDescription": "online.example.com:11010"
+                    }
+                    """.trimIndent()
+                )
+            )
+            server.start()
+
+            val client = EasyTierRoomApiClient(roots.context, OkHttpClient())
+            roots.overrideBaseUrl(server.url("/").toString().removeSuffix("/"))
+
+            val status = client.fetchSessionStatus("sess-2", "A".repeat(43))
+
+            val request = server.takeRequest()
+            assertEquals("/api/lan/session/status?sessionId=sess-2", request.target)
+            assertEquals("GET", request.method)
+            assertEquals("Bearer ${"A".repeat(43)}", request.headers["Authorization"])
+            assertEquals("connected", status.sessionState)
+            assertEquals(3, status.peerCount)
+            assertEquals("10.144.0.2/24", status.assignedIpv4Cidr)
+        } finally {
+            server.close()
+            roots.restoreDefaults()
+            roots.rootDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun fetchSessionStatus_encodesQueryParameter() {
+        val roots = TestRoots.create("easytier-room-api-status-encoding")
+        val server = MockWebServer()
+        try {
+            server.enqueue(
+                MockResponse(
+                    200,
+                    Headers.headersOf("Content-Type", "application/json"),
+                    """
+                    {
+                      "sessionId": "sess with/slash?and=eq",
+                      "roomId": "room-status",
+                      "sessionState": "issued",
+                      "roomState": "active"
+                    }
+                    """.trimIndent()
+                )
+            )
+            server.start()
+
+            val client = EasyTierRoomApiClient(roots.context, OkHttpClient())
+            roots.overrideBaseUrl(server.url("/").toString().removeSuffix("/"))
+
+            client.fetchSessionStatus("sess with/slash?and=eq", "A".repeat(43))
+
+            val request = server.takeRequest()
+            assertEquals("GET", request.method)
+            assertTrue(request.target.startsWith("/api/lan/session/status?sessionId="))
+            assertTrue(request.target.contains("sess%20with"))
+            assertTrue(request.target.contains("and%3Deq"))
+            assertEquals("Bearer ${"A".repeat(43)}", request.headers["Authorization"])
+        } finally {
+            server.close()
+            roots.restoreDefaults()
+            roots.rootDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun reportSessionRuntime_postsPayloadAndParsesResponse() {
+        val roots = TestRoots.create("easytier-room-api-runtime-report")
+        val server = MockWebServer()
+        try {
+            server.enqueue(
+                MockResponse(
+                    200,
+                    Headers.headersOf("Content-Type", "application/json"),
+                    """
+                    {
+                      "sessionId": "sess-runtime",
+                      "roomId": "room-runtime",
+                      "sessionState": "connected",
+                      "roomState": "active",
+                      "peerCount": 2,
+                      "assignedIpv4Cidr": "10.144.0.9/24",
+                      "relayServerDescription": "single-server relay"
+                    }
+                    """.trimIndent()
+                )
+            )
+            server.start()
+
+            val client = EasyTierRoomApiClient(roots.context, OkHttpClient())
+            roots.overrideBaseUrl(server.url("/").toString().removeSuffix("/"))
+
+            val status = client.reportSessionRuntime(
+                sessionId = "sess-runtime",
+                sessionToken = "A".repeat(43),
+                assignedIpv4Cidr = "10.144.0.9/24",
+                relayServerDescription = "single-server relay",
+            )
+
+            val request = server.takeRequest()
+            assertEquals("/api/lan/session/runtime", request.target)
+            assertEquals("POST", request.method)
+            val body = request.body?.utf8().orEmpty()
+            assertTrue(body.contains("\"sessionId\":\"sess-runtime\""))
+            assertFalse(body.contains("sessionToken"))
+            assertEquals("Bearer ${"A".repeat(43)}", request.headers["Authorization"])
+            assertTrue(body.contains("\"assignedIpv4Cidr\":\"10.144.0.9/24\""))
+            assertTrue(body.contains("\"relayServerDescription\":\"single-server relay\""))
+            assertEquals("connected", status.sessionState)
+            assertEquals("10.144.0.9/24", status.assignedIpv4Cidr)
+        } finally {
+            server.close()
+            roots.restoreDefaults()
+            roots.rootDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun reportSessionRuntime_exposesHttpStatusForCompatibilityFallback() {
+        val roots = TestRoots.create("easytier-room-api-runtime-report-404")
+        val server = MockWebServer()
+        try {
+            server.enqueue(
+                MockResponse(
+                    code = 404,
+                    body = "{\"message\":\"route not found\"}",
+                )
+            )
+            server.start()
+
+            val client = EasyTierRoomApiClient(roots.context, OkHttpClient())
+            roots.overrideBaseUrl(server.url("/").toString().removeSuffix("/"))
+
+            val error = runCatching {
+                client.reportSessionRuntime(
+                    sessionId = "sess-runtime",
+                    sessionToken = "A".repeat(43),
+                    assignedIpv4Cidr = "10.144.0.9/24",
+                )
+            }.exceptionOrNull()
+
+            assertEquals(404, (error as EasyTierRoomApiHttpException).statusCode)
+        } finally {
+            server.close()
+            roots.restoreDefaults()
+            roots.rootDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun fetchRoomInfo_encodesRoomIdPathSegment() {
+        val roots = TestRoots.create("easytier-room-api-room-encoding")
+        val server = MockWebServer()
+        try {
+            server.enqueue(
+                MockResponse(
+                    200,
+                    Headers.headersOf("Content-Type", "application/json"),
+                    """
+                    {
+                      "roomId": "room/a b",
+                      "ownerPlayerId": "owner",
+                      "ownerDisplayName": "Owner",
+                      "mode": "room",
+                      "allowNewJoins": true,
+                      "closedAtMs": 0,
+                      "memberCount": 0,
+                      "members": []
+                    }
+                    """.trimIndent()
+                )
+            )
+            server.start()
+
+            val client = EasyTierRoomApiClient(roots.context, OkHttpClient())
+            roots.overrideBaseUrl(server.url("/").toString().removeSuffix("/"))
+
+            val room = client.fetchRoomInfo("room/a b")
+
+            val request = server.takeRequest()
+            assertEquals("GET", request.method)
+            assertEquals("/api/lan/rooms/room%2Fa%20b", request.target)
+            assertEquals("room/a b", room.roomId)
+        } finally {
+            server.close()
+            roots.restoreDefaults()
+            roots.rootDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun parseRoomListResponse_mapsRoomCards() {
+        val roots = TestRoots.create("easytier-room-api-parse-room-list")
+        try {
+            val client = EasyTierRoomApiClient(roots.context, OkHttpClient())
+            val parsed = client.parseRoomListResponse(
+                """
+                {
+                  "rooms": [
+                    {
+                      "roomId": "alpha-room",
+                      "ownerPlayerId": "alice",
+                      "ownerDisplayName": "Alice",
+                      "mode": "room",
+                      "allowNewJoins": true,
+                      "closedAtMs": 0,
+                      "memberCount": 3,
+                      "onlineMemberCount": 2,
+                      "roomState": "active",
+                      "lastSessionStartedAtMs": 123,
+                      "updatedAtMs": 456
+                    }
+                  ]
+                }
+                """.trimIndent()
+            )
+
+            assertEquals(1, parsed.size)
+            assertEquals("alpha-room", parsed[0].roomId)
+            assertEquals("alice", parsed[0].ownerPlayerId)
+            assertEquals("Alice", parsed[0].ownerDisplayName)
+            assertEquals(EasyTierNetworkMode.Room, parsed[0].mode)
+            assertTrue(parsed[0].allowNewJoins)
+            assertEquals(0L, parsed[0].closedAtMs)
+            assertEquals(3, parsed[0].memberCount)
+            assertEquals(2, parsed[0].onlineMemberCount)
+            assertEquals("active", parsed[0].roomState)
+        } finally {
+            roots.rootDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun startSession_postsCreationJoinPolicy() {
+        val roots = TestRoots.create("easytier-room-api-start-session-policy")
+        val server = MockWebServer()
+        try {
+            server.enqueue(
+                MockResponse(
+                    200,
+                    Headers.headersOf("Content-Type", "application/json"),
+                    """
+                    {
+                      "sessionId": "lan_alpha",
+                      "roomId": "alpha-room",
+                      "mode": "room",
+                      "entryNodeUrl": "tcp://online.example.com:11010",
+                      "configServerUrl": "udp://online.example.com:22020",
+                      "aclGroup": "room-alpha",
+                      "networkSecret": "temporary-key",
+                      "expiresAt": 1800000000
+                    }
+                    """.trimIndent()
+                )
+            )
+            server.start()
+
+            val client = EasyTierRoomApiClient(roots.context, OkHttpClient())
+            roots.overrideBaseUrl(server.url("/").toString().removeSuffix("/"))
+
+            val session = client.startSession(
+                roomId = "alpha-room",
+                playerId = "alice",
+                displayName = "Alice",
+                allowNewJoinsWhenCreating = false,
+            )
+
+            val request = server.takeRequest()
+            assertEquals("/api/lan/session/start", request.target)
+            assertEquals("POST", request.method)
+            val body = request.body?.utf8().orEmpty()
+            assertTrue(body.contains("\"roomId\":\"alpha-room\""))
+            assertTrue(body.contains("\"playerId\":\"alice\""))
+            assertTrue(body.contains("\"allowNewJoins\":false"))
+            assertEquals("lan_alpha", session.sessionId)
+            assertEquals("alpha-room", session.roomId)
+        } finally {
+            server.close()
+            roots.restoreDefaults()
+            roots.rootDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun lockRoom_postsActionAndParsesResponse() {
+        val roots = TestRoots.create("easytier-room-api-lock-room")
+        val server = MockWebServer()
+        try {
+            server.enqueue(
+                MockResponse(
+                    200,
+                    Headers.headersOf("Content-Type", "application/json"),
+                    """
+                    {
+                      "roomId": "alpha-room",
+                      "ownerPlayerId": "alice",
+                      "ownerDisplayName": "Alice",
+                      "mode": "room",
+                      "allowNewJoins": false,
+                      "closedAtMs": 0,
+                      "memberCount": 1,
+                      "members": []
+                    }
+                    """.trimIndent()
+                )
+            )
+            server.start()
+
+            val client = EasyTierRoomApiClient(roots.context, OkHttpClient())
+            roots.overrideBaseUrl(server.url("/").toString().removeSuffix("/"))
+
+            val room = client.lockRoom(
+                roomId = "alpha-room",
+                ownerToken = "A".repeat(43),
+            )
+
+            val request = server.takeRequest()
+            assertEquals("/api/lan/rooms/alpha-room/action", request.target)
+            assertEquals("POST", request.method)
+            val body = request.body?.utf8().orEmpty()
+            assertFalse(body.contains("ownerToken"))
+            assertEquals("A".repeat(43), request.headers["X-Lan-Owner-Token"])
+            assertTrue(body.contains("\"action\":\"lock\""))
+            assertEquals(false, room.allowNewJoins)
+        } finally {
+            server.close()
+            roots.restoreDefaults()
+            roots.rootDir.deleteRecursively()
+        }
+    }
+
+    private class TestRoots private constructor(
+        val rootDir: File,
+        val context: Context,
+        private val originalSettings: CloudControlSettings,
+    ) {
+        companion object {
+            fun create(prefix: String): TestRoots {
+                val rootDir = Files.createTempDirectory(prefix).toFile()
+                val filesDir = File(rootDir, "internal-files").apply { mkdirs() }
+                val externalFilesDir = File(rootDir, "external-files").apply { mkdirs() }
+                val original = CloudControlConfig.current()
+                return TestRoots(
+                    rootDir = rootDir,
+                    context = object : ContextWrapper(Application()) {
+                        override fun getFilesDir(): File = filesDir
+
+                        override fun getExternalFilesDir(type: String?): File = externalFilesDir
+
+                        override fun getApplicationContext(): Context = this
+
+                        override fun getPackageName(): String = "io.stamethyst.test"
+                    },
+                    originalSettings = original,
+                )
+            }
+        }
+
+        fun overrideBaseUrl(baseUrl: String) {
+            setCurrentSettings(
+                CloudControlSettings(
+                    heartbeatIntervalSeconds = originalSettings.heartbeatIntervalSeconds,
+                    heartbeatWsUrl = originalSettings.heartbeatWsUrl,
+                    qqGroupNumber = originalSettings.qqGroupNumber,
+                    steamDepotKeys = originalSettings.steamDepotKeys,
+                    easyTier = CloudControlEasyTierSettings(
+                        enabled = true,
+                        roomApiBaseUrl = baseUrl,
+                        webConsoleApiBaseUrl = originalSettings.easyTier.webConsoleApiBaseUrl,
+                        configServerUrl = originalSettings.easyTier.configServerUrl,
+                        entryNodeUrl = "tcp://online.example.com:11010",
+                        connectTimeoutSeconds = originalSettings.easyTier.connectTimeoutSeconds,
+                        statusPollIntervalSeconds = originalSettings.easyTier.statusPollIntervalSeconds,
+                        allowSharedCommunityNetwork = originalSettings.easyTier.allowSharedCommunityNetwork,
+                        defaultMode = originalSettings.easyTier.defaultMode,
+                    )
+                )
+            )
+        }
+
+        fun restoreDefaults() {
+            setCurrentSettings(originalSettings)
+        }
+
+        private fun setCurrentSettings(settings: CloudControlSettings) {
+            val field = CloudControlConfig::class.java.getDeclaredField("currentSettings")
+            field.isAccessible = true
+            field.set(CloudControlConfig, settings)
+        }
+    }
+}

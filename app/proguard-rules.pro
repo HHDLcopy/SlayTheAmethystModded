@@ -7,6 +7,7 @@
 }
 -keep class org.lwjgl.glfw.CallbackBridge { *; }
 -keep class io.stamethyst.backend.workshop.AndroidZstdBridge { *; }
+-keep class com.easytier.jni.EasyTierJNI { *; }
 -keep class net.kdt.pojavlaunch.AWTInputBridge { *; }
 -keep class net.kdt.pojavlaunch.CriticalNativeTest { *; }
 -keep class net.kdt.pojavlaunch.ExitActivity { *; }

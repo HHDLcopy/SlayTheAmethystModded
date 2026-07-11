@@ -5,6 +5,12 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.SharedPreferences
 import io.stamethyst.backend.workshop.WorkshopAutoImportPatchLogStore
+import io.stamethyst.backend.easytier.EasyTierConnectionSnapshot
+import io.stamethyst.backend.easytier.EasyTierConnectionStatus
+import io.stamethyst.backend.easytier.EasyTierDiagnosticsStore
+import io.stamethyst.backend.easytier.EasyTierFailureCategory
+import io.stamethyst.backend.easytier.EasyTierNetworkMode
+import io.stamethyst.backend.easytier.EasyTierStateStore
 import io.stamethyst.config.RuntimePaths
 import java.io.File
 import java.io.FileOutputStream
@@ -68,6 +74,56 @@ class DiagnosticsArchiveBuilderAutoImportPatchLogsTest {
             assertNull(zipFile.getEntry("sts/launcher_crash_reports/notes.txt"))
             val reportText = zipFile.getInputStream(reportEntry).bufferedReader(Charsets.UTF_8).use { it.readText() }
             assertEquals("launcher stack trace", reportText)
+        }
+    }
+
+    @Test
+    fun writeEasyTierDiagnosticsForArchive_includesSnapshotSummaryAndHistory() {
+        val roots = TestRoots.create("diag-easytier")
+        val snapshot = EasyTierConnectionSnapshot(
+            enabled = true,
+            canConnect = true,
+            status = EasyTierConnectionStatus.FAILED,
+            mode = EasyTierNetworkMode.Room,
+            failureCategory = EasyTierFailureCategory.RuntimeBridgePending,
+            roomId = "room-e2e",
+            entryNodeUrl = "tcp://online.example.com:11010",
+            lastUpdatedAtMs = 9_000L,
+            lastErrorSummary = "EasyTier runtime bridge is not wired into this build yet."
+        )
+        EasyTierStateStore.writeSnapshot(roots.context, snapshot)
+        EasyTierDiagnosticsStore.recordStateTransition(
+            context = roots.context,
+            snapshot = snapshot,
+            extraLines = listOf("runtime_bridge_integrated=false")
+        )
+        val archive = File(roots.rootDir, "diagnostics-easytier.zip")
+
+        FileOutputStream(archive, false).use { output ->
+            ZipOutputStream(output).use { zipOutput ->
+                DiagnosticsArchiveBuilder.writeEasyTierDiagnosticsForArchive(zipOutput, roots.context)
+            }
+        }
+
+        ZipFile(archive).use { zipFile ->
+            val configEntry = zipFile.getEntry("sts/easytier/config_snapshot.txt")
+            assertNotNull(configEntry)
+            val configText = zipFile.getInputStream(configEntry).bufferedReader(Charsets.UTF_8).use { it.readText() }
+            assertTrue(configText.contains("entryNodeUrl="))
+
+            val stateEntry = zipFile.getEntry("sts/easytier/connection-state.json")
+            assertNotNull(stateEntry)
+            val stateText = zipFile.getInputStream(stateEntry).bufferedReader(Charsets.UTF_8).use { it.readText() }
+            assertTrue(stateText.contains("RuntimeBridgePending"))
+
+            val summaryEntry = zipFile.getEntry("sts/easytier/last-session-summary.txt")
+            assertNotNull(summaryEntry)
+            val summaryText = zipFile.getInputStream(summaryEntry).bufferedReader(Charsets.UTF_8).use { it.readText() }
+            assertTrue(summaryText.contains("Failure Category: RuntimeBridgePending"))
+
+            val eventEntry = zipFile.entries().asSequence()
+                .firstOrNull { it.name.startsWith("sts/easytier/events/event-failed-") }
+            assertNotNull(eventEntry)
         }
     }
 

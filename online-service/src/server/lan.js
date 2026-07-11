@@ -13,6 +13,9 @@ const MIN_EASYTIER_SESSION_TTL_SECONDS = 60;
 const MAX_EASYTIER_SESSION_TTL_SECONDS = 24 * 60 * 60;
 const DEFAULT_LAN_ROOM_LIST_LIMIT = 20;
 const MAX_LAN_ROOM_LIST_LIMIT = 50;
+const MAX_LAN_ROOM_MEMBERS = 16;
+const MAX_LAN_ROOM_MEMBERS_PER_SOURCE_IP = 8;
+const MAX_LAN_ROOMS_PER_SOURCE_IP = 10;
 const MAX_ID_LENGTH = 128;
 const MAX_TEXT_LENGTH = 256;
 const TERMINAL_SESSION_STATES = new Set(['expired', 'stopped', 'superseded']);
@@ -26,20 +29,47 @@ class LanStore {
 
   async startSession(rawBody, options = {}) {
     const request = parseStartSessionRequest(rawBody || {});
+    request.sourceIp = normalizeSourceIp(options.sourceIp);
     const nowMs = normalizeNowMs(options.nowMs);
     const easyTier = normalizeEasyTierSettings(options.easyTier);
     ensureEasyTierSessionAvailability(easyTier);
 
     await this.expireSessions(nowMs);
 
-    const room = await this.getOrCreateRoom(request, nowMs);
+    return this.database.transaction(async (transactionDatabase) => {
+      const transactionStore = new LanStore(transactionDatabase, this.config);
+      return transactionStore.startSessionInTransaction(request, nowMs, easyTier);
+    });
+  }
+
+  async startSessionInTransaction(request, nowMs, easyTier) {
+    const roomResult = await this.getOrCreateRoom(request, nowMs);
+    const room = roomResult.room;
+    const ownerToken = roomResult.ownerToken || request.ownerToken;
     if (isRoomClosed(room)) {
       throw httpError(403, 'This room has been closed');
     }
+    const priorSession = await this.findLatestSessionForPlayer(room.roomId, request.playerId);
+    if (!roomResult.created && request.playerId === room.ownerPlayerId &&
+      !tokensEqual(room.ownerTokenHash, request.ownerToken)) {
+      throw httpError(403, 'Room owner credential is required');
+    }
+    if (!roomResult.created && request.playerId !== room.ownerPlayerId && priorSession &&
+      !tokensEqual(priorSession.sessionTokenHash, request.sessionToken)) {
+      throw httpError(403, 'Existing player credential is required');
+    }
     if (!room.allowNewJoins && request.playerId !== room.ownerPlayerId) {
-      const knownMember = await this.hasJoinedRoom(room.roomId, request.playerId);
-      if (!knownMember) {
+      if (!priorSession || !tokensEqual(priorSession.sessionTokenHash, request.sessionToken)) {
         throw httpError(403, 'This room is not accepting new joins');
+      }
+    }
+    if (request.playerId !== room.ownerPlayerId && !priorSession) {
+      if (await this.countActiveSessions(room.roomId, nowMs) >= MAX_LAN_ROOM_MEMBERS) {
+        throw httpError(429, 'This room is full');
+      }
+      if (await this.countActiveSessionsForSource(room.roomId, request.sourceIp, nowMs) >=
+        MAX_LAN_ROOM_MEMBERS_PER_SOURCE_IP) {
+        throw httpError(429, 'Too many active members from this network');
       }
     }
 
@@ -75,6 +105,7 @@ class LanStore {
     ]);
 
     const sessionId = generateSessionId();
+    const sessionToken = generateAccessToken();
     const expiresAtMs = nowMs + (resolveEasyTierSessionTtlSeconds(this.config) * 1000);
     const relayServerDescription = buildRelayServerDescription(
       easyTier.entryNodeUrl,
@@ -95,6 +126,8 @@ class LanStore {
         acl_group,
         network_secret,
         session_state,
+        session_token_hash,
+        source_ip,
         assigned_ipv4_cidr,
         relay_server_description,
         created_at_ms,
@@ -102,7 +135,7 @@ class LanStore {
         expires_at_ms,
         ended_at_ms
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
     `, [
       sessionId,
       room.roomId,
@@ -116,6 +149,8 @@ class LanStore {
       room.aclGroup,
       room.networkSecret,
       'issued',
+      hashToken(sessionToken),
+      request.sourceIp,
       '',
       relayServerDescription,
       nowMs,
@@ -141,69 +176,15 @@ class LanStore {
       configServerUrl: easyTier.configServerUrl,
       aclGroup: room.aclGroup,
       networkSecret: room.networkSecret,
+      sessionToken,
+      ownerToken: request.playerId === room.ownerPlayerId ? ownerToken : '',
       expiresAt: Math.floor(expiresAtMs / 1000)
     };
   }
 
   async createRoom(rawBody, options = {}) {
-    const request = parseCreateRoomRequest(rawBody || {});
-    const nowMs = normalizeNowMs(options.nowMs);
-    const easyTier = normalizeEasyTierSettings(options.easyTier);
-    ensureEasyTierSessionAvailability(easyTier);
-
-    await this.expireSessions(nowMs);
-
-    const existing = await this.findRoom(request.roomId);
-    if (existing && existing.ownerPlayerId !== request.playerId) {
-      throw httpError(409, 'LAN room already exists');
-    }
-
-    const ownerDisplayName = request.displayName || request.playerId;
-    if (!existing) {
-      await this.createRoomRecord({
-        roomId: request.roomId,
-        playerId: request.playerId,
-        displayName: ownerDisplayName,
-        allowNewJoins: request.allowNewJoins
-      }, nowMs);
-    } else if (
-      existing.ownerDisplayName !== ownerDisplayName ||
-      existing.allowNewJoins !== request.allowNewJoins ||
-      existing.closedAtMs > 0
-    ) {
-      const reopeningClosedRoom = existing.closedAtMs > 0;
-      const updatedAtMs = reopeningClosedRoom
-        ? Math.max(nowMs, existing.updatedAtMs + 1, existing.closedAtMs + 1)
-        : nowMs;
-      const aclGroup = reopeningClosedRoom ? buildAclGroup(request.roomId) : existing.aclGroup;
-      const networkSecret = reopeningClosedRoom ? generateNetworkSecret() : existing.networkSecret;
-      const createdAtMs = reopeningClosedRoom ? updatedAtMs : existing.createdAtMs;
-      const lastSessionStartedAtMs = reopeningClosedRoom ? 0 : existing.lastSessionStartedAtMs;
-      await this.database.run(`
-        UPDATE lan_rooms
-        SET
-          owner_display_name = ?,
-          allow_new_joins = ?,
-          closed_at_ms = 0,
-          acl_group = ?,
-          network_secret = ?,
-          created_at_ms = ?,
-          last_session_started_at_ms = ?,
-          updated_at_ms = ?
-        WHERE room_id = ?
-      `, [
-        ownerDisplayName,
-        request.allowNewJoins ? 1 : 0,
-        aclGroup,
-        networkSecret,
-        createdAtMs,
-        lastSessionStartedAtMs,
-        updatedAtMs,
-        request.roomId
-      ]);
-    }
-
-    return this.getRoomInfo(request.roomId, { nowMs });
+    parseCreateRoomRequest(rawBody || {});
+    throw httpError(409, 'LAN rooms must be created by the owner starting a session');
   }
 
   async updateRoom(rawRoomId, rawBody, options = {}) {
@@ -216,7 +197,7 @@ class LanStore {
     if (!room) {
       throw httpError(404, 'LAN room not found');
     }
-    if (request.playerId !== room.ownerPlayerId) {
+    if (!tokensEqual(room.ownerTokenHash, request.ownerToken)) {
       throw httpError(403, 'Only the room owner can manage this room');
     }
     if (isRoomClosed(room) && request.action !== 'close') {
@@ -280,6 +261,7 @@ class LanStore {
         updatedAtMs: nowMs
       };
       const members = await this.buildRoomMembers(closedRoom, nowMs);
+      await this.deleteRoomsWithoutActiveOwner(nowMs);
       return {
         roomId: closedRoom.roomId,
         ownerPlayerId: closedRoom.ownerPlayerId,
@@ -296,7 +278,8 @@ class LanStore {
   }
 
   async stopSession(rawBody, options = {}) {
-    const sessionId = parseSessionIdentifier(rawBody);
+    const request = parseSessionCredentialRequest(rawBody);
+    const sessionId = request.sessionId;
     const nowMs = normalizeNowMs(options.nowMs);
     await this.expireSessions(nowMs);
 
@@ -304,6 +287,7 @@ class LanStore {
     if (!session) {
       throw httpError(404, 'LAN session not found');
     }
+    ensureSessionAccess(session, request.sessionToken);
 
     const sessionState = deriveSessionState(session, nowMs);
     if (session.endedAtMs === 0 && !TERMINAL_SESSION_STATES.has(sessionState)) {
@@ -327,6 +311,7 @@ class LanStore {
         nowMs,
         session.roomId
       ]);
+      await this.deleteRoomsWithoutActiveOwner(nowMs);
     }
 
     return {
@@ -347,6 +332,7 @@ class LanStore {
     if (!session) {
       throw httpError(404, 'LAN session not found');
     }
+    ensureSessionAccess(session, request.sessionToken);
 
     const sessionState = deriveSessionState(session, nowMs);
     if (session.endedAtMs > 0 || TERMINAL_SESSION_STATES.has(sessionState)) {
@@ -355,6 +341,9 @@ class LanStore {
 
     const relayServerDescription =
       request.relayServerDescription || session.relayServerDescription;
+    // Runtime reports are lease heartbeats. Status reads cannot keep an abandoned
+    // client alive, so only a working EasyTier runtime can renew this session.
+    const expiresAtMs = nowMs + (resolveEasyTierSessionTtlSeconds(this.config) * 1000);
 
     await this.database.run(`
       UPDATE lan_sessions
@@ -362,11 +351,13 @@ class LanStore {
         session_state = 'connected',
         assigned_ipv4_cidr = ?,
         relay_server_description = ?,
+        expires_at_ms = ?,
         updated_at_ms = ?
       WHERE session_id = ?
     `, [
       request.assignedIpv4Cidr,
       relayServerDescription,
+      expiresAtMs,
       nowMs,
       request.sessionId
     ]);
@@ -379,11 +370,15 @@ class LanStore {
       session.roomId
     ]);
 
-    return this.getSessionStatus(request.sessionId, { nowMs });
+    return this.getSessionStatus({
+      sessionId: request.sessionId,
+      sessionToken: request.sessionToken
+    }, { nowMs });
   }
 
   async getSessionStatus(rawQuery, options = {}) {
-    const sessionId = parseSessionIdentifier(rawQuery);
+    const request = parseSessionCredentialRequest(rawQuery);
+    const sessionId = request.sessionId;
     const nowMs = normalizeNowMs(options.nowMs);
     await this.expireSessions(nowMs);
 
@@ -391,6 +386,7 @@ class LanStore {
     if (!session) {
       throw httpError(404, 'LAN session not found');
     }
+    ensureSessionAccess(session, request.sessionToken);
 
     const room = await this.findRoom(session.roomId);
     const peerCount = await this.countActiveSessions(session.roomId, nowMs);
@@ -421,6 +417,7 @@ class LanStore {
         closed_at_ms,
         acl_group,
         network_secret,
+        owner_token_hash,
         created_at_ms,
         updated_at_ms,
         last_session_started_at_ms
@@ -431,10 +428,13 @@ class LanStore {
         last_session_started_at_ms DESC,
         updated_at_ms DESC,
         created_at_ms DESC
-      LIMIT ?
-    `, [query.limit]);
+      LIMIT ? OFFSET ?
+    `, [query.limit + 1, query.offset]);
 
-    const rooms = await Promise.all(rows.map(async (row) => {
+    const hasMore = rows.length > query.limit;
+    const pageRows = hasMore ? rows.slice(0, query.limit) : rows;
+
+    const rooms = await Promise.all(pageRows.map(async (row) => {
       const room = serializeRoomRow(row);
       const members = await this.buildRoomMembers(room, nowMs);
       const onlineMemberCount = members.filter((member) => member.online).length;
@@ -470,7 +470,8 @@ class LanStore {
     });
 
     return {
-      rooms
+      rooms,
+      nextOffset: hasMore ? query.offset + pageRows.length : null
     };
   }
 
@@ -506,7 +507,11 @@ class LanStore {
       SET
         session_state = 'expired',
         updated_at_ms = ?,
-        ended_at_ms = CASE WHEN ended_at_ms > 0 THEN ended_at_ms ELSE ? END
+        ended_at_ms = CASE WHEN ended_at_ms > 0 THEN ended_at_ms ELSE ? END,
+        entry_node_url = '',
+        config_server_url = '',
+        acl_group = '',
+        network_secret = ''
       WHERE ended_at_ms = 0
         AND expires_at_ms > 0
         AND expires_at_ms <= ?
@@ -516,32 +521,44 @@ class LanStore {
       nowMs,
       nowMs
     ]);
+    await this.deleteRoomsWithoutActiveOwner(nowMs);
   }
 
   async getOrCreateRoom(request, nowMs) {
     const existing = await this.findRoom(request.roomId);
     if (existing) {
-      return existing;
+      return { room: existing, created: false, ownerToken: '' };
     }
 
-    await this.createRoomRecord({
+    const ownerToken = generateAccessToken();
+    if (await this.countActiveRoomsForSource(request.sourceIp, nowMs) >= MAX_LAN_ROOMS_PER_SOURCE_IP) {
+      throw httpError(429, 'Too many active LAN rooms from this network');
+    }
+
+    const inserted = await this.createRoomRecord({
       roomId: request.roomId,
       playerId: request.playerId,
       displayName: request.displayName || request.playerId,
-      allowNewJoins: true
+      allowNewJoins: request.allowNewJoins,
+      sourceIp: request.sourceIp,
+      ownerToken
     }, nowMs);
 
     const created = await this.findRoom(request.roomId);
     if (!created) {
       throw httpError(500, 'Failed to initialize LAN room');
     }
-    return created;
+    return {
+      room: created,
+      created: inserted && created.ownerPlayerId === request.playerId,
+      ownerToken: inserted && created.ownerPlayerId === request.playerId ? ownerToken : ''
+    };
   }
 
   async createRoomRecord(request, nowMs) {
     const aclGroup = buildAclGroup(request.roomId);
     const networkSecret = generateNetworkSecret();
-    await this.database.run(`
+    const result = await this.database.run(`
       INSERT OR IGNORE INTO lan_rooms (
         room_id,
         owner_player_id,
@@ -551,11 +568,13 @@ class LanStore {
         closed_at_ms,
         acl_group,
         network_secret,
+        owner_token_hash,
+        owner_source_ip,
         created_at_ms,
         updated_at_ms,
         last_session_started_at_ms
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
     `, [
       request.roomId,
       request.playerId,
@@ -565,9 +584,35 @@ class LanStore {
       0,
       aclGroup,
       networkSecret,
+      hashToken(request.ownerToken),
+      request.sourceIp,
       nowMs,
       nowMs
     ]);
+    return result.changes > 0;
+  }
+
+  async deleteRoomsWithoutActiveOwner(nowMs = Date.now()) {
+    await this.database.run(`
+      DELETE FROM lan_rooms
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM lan_sessions AS owner_session
+        WHERE owner_session.room_id = lan_rooms.room_id
+          AND owner_session.player_id = lan_rooms.owner_player_id
+          AND owner_session.ended_at_ms = 0
+          AND owner_session.expires_at_ms > ?
+          AND owner_session.session_state NOT IN ('expired', 'stopped', 'superseded')
+      )
+      OR NOT EXISTS (
+        SELECT 1
+        FROM lan_sessions AS member_session
+        WHERE member_session.room_id = lan_rooms.room_id
+          AND member_session.ended_at_ms = 0
+          AND member_session.expires_at_ms > ?
+          AND member_session.session_state NOT IN ('expired', 'stopped', 'superseded')
+      )
+    `, [nowMs, nowMs]);
   }
 
   async hasJoinedRoom(roomId, playerId) {
@@ -583,6 +628,36 @@ class LanStore {
     return Boolean(row);
   }
 
+  async findLatestSessionForPlayer(roomId, playerId) {
+    const row = await this.database.get(`
+      SELECT
+        session_id,
+        room_id,
+        player_id,
+        display_name,
+        client_version,
+        device_summary,
+        mode,
+        entry_node_url,
+        config_server_url,
+        acl_group,
+        network_secret,
+        session_state,
+        session_token_hash,
+        assigned_ipv4_cidr,
+        relay_server_description,
+        created_at_ms,
+        updated_at_ms,
+        expires_at_ms,
+        ended_at_ms
+      FROM lan_sessions
+      WHERE room_id = ? AND player_id = ?
+      ORDER BY created_at_ms DESC
+      LIMIT 1
+    `, [roomId, playerId]);
+    return row ? serializeSessionRow(row) : null;
+  }
+
   async findRoom(roomId) {
     const row = await this.database.get(`
       SELECT
@@ -594,6 +669,7 @@ class LanStore {
         closed_at_ms,
         acl_group,
         network_secret,
+        owner_token_hash,
         created_at_ms,
         updated_at_ms,
         last_session_started_at_ms
@@ -618,6 +694,7 @@ class LanStore {
         acl_group,
         network_secret,
         session_state,
+        session_token_hash,
         assigned_ipv4_cidr,
         relay_server_description,
         created_at_ms,
@@ -645,6 +722,38 @@ class LanStore {
     return Number(row && row.count) || 0;
   }
 
+  async countActiveSessionsForSource(roomId, sourceIp, nowMs) {
+    const row = await this.database.get(`
+      SELECT COUNT(*) AS count
+      FROM lan_sessions
+      WHERE room_id = ?
+        AND source_ip = ?
+        AND ended_at_ms = 0
+        AND expires_at_ms > ?
+        AND session_state NOT IN ('expired', 'stopped', 'superseded')
+    `, [roomId, sourceIp, nowMs]);
+    return Number(row && row.count) || 0;
+  }
+
+  async countActiveRoomsForSource(sourceIp, nowMs) {
+    const row = await this.database.get(`
+      SELECT COUNT(*) AS count
+      FROM lan_rooms AS rooms
+      WHERE rooms.owner_source_ip = ?
+        AND rooms.closed_at_ms = 0
+        AND EXISTS (
+          SELECT 1
+          FROM lan_sessions AS owner_session
+          WHERE owner_session.room_id = rooms.room_id
+            AND owner_session.player_id = rooms.owner_player_id
+            AND owner_session.ended_at_ms = 0
+            AND owner_session.expires_at_ms > ?
+            AND owner_session.session_state NOT IN ('expired', 'stopped', 'superseded')
+        )
+    `, [sourceIp, nowMs]);
+    return Number(row && row.count) || 0;
+  }
+
   async buildRoomMembers(room, nowMs) {
     const rows = await this.database.all(`
       SELECT
@@ -655,7 +764,7 @@ class LanStore {
         sessions.expires_at_ms,
         sessions.ended_at_ms,
         sessions.created_at_ms
-      FROM lan_sessions AS sessions
+        FROM lan_sessions AS sessions
       INNER JOIN (
         SELECT
           player_id,
@@ -667,11 +776,15 @@ class LanStore {
       ) AS latest
         ON latest.player_id = sessions.player_id
        AND latest.latest_created_at_ms = sessions.created_at_ms
-      WHERE sessions.room_id = ?
+        WHERE sessions.room_id = ?
+          AND sessions.ended_at_ms = 0
+          AND sessions.expires_at_ms > ?
+          AND sessions.session_state NOT IN ('expired', 'stopped', 'superseded')
     `, [
       room.roomId,
       room.createdAtMs,
-      room.roomId
+      room.roomId,
+      nowMs
     ]);
 
     const members = rows.map((row) => {
@@ -727,7 +840,15 @@ function parseStartSessionRequest(body) {
     deviceSummary: normalizeOptionalText(
       firstNonEmpty(body.deviceSummary, body.device_summary),
       MAX_TEXT_LENGTH
-    )
+    ),
+    sessionToken: normalizeOptionalAccessToken(firstNonEmpty(body.sessionToken, body.session_token)),
+    ownerToken: normalizeOptionalAccessToken(firstNonEmpty(body.ownerToken, body.owner_token)),
+    allowNewJoins: body.allowNewJoins === undefined && body.allow_new_joins === undefined
+      ? true
+      : normalizeBoolean(
+        body.allowNewJoins !== undefined ? body.allowNewJoins : body.allow_new_joins,
+        true
+      )
   };
 }
 
@@ -756,16 +877,13 @@ function parseUpdateRoomRequest(body) {
   }
   return {
     action,
-    playerId: normalizeRequiredIdentifier(
-      firstNonEmpty(body.playerId, body.player_id),
-      'playerId'
-    )
+    ownerToken: normalizeRequiredAccessToken(firstNonEmpty(body.ownerToken, body.owner_token), 'ownerToken')
   };
 }
 
 function parseSessionRuntimeRequest(body) {
   return {
-    sessionId: parseSessionIdentifier(body),
+    ...parseSessionCredentialRequest(body),
     assignedIpv4Cidr: normalizeRequiredIpv4Cidr(
       firstNonEmpty(body.assignedIpv4Cidr, body.assigned_ipv4_cidr),
       'assignedIpv4Cidr'
@@ -787,6 +905,17 @@ function parseSessionIdentifier(value) {
   return sessionId;
 }
 
+function parseSessionCredentialRequest(value) {
+  const body = typeof value === 'string' ? { sessionId: value } : (value || {});
+  return {
+    sessionId: parseSessionIdentifier(body),
+    sessionToken: normalizeRequiredAccessToken(
+      firstNonEmpty(body.sessionToken, body.session_token),
+      'sessionToken'
+    )
+  };
+}
+
 function parseRoomIdentifier(value) {
   return normalizeRequiredIdentifier(
     typeof value === 'string'
@@ -801,6 +930,10 @@ function parseRoomListQuery(value) {
     limit: Math.max(1, Math.min(
       MAX_LAN_ROOM_LIST_LIMIT,
       parsePositiveInteger(value && value.limit, DEFAULT_LAN_ROOM_LIST_LIMIT)
+    )),
+    offset: Math.max(0, Math.min(
+      10000,
+      Number.parseInt(String(value && value.offset || '0').trim(), 10) || 0
     ))
   };
 }
@@ -811,6 +944,23 @@ function normalizeRequiredIdentifier(value, fieldName) {
     throw httpError(400, `Missing required ${fieldName}`);
   }
   return normalized;
+}
+
+function normalizeOptionalAccessToken(value) {
+  const token = String(value || '').trim();
+  return /^[A-Za-z0-9_-]{32,128}$/.test(token) ? token : '';
+}
+
+function normalizeSourceIp(value) {
+  return normalizeOptionalText(value, MAX_TEXT_LENGTH).toLowerCase() || 'unknown';
+}
+
+function normalizeRequiredAccessToken(value, fieldName) {
+  const token = normalizeOptionalAccessToken(value);
+  if (!token) {
+    throw httpError(400, `Missing or invalid ${fieldName}`);
+  }
+  return token;
 }
 
 function normalizeRequiredIpv4Cidr(value, fieldName) {
@@ -903,6 +1053,7 @@ function serializeRoomRow(row) {
     closedAtMs: Number(row.closed_at_ms) || 0,
     aclGroup: normalizeOptionalText(row.acl_group, MAX_TEXT_LENGTH),
     networkSecret: normalizeOptionalText(row.network_secret, MAX_TEXT_LENGTH),
+    ownerTokenHash: normalizeOptionalText(row.owner_token_hash, MAX_TEXT_LENGTH),
     createdAtMs: Number(row.created_at_ms) || 0,
     updatedAtMs: Number(row.updated_at_ms) || 0,
     lastSessionStartedAtMs: Number(row.last_session_started_at_ms) || 0
@@ -923,6 +1074,7 @@ function serializeSessionRow(row) {
     aclGroup: normalizeOptionalText(row.acl_group, MAX_TEXT_LENGTH),
     networkSecret: normalizeOptionalText(row.network_secret, MAX_TEXT_LENGTH),
     sessionState: normalizeOptionalText(row.session_state, MAX_ID_LENGTH) || 'issued',
+    sessionTokenHash: normalizeOptionalText(row.session_token_hash, MAX_TEXT_LENGTH),
     assignedIpv4Cidr: normalizeOptionalText(row.assigned_ipv4_cidr, MAX_TEXT_LENGTH),
     relayServerDescription: normalizeOptionalText(row.relay_server_description, MAX_TEXT_LENGTH),
     createdAtMs: Number(row.created_at_ms) || 0,
@@ -999,6 +1151,26 @@ function generateSessionId() {
 
 function generateNetworkSecret() {
   return crypto.randomBytes(24).toString('base64url');
+}
+
+function generateAccessToken() {
+  return crypto.randomBytes(32).toString('base64url');
+}
+
+function hashToken(token) {
+  return crypto.createHash('sha256').update(String(token || ''), 'utf8').digest('base64url');
+}
+
+function tokensEqual(expectedHash, token) {
+  const expected = Buffer.from(String(expectedHash || ''), 'utf8');
+  const actual = Buffer.from(hashToken(token), 'utf8');
+  return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
+}
+
+function ensureSessionAccess(session, sessionToken) {
+  if (!tokensEqual(session.sessionTokenHash, sessionToken)) {
+    throw httpError(403, 'Invalid LAN session credential');
+  }
 }
 
 function buildRelayServerDescription(entryNodeUrl, configServerUrl) {

@@ -33,19 +33,27 @@ const MDI_FONT_DIR = path.resolve(path.dirname(require.resolve('@mdi/font/packag
 
 async function buildServer(config = loadConfig()) {
   const fastify = Fastify({
-    logger: config.logLevel === 'silent' ? false : { level: config.logLevel }
+    logger: config.logLevel === 'silent' ? false : { level: config.logLevel },
+    trustProxy: Boolean(config.trustProxy)
   });
   const database = await openDatabase(config.dbPath);
   const store = new PresenceStore(database, config);
   const lanStore = new LanStore(database, config);
   const easyTierRuntime = new EasyTierRuntimeManager(config, fastify.log);
   const panelSockets = new Map();
+  const lanRateLimits = new Map();
   const timers = new Set();
   let snapshotBroadcastTimer = null;
 
   await fastify.register(websocket, {
     options: {
       maxPayload: 32 * 1024
+    }
+  });
+
+  fastify.addHook('onRequest', async (request) => {
+    if (String(request.raw && request.raw.url || '').startsWith('/api/lan/')) {
+      enforceLanRateLimit(lanRateLimits, request);
     }
   });
 
@@ -58,12 +66,23 @@ async function buildServer(config = loadConfig()) {
     websocket: '/api/presence/ws'
   }));
 
-  fastify.get('/healthz', async (_request, _reply) => ({
-    ok: true,
-    service: SERVICE_NAME,
-    storageBackend: 'sqlite3',
-    easyTierRuntime: easyTierRuntime.getHealthSummary()
-  }));
+  fastify.get('/healthz', async (_request, reply) => {
+    const easyTierHealth = easyTierRuntime.getHealthSummary();
+    const easyTierRequired = easyTierHealth.managed &&
+      easyTierHealth.enabled &&
+      easyTierHealth.desiredState === 'running';
+    const easyTierReady = !easyTierRequired ||
+      (easyTierHealth.webEmbedRunning && easyTierHealth.sharedNodeRunning);
+    if (!easyTierReady) {
+      reply.code(503);
+    }
+    return {
+      ok: easyTierReady,
+      service: SERVICE_NAME,
+      storageBackend: 'sqlite3',
+      easyTierRuntime: easyTierHealth
+    };
+  });
 
   fastify.get('/cloud-control.json', async (request, reply) => {
     reply.header('Cache-Control', 'no-cache');
@@ -127,8 +146,9 @@ async function buildServer(config = loadConfig()) {
     const baseUrl = config.publicBaseUrl || buildRequestBaseUrl(config, request);
     return {
       ok: true,
-      ...(await lanStore.startSession(request.body || {}, {
-        easyTier: buildEasyTierCloudControlResponse(config, baseUrl)
+      ...(await lanStore.startSession(withStartCredential(request, request.body || {}), {
+        easyTier: buildEasyTierCloudControlResponse(config, baseUrl),
+        sourceIp: request.ip
       }))
     };
   });
@@ -158,7 +178,7 @@ async function buildServer(config = loadConfig()) {
       ok: true,
       ...(await lanStore.updateRoom(
         request.params && request.params.roomId,
-        request.body || {}
+        withOwnerCredential(request, request.body || {})
       ))
     };
   });
@@ -167,7 +187,7 @@ async function buildServer(config = loadConfig()) {
     reply.header('Cache-Control', 'no-store');
     return {
       ok: true,
-      ...(await lanStore.stopSession(request.body || {}))
+      ...(await lanStore.stopSession(withSessionCredential(request, request.body || {})))
     };
   });
 
@@ -175,7 +195,7 @@ async function buildServer(config = loadConfig()) {
     reply.header('Cache-Control', 'no-store');
     return {
       ok: true,
-      ...(await lanStore.reportSessionRuntime(request.body || {}))
+      ...(await lanStore.reportSessionRuntime(withSessionCredential(request, request.body || {})))
     };
   });
 
@@ -183,7 +203,7 @@ async function buildServer(config = loadConfig()) {
     reply.header('Cache-Control', 'no-store');
     return {
       ok: true,
-      ...(await lanStore.getSessionStatus(request.query || {}))
+      ...(await lanStore.getSessionStatus(withSessionCredential(request, request.query || {})))
     };
   });
 
@@ -705,6 +725,79 @@ function firstHeaderValue(value) {
     return value.length > 0 ? String(value[0] || '').trim() : '';
   }
   return String(value || '').trim();
+}
+
+function enforceLanRateLimit(buckets, request, nowMs = Date.now()) {
+  const path = String(request && request.raw && request.raw.url || '').split('?')[0];
+  const ip = String(request && request.ip || 'unknown').trim() || 'unknown';
+  const sessionToken = readBearerToken(request);
+  const ownerToken = firstHeaderValue(request && request.headers && request.headers['x-lan-owner-token']);
+  if (path === '/api/lan/session/start') {
+    enforceLanRateLimitBucket(buckets, `start:${ip}`, 30, nowMs);
+    return;
+  }
+  if (path.endsWith('/action')) {
+    enforceLanRateLimitBucket(buckets, `owner:${ownerToken || ip}`, 30, nowMs);
+    enforceLanRateLimitBucket(buckets, `ip:${ip}`, 1200, nowMs);
+    return;
+  }
+  if (path.startsWith('/api/lan/session/')) {
+    enforceLanRateLimitBucket(buckets, `session:${sessionToken || ip}`, 120, nowMs);
+    enforceLanRateLimitBucket(buckets, `ip:${ip}`, 1200, nowMs);
+    return;
+  }
+  enforceLanRateLimitBucket(buckets, `read:${ip}`, 1200, nowMs);
+}
+
+function enforceLanRateLimitBucket(buckets, key, limit, nowMs) {
+  const windowMs = 60 * 1000;
+  if (buckets.size > 10000) {
+    for (const [candidateKey, candidate] of buckets.entries()) {
+      if (nowMs - candidate.startedAtMs >= windowMs) {
+        buckets.delete(candidateKey);
+      }
+    }
+  }
+  const bucket = buckets.get(key);
+  if (!bucket || nowMs - bucket.startedAtMs >= windowMs) {
+    buckets.set(key, { startedAtMs: nowMs, count: 1 });
+    return;
+  }
+  bucket.count += 1;
+  if (bucket.count > limit) {
+    throw httpError(429, 'Too many LAN API requests');
+  }
+}
+
+function withStartCredential(request, body) {
+  const { sessionToken, session_token, ownerToken, owner_token, ...remaining } = body || {};
+  return {
+    ...remaining,
+    sessionToken: readBearerToken(request),
+    ownerToken: firstHeaderValue(request && request.headers && request.headers['x-lan-owner-token'])
+  };
+}
+
+function withSessionCredential(request, body) {
+  const { sessionToken, session_token, ...remaining } = body || {};
+  return {
+    ...remaining,
+    sessionToken: readBearerToken(request)
+  };
+}
+
+function withOwnerCredential(request, body) {
+  const { ownerToken, owner_token, ...remaining } = body || {};
+  return {
+    ...remaining,
+    ownerToken: firstHeaderValue(request && request.headers && request.headers['x-lan-owner-token'])
+  };
+}
+
+function readBearerToken(request) {
+  const authorization = firstHeaderValue(request && request.headers && request.headers.authorization);
+  const match = /^Bearer\s+(.+)$/i.exec(authorization);
+  return match ? match[1].trim() : '';
 }
 
 function resolveFontContentType(fileName) {

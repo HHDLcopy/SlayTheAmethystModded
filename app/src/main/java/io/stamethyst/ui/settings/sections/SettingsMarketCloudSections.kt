@@ -53,6 +53,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.stamethyst.R
+import io.stamethyst.backend.easytier.EasyTierNetworkMode
 import io.stamethyst.backend.steamcloud.SteamCloudAvatarCacheStore
 import io.stamethyst.backend.steamcloud.SteamCloudConflict
 import io.stamethyst.backend.steamcloud.SteamCloudConflictKind
@@ -91,6 +92,108 @@ internal data class MarketSettingsActions(
     val onClearWorkshopPreviewCache: () -> Unit,
     val onOpenBaiduTranslationCredentials: () -> Unit,
 )
+
+
+@Composable
+internal fun SettingsEasyTierSection(
+    uiState: SettingsScreenViewModel.UiState,
+) {
+    val settings = uiState.easyTierSettings
+    val statusText = when {
+        settings.canConnect -> stringResource(R.string.settings_easytier_status_ready)
+        else -> stringResource(R.string.settings_easytier_status_config_missing)
+    }
+    val sharedNetworkText = if (settings.allowSharedCommunityNetwork) {
+        stringResource(R.string.settings_easytier_shared_network_allowed)
+    } else {
+        stringResource(R.string.settings_easytier_shared_network_blocked)
+    }
+    val missingValueText = stringResource(R.string.settings_easytier_value_missing)
+
+    Text(
+        text = stringResource(R.string.settings_easytier_intro),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    Spacer(modifier = Modifier.size(8.dp))
+    EasyTierSettingsInfoCard(
+        title = stringResource(R.string.settings_easytier_status_title),
+        value = statusText,
+    )
+    EasyTierSettingsInfoCard(
+        title = stringResource(R.string.settings_easytier_mode_title),
+        value = easyTierSettingsModeLabel(settings.defaultMode),
+    )
+    EasyTierSettingsInfoCard(
+        title = stringResource(R.string.settings_easytier_shared_network_title),
+        value = sharedNetworkText,
+    )
+    EasyTierSettingsInfoCard(
+        title = stringResource(R.string.settings_easytier_entry_node_title),
+        value = settings.entryNodeUrl.ifBlank { missingValueText },
+    )
+    EasyTierSettingsInfoCard(
+        title = stringResource(R.string.settings_easytier_room_api_title),
+        value = settings.roomApiBaseUrl.ifBlank { missingValueText },
+    )
+    EasyTierSettingsInfoCard(
+        title = stringResource(R.string.settings_easytier_config_server_title),
+        value = settings.configServerUrl.ifBlank { missingValueText },
+    )
+    EasyTierSettingsInfoCard(
+        title = stringResource(R.string.settings_easytier_polling_title),
+        value = stringResource(
+            R.string.settings_easytier_polling_summary,
+            settings.connectTimeoutSeconds,
+            settings.statusPollIntervalSeconds,
+        ),
+    )
+    Text(
+        text = stringResource(R.string.settings_easytier_vpn_notice),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+}
+
+
+@Composable
+private fun EasyTierSettingsInfoCard(
+    title: String,
+    value: String,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            SelectionContainer {
+                Text(
+                    text = value,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
+    }
+}
+
+
+@Composable
+private fun easyTierSettingsModeLabel(mode: EasyTierNetworkMode): String {
+    return when (mode) {
+        EasyTierNetworkMode.Room -> stringResource(R.string.main_easytier_mode_room)
+        EasyTierNetworkMode.Community -> stringResource(R.string.main_easytier_mode_community)
+    }
+}
 
 
 @OptIn(ExperimentalMaterial3Api::class)

@@ -31,6 +31,7 @@ function loadConfig(env = process.env) {
   return {
     host: firstNonEmpty(env.HOST, '0.0.0.0'),
     port: parsePositiveInteger(env.PORT, DEFAULT_PORT),
+    trustProxy: parseBoolean(env.TRUST_PROXY, false),
     publicBaseUrl: normalizeOptionalBaseUrl(env.PUBLIC_BASE_URL),
     dbPath: path.resolve(firstNonEmpty(env.PRESENCE_DB_PATH, './data/presence.sqlite')),
     presenceHeartbeatIntervalSeconds: heartbeatIntervalSeconds,

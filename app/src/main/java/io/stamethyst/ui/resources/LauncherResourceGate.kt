@@ -6,6 +6,16 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -151,64 +161,86 @@ fun LauncherResourceGate(
         )
     }
 
-    if (gateState is ResourceGateState.Ready) {
+    val resourcesReady = gateState is ResourceGateState.Ready
+    if (resourcesReady) {
         LaunchedEffect(Unit) {
             if (!readyNotified) {
                 readyNotified = true
                 onResourcesReady()
             }
         }
-        content()
-        return
     }
 
-    ResourcePreparationScreen(
-        state = gateState,
-        selectedMirror = selectedMirror,
-        availableMirrors = remember(context) { UpdateMirrorManager.selectableSources(context) },
-        slowDownloadSwitch = slowDownloadSwitch,
-        onMirrorSelected = { source ->
-            selectedMirror = source
-            UpdateMirrorManager.saveCurrent(context, source)
-            retryNonce++
+    AnimatedContent(
+        targetState = resourcesReady,
+        modifier = modifier.fillMaxSize(),
+        transitionSpec = {
+            (fadeIn(
+                animationSpec = tween(durationMillis = 220, delayMillis = 100)
+            ) + scaleIn(
+                initialScale = 0.98f,
+                animationSpec = tween(durationMillis = 260, delayMillis = 100)
+            )) togetherWith
+                (fadeOut(animationSpec = tween(durationMillis = 160)) +
+                    slideOutVertically(
+                        targetOffsetY = { -it / 8 },
+                        animationSpec = tween(durationMillis = 220)
+                    )) using SizeTransform(clip = false)
         },
-        onSlowDownloadMirrorSwitch = {
-            val prompt = slowDownloadSwitch
-            if (prompt != null) {
-                prompt.nextPreferredMirrorSource?.let { nextMirror ->
-                    selectedMirror = nextMirror
-                    UpdateMirrorManager.saveCurrent(context, nextMirror)
-                }
-                mirrorSwitchController.requestSwitchToNextMirror()
-            }
-        },
-        onRetry = { retryNonce++ },
-        onOpenFullRelease = {
-            if (!resolvingFullRelease) {
-                resolvingFullRelease = true
-                coroutineScope.launch {
-                    val downloadTarget = resolveLatestFullReleaseDownloadTarget(
-                        context = applicationContext,
-                        selectedMirror = selectedMirror
-                    )
-                    resolvingFullRelease = false
-                    when (downloadTarget) {
-                        is FullReleaseDownloadTarget.Github -> openExternalUrl(
-                            context,
-                            downloadTarget.url
-                        )
-
-                        FullReleaseDownloadTarget.Quark -> copyAndOpenQuarkDownload(
-                            context,
-                            quarkDownloadUrl
-                        )
+        label = "resource-gate-transition"
+    ) { ready ->
+        if (ready) {
+            content()
+        } else {
+            ResourcePreparationScreen(
+                state = gateState,
+                selectedMirror = selectedMirror,
+                availableMirrors = remember(context) { UpdateMirrorManager.selectableSources(context) },
+                slowDownloadSwitch = slowDownloadSwitch,
+                onMirrorSelected = { source ->
+                    selectedMirror = source
+                    UpdateMirrorManager.saveCurrent(context, source)
+                    retryNonce++
+                },
+                onSlowDownloadMirrorSwitch = {
+                    val prompt = slowDownloadSwitch
+                    if (prompt != null) {
+                        prompt.nextPreferredMirrorSource?.let { nextMirror ->
+                            selectedMirror = nextMirror
+                            UpdateMirrorManager.saveCurrent(context, nextMirror)
+                        }
+                        mirrorSwitchController.requestSwitchToNextMirror()
                     }
-                }
-            }
-        },
-        resolvingFullRelease = resolvingFullRelease,
-        modifier = modifier
-    )
+                },
+                onRetry = { retryNonce++ },
+                onOpenFullRelease = {
+                    if (!resolvingFullRelease) {
+                        resolvingFullRelease = true
+                        coroutineScope.launch {
+                            val downloadTarget = resolveLatestFullReleaseDownloadTarget(
+                                context = applicationContext,
+                                selectedMirror = selectedMirror
+                            )
+                            resolvingFullRelease = false
+                            when (downloadTarget) {
+                                is FullReleaseDownloadTarget.Github -> openExternalUrl(
+                                    context,
+                                    downloadTarget.url
+                                )
+
+                                FullReleaseDownloadTarget.Quark -> copyAndOpenQuarkDownload(
+                                    context,
+                                    quarkDownloadUrl
+                                )
+                            }
+                        }
+                    }
+                },
+                resolvingFullRelease = resolvingFullRelease,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+    }
 }
 
 @Composable
@@ -263,8 +295,16 @@ private fun ResourcePreparationScreen(
 
                     if (preparing != null) {
                         val progress = preparing.percent.coerceIn(0, 100)
+                        val animatedProgress by animateFloatAsState(
+                            targetValue = progress / 100f,
+                            animationSpec = tween(
+                                durationMillis = 450,
+                                easing = FastOutSlowInEasing
+                            ),
+                            label = "resource-gate-progress"
+                        )
                         LinearProgressIndicator(
-                            progress = { progress / 100f },
+                            progress = { animatedProgress },
                             modifier = Modifier.fillMaxWidth()
                         )
                         Text(

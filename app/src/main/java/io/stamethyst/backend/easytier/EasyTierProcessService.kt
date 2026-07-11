@@ -1,0 +1,1102 @@
+package io.stamethyst.backend.easytier
+
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
+import android.content.Context
+import android.content.Intent
+import android.net.VpnService
+import android.os.Build
+import android.os.Bundle
+import android.os.Handler
+import android.os.IBinder
+import android.os.Looper
+import android.os.ResultReceiver
+import android.util.Log
+import androidx.core.app.NotificationCompat
+import io.stamethyst.LauncherActivity
+import io.stamethyst.R
+import io.stamethyst.config.LauncherConfig
+
+class EasyTierProcessService : Service() {
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var statusPollRunnable: Runnable? = null
+    @Volatile
+    private var workerThread: Thread? = null
+    @Volatile
+    private var currentSessionId: String = ""
+    @Volatile
+    private var currentRuntimeInstanceName: String = ""
+    @Volatile
+    private var currentVpnRouteSignature: String = ""
+    @Volatile
+    private var runtimeReportUnsupported: Boolean = false
+
+    companion object {
+        private const val TAG = "EasyTierProcessService"
+
+        const val ACTION_CONNECT = "io.stamethyst.action.EASYTIER_CONNECT"
+        const val ACTION_DISCONNECT = "io.stamethyst.action.EASYTIER_DISCONNECT"
+        const val ACTION_REFRESH_STATE = "io.stamethyst.action.EASYTIER_REFRESH_STATE"
+        const val ACTION_CONNECTION_EVENT = "io.stamethyst.action.EASYTIER_CONNECTION_EVENT"
+
+        const val EXTRA_RESULT_RECEIVER = "io.stamethyst.extra.EASYTIER_RESULT_RECEIVER"
+        const val EXTRA_EVENT_RESULT_CODE = "io.stamethyst.extra.EASYTIER_EVENT_RESULT_CODE"
+        const val EXTRA_STATE_SNAPSHOT = "io.stamethyst.extra.EASYTIER_STATE_SNAPSHOT"
+        const val EXTRA_ERROR_SUMMARY = "io.stamethyst.extra.EASYTIER_ERROR_SUMMARY"
+        const val EXTRA_USER_INITIATED = "io.stamethyst.extra.EASYTIER_USER_INITIATED"
+        const val EXTRA_CONNECT_MODE = "io.stamethyst.extra.EASYTIER_CONNECT_MODE"
+        const val EXTRA_ROOM_ID = "io.stamethyst.extra.EASYTIER_ROOM_ID"
+        const val EXTRA_ALLOW_NEW_JOINS = "io.stamethyst.extra.EASYTIER_ALLOW_NEW_JOINS"
+
+        const val RESULT_CONNECTING = 1
+        const val RESULT_CONNECTED = 2
+        const val RESULT_RECONNECTING = 3
+        const val RESULT_DISCONNECTED = 4
+        const val RESULT_FAILURE = 5
+        const val RESULT_PERMISSION_REQUIRED = 6
+        const val RESULT_SESSION_READY = 7
+
+        private const val CHANNEL_ID = "easytier_virtual_network"
+        private const val NOTIFICATION_ID = 646572
+
+        @Volatile
+        private var running = false
+
+        fun isRunning(): Boolean = running
+
+        fun startConnect(
+            context: Context,
+            mode: EasyTierNetworkMode? = null,
+            roomId: String = "",
+            userInitiated: Boolean,
+            receiver: ResultReceiver? = null,
+            allowNewJoinsWhenCreating: Boolean? = null,
+        ): Boolean {
+            val appContext = context.applicationContext
+            val intent = Intent(appContext, EasyTierProcessService::class.java).apply {
+                action = ACTION_CONNECT
+                putExtra(EXTRA_RESULT_RECEIVER, receiver)
+                putExtra(EXTRA_USER_INITIATED, userInitiated)
+                mode?.let { putExtra(EXTRA_CONNECT_MODE, it.cloudControlValue) }
+                if (roomId.isNotBlank()) {
+                    putExtra(EXTRA_ROOM_ID, roomId)
+                }
+                allowNewJoinsWhenCreating?.let {
+                    putExtra(EXTRA_ALLOW_NEW_JOINS, it)
+                }
+            }
+            return try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    appContext.startForegroundService(intent)
+                } else {
+                    appContext.startService(intent)
+                }
+                true
+            } catch (error: IllegalStateException) {
+                if (!isForegroundServiceStartRejected(error)) {
+                    throw error
+                }
+                reportServiceStartRejected(appContext, receiver, error)
+                false
+            }
+        }
+
+        fun disconnect(
+            context: Context,
+            receiver: ResultReceiver? = null,
+        ) {
+            val appContext = context.applicationContext
+            appContext.startService(
+                Intent(appContext, EasyTierProcessService::class.java).apply {
+                    action = ACTION_DISCONNECT
+                    putExtra(EXTRA_RESULT_RECEIVER, receiver)
+                }
+            )
+        }
+
+        fun requestStateSync(
+            context: Context,
+            receiver: ResultReceiver? = null,
+        ) {
+            val appContext = context.applicationContext
+            appContext.startService(
+                Intent(appContext, EasyTierProcessService::class.java).apply {
+                    action = ACTION_REFRESH_STATE
+                    putExtra(EXTRA_RESULT_RECEIVER, receiver)
+                }
+            )
+        }
+
+        internal fun broadcastSnapshot(
+            context: Context,
+            resultCode: Int,
+            snapshot: EasyTierConnectionSnapshot,
+            errorSummary: String = snapshot.lastErrorSummary,
+        ) {
+            context.sendBroadcast(
+                Intent(ACTION_CONNECTION_EVENT).apply {
+                    `package` = context.packageName
+                    putExtra(EXTRA_EVENT_RESULT_CODE, resultCode)
+                    putExtra(EXTRA_STATE_SNAPSHOT, snapshot)
+                    if (errorSummary.isNotBlank()) {
+                        putExtra(EXTRA_ERROR_SUMMARY, errorSummary)
+                    }
+                }
+            )
+        }
+
+        private fun isForegroundServiceStartRejected(error: IllegalStateException): Boolean {
+            return Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                error.javaClass.name == "android.app.ForegroundServiceStartNotAllowedException"
+        }
+
+        private fun reportServiceStartRejected(
+            context: Context,
+            receiver: ResultReceiver?,
+            error: IllegalStateException,
+        ) {
+            val summary = context.getString(R.string.main_easytier_service_start_blocked)
+            Log.w(TAG, summary, error)
+            val snapshot = EasyTierSessionController.persistSnapshot(
+                context = context,
+                snapshot = EasyTierSessionController.buildFailureSnapshot(
+                    previous = EasyTierSessionController.currentSnapshot(context),
+                    summary = summary,
+                    failureCategory = EasyTierFailureCategory.BackgroundStartBlocked,
+                ),
+                extraLines = listOf("foreground_service_start_rejected=true"),
+                error = error,
+            )
+            deliverSnapshot(context, receiver, RESULT_FAILURE, snapshot)
+        }
+
+        private fun deliverSnapshot(
+            context: Context,
+            receiver: ResultReceiver?,
+            resultCode: Int,
+            snapshot: EasyTierConnectionSnapshot,
+        ) {
+            val data = Bundle().apply {
+                putSerializable(EXTRA_STATE_SNAPSHOT, snapshot)
+                if (snapshot.lastErrorSummary.isNotBlank()) {
+                    putString(EXTRA_ERROR_SUMMARY, snapshot.lastErrorSummary)
+                }
+            }
+            receiver?.send(resultCode, Bundle(data))
+            broadcastSnapshot(context, resultCode, snapshot)
+        }
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val safeIntent = intent ?: return START_NOT_STICKY
+        val receiver = extractResultReceiver(safeIntent)
+        when (safeIntent.action) {
+            ACTION_REFRESH_STATE -> {
+                val snapshot = EasyTierSessionController.currentSnapshot(applicationContext)
+                deliverSnapshot(applicationContext, receiver, resultCodeFor(snapshot), snapshot)
+                return START_NOT_STICKY
+            }
+
+            ACTION_DISCONNECT -> {
+                running = false
+                workerThread?.interrupt()
+                workerThread = null
+                stopStatusPolling()
+                Thread(
+                    { runDisconnect(startId, receiver) },
+                    "STS-EasyTierDisconnect"
+                ).start()
+                return START_NOT_STICKY
+            }
+
+            ACTION_CONNECT -> {
+                startForeground(
+                    NOTIFICATION_ID,
+                    buildNotification(getString(R.string.main_easytier_notification_connecting)),
+                )
+                if (running) {
+                    val snapshot = EasyTierSessionController.currentSnapshot(applicationContext)
+                    deliverSnapshot(applicationContext, receiver, resultCodeFor(snapshot), snapshot)
+                    return START_REDELIVER_INTENT
+                }
+                running = true
+                val taskIntent = Intent(safeIntent)
+                val thread = Thread(
+                    { runConnect(startId, taskIntent, receiver) },
+                    "STS-EasyTierConnect"
+                )
+                workerThread = thread
+                thread.start()
+                return START_REDELIVER_INTENT
+            }
+
+            else -> return START_NOT_STICKY
+        }
+    }
+
+    override fun onDestroy() {
+        val previous = EasyTierStateStore.readSnapshot(applicationContext)
+        running = false
+        workerThread?.interrupt()
+        workerThread = null
+        stopStatusPolling()
+        StsEasyTierVpnService.stopSession(applicationContext)
+        EasyTierJniBridge.stopAllInstances()
+        if (previous?.isConnectionActive == true) {
+            EasyTierSessionController.persistSnapshot(
+                context = applicationContext,
+                snapshot = EasyTierSessionController.buildDisconnectedSnapshot(previous),
+                extraLines = listOf("process_service_destroyed=true"),
+            )
+        }
+        super.onDestroy()
+    }
+
+    private fun runConnect(
+        startId: Int,
+        intent: Intent,
+        receiver: ResultReceiver?,
+    ) {
+        try {
+            val config = EasyTierConfigRepository.current()
+            val currentPlayerId = buildStablePlayerId(applicationContext)
+            val mode = intent.getStringExtra(EXTRA_CONNECT_MODE)
+                ?.let(EasyTierNetworkMode::fromCloudControl)
+                ?: config.defaultMode
+            val roomId = EasyTierSessionController.resolveRequestedRoomId(
+                mode = mode,
+                requestedRoomId = intent.getStringExtra(EXTRA_ROOM_ID).orEmpty(),
+            )
+            val userInitiated = intent.getBooleanExtra(EXTRA_USER_INITIATED, false)
+            val allowNewJoinsWhenCreating = if (intent.hasExtra(EXTRA_ALLOW_NEW_JOINS)) {
+                intent.getBooleanExtra(EXTRA_ALLOW_NEW_JOINS, true)
+            } else {
+                null
+            }
+
+            if (!config.canConnect) {
+                val snapshot = EasyTierSessionController.persistSnapshot(
+                    context = applicationContext,
+                    snapshot = EasyTierSessionController.buildFailureSnapshot(
+                        previous = EasyTierSessionController.buildInitialSnapshot(
+                            applicationContext,
+                            config,
+                        ).copy(
+                            mode = mode,
+                            roomId = roomId,
+                            currentPlayerId = currentPlayerId,
+                            userInitiated = userInitiated,
+                        ),
+                        summary = getString(R.string.main_easytier_config_missing),
+                        failureCategory = EasyTierFailureCategory.ConfigMissing,
+                    ),
+                    extraLines = listOf("connect_blocked=config_unavailable"),
+                )
+                deliverSnapshot(applicationContext, receiver, RESULT_FAILURE, snapshot)
+                updateNotification(getString(R.string.main_easytier_config_missing))
+                return
+            }
+
+            val connectingSnapshot = EasyTierSessionController.persistSnapshot(
+                context = applicationContext,
+                snapshot = EasyTierSessionController.buildConnectingSnapshot(
+                    config = config,
+                    mode = mode,
+                    roomId = roomId,
+                    userInitiated = userInitiated,
+                    currentPlayerId = currentPlayerId,
+                ),
+                extraLines = listOf("connect_requested=true"),
+            )
+
+            if (VpnService.prepare(applicationContext) != null) {
+                val permissionSnapshot = EasyTierSessionController.persistSnapshot(
+                    context = applicationContext,
+                    snapshot = EasyTierSessionController.buildPermissionRequiredSnapshot(
+                        applicationContext,
+                        connectingSnapshot,
+                    ),
+                    extraLines = listOf("vpn_prepare_required=true"),
+                )
+                deliverSnapshot(applicationContext, receiver, RESULT_PERMISSION_REQUIRED, permissionSnapshot)
+                updateNotification(getString(R.string.main_easytier_notification_permission_required))
+                return
+            }
+
+            deliverSnapshot(applicationContext, receiver, RESULT_CONNECTING, connectingSnapshot)
+            updateNotification(getString(R.string.main_easytier_notification_connecting))
+
+            var startedSessionConfig: EasyTierRoomSessionConfig? = null
+            val resolvedSnapshot = if (roomId.isNotBlank()) {
+                runCatching {
+                    val playerName = LauncherConfig.readPlayerName(applicationContext)
+                        .trim()
+                        .ifEmpty { LauncherConfig.DEFAULT_PLAYER_NAME }
+                    val sessionConfig = EasyTierRoomApiClient(applicationContext).startSession(
+                        roomId = roomId,
+                        playerId = currentPlayerId,
+                        displayName = playerName,
+                        allowNewJoinsWhenCreating = allowNewJoinsWhenCreating,
+                        sessionToken = EasyTierCredentialStore.sessionToken(
+                            applicationContext,
+                            roomId,
+                            currentPlayerId,
+                        ),
+                        ownerToken = EasyTierCredentialStore.ownerToken(applicationContext, roomId),
+                    )
+                    EasyTierCredentialStore.save(
+                        context = applicationContext,
+                        roomId = sessionConfig.roomId,
+                        playerId = currentPlayerId,
+                        sessionToken = sessionConfig.sessionToken,
+                        ownerToken = sessionConfig.ownerToken,
+                    )
+                    startedSessionConfig = sessionConfig
+                    val sessionStatus = runCatching {
+                        EasyTierRoomApiClient(applicationContext).fetchSessionStatus(
+                            sessionConfig.sessionId,
+                            sessionConfig.sessionToken,
+                        )
+                    }.getOrNull()
+                    val roomInfo = fetchRoomInfoOrNull(sessionConfig.roomId)
+                    applyEasyTierRoomInfo(
+                        snapshot = EasyTierSessionController.buildSessionReadySnapshot(
+                            previous = connectingSnapshot,
+                            sessionConfig = sessionConfig,
+                            sessionStatus = sessionStatus,
+                            currentPlayerId = currentPlayerId,
+                        ),
+                        roomInfo = roomInfo,
+                    )
+                }.getOrElse { error ->
+                    val failureSnapshot = EasyTierSessionController.persistSnapshot(
+                        context = applicationContext,
+                        snapshot = EasyTierSessionController.buildFailureSnapshot(
+                            previous = connectingSnapshot,
+                            summary = error.message?.trim().takeUnless { it.isNullOrEmpty() }
+                                ?: getString(R.string.main_easytier_unknown_error),
+                        ),
+                        extraLines = listOf("room_session_start_failed=true"),
+                        error = error,
+                    )
+                    deliverSnapshot(applicationContext, receiver, RESULT_FAILURE, failureSnapshot)
+                    updateNotification(failureSnapshot.lastErrorSummary)
+                    return
+                }
+            } else {
+                connectingSnapshot
+            }
+
+            val sessionReadySnapshot = EasyTierSessionController.persistSnapshot(
+                context = applicationContext,
+                snapshot = resolvedSnapshot,
+                extraLines = buildList {
+                    add("runtime_bridge_integrated=true")
+                    add("runtime_bridge_type=android_jni")
+                    if (resolvedSnapshot.sessionId.isNotBlank()) {
+                        add("room_session_started=true")
+                    }
+                },
+            )
+            deliverSnapshot(applicationContext, receiver, RESULT_SESSION_READY, sessionReadySnapshot)
+            notificationMessageForSnapshot(sessionReadySnapshot)?.let(::updateNotification)
+
+            val runtimeSessionConfig = startedSessionConfig ?: EasyTierRoomSessionConfig(
+                sessionId = sessionReadySnapshot.sessionId,
+                roomId = sessionReadySnapshot.roomId.ifBlank { roomId },
+                mode = sessionReadySnapshot.mode,
+                entryNodeUrl = sessionReadySnapshot.entryNodeUrl,
+                configServerUrl = sessionReadySnapshot.configServerUrl,
+                aclGroup = sessionReadySnapshot.aclGroup,
+                networkSecret = "",
+                expiresAtEpochSeconds = sessionReadySnapshot.expiresAtEpochSeconds,
+            )
+            val runtimeStart = EasyTierRuntimeBridge.startNetworkInstance(
+                sessionConfig = runtimeSessionConfig,
+                playerId = currentPlayerId,
+            )
+            when (runtimeStart) {
+                is EasyTierRuntimeStartResult.Failed -> {
+                    if (runtimeSessionConfig.sessionId.isNotBlank()) {
+                        runCatching {
+                            EasyTierRoomApiClient(applicationContext).stopSession(
+                                runtimeSessionConfig.sessionId,
+                                EasyTierCredentialStore.sessionToken(
+                                    applicationContext,
+                                    runtimeSessionConfig.roomId,
+                                    currentPlayerId,
+                                ),
+                            )
+                        }.onFailure { error ->
+                            Log.w(TAG, "Failed to stop EasyTier room session ${runtimeSessionConfig.sessionId}", error)
+                        }
+                    }
+                    val summary = localizedRuntimeFailureSummary(runtimeStart)
+                    val failureSnapshot = EasyTierSessionController.persistSnapshot(
+                        context = applicationContext,
+                        snapshot = EasyTierSessionController.buildFailureSnapshot(
+                            previous = sessionReadySnapshot,
+                            summary = summary,
+                            failureCategory = runtimeStart.failureCategory,
+                        ),
+                        extraLines = buildList {
+                            add("runtime_instance_start_failed=true")
+                            add("runtime_failure_category=${runtimeStart.failureCategory.name}")
+                        },
+                        error = runtimeStart.error,
+                    )
+                    deliverSnapshot(applicationContext, receiver, RESULT_FAILURE, failureSnapshot)
+                    updateNotification(summary)
+                    return
+                }
+                is EasyTierRuntimeStartResult.Started -> {
+                    currentSessionId = sessionReadySnapshot.sessionId
+                    currentRuntimeInstanceName = runtimeStart.config.instanceName
+                    currentVpnRouteSignature = ""
+                    runtimeReportUnsupported = false
+                    EasyTierSessionController.persistSnapshot(
+                        context = applicationContext,
+                        snapshot = sessionReadySnapshot,
+                        extraLines = listOf(
+                            "runtime_instance_started=true",
+                            "runtime_instance_name=${runtimeStart.config.instanceName}",
+                            "runtime_network_name=${runtimeStart.config.networkName}",
+                            "runtime_peer_urls=${runtimeStart.config.peerUrls.joinToString(",")}",
+                        ),
+                    )
+                }
+            }
+            startStatusPolling(receiver)
+            return
+        } finally {
+            if (currentSessionId.isBlank()) {
+                running = false
+                stopForegroundCompat()
+                stopSelf(startId)
+            }
+        }
+    }
+
+    private fun runDisconnect(
+        startId: Int,
+        receiver: ResultReceiver?,
+    ) {
+        val previous = EasyTierSessionController.currentSnapshot(applicationContext)
+        if (previous.sessionId.isNotBlank()) {
+            runCatching {
+                EasyTierRoomApiClient(applicationContext).stopSession(
+                    previous.sessionId,
+                    EasyTierCredentialStore.sessionToken(
+                        applicationContext,
+                        previous.roomId,
+                        previous.currentPlayerId,
+                    ),
+                )
+            }.onFailure { error ->
+                Log.w(TAG, "Failed to stop EasyTier room session ${previous.sessionId}", error)
+            }
+        }
+        StsEasyTierVpnService.stopSession(applicationContext)
+        EasyTierJniBridge.stopAllInstances().exceptionOrNull()?.let { error ->
+            Log.w(TAG, "Failed to stop EasyTier runtime instances", error)
+        }
+        val snapshot = EasyTierSessionController.persistSnapshot(
+            context = applicationContext,
+            snapshot = EasyTierSessionController.buildDisconnectedSnapshot(
+                previous = previous,
+            ),
+            extraLines = buildList {
+                add("disconnect_requested=true")
+                add("runtime_stop_requested=true")
+                if (previous.sessionId.isNotBlank()) {
+                    add("room_session_stop_requested=true")
+                }
+            },
+        )
+        if (previous.roomOwnerPlayerId == previous.currentPlayerId && previous.roomId.isNotBlank()) {
+            EasyTierCredentialStore.clearRoom(
+                applicationContext,
+                previous.roomId,
+                previous.currentPlayerId,
+            )
+        }
+        deliverSnapshot(applicationContext, receiver, RESULT_DISCONNECTED, snapshot)
+        stopForegroundCompat()
+        stopSelf(startId)
+    }
+
+    private fun resultCodeFor(snapshot: EasyTierConnectionSnapshot): Int = when (snapshot.status) {
+        EasyTierConnectionStatus.CONNECTING -> RESULT_CONNECTING
+        EasyTierConnectionStatus.SESSION_READY -> RESULT_SESSION_READY
+        EasyTierConnectionStatus.CONNECTED -> RESULT_CONNECTED
+        EasyTierConnectionStatus.RECONNECTING -> RESULT_RECONNECTING
+        EasyTierConnectionStatus.PERMISSION_REQUIRED -> RESULT_PERMISSION_REQUIRED
+        EasyTierConnectionStatus.IDLE,
+        EasyTierConnectionStatus.DISCONNECTING,
+        EasyTierConnectionStatus.DISCONNECTED -> RESULT_DISCONNECTED
+        EasyTierConnectionStatus.FAILED -> RESULT_FAILURE
+    }
+
+    private fun buildNotification(message: String): Notification {
+        ensureNotificationChannel()
+        val intent = Intent(this, LauncherActivity::class.java)
+        val pendingIntent = PendingIntent.getActivity(
+            this,
+            0,
+            intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_link)
+            .setContentTitle(getString(R.string.main_easytier_notification_title))
+            .setContentText(message)
+            .setContentIntent(pendingIntent)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
+    }
+
+    private fun updateNotification(message: String) {
+        val manager = getSystemService(NotificationManager::class.java)
+        manager.notify(NOTIFICATION_ID, buildNotification(message))
+    }
+
+    private fun notificationMessageForSnapshot(snapshot: EasyTierConnectionSnapshot): String? {
+        return easyTierNotificationMessage(
+            snapshot = snapshot,
+            resolveString = ::getString,
+            unknownErrorMessage = getString(R.string.main_easytier_unknown_error),
+        )
+    }
+
+    private fun localizedRuntimeFailureSummary(result: EasyTierRuntimeStartResult.Failed): String {
+        return when (result.failureCategory) {
+            EasyTierFailureCategory.RuntimeBridgeUnavailable ->
+                result.summary.ifBlank { getString(R.string.main_easytier_runtime_bridge_unavailable) }
+            else -> result.summary.ifBlank { getString(R.string.main_easytier_unknown_error) }
+        }
+    }
+
+    private fun ensureNotificationChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val manager = getSystemService(NotificationManager::class.java)
+        manager.createNotificationChannel(
+            NotificationChannel(
+                CHANNEL_ID,
+                getString(R.string.main_easytier_notification_title),
+                NotificationManager.IMPORTANCE_LOW,
+            )
+        )
+    }
+
+    private fun stopForegroundCompat() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } else {
+            @Suppress("DEPRECATION")
+            stopForeground(true)
+        }
+    }
+
+    private fun extractResultReceiver(intent: Intent): ResultReceiver? {
+        @Suppress("DEPRECATION")
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableExtra(EXTRA_RESULT_RECEIVER, ResultReceiver::class.java)
+        } else {
+            intent.getParcelableExtra(EXTRA_RESULT_RECEIVER)
+        }
+    }
+
+    private fun startStatusPolling(receiver: ResultReceiver?) {
+        stopStatusPolling(clearRuntimeState = false)
+        val intervalMs = EasyTierConfigRepository.current().statusPollIntervalSeconds.coerceAtLeast(1) * 1000L
+        val runnable = object : Runnable {
+            override fun run() {
+                val sessionId = currentSessionId
+                if (!running || sessionId.isBlank()) {
+                    return
+                }
+                Thread(
+                    {
+                        runStatusPollIteration(sessionId, receiver)
+                        if (running && currentSessionId == sessionId) {
+                            mainHandler.postDelayed(this, intervalMs)
+                        }
+                    },
+                    "STS-EasyTierStatusPoll"
+                ).start()
+            }
+        }
+        statusPollRunnable = runnable
+        mainHandler.post(runnable)
+    }
+
+    private fun runStatusPollIteration(
+        sessionId: String,
+        receiver: ResultReceiver?,
+    ) {
+        val current = EasyTierSessionController.currentSnapshot(applicationContext)
+        if (hasEasyTierConnectionTimedOut(current, EasyTierConfigRepository.current())) {
+            handleConnectionTimeout(current, receiver)
+            return
+        }
+        runCatching {
+            EasyTierRoomApiClient(applicationContext).fetchSessionStatus(
+                sessionId,
+                EasyTierCredentialStore.sessionToken(
+                    applicationContext,
+                    current.roomId,
+                    current.currentPlayerId,
+                ),
+            )
+        }.onSuccess { sessionStatus ->
+            val normalizedSessionState = sessionStatus.sessionState.trim().lowercase()
+            val normalizedRoomState = sessionStatus.roomState.trim().lowercase()
+            val terminalSession = isTerminalSessionState(
+                sessionState = normalizedSessionState,
+                roomState = normalizedRoomState,
+            )
+            if (terminalSession) {
+                handleTerminalSessionState(
+                    current = current,
+                    receiver = receiver,
+                )
+                return@onSuccess
+            }
+
+            val nextStatus = when (normalizedSessionState) {
+                "issued", "connected" -> if (current.status == EasyTierConnectionStatus.CONNECTED) {
+                    EasyTierConnectionStatus.CONNECTED
+                } else {
+                    EasyTierConnectionStatus.SESSION_READY
+                }
+                else -> EasyTierConnectionStatus.RECONNECTING
+            }
+            val roomInfo = fetchRoomInfoOrNull(current.roomId.ifBlank { sessionStatus.roomId })
+            val updatedSnapshot = EasyTierSessionController.persistSnapshot(
+                context = applicationContext,
+                snapshot = applyEasyTierRoomInfo(
+                    snapshot = current.copy(
+                        status = nextStatus,
+                        // Older servers do not report the runtime IP. Do not erase the local
+                        // EasyTier address between runtime polls, or the launcher card flickers.
+                        assignedIpv4Cidr = resolveEasyTierAssignedIpv4Cidr(
+                            currentValue = current.assignedIpv4Cidr,
+                            reportedValue = sessionStatus.assignedIpv4Cidr,
+                        ),
+                        currentPlayerId = current.currentPlayerId.ifBlank {
+                            buildStablePlayerId(applicationContext)
+                        },
+                        peerCount = sessionStatus.peerCount,
+                        relayServerDescription = sessionStatus.relayServerDescription,
+                        lastSessionState = sessionStatus.sessionState.trim(),
+                        lastRoomState = sessionStatus.roomState.trim(),
+                        lastUpdatedAtMs = System.currentTimeMillis(),
+                        lastErrorSummary = "",
+                    ),
+                    roomInfo = roomInfo,
+                ),
+                extraLines = listOf(
+                    "session_state=${sessionStatus.sessionState}",
+                    "room_state=${sessionStatus.roomState}",
+                ),
+            )
+            deliverSnapshot(
+                applicationContext,
+                receiver,
+                resultCodeFor(updatedSnapshot),
+                updatedSnapshot,
+            )
+            notificationMessageForSnapshot(updatedSnapshot)?.let(::updateNotification)
+            pollRuntimeInfo(updatedSnapshot, receiver)
+        }.onFailure { error ->
+            if (error is EasyTierRoomApiHttpException && error.statusCode == 404) {
+                handleTerminalSessionState(
+                    current = current,
+                    receiver = receiver,
+                )
+                return@onFailure
+            }
+            val failedSnapshot = EasyTierSessionController.persistSnapshot(
+                context = applicationContext,
+                snapshot = EasyTierSessionController.buildFailureSnapshot(
+                    previous = current,
+                    summary = error.message?.trim().takeUnless { it.isNullOrEmpty() }
+                        ?: getString(R.string.main_easytier_unknown_error),
+                ),
+                extraLines = listOf("session_status_poll_failed=true"),
+                error = error,
+            )
+            deliverSnapshot(applicationContext, receiver, RESULT_FAILURE, failedSnapshot)
+            notificationMessageForSnapshot(failedSnapshot)?.let(::updateNotification)
+        }
+    }
+
+    private fun handleTerminalSessionState(
+        current: EasyTierConnectionSnapshot,
+        receiver: ResultReceiver?,
+    ) {
+        running = false
+        stopStatusPolling(clearRuntimeState = false)
+        StsEasyTierVpnService.stopSession(applicationContext)
+        EasyTierJniBridge.stopAllInstances().exceptionOrNull()?.let { error ->
+            Log.w(TAG, "Failed to stop EasyTier runtime instances after terminal session state", error)
+        }
+        if (current.roomId.isNotBlank()) {
+            EasyTierCredentialStore.clearRoom(
+                applicationContext,
+                current.roomId,
+                current.currentPlayerId,
+            )
+        }
+        val snapshot = EasyTierSessionController.persistSnapshot(
+            context = applicationContext,
+            snapshot = EasyTierSessionController.buildDisconnectedSnapshot(
+                previous = current,
+            ),
+            extraLines = listOf("terminal_session_state=true"),
+        )
+        deliverSnapshot(applicationContext, receiver, RESULT_DISCONNECTED, snapshot)
+        stopForegroundCompat()
+        stopSelf()
+    }
+
+    private fun pollRuntimeInfo(
+        baseSnapshot: EasyTierConnectionSnapshot,
+        receiver: ResultReceiver?,
+    ) {
+        val instanceName = currentRuntimeInstanceName
+        if (instanceName.isBlank()) {
+            return
+        }
+        val runtimeResult = EasyTierJniBridge.collectNetworkInfo(instanceName)
+        runtimeResult.exceptionOrNull()?.let { error ->
+            val summary = EasyTierJniBridge.failureSummary(error)
+            val failedSnapshot = EasyTierSessionController.persistSnapshot(
+                context = applicationContext,
+                snapshot = EasyTierSessionController.buildFailureSnapshot(
+                    previous = baseSnapshot,
+                    summary = summary,
+                    failureCategory = EasyTierJniBridge.failureCategory(error),
+                ),
+                extraLines = listOf(
+                    "runtime_info_poll_failed=true",
+                    "runtime_instance_name=$instanceName",
+                ),
+                error = error,
+            )
+            deliverSnapshot(applicationContext, receiver, RESULT_FAILURE, failedSnapshot)
+            notificationMessageForSnapshot(failedSnapshot)?.let(::updateNotification)
+            return
+        }
+
+        val runtimeInfo = runtimeResult.getOrNull() ?: return
+        if (!runtimeInfo.running) {
+            val runtimeError = runtimeInfo.errorMessage.ifBlank {
+                getString(R.string.main_easytier_notification_reconnecting)
+            }
+            val reconnectingSnapshot = EasyTierSessionController.persistSnapshot(
+                context = applicationContext,
+                snapshot = baseSnapshot.copy(
+                    status = EasyTierConnectionStatus.RECONNECTING,
+                    lastUpdatedAtMs = System.currentTimeMillis(),
+                    lastErrorSummary = runtimeInfo.errorMessage,
+                ),
+                extraLines = listOf(
+                    "runtime_instance_running=false",
+                    "runtime_instance_name=$instanceName",
+                    "runtime_error=${runtimeInfo.errorMessage.ifBlank { "<empty>" }}",
+                ),
+            )
+            deliverSnapshot(applicationContext, receiver, RESULT_RECONNECTING, reconnectingSnapshot)
+            updateNotification(runtimeError)
+            return
+        }
+
+        if (runtimeInfo.virtualIpv4Cidr.isBlank()) {
+            if (hasEasyTierConnectionTimedOut(baseSnapshot, EasyTierConfigRepository.current())) {
+                handleConnectionTimeout(baseSnapshot, receiver)
+            }
+            return
+        }
+        val routeCidrs = runtimeInfo.routeCidrs.ifEmpty {
+            normalizeEasyTierIpv4Route(runtimeInfo.virtualIpv4Cidr)
+                ?.cidr
+                ?.let(::listOf)
+                .orEmpty()
+        }
+        val routeSignature = routeCidrs.joinToString("|")
+        if (routeSignature.isNotBlank() && routeSignature != currentVpnRouteSignature) {
+            currentVpnRouteSignature = routeSignature
+            StsEasyTierVpnService.startSession(
+                context = applicationContext,
+                instanceName = instanceName,
+                ipv4Cidr = runtimeInfo.virtualIpv4Cidr,
+                routeCidrs = routeCidrs,
+            )
+        }
+        val runtimeStatus = reportSessionRuntimeOrNull(
+            snapshot = baseSnapshot,
+            assignedIpv4Cidr = runtimeInfo.virtualIpv4Cidr,
+        )
+        // The VPN worker can finish while this poll is blocked on the Room API. Preserve its
+        // CONNECTED snapshot instead of overwriting it with the stale SESSION_READY snapshot.
+        val snapshotBeforePersist = selectRuntimePollBaseSnapshot(
+            polledSnapshot = baseSnapshot,
+            latestSnapshot = EasyTierSessionController.currentSnapshot(applicationContext),
+        )
+        val updatedSnapshot = EasyTierSessionController.persistSnapshot(
+            context = applicationContext,
+            snapshot = applyLocalEasyTierOwnerIpv4(
+                snapshotBeforePersist.copy(
+                    assignedIpv4Cidr = runtimeStatus?.assignedIpv4Cidr ?: runtimeInfo.virtualIpv4Cidr,
+                    peerCount = runtimeInfo.peerCount ?: runtimeStatus?.peerCount ?: snapshotBeforePersist.peerCount,
+                    relayServerDescription = runtimeStatus?.relayServerDescription
+                        ?: snapshotBeforePersist.relayServerDescription,
+                    lastSessionState = runtimeStatus?.sessionState?.trim()
+                        ?: snapshotBeforePersist.lastSessionState,
+                    lastRoomState = runtimeStatus?.roomState?.trim()
+                        ?: snapshotBeforePersist.lastRoomState,
+                    lastUpdatedAtMs = System.currentTimeMillis(),
+                    lastErrorSummary = "",
+                ),
+                assignedIpv4Cidr = runtimeInfo.virtualIpv4Cidr,
+            ),
+            extraLines = buildList {
+                add("runtime_info_poll_success=true")
+                add("runtime_instance_name=$instanceName")
+                add("runtime_virtual_ipv4_cidr=${runtimeInfo.virtualIpv4Cidr}")
+                add("runtime_routes=${routeCidrs.joinToString(",")}")
+            },
+        )
+        deliverSnapshot(applicationContext, receiver, resultCodeFor(updatedSnapshot), updatedSnapshot)
+        notificationMessageForSnapshot(updatedSnapshot)?.let(::updateNotification)
+    }
+
+    private fun fetchRoomInfoOrNull(roomId: String): EasyTierRoomInfo? {
+        if (roomId.isBlank()) {
+            return null
+        }
+        return runCatching {
+            EasyTierRoomApiClient(applicationContext).fetchRoomInfo(roomId)
+        }.onFailure { error ->
+            Log.w(TAG, "Failed to fetch EasyTier room info for $roomId", error)
+        }.getOrNull()
+    }
+
+    private fun reportSessionRuntimeOrNull(
+        snapshot: EasyTierConnectionSnapshot,
+        assignedIpv4Cidr: String,
+    ): EasyTierSessionStatusSnapshot? {
+        if (runtimeReportUnsupported) {
+            return null
+        }
+        if (!shouldReportEasyTierRuntime(
+                snapshot = snapshot,
+                assignedIpv4Cidr = assignedIpv4Cidr,
+            )
+        ) {
+            return null
+        }
+        return try {
+            EasyTierRoomApiClient(applicationContext).reportSessionRuntime(
+                sessionId = snapshot.sessionId,
+                sessionToken = EasyTierCredentialStore.sessionToken(
+                    applicationContext,
+                    snapshot.roomId,
+                    snapshot.currentPlayerId,
+                ),
+                assignedIpv4Cidr = assignedIpv4Cidr,
+                relayServerDescription = snapshot.relayServerDescription,
+            )
+        } catch (error: EasyTierRoomApiHttpException) {
+            if (error.statusCode == 404) {
+                runtimeReportUnsupported = true
+                Log.i(TAG, "Room API does not support runtime reports; continuing with local connection state")
+            } else {
+                Log.w(TAG, "Failed to report EasyTier runtime for session ${snapshot.sessionId}", error)
+            }
+            null
+        } catch (error: Exception) {
+            Log.w(TAG, "Failed to report EasyTier runtime for session ${snapshot.sessionId}", error)
+            null
+        }
+    }
+
+    private fun stopStatusPolling(clearRuntimeState: Boolean = true) {
+        statusPollRunnable?.let(mainHandler::removeCallbacks)
+        statusPollRunnable = null
+        if (clearRuntimeState) {
+            currentSessionId = ""
+            currentRuntimeInstanceName = ""
+            currentVpnRouteSignature = ""
+            runtimeReportUnsupported = false
+        }
+    }
+
+    private fun handleConnectionTimeout(
+        current: EasyTierConnectionSnapshot,
+        receiver: ResultReceiver?,
+    ) {
+        running = false
+        stopStatusPolling(clearRuntimeState = false)
+        if (current.sessionId.isNotBlank()) {
+            runCatching {
+                EasyTierRoomApiClient(applicationContext).stopSession(
+                    current.sessionId,
+                    EasyTierCredentialStore.sessionToken(
+                        applicationContext,
+                        current.roomId,
+                        current.currentPlayerId,
+                    ),
+                )
+            }.onFailure { error ->
+                Log.w(TAG, "Failed to release timed-out EasyTier session ${current.sessionId}", error)
+            }
+        }
+        StsEasyTierVpnService.stopSession(applicationContext)
+        EasyTierJniBridge.stopAllInstances()
+        if (current.roomOwnerPlayerId == current.currentPlayerId && current.roomId.isNotBlank()) {
+            EasyTierCredentialStore.clearRoom(
+                applicationContext,
+                current.roomId,
+                current.currentPlayerId,
+            )
+        }
+        val summary = "EasyTier did not receive a virtual IP before the connection timeout."
+        val failedSnapshot = EasyTierSessionController.persistSnapshot(
+            context = applicationContext,
+            snapshot = EasyTierSessionController.buildFailureSnapshot(current, summary),
+            extraLines = listOf("connection_timeout=true"),
+        )
+        deliverSnapshot(applicationContext, receiver, RESULT_FAILURE, failedSnapshot)
+        updateNotification(summary)
+        stopForegroundCompat()
+        stopSelf()
+    }
+
+    private fun buildStablePlayerId(context: Context): String {
+        return io.stamethyst.backend.presence.GamePresenceClient.resolveIdentityPayload(context).deviceId
+    }
+}
+
+internal fun hasEasyTierConnectionTimedOut(
+    snapshot: EasyTierConnectionSnapshot,
+    config: EasyTierResolvedConfig,
+    nowMs: Long = System.currentTimeMillis(),
+): Boolean {
+    val startedAtMs = snapshot.startedAtMs ?: return false
+    if (snapshot.assignedIpv4Cidr.isNotBlank()) {
+        return false
+    }
+    return snapshot.status in setOf(
+        EasyTierConnectionStatus.CONNECTING,
+        EasyTierConnectionStatus.SESSION_READY,
+        EasyTierConnectionStatus.RECONNECTING,
+        EasyTierConnectionStatus.FAILED,
+    ) && nowMs - startedAtMs >= config.connectTimeoutSeconds.coerceAtLeast(1) * 1000L
+}
+
+internal fun applyEasyTierRoomInfo(
+    snapshot: EasyTierConnectionSnapshot,
+    roomInfo: EasyTierRoomInfo?,
+): EasyTierConnectionSnapshot {
+    if (roomInfo == null) {
+        return snapshot
+    }
+    val ownerPlayerId = roomInfo.ownerPlayerId.trim()
+    val ownerMember = roomInfo.members.firstOrNull { it.playerId.trim() == ownerPlayerId }
+        ?: roomInfo.members.firstOrNull { it.role.trim().equals("owner", ignoreCase = true) }
+    val ownerIpv4Cidr = when {
+        ownerPlayerId.isBlank() -> ""
+        ownerPlayerId == snapshot.currentPlayerId && snapshot.assignedIpv4Cidr.isNotBlank() ->
+            snapshot.assignedIpv4Cidr
+        else -> ownerMember?.assignedIpv4Cidr?.trim().orEmpty()
+    }
+    return snapshot.copy(
+        roomOwnerPlayerId = ownerPlayerId,
+        roomOwnerIpv4Cidr = ownerIpv4Cidr,
+    )
+}
+
+internal fun applyLocalEasyTierOwnerIpv4(
+    snapshot: EasyTierConnectionSnapshot,
+    assignedIpv4Cidr: String,
+): EasyTierConnectionSnapshot {
+    val normalizedIpv4Cidr = assignedIpv4Cidr.trim()
+    if (normalizedIpv4Cidr.isBlank()) {
+        return snapshot
+    }
+    return if (
+        snapshot.roomOwnerPlayerId.isNotBlank() &&
+        snapshot.roomOwnerPlayerId == snapshot.currentPlayerId
+    ) {
+        snapshot.copy(roomOwnerIpv4Cidr = normalizedIpv4Cidr)
+    } else {
+        snapshot
+    }
+}
+
+internal fun selectRuntimePollBaseSnapshot(
+    polledSnapshot: EasyTierConnectionSnapshot,
+    latestSnapshot: EasyTierConnectionSnapshot,
+): EasyTierConnectionSnapshot {
+    val isSameSession = polledSnapshot.sessionId.isNotBlank() &&
+        polledSnapshot.sessionId == latestSnapshot.sessionId
+    return if (isSameSession && latestSnapshot.status == EasyTierConnectionStatus.CONNECTED) {
+        latestSnapshot
+    } else {
+        polledSnapshot
+    }
+}
+
+internal fun resolveEasyTierAssignedIpv4Cidr(
+    currentValue: String,
+    reportedValue: String,
+): String = reportedValue.trim().ifBlank { currentValue.trim() }
+
+internal fun shouldReportEasyTierRuntime(
+    snapshot: EasyTierConnectionSnapshot,
+    assignedIpv4Cidr: String,
+): Boolean = snapshot.sessionId.isNotBlank() && assignedIpv4Cidr.isNotBlank()
+
+internal fun easyTierNotificationMessage(
+    snapshot: EasyTierConnectionSnapshot,
+    resolveString: (Int) -> String,
+    unknownErrorMessage: String,
+): String? {
+    return when (snapshot.status) {
+        EasyTierConnectionStatus.DISCONNECTED ->
+            snapshot.lastErrorSummary.takeIf { it.isNotBlank() }
+        EasyTierConnectionStatus.FAILED -> snapshot.lastErrorSummary.ifBlank { unknownErrorMessage }
+        else -> easyTierNotificationMessageResIdForStatus(snapshot.status)?.let(resolveString)
+    }
+}
+
+internal fun easyTierNotificationMessageResIdForStatus(status: EasyTierConnectionStatus): Int? {
+    return when (status) {
+        EasyTierConnectionStatus.PERMISSION_REQUIRED -> R.string.main_easytier_notification_permission_required
+        EasyTierConnectionStatus.CONNECTING -> R.string.main_easytier_notification_connecting
+        EasyTierConnectionStatus.SESSION_READY -> R.string.main_easytier_notification_runtime_starting
+        EasyTierConnectionStatus.CONNECTED -> R.string.main_easytier_notification_connected
+        EasyTierConnectionStatus.RECONNECTING -> R.string.main_easytier_notification_reconnecting
+        EasyTierConnectionStatus.IDLE,
+        EasyTierConnectionStatus.DISCONNECTING,
+        EasyTierConnectionStatus.DISCONNECTED,
+        EasyTierConnectionStatus.FAILED -> null
+    }
+}
+
+internal fun isTerminalSessionState(
+    sessionState: String,
+    roomState: String,
+): Boolean = roomState == "closed" ||
+    sessionState == "expired" ||
+    sessionState == "stopped" ||
+    sessionState == "superseded"

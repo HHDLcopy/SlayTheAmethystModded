@@ -64,6 +64,7 @@ http://localhost:3001/online?token=change-me
 ```text
 HOST=0.0.0.0
 PORT=3001
+TRUST_PROXY=false
 PUBLIC_BASE_URL=https://online.example.com
 PRESENCE_DB_PATH=./data/presence.sqlite
 PRESENCE_HEARTBEAT_INTERVAL_SECONDS=30
@@ -118,8 +119,12 @@ When `EASYTIER_ENABLED=true`, `roomApiBaseUrl` and `webConsoleApiBaseUrl`
 default to `PUBLIC_BASE_URL`, while `configServerUrl` and `entryNodeUrl`
 default to the same host with `udp://:22020` and `tcp://:11010`. You can
 override either address with `EASYTIER_CONFIG_SERVER_URL` or
-`EASYTIER_ENTRY_NODE_URL`. `EASYTIER_SESSION_TTL_SECONDS` controls how long a
-signed room session remains valid before the server expires it automatically.
+`EASYTIER_ENTRY_NODE_URL`. `EASYTIER_SESSION_TTL_SECONDS` is the runtime lease
+timeout: every active client renews it through `POST /api/lan/session/runtime`.
+If a client stops reporting before the timeout, the server expires the session
+and deletes the room when the missing session belongs to its owner. Rooms are
+created atomically by the owner's `POST /api/lan/session/start` request; a room
+with no active owner, or no active members, is removed with all of its sessions.
 
 When `EASYTIER_MANAGED=true`, the Node service can manage local EasyTier child
 processes in development:
@@ -270,11 +275,16 @@ Invoke-RestMethod `
   -Body '{"roomId":"alpha-room","playerId":"alice","displayName":"Alice","clientVersion":"1.4.8","deviceSummary":"Pixel 8 sdk35"}'
 ```
 
+Every session status, runtime, and stop request must send the session credential
+in `Authorization: Bearer <sessionToken>`. Room-owner actions must send
+`X-Lan-Owner-Token: <ownerToken>`.
+
 Query session status:
 
 ```powershell
 Invoke-RestMethod `
-  -Uri "http://127.0.0.1:3001/api/lan/session/status?sessionId=lan_xxx"
+  -Uri "http://127.0.0.1:3001/api/lan/session/status?sessionId=lan_xxx" `
+  -Headers @{ Authorization = 'Bearer <sessionToken>' }
 ```
 
 Report the runtime-assigned virtual IPv4 after EasyTier has started:
@@ -284,6 +294,7 @@ Invoke-RestMethod `
   -Method Post `
   -Uri http://127.0.0.1:3001/api/lan/session/runtime `
   -ContentType 'application/json' `
+  -Headers @{ Authorization = 'Bearer <sessionToken>' } `
   -Body '{"sessionId":"lan_xxx","assignedIpv4Cidr":"10.144.0.1/24"}'
 ```
 
@@ -301,6 +312,7 @@ Invoke-RestMethod `
   -Method Post `
   -Uri http://127.0.0.1:3001/api/lan/session/stop `
   -ContentType 'application/json' `
+  -Headers @{ Authorization = 'Bearer <sessionToken>' } `
   -Body '{"sessionId":"lan_xxx"}'
 ```
 
@@ -309,8 +321,9 @@ Business rules in the current MVP:
 - The first player to join a room becomes the room owner.
 - Starting a new session for the same `roomId + playerId` supersedes the older
   active session.
-- Room session responses include short-lived `sessionId`, `aclGroup`,
-  `networkSecret`, and `expiresAt` fields expected by the Android client.
+- Room session responses include short-lived `sessionId`, `sessionToken`,
+  `aclGroup`, `networkSecret`, and `expiresAt` fields expected by the Android
+  client. The first owner session also receives an `ownerToken`.
 - Once the EasyTier runtime is connected, the launcher reports
   `assignedIpv4Cidr` back through `POST /api/lan/session/runtime`, and
   `GET /api/lan/session/status` starts returning `sessionState: "connected"`.

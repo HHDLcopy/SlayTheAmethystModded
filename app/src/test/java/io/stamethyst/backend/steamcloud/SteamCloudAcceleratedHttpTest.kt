@@ -100,6 +100,20 @@ class SteamCloudAcceleratedHttpTest {
     }
 
     @Test
+    fun steamContentRouteProfile_supportsSteamPipeCdnHostsSeenOnDevice() {
+        val expectedHosts = setOf(
+            "st.dl.eccdnx.com",
+            "xz.pphimalayanrt.com",
+            "dl.steam.clngaa.com",
+            "files.steam.nsclouds.cn",
+        )
+
+        assertTrue(
+            SteamContentCdnWattToolkitRouteProfile.supportedHosts.containsAll(expectedHosts),
+        )
+    }
+
+    @Test
     fun routeResolver_matchesSteamContentCdnHostsFromWattProxyRule() {
         apiServer.enqueue(
             MockResponse.Builder()
@@ -111,8 +125,8 @@ class SteamCloudAcceleratedHttpTest {
                         {
                           "Items": [
                             {
-                              "MatchDomainNames": "*.st.dl.eccdnx.com",
-                              "ListenDomainNames": "shared.st.dl.eccdnx.com;store.st.dl.eccdnx.com",
+                              "MatchDomainNames": "st.dl.eccdnx.com;xz.pphimalayanrt.com;dl.steam.clngaa.com;files.steam.nsclouds.cn",
+                              "ListenDomainNames": "st.dl.eccdnx.com;xz.pphimalayanrt.com;dl.steam.clngaa.com;files.steam.nsclouds.cn",
                               "ForwardDomainNames": "http://cdn.queniuqe.com:${steamContentForwardServer.port}",
                               "ProxyType": 1,
                               "IgnoreSSLCertVerification": true
@@ -133,15 +147,17 @@ class SteamCloudAcceleratedHttpTest {
             projectGroupsUrl = apiServer.url("/accelerator/projectgroups"),
         )
 
-        val route = resolver.resolveRouteForHost("shared.st.dl.eccdnx.com")
+        val route = resolver.resolveRouteForHost("xz.pphimalayanrt.com")
 
         assertNotNull(route)
-        assertTrue(route!!.logicalHosts.contains("shared.st.dl.eccdnx.com"))
-        assertTrue(route.logicalHosts.contains("store.st.dl.eccdnx.com"))
+        assertTrue(route!!.logicalHosts.contains("xz.pphimalayanrt.com"))
+        assertTrue(route.logicalHosts.contains("st.dl.eccdnx.com"))
+        assertTrue(route.logicalHosts.contains("dl.steam.clngaa.com"))
+        assertTrue(route.logicalHosts.contains("files.steam.nsclouds.cn"))
         assertEquals(
             "cdn.queniuqe.com",
             route.buildForwardedUrl(
-                "https://shared.st.dl.eccdnx.com/depot/646571/manifest/1616206291221819177/5".toHttpUrl(),
+                "https://xz.pphimalayanrt.com/depot/646571/manifest/1616206291221819177/5".toHttpUrl(),
             ).host,
         )
     }
@@ -239,8 +255,8 @@ class SteamCloudAcceleratedHttpTest {
                         {
                           "Items": [
                             {
-                              "MatchDomainNames": "*.st.dl.eccdnx.com",
-                              "ListenDomainNames": "shared.st.dl.eccdnx.com;store.st.dl.eccdnx.com",
+                              "MatchDomainNames": "st.dl.eccdnx.com;xz.pphimalayanrt.com;dl.steam.clngaa.com;files.steam.nsclouds.cn",
+                              "ListenDomainNames": "st.dl.eccdnx.com;xz.pphimalayanrt.com;dl.steam.clngaa.com;files.steam.nsclouds.cn",
                               "ForwardDomainNames": "http://cdn.queniuqe.com:${steamContentForwardServer.port}",
                               "ProxyType": 1,
                               "IgnoreSSLCertVerification": true
@@ -289,11 +305,11 @@ class SteamCloudAcceleratedHttpTest {
 
         client.newCall(
             Request.Builder()
-                .url("https://shared.st.dl.eccdnx.com/depot/646571/manifest/1616206291221819177/5")
+                .url("https://st.dl.eccdnx.com/depot/646571/manifest/1616206291221819177/5")
                 .build(),
         ).execute().use { response ->
             assertEquals(200, response.code)
-            assertEquals("shared.st.dl.eccdnx.com", response.request.url.host)
+            assertEquals("st.dl.eccdnx.com", response.request.url.host)
         }
 
         val routeRequest = apiServer.takeRequest()
@@ -304,6 +320,6 @@ class SteamCloudAcceleratedHttpTest {
             "/depot/646571/manifest/1616206291221819177/5",
             forwardedRequest.url.encodedPath,
         )
-        assertEquals("shared.st.dl.eccdnx.com", forwardedRequest.headers["Host"])
+        assertEquals("st.dl.eccdnx.com", forwardedRequest.headers["Host"])
     }
 }

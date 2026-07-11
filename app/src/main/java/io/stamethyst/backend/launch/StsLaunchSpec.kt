@@ -4,6 +4,9 @@ import android.content.Context
 import android.os.Build
 import android.util.Log
 import io.stamethyst.BuildConfig
+import io.stamethyst.backend.easytier.EasyTierConnectionSnapshot
+import io.stamethyst.backend.easytier.EasyTierConnectionStatus
+import io.stamethyst.backend.easytier.EasyTierSessionController
 import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.backend.render.RendererBackendResolver
@@ -25,6 +28,7 @@ import java.util.TimeZone
 
 object StsLaunchSpec {
     private const val TAG = "STS-LaunchSpec"
+    private const val EASYTIER_TOGETHER_IN_SPIRE_PORT = "33455"
     private const val DEFAULT_G1_MAX_PAUSE_MILLIS = 80
     private const val DEFAULT_ACTIVE_PROCESSOR_COUNT = 3
     private const val DEFAULT_TIERED_STOP_AT_LEVEL = 2
@@ -121,6 +125,7 @@ object StsLaunchSpec {
         val stsRoot = RuntimePaths.stsRoot(context)
         val stsHome = RuntimePaths.stsHome(context)
         val ramSaverEnabled = isMtsLaunchMode(launchMode) && ModManager.isRamSaverEnabled(context)
+        val easyTierSnapshot = EasyTierSessionController.currentSnapshot(context)
         if (!stsHome.exists()) {
             stsHome.mkdirs()
         }
@@ -336,6 +341,9 @@ object StsLaunchSpec {
             "-Damethyst.floating_tools.built_in_keyboard=" +
                 if (LauncherConfig.isBuiltInSoftKeyboardEnabled(context)) "true" else "false"
         )
+        buildEasyTierTogetherInSpireJvmProperties(easyTierSnapshot).forEach { (key, value) ->
+            args.add("-D$key=$value")
+        }
         args.add("-Duser.language=${Locale.getDefault().language}")
         args.add("-Duser.timezone=${TimeZone.getDefault().id}")
         args.add("-Dos.name=Linux")
@@ -822,6 +830,52 @@ object StsLaunchSpec {
         return !ramSaverEnabled && configuredEnabled && offscreenFrameBuffersEnabled
     }
 
+    internal fun buildEasyTierTogetherInSpireJvmProperties(
+        snapshot: EasyTierConnectionSnapshot?,
+    ): Map<String, String> {
+        val properties = linkedMapOf(
+            "amethyst.easytier.together_in_spire.port" to EASYTIER_TOGETHER_IN_SPIRE_PORT,
+        )
+        if (snapshot == null || snapshot.status != EasyTierConnectionStatus.CONNECTED) {
+            return properties
+        }
+        val ownerHost = extractEasyTierIpv4Host(snapshot.roomOwnerIpv4Cidr)
+        val localHost = extractEasyTierIpv4Host(snapshot.assignedIpv4Cidr)
+        if (ownerHost.isBlank() || localHost.isBlank()) {
+            return properties
+        }
+        putIfNotBlank(
+            properties,
+            "amethyst.easytier.together_in_spire.host_ip",
+            ownerHost,
+        )
+        putIfNotBlank(properties, "amethyst.easytier.assigned_ipv4_cidr", snapshot.assignedIpv4Cidr)
+        putIfNotBlank(properties, "amethyst.easytier.current_player_id", snapshot.currentPlayerId)
+        putIfNotBlank(properties, "amethyst.easytier.room_owner_player_id", snapshot.roomOwnerPlayerId)
+        putIfNotBlank(properties, "amethyst.easytier.room_id", snapshot.roomId)
+        return properties
+    }
+
+    internal fun extractEasyTierIpv4Host(value: String): String {
+        val normalized = value.trim()
+        if (normalized.isEmpty()) {
+            return ""
+        }
+        val host = normalized.substringBefore('/').trim()
+        val octets = host.split('.')
+        if (octets.size != 4) {
+            return ""
+        }
+        return if (octets.all { octet ->
+                octet.all(Char::isDigit) && octet.toIntOrNull()?.let { it in 0..255 } == true
+            }
+        ) {
+            host
+        } else {
+            ""
+        }
+    }
+
     private fun addDebugGpuGuardianTestProperties(
         context: Context,
         args: MutableList<String>
@@ -905,6 +959,16 @@ object StsLaunchSpec {
             }
         }
         return null
+    }
+
+    private fun putIfNotBlank(
+        target: MutableMap<String, String>,
+        key: String,
+        value: String,
+    ) {
+        if (value.isNotBlank()) {
+            target[key] = value
+        }
     }
 
     private fun addCacioBootClasspath(args: MutableList<String>, cacioDir: File) {

@@ -5,8 +5,10 @@ const path = require('path');
 const sqlite3 = require('sqlite3');
 
 class SqliteDatabase {
-  constructor(db) {
+  constructor(db, dbPath = '') {
     this.db = db;
+    this.dbPath = dbPath;
+    this.transactionTail = Promise.resolve();
   }
 
   exec(sql) {
@@ -60,6 +62,29 @@ class SqliteDatabase {
     });
   }
 
+  async transaction(callback) {
+    const previous = this.transactionTail;
+    let release;
+    this.transactionTail = new Promise((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    let transactionDatabase = null;
+    try {
+      transactionDatabase = await openTransactionDatabase(this.dbPath);
+      await transactionDatabase.exec('BEGIN IMMEDIATE;');
+      const result = await callback(transactionDatabase);
+      await transactionDatabase.exec('COMMIT;');
+      return result;
+    } catch (error) {
+      await transactionDatabase?.exec('ROLLBACK;').catch(() => {});
+      throw error;
+    } finally {
+      await transactionDatabase?.close().catch(() => {});
+      release();
+    }
+  }
+
   close() {
     return new Promise((resolve, reject) => {
       this.db.close((error) => {
@@ -88,8 +113,27 @@ async function openDatabase(dbPath) {
   });
   sqlite.configure('busyTimeout', 5000);
 
-  const database = new SqliteDatabase(sqlite);
+  const database = new SqliteDatabase(sqlite, resolvedPath);
   await initializeDatabase(database);
+  return database;
+}
+
+async function openTransactionDatabase(dbPath) {
+  if (!dbPath) {
+    throw new Error('SQLite transaction database path is unavailable');
+  }
+  const sqlite = await new Promise((resolve, reject) => {
+    const db = new sqlite3.Database(dbPath, (error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve(db);
+    });
+  });
+  sqlite.configure('busyTimeout', 5000);
+  const database = new SqliteDatabase(sqlite, dbPath);
+  await database.exec('PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
   return database;
 }
 
@@ -130,6 +174,8 @@ async function initializeDatabase(database) {
       closed_at_ms INTEGER NOT NULL DEFAULT 0,
       acl_group TEXT NOT NULL DEFAULT '',
       network_secret TEXT NOT NULL DEFAULT '',
+      owner_token_hash TEXT NOT NULL DEFAULT '',
+      owner_source_ip TEXT NOT NULL DEFAULT '',
       created_at_ms INTEGER NOT NULL,
       updated_at_ms INTEGER NOT NULL,
       last_session_started_at_ms INTEGER NOT NULL DEFAULT 0
@@ -148,6 +194,8 @@ async function initializeDatabase(database) {
       acl_group TEXT NOT NULL DEFAULT '',
       network_secret TEXT NOT NULL DEFAULT '',
       session_state TEXT NOT NULL DEFAULT 'issued',
+      session_token_hash TEXT NOT NULL DEFAULT '',
+      source_ip TEXT NOT NULL DEFAULT '',
       assigned_ipv4_cidr TEXT NOT NULL DEFAULT '',
       relay_server_description TEXT NOT NULL DEFAULT '',
       created_at_ms INTEGER NOT NULL,
@@ -165,6 +213,7 @@ async function initializeDatabase(database) {
 
     CREATE INDEX IF NOT EXISTS idx_lan_sessions_room_active
       ON lan_sessions(room_id, ended_at_ms, expires_at_ms);
+
   `);
   await database.exec(`
     ALTER TABLE presence_sessions ADD COLUMN device_model TEXT NOT NULL DEFAULT '';
@@ -187,6 +236,40 @@ async function initializeDatabase(database) {
       throw error;
     }
   });
+  await database.exec(`
+    ALTER TABLE lan_rooms ADD COLUMN owner_token_hash TEXT NOT NULL DEFAULT '';
+  `).catch((error) => {
+    if (!/duplicate column name/i.test(String(error && error.message))) {
+      throw error;
+    }
+  });
+  await database.exec(`
+    ALTER TABLE lan_rooms ADD COLUMN owner_source_ip TEXT NOT NULL DEFAULT '';
+  `).catch((error) => {
+    if (!/duplicate column name/i.test(String(error && error.message))) {
+      throw error;
+    }
+  });
+  await database.exec(`
+    ALTER TABLE lan_sessions ADD COLUMN session_token_hash TEXT NOT NULL DEFAULT '';
+  `).catch((error) => {
+    if (!/duplicate column name/i.test(String(error && error.message))) {
+      throw error;
+    }
+  });
+  await database.exec(`
+    ALTER TABLE lan_sessions ADD COLUMN source_ip TEXT NOT NULL DEFAULT '';
+  `).catch((error) => {
+    if (!/duplicate column name/i.test(String(error && error.message))) {
+      throw error;
+    }
+  });
+  await database.exec(`
+    CREATE INDEX IF NOT EXISTS idx_lan_sessions_room_source_active
+      ON lan_sessions(room_id, source_ip, ended_at_ms, expires_at_ms);
+    CREATE INDEX IF NOT EXISTS idx_lan_rooms_owner_source
+      ON lan_rooms(owner_source_ip, closed_at_ms);
+  `);
 }
 
 module.exports = {

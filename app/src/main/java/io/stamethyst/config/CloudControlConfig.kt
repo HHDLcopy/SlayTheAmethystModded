@@ -24,12 +24,17 @@ import okhttp3.Request
 
 private const val DEFAULT_QQ_GROUP_NUMBER_VALUE = "1029305387"
 private const val STEAM_DEPOT_KEY_BYTES = 32
+private const val DEFAULT_CLOUD_CONTROL_ASSET_NAME = "cloud-control.json"
+private const val DEFAULT_EASYTIER_CONNECT_TIMEOUT_SECONDS = 12
+private const val DEFAULT_EASYTIER_STATUS_POLL_INTERVAL_SECONDS = 5
+private const val DEFAULT_EASYTIER_DEFAULT_MODE = "room"
 
 data class CloudControlSettings(
     val heartbeatIntervalSeconds: Int,
     val heartbeatWsUrl: String,
     val qqGroupNumber: String = DEFAULT_QQ_GROUP_NUMBER_VALUE,
-    val steamDepotKeys: List<CloudControlSteamDepotKey> = emptyList()
+    val steamDepotKeys: List<CloudControlSteamDepotKey> = emptyList(),
+    val easyTier: CloudControlEasyTierSettings = CloudControlEasyTierSettings(),
 ) {
     val heartbeatIntervalMs: Long
         get() = heartbeatIntervalSeconds * 1000L
@@ -43,6 +48,21 @@ data class CloudControlSettings(
                 key.appId == appId.toLong() && key.depotId == depotId.toLong()
             }
             ?.decodeKeyBytes()
+}
+
+data class CloudControlEasyTierSettings(
+    val enabled: Boolean = false,
+    val roomApiBaseUrl: String = "",
+    val webConsoleApiBaseUrl: String = "",
+    val configServerUrl: String = "",
+    val entryNodeUrl: String = "",
+    val connectTimeoutSeconds: Int = DEFAULT_EASYTIER_CONNECT_TIMEOUT_SECONDS,
+    val statusPollIntervalSeconds: Int = DEFAULT_EASYTIER_STATUS_POLL_INTERVAL_SECONDS,
+    val allowSharedCommunityNetwork: Boolean = false,
+    val defaultMode: String = DEFAULT_EASYTIER_DEFAULT_MODE,
+) {
+    val isConfigured: Boolean
+        get() = enabled && entryNodeUrl.isNotBlank()
 }
 
 data class CloudControlSteamDepotKey(
@@ -66,6 +86,10 @@ object CloudControlConfig {
     const val DEFAULT_QQ_GROUP_NUMBER = DEFAULT_QQ_GROUP_NUMBER_VALUE
     const val MIN_HEARTBEAT_INTERVAL_SECONDS = 30
     const val MAX_HEARTBEAT_INTERVAL_SECONDS = 3_600
+    const val MIN_EASYTIER_CONNECT_TIMEOUT_SECONDS = 1
+    const val MAX_EASYTIER_CONNECT_TIMEOUT_SECONDS = 300
+    const val MIN_EASYTIER_STATUS_POLL_INTERVAL_SECONDS = 1
+    const val MAX_EASYTIER_STATUS_POLL_INTERVAL_SECONDS = 300
 
     private const val TAG = "STS-CloudControl"
     private const val CONNECT_TIMEOUT_MS = 5_000
@@ -81,6 +105,9 @@ object CloudControlConfig {
     private val startupRefreshStarted = AtomicBoolean(false)
     private val refreshing = AtomicBoolean(false)
     private val listeners = CopyOnWriteArraySet<() -> Unit>()
+
+    @Volatile
+    private var bundledDefaultSettings: CloudControlSettings? = null
 
     @Volatile
     private var startupRefreshCompleted = false
@@ -102,6 +129,9 @@ object CloudControlConfig {
 
     @JvmStatic
     fun qqGroupUrl(): String = current().qqGroupUrl
+
+    @JvmStatic
+    fun easyTier(): CloudControlEasyTierSettings = current().easyTier
 
     fun steamDepotKeyBytes(appId: UInt, depotId: UInt): ByteArray? =
         current().steamDepotKeyBytes(appId, depotId)
@@ -128,6 +158,15 @@ object CloudControlConfig {
         )
 
     @JvmStatic
+    fun defaultSettings(context: Context): CloudControlSettings =
+        bundledDefaultSettings
+            ?: synchronized(this) {
+                bundledDefaultSettings
+                    ?: readBundledDefaultSettings(context.applicationContext)
+                        .also { bundledDefaultSettings = it }
+            }
+
+    @JvmStatic
     fun defaultHeartbeatWsUrl(): String =
         DEFAULT_HEARTBEAT_WS_URL
 
@@ -136,6 +175,28 @@ object CloudControlConfig {
         "mqqapi://card/show_pslcard?src_type=internal&version=1&uin=" +
             groupNumber +
             "&card_type=group&source=qrcode"
+
+    private fun readBundledDefaultSettings(context: Context): CloudControlSettings {
+        val emergencyDefaults = defaultSettings()
+        val responseText = try {
+            context.assets
+                .open(DEFAULT_CLOUD_CONTROL_ASSET_NAME)
+                .bufferedReader(StandardCharsets.UTF_8)
+                .use { reader -> reader.readText() }
+        } catch (error: Throwable) {
+            Log.w(
+                TAG,
+                "Bundled cloud control config read failed; using emergency defaults: " +
+                    "${error.javaClass.simpleName}: ${error.message ?: "no message"}"
+            )
+            return emergencyDefaults
+        }
+
+        return parseSettings(responseText, defaults = emergencyDefaults)
+            ?: emergencyDefaults.also {
+                Log.w(TAG, "Bundled cloud control config is invalid; using emergency defaults")
+            }
+    }
 
     fun fetchRemoteConfigText(context: Context): CloudControlRemoteConfigText {
         val configUrl = BuildConfig.CLOUD_CONTROL_CONFIG_URL.trim()
@@ -150,9 +211,10 @@ object CloudControlConfig {
         if (!startupRefreshStarted.compareAndSet(false, true)) {
             return
         }
-        currentSettings = defaultSettings()
+        val appContext = context.applicationContext
+        currentSettings = defaultSettings(appContext)
         startupRefreshCompleted = false
-        refreshAsync(context)
+        refreshAsync(appContext)
     }
 
     @JvmStatic
@@ -166,7 +228,7 @@ object CloudControlConfig {
                 val configUrl = BuildConfig.CLOUD_CONTROL_CONFIG_URL.trim()
                 if (configUrl.isEmpty()) {
                     Log.i(TAG, "Cloud control config URL is empty; using defaults")
-                    updateCurrentSettings(defaultSettings())
+                    updateCurrentSettings(defaultSettings(appContext))
                     return@Thread
                 }
 
@@ -178,13 +240,15 @@ object CloudControlConfig {
                         "${fetched.heartbeatIntervalSeconds}, heartbeatWsUrl=" +
                         "${fetched.heartbeatWsUrl}, qqGroupNumber=" +
                         "${fetched.qqGroupNumber}, steamDepotKeys=" +
-                        fetched.steamDepotKeys.size
+                        "${fetched.steamDepotKeys.size}, easyTierEnabled=" +
+                        "${fetched.easyTier.enabled}, easyTierEntryNodeUrl=" +
+                        fetched.easyTier.entryNodeUrl
                 )
             } catch (error: Throwable) {
-                updateCurrentSettings(defaultSettings())
+                updateCurrentSettings(currentSettingsForFetchFailure(defaultSettings(appContext)))
                 Log.w(
                     TAG,
-                    "Cloud control config fetch failed; using defaults: " +
+                    "Cloud control config fetch failed; using bundled/current settings: " +
                         "${error.javaClass.simpleName}: ${error.message ?: "no message"}"
                 )
             } finally {
@@ -202,19 +266,23 @@ object CloudControlConfig {
         return try {
             val configUrl = BuildConfig.CLOUD_CONTROL_CONFIG_URL.trim()
             if (configUrl.isEmpty()) {
-                Log.i(TAG, "Cloud control config URL is empty; keeping current settings")
-                return currentSettings
+                Log.i(TAG, "Cloud control config URL is empty; using defaults")
+                val defaults = defaultSettings(appContext)
+                updateCurrentSettings(defaults)
+                return defaults
             }
             val fetched = fetchRemoteSettings(appContext, configUrl)
             updateCurrentSettings(fetched)
             fetched
         } catch (error: Throwable) {
+            val fallback = currentSettingsForFetchFailure(defaultSettings(appContext))
+            updateCurrentSettings(fallback)
             Log.w(
                 TAG,
-                "Cloud control config fetch failed; keeping current settings: " +
+                "Cloud control config fetch failed; using bundled/current settings: " +
                     "${error.javaClass.simpleName}: ${error.message ?: "no message"}"
             )
-            currentSettings
+            fallback
         }
     }
 
@@ -226,6 +294,18 @@ object CloudControlConfig {
                 listener()
             } catch (_: Throwable) {
             }
+        }
+    }
+
+    private fun currentSettingsForFetchFailure(bundledDefaults: CloudControlSettings): CloudControlSettings {
+        val current = currentSettings
+        if (current == defaultSettings()) {
+            return bundledDefaults
+        }
+        return if (current.steamDepotKeys.isEmpty() && bundledDefaults.steamDepotKeys.isNotEmpty()) {
+            current.copy(steamDepotKeys = bundledDefaults.steamDepotKeys)
+        } else {
+            current
         }
     }
 
@@ -294,12 +374,124 @@ object CloudControlConfig {
         )
         val steamDepotKeys = parseSteamDepotKeys(root)
             .ifEmpty { defaults.steamDepotKeys }
+        val easyTier = parseEasyTier(root, defaults.easyTier)
 
         return CloudControlSettings(
             heartbeatIntervalSeconds = intervalSeconds,
             heartbeatWsUrl = wsUrl,
             qqGroupNumber = qqGroupNumber,
-            steamDepotKeys = steamDepotKeys
+            steamDepotKeys = steamDepotKeys,
+            easyTier = easyTier,
+        )
+    }
+
+    private fun parseEasyTier(
+        root: JSONObject,
+        defaults: CloudControlEasyTierSettings,
+    ): CloudControlEasyTierSettings {
+        val easyTierObject = root.optJSONObject("easyTier")
+            ?: root.optJSONObject("easytier")
+        val enabled = firstBoolean(
+            root = root,
+            nested = easyTierObject,
+            rootNames = arrayOf("easyTierEnabled", "easytierEnabled"),
+            nestedNames = arrayOf("enabled", "isEnabled"),
+        ) ?: defaults.enabled
+        val roomApiBaseUrl = normalizeHttpUrl(
+            firstNonBlankString(root, "easyTierRoomApiBaseUrl", "easytierRoomApiBaseUrl")
+                ?: firstNonBlankString(
+                    easyTierObject,
+                    "roomApiBaseUrl",
+                    "room_api_base_url",
+                )
+        ) ?: defaults.roomApiBaseUrl
+        val webConsoleApiBaseUrl = normalizeHttpUrl(
+            firstNonBlankString(
+                root,
+                "easyTierWebConsoleApiBaseUrl",
+                "easytierWebConsoleApiBaseUrl",
+            ) ?: firstNonBlankString(
+                easyTierObject,
+                "webConsoleApiBaseUrl",
+                "web_console_api_base_url",
+            )
+        ) ?: defaults.webConsoleApiBaseUrl
+        val configServerUrl = normalizeEndpointUrl(
+            firstNonBlankString(
+                root,
+                "easyTierConfigServerUrl",
+                "easytierConfigServerUrl",
+            ) ?: firstNonBlankString(
+                easyTierObject,
+                "configServerUrl",
+                "config_server_url",
+            )
+        ) ?: defaults.configServerUrl
+        val entryNodeUrl = normalizeEndpointUrl(
+            firstNonBlankString(
+                root,
+                "easyTierEntryNodeUrl",
+                "easytierEntryNodeUrl",
+            ) ?: firstNonBlankString(
+                easyTierObject,
+                "entryNodeUrl",
+                "entry_node_url",
+            )
+        ) ?: defaults.entryNodeUrl
+        val connectTimeoutSeconds = normalizeEasyTierConnectTimeoutSeconds(
+            firstPositiveInt(
+                root,
+                "easyTierConnectTimeoutSeconds",
+                "easytierConnectTimeoutSeconds",
+            ) ?: firstPositiveInt(
+                easyTierObject,
+                "connectTimeoutSeconds",
+                "connect_timeout_seconds",
+            ) ?: defaults.connectTimeoutSeconds
+        )
+        val statusPollIntervalSeconds = normalizeEasyTierStatusPollIntervalSeconds(
+            firstPositiveInt(
+                root,
+                "easyTierStatusPollIntervalSeconds",
+                "easytierStatusPollIntervalSeconds",
+            ) ?: firstPositiveInt(
+                easyTierObject,
+                "statusPollIntervalSeconds",
+                "status_poll_interval_seconds",
+            ) ?: defaults.statusPollIntervalSeconds
+        )
+        val allowSharedCommunityNetwork = firstBoolean(
+            root = root,
+            nested = easyTierObject,
+            rootNames = arrayOf(
+                "easyTierAllowSharedCommunityNetwork",
+                "easytierAllowSharedCommunityNetwork",
+            ),
+            nestedNames = arrayOf(
+                "allowSharedCommunityNetwork",
+                "allow_shared_community_network",
+            ),
+        ) ?: defaults.allowSharedCommunityNetwork
+        val defaultMode = normalizeEasyTierDefaultMode(
+            firstNonBlankString(root, "easyTierDefaultMode", "easytierDefaultMode")
+                ?: firstNonBlankString(
+                    easyTierObject,
+                    "defaultMode",
+                    "default_mode",
+                )
+                ?: defaults.defaultMode
+        )
+
+        return CloudControlEasyTierSettings(
+            enabled = enabled,
+            roomApiBaseUrl = roomApiBaseUrl,
+            webConsoleApiBaseUrl = webConsoleApiBaseUrl,
+            configServerUrl = configServerUrl,
+            entryNodeUrl = entryNodeUrl,
+            connectTimeoutSeconds = connectTimeoutSeconds,
+            statusPollIntervalSeconds = statusPollIntervalSeconds,
+            allowSharedCommunityNetwork = allowSharedCommunityNetwork,
+            defaultMode = defaultMode,
         )
     }
 
@@ -309,7 +501,7 @@ object CloudControlConfig {
     ): CloudControlSettings {
         val responseText = fetchRemoteConfigText(context, configUrl).rawText
 
-        return parseSettings(responseText)
+        return parseSettings(responseText, defaults = defaultSettings(context))
             ?: throw IOException("Cloud control response is not a JSON object.")
     }
 
@@ -376,6 +568,18 @@ object CloudControlConfig {
         value.coerceIn(
             MIN_HEARTBEAT_INTERVAL_SECONDS,
             MAX_HEARTBEAT_INTERVAL_SECONDS
+        )
+
+    private fun normalizeEasyTierConnectTimeoutSeconds(value: Int): Int =
+        value.coerceIn(
+            MIN_EASYTIER_CONNECT_TIMEOUT_SECONDS,
+            MAX_EASYTIER_CONNECT_TIMEOUT_SECONDS,
+        )
+
+    private fun normalizeEasyTierStatusPollIntervalSeconds(value: Int): Int =
+        value.coerceIn(
+            MIN_EASYTIER_STATUS_POLL_INTERVAL_SECONDS,
+            MAX_EASYTIER_STATUS_POLL_INTERVAL_SECONDS,
         )
 
     private fun normalizeQqGroupNumber(
@@ -512,8 +716,8 @@ object CloudControlConfig {
         return String(chars)
     }
 
-    private fun normalizeHttpUrl(value: String): String? {
-        val normalized = value.trim()
+    private fun normalizeHttpUrl(value: String?): String? {
+        val normalized = value?.trim().orEmpty()
         if (normalized.isEmpty()) {
             return null
         }
@@ -528,6 +732,32 @@ object CloudControlConfig {
         return when (parsed.protocol.lowercase()) {
             "http", "https" -> normalized
             else -> null
+        }
+    }
+
+    private fun normalizeEndpointUrl(value: String?): String? {
+        val normalized = value?.trim().orEmpty()
+        if (normalized.isEmpty()) {
+            return null
+        }
+        val parsed = try {
+            URI(normalized)
+        } catch (_: Throwable) {
+            return null
+        }
+        val scheme = parsed.scheme?.trim()?.lowercase(Locale.ROOT).orEmpty()
+        return if (scheme.isNotEmpty() && !parsed.host.isNullOrBlank()) {
+            normalized
+        } else {
+            null
+        }
+    }
+
+    private fun normalizeEasyTierDefaultMode(value: String): String {
+        return when (value.trim().lowercase(Locale.ROOT)) {
+            "room" -> "room"
+            "community", "shared", "shared-community" -> "community"
+            else -> DEFAULT_EASYTIER_DEFAULT_MODE
         }
     }
 
@@ -607,6 +837,22 @@ object CloudControlConfig {
         return parsed?.takeIf { it > 0 }
     }
 
+    private fun firstPositiveInt(
+        json: JSONObject?,
+        vararg names: String,
+    ): Int? {
+        if (json == null) {
+            return null
+        }
+        for (name in names) {
+            val value = optionalPositiveInt(json, name)
+            if (value != null) {
+                return value
+            }
+        }
+        return null
+    }
+
     private fun firstNonBlankString(
         root: JSONObject,
         nested: JSONObject?,
@@ -650,6 +896,45 @@ object CloudControlConfig {
             return null
         }
         return json.optString(name).trim().ifEmpty { null }
+    }
+
+    private fun firstBoolean(
+        root: JSONObject,
+        nested: JSONObject?,
+        rootNames: Array<String>,
+        nestedNames: Array<String> = rootNames,
+    ): Boolean? {
+        for (name in rootNames) {
+            val value = optionalBoolean(root, name)
+            if (value != null) {
+                return value
+            }
+        }
+        if (nested != null) {
+            for (name in nestedNames) {
+                val value = optionalBoolean(nested, name)
+                if (value != null) {
+                    return value
+                }
+            }
+        }
+        return null
+    }
+
+    private fun optionalBoolean(json: JSONObject, name: String): Boolean? {
+        if (!json.has(name)) {
+            return null
+        }
+        return when (val rawValue = json.opt(name)) {
+            is Boolean -> rawValue
+            is Number -> rawValue.toInt() != 0
+            is String -> when (rawValue.trim().lowercase(Locale.ROOT)) {
+                "true", "1", "yes", "on" -> true
+                "false", "0", "no", "off" -> false
+                else -> null
+            }
+            else -> null
+        }
     }
 
     private fun parseJsonObject(text: String): JSONObject? {

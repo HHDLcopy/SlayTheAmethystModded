@@ -32,9 +32,13 @@ import io.stamethyst.backend.fs.LauncherJunkFileCleaner
 import io.stamethyst.backend.network.NetworkAccelerationPolicy
 import io.stamethyst.backend.steamcloud.STEAM_CLOUD_APP_ID
 import io.stamethyst.backend.steamcloud.SteamCloudAuthCoordinator
+import io.stamethyst.backend.steam.SteamAccountLogoutCoordinator
 import io.stamethyst.backend.steamcloud.SteamCloudAuthStore
+import io.stamethyst.backend.steamcloud.SteamAuthenticationCircuitBreaker
 import io.stamethyst.backend.steamcloud.SteamCloudAvatarCacheStore
 import io.stamethyst.backend.steamcloud.SteamCloudBaselineStore
+import io.stamethyst.backend.steamcloud.SteamCloudFailureCategory
+import io.stamethyst.backend.steamcloud.SteamCloudFailureClassifier
 import io.stamethyst.backend.steamcloud.SteamCloudClient
 import io.stamethyst.backend.steamcloud.SteamCloudDiagnosticsStore
 import io.stamethyst.backend.steamcloud.SteamCloudLoginChallenge
@@ -217,6 +221,7 @@ class SettingsScreenViewModel : ViewModel() {
         data object OpenMobileGluesSettings : Effect
         data object OpenFeedback : Effect
     }
+        data class ShowDialog(val title: String, val message: String) : Effect
 
     data class UpdateDownloadOptionState(
         val source: UpdateSource,
@@ -1461,6 +1466,7 @@ class SettingsScreenViewModel : ViewModel() {
                         cancellationHandle = cancellationHandle,
                     )
                 }
+                SteamAuthenticationCircuitBreaker.reset()
                 val hadIncompleteAuth = runCatching {
                     val snapshot = SteamCloudAuthStore.readSnapshot(host)
                     snapshot.refreshTokenConfigured && !snapshot.isComplete
@@ -1546,6 +1552,22 @@ class SettingsScreenViewModel : ViewModel() {
                         extraLines = loginDiagnosticsExtraLines,
                     )
                 }
+                val failureCategory = if (loginCancelled) {
+                    SteamCloudFailureCategory.CANCELLED
+                } else {
+                    SteamCloudFailureClassifier.classify(error)
+                }
+                val circuitTripped = SteamAuthenticationCircuitBreaker.trip(failureCategory)
+                val circuitLogoutFailure = if (circuitTripped) {
+                    runCatching {
+                        SteamAccountLogoutCoordinator.logout(
+                            context = host,
+                            clearDiagnostics = false,
+                        )
+                    }.exceptionOrNull()
+                } else {
+                    null
+                }
                 SteamCloudManifestStore.clear(host)
                 SteamCloudBaselineStore.clear(host)
                 val shouldPromptSteamCloudSaveModeSwitch =
@@ -1588,7 +1610,28 @@ class SettingsScreenViewModel : ViewModel() {
                     pendingSteamCloudLoginCancellationHandle = null
                     pendingSteamCloudLoginTask = null
                     dismissSteamCloudManifestDialog()
-                    if (loginCancelled) {
+                    if (circuitTripped) {
+                        _effects.tryEmit(
+                            Effect.ShowDialog(
+                                title = host.getString(R.string.main_steam_auth_circuit_logout_title),
+                                message = when {
+                                    circuitLogoutFailure != null -> host.getString(
+                                        R.string.main_steam_auth_circuit_logout_failed_message,
+                                        circuitLogoutFailure.message ?: circuitLogoutFailure.javaClass.simpleName,
+                                    )
+
+                                    failureCategory == SteamCloudFailureCategory.RATE_LIMITED -> host.getString(
+                                        R.string.main_steam_auth_circuit_rate_limited_message,
+                                    )
+
+                                    else -> host.getString(
+                                        R.string.main_steam_auth_circuit_rejected_message,
+                                        summary,
+                                    )
+                                },
+                            )
+                        )
+                    } else if (loginCancelled) {
                         showToast(host, UiText.StringResource(R.string.settings_steam_cloud_login_cancelled))
                     } else {
                         showToast(
@@ -2262,20 +2305,10 @@ class SettingsScreenViewModel : ViewModel() {
         setBusy(true, UiText.StringResource(R.string.settings_busy_steam_cloud_save_mode_switch))
         executor.execute {
             try {
-                val currentMode = LauncherPreferences.readSteamCloudSaveMode(host)
-                if (currentMode != SteamCloudSaveMode.INDEPENDENT) {
-                    SteamCloudSaveProfileManager.switchMode(
-                        context = host,
-                        fromMode = currentMode,
-                        toMode = SteamCloudSaveMode.INDEPENDENT,
-                    )
-                }
-                LauncherPreferences.saveSteamCloudSaveMode(host, SteamCloudSaveMode.INDEPENDENT)
-                runCatching { SteamCloudAuthStore.clear(host) }
-                runCatching { SteamCloudAvatarCacheStore.clear(host) }
-                SteamCloudManifestStore.clear(host)
-                SteamCloudBaselineStore.clear(host)
-                SteamCloudDiagnosticsStore.clear(host)
+                SteamAccountLogoutCoordinator.logout(
+                    context = host,
+                    clearDiagnostics = true,
+                )
                 host.runOnUiThread {
                     dismissSteamCloudManifestDialog()
                     dismissSteamCloudUploadPlanDialog()

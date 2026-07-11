@@ -117,6 +117,7 @@ import io.stamethyst.backend.workshop.WorkshopUpdateCheckUiState
 import io.stamethyst.backend.workshop.isActiveDownload
 import io.stamethyst.ui.CollapsibleFloatingGlassHeader
 import io.stamethyst.ui.FloatingGlassHeader
+import io.stamethyst.backend.steamcloud.SteamCloudFailureCategory
 import io.stamethyst.ui.LauncherTransientNoticeBus
 import io.stamethyst.ui.UiText
 import io.stamethyst.model.ModItemUi
@@ -900,7 +901,7 @@ data class LauncherUpdateNoticeUiState(
 
 private const val STEAM_CLOUD_AUTO_RETRY_INITIAL_DELAY_SECONDS = 5
 private const val STEAM_CLOUD_AUTO_RETRY_MAX_DELAY_SECONDS = 300
-private const val STEAM_CLOUD_AUTO_RETRY_STORED_ATTEMPT_CAP = 7
+private const val STEAM_CLOUD_AUTO_RETRY_MAX_ATTEMPTS = 3
 
 private data class SteamCloudAutoRetryUiState(
     val inProgress: Boolean = false,
@@ -1657,7 +1658,7 @@ private fun LauncherMainScreenContent(
         }
         val nextRetryDelaySeconds = steamCloudAutoRetryDelaySeconds(steamCloudAutoRetryAttemptIndex)
         steamCloudAutoRetryAttemptIndex = (steamCloudAutoRetryAttemptIndex + 1)
-            .coerceAtMost(STEAM_CLOUD_AUTO_RETRY_STORED_ATTEMPT_CAP)
+            .coerceAtMost(STEAM_CLOUD_AUTO_RETRY_MAX_ATTEMPTS)
         steamCloudAutoRetryCurrentDelaySeconds = nextRetryDelaySeconds
         steamCloudAutoRetryCountdownSeconds = nextRetryDelaySeconds
         repeat(nextRetryDelaySeconds) {
@@ -1808,6 +1809,12 @@ private fun LauncherMainScreenContent(
                                     actionBarBottomPadding = launcherDockContentPadding + batchEditBarContentPadding,
                                     onHeaderCollapsedChange = { modsHeaderCollapsed = it },
                                     onBatchEditBarStateChange = { batchEditBarState = it },
+internal fun shouldAutoRetrySteamCloudFailure(
+    category: SteamCloudFailureCategory?,
+    attemptIndex: Int,
+): Boolean = category == SteamCloudFailureCategory.TRANSIENT_NETWORK &&
+    attemptIndex in 0 until STEAM_CLOUD_AUTO_RETRY_MAX_ATTEMPTS
+
                                     actions = actions
                                 )
                             }
@@ -2498,6 +2505,10 @@ private fun CrashRecoveryScreen(
             selectionMode = LauncherPreferences.readRendererSelectionMode(context),
             manualBackend = LauncherPreferences.readManualRendererBackend(context)
         )
+            shouldAutoRetrySteamCloudFailure(
+                steamCloudIndicator.failureCategory,
+                steamCloudAutoRetryAttemptIndex,
+            ) &&
         buildList {
             add(
                 resources.getString(
@@ -2550,10 +2561,15 @@ private fun CrashRecoveryScreen(
         ) {
             IconButton(onClick = onBack) {
                 Icon(
+        steamCloudIndicator.failureCategory,
                     imageVector = Icons.ArrowBack,
                     contentDescription = stringResource(R.string.common_content_desc_back)
                 )
             }
+            !shouldAutoRetrySteamCloudFailure(
+                steamCloudIndicator.failureCategory,
+                steamCloudAutoRetryAttemptIndex,
+            ) ||
             Text(
                 text = stringResource(R.string.sts_crash_page_title),
                 style = MaterialTheme.typography.headlineMedium,

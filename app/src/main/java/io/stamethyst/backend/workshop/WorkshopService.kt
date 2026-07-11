@@ -3,14 +3,17 @@ package io.stamethyst.backend.workshop
 import android.content.Context
 import android.util.Log
 import io.stamethyst.backend.steamcloud.SteamCloudAcceleratedHttp
+import io.stamethyst.backend.steamcloud.SteamAuthenticationCircuitBreaker
 import io.stamethyst.backend.steamcloud.SteamCloudAuthStore
 import io.stamethyst.backend.steamcloud.SteamCloudAuthStore.AuthSnapshot
 import io.stamethyst.ui.preferences.LauncherPreferences
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.util.Collections
 import java.util.LinkedHashMap
 import java.util.Locale
+import java.util.WeakHashMap
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -53,6 +56,12 @@ internal class WorkshopService(
     ),
     private val contentDownloaderFactory: ((WorkshopService) -> WorkshopContentDownloader)? = null,
 ) {
+    init {
+        synchronized(activeInstances) {
+            activeInstances += this
+        }
+    }
+
     private val json = Json { ignoreUnknownKeys = true }
     private val identity = WorkshopSteamClientIdentity(context)
     private val steamWebSession = WorkshopSteamWebSession(client, identity)
@@ -80,6 +89,13 @@ internal class WorkshopService(
         listOf(client, workshopClient, browseDetailClient).forEach { httpClient ->
             httpClient.dispatcher.queuedCalls().forEach { it.cancel() }
             httpClient.dispatcher.runningCalls().forEach { it.cancel() }
+        }
+    }
+
+    fun close() {
+        cancelActiveCalls()
+        synchronized(activeInstances) {
+            activeInstances -= this
         }
     }
 
@@ -861,18 +877,21 @@ internal class WorkshopService(
 
     private fun readSteamAccountSession(
         identity: WorkshopSteamClientIdentity = WorkshopSteamClientIdentity(context),
-    ): SteamAccountSession? = SteamCloudAuthStore.readAuthMaterial(context)?.let { auth ->
-        val snapshot = SteamCloudAuthStore.readSnapshot(context)
-        val steamId = snapshot.steamId64.toLongOrNull() ?: 0L
-        if (steamId > 0L) {
-            SteamAccountSession(
-                accountName = auth.accountName,
-                steamId = steamId,
-                refreshToken = auth.refreshToken,
-                machineName = identity.machineName,
-            )
-        } else {
-            null
+    ): SteamAccountSession? {
+        if (SteamAuthenticationCircuitBreaker.isOpen()) return null
+        return SteamCloudAuthStore.readAuthMaterial(context)?.let { auth ->
+            val snapshot = SteamCloudAuthStore.readSnapshot(context)
+            val steamId = snapshot.steamId64.toLongOrNull() ?: 0L
+            if (steamId > 0L) {
+                SteamAccountSession(
+                    accountName = auth.accountName,
+                    steamId = steamId,
+                    refreshToken = auth.refreshToken,
+                    machineName = identity.machineName,
+                )
+            } else {
+                null
+            }
         }
     }
 
@@ -1703,7 +1722,17 @@ internal class WorkshopService(
             sample.contains("wifi") && sample.contains("login") && !sample.contains("workshopitem")
     }
 
-    private companion object {
+    companion object {
+        private val activeInstances: MutableSet<WorkshopService> =
+            Collections.newSetFromMap(WeakHashMap<WorkshopService, Boolean>())
+
+        fun cancelAllActiveCalls() {
+            val instances = synchronized(activeInstances) { activeInstances.toList() }
+            instances.forEach { service ->
+                runCatching { service.cancelActiveCalls() }
+            }
+        }
+
         private const val TAG = "WorkshopService"
         private const val COMMENT_PAGE_SIZE = 5
         private const val STEAM_COMMENTS_PAGE_SIZE = 50

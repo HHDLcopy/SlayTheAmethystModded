@@ -50,6 +50,7 @@ class SteamCloudSyncProcessService : Service() {
         const val EXTRA_DELETED_REMOTE_FILE_COUNT = "io.stamethyst.extra.STEAM_CLOUD_DELETED_REMOTE_FILE_COUNT"
         const val EXTRA_APPLIED_FILE_COUNT = "io.stamethyst.extra.STEAM_CLOUD_APPLIED_FILE_COUNT"
         const val EXTRA_ERROR_SUMMARY = "io.stamethyst.extra.STEAM_CLOUD_ERROR_SUMMARY"
+        const val EXTRA_FAILURE_CATEGORY = "io.stamethyst.extra.STEAM_CLOUD_FAILURE_CATEGORY"
 
         const val RESULT_CHECKING = 1
         const val RESULT_PLAN_READY = 2
@@ -140,6 +141,7 @@ class SteamCloudSyncProcessService : Service() {
             SteamCloudAuthStore.recordFailure(context, summary)
             deliverResult(context, receiver, RESULT_FAILURE, Bundle().apply {
                 putString(EXTRA_ERROR_SUMMARY, summary)
+                putString(EXTRA_FAILURE_CATEGORY, SteamCloudFailureCategory.UNKNOWN.name)
                 putLong(EXTRA_CHECKED_AT_MS, System.currentTimeMillis())
             })
         }
@@ -174,8 +176,12 @@ class SteamCloudSyncProcessService : Service() {
             workerThread?.interrupt()
             deliverResult(applicationContext, extractResultReceiver(safeIntent), RESULT_CANCELLED, Bundle().apply {
                 putString(EXTRA_ERROR_SUMMARY, getString(R.string.main_steam_cloud_sync_cancelled_summary))
+                putString(EXTRA_FAILURE_CATEGORY, SteamCloudFailureCategory.CANCELLED.name)
             })
             updateNotification(getString(R.string.main_steam_cloud_sync_cancelled_summary))
+            if (!running) {
+                stopSelf(startId)
+            }
             return START_NOT_STICKY
         }
 
@@ -197,7 +203,7 @@ class SteamCloudSyncProcessService : Service() {
         val receiver = extractResultReceiver(safeIntent)
         val taskIntent = Intent(safeIntent)
         val thread = Thread(
-            { runOperation(startId, action, taskIntent, receiver) },
+            { runOperation(action, taskIntent, receiver) },
             "STS-SteamCloudSync"
         )
         workerThread = thread
@@ -214,29 +220,36 @@ class SteamCloudSyncProcessService : Service() {
     }
 
     private fun runOperation(
-        startId: Int,
         action: String,
         intent: Intent,
         receiver: ResultReceiver?,
     ) {
         try {
             val authMaterial = SteamCloudAuthStore.readAuthMaterial(applicationContext)
-                ?: throw IllegalStateException(getString(R.string.settings_steam_cloud_credentials_missing))
+                ?: throw SteamCloudCredentialsMissingException(
+                    getString(R.string.settings_steam_cloud_credentials_missing)
+                )
             when (action) {
                 ACTION_CHECK_AND_SYNC -> runCheckAndSync(intent, authMaterial, receiver)
                 ACTION_USE_LOCAL -> runUseLocal(authMaterial, receiver)
                 ACTION_USE_CLOUD -> runUseCloud(authMaterial, receiver)
             }
         } catch (error: Throwable) {
+            val category = if (cancelRequested.get()) {
+                SteamCloudFailureCategory.CANCELLED
+            } else {
+                SteamCloudFailureClassifier.classify(error)
+            }
             val summary = summarizeError(error)
             SteamCloudAuthStore.recordFailure(applicationContext, summary)
-            val resultCode = if (error is CancellationException || cancelRequested.get()) {
+            val resultCode = if (category == SteamCloudFailureCategory.CANCELLED) {
                 RESULT_CANCELLED
             } else {
                 RESULT_FAILURE
             }
             deliverResult(applicationContext, receiver, resultCode, Bundle().apply {
                 putString(EXTRA_ERROR_SUMMARY, summary)
+                putString(EXTRA_FAILURE_CATEGORY, category.name)
                 putLong(EXTRA_CHECKED_AT_MS, System.currentTimeMillis())
             })
             updateNotification(summary)
@@ -244,7 +257,7 @@ class SteamCloudSyncProcessService : Service() {
             running = false
             workerThread = null
             stopForegroundCompat()
-            stopSelf(startId)
+            stopSelf()
         }
     }
 

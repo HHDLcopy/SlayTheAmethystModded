@@ -64,7 +64,10 @@ import io.stamethyst.backend.update.MtsComponentUpdateService
 import io.stamethyst.backend.update.UpdateMirrorManager
 import io.stamethyst.backend.workshop.WorkshopDownloadTaskRecord
 import io.stamethyst.backend.workshop.WorkshopDownloadTaskStatus
+import io.stamethyst.backend.steam.SteamAccountLogoutCoordinator
+import io.stamethyst.backend.steamcloud.SteamAuthenticationCircuitBreaker
 import io.stamethyst.backend.workshop.WorkshopDownloadTaskStore
+import io.stamethyst.backend.steamcloud.SteamCloudFailureCategory
 import io.stamethyst.backend.workshop.WorkshopAutoImporter
 import io.stamethyst.backend.workshop.WorkshopAutoImportProgress
 import io.stamethyst.backend.workshop.WorkshopAutoImportResult
@@ -190,6 +193,7 @@ class MainScreenViewModel : ViewModel() {
         val exists: Boolean,
         val length: Long,
         val lastModified: Long
+        val failureCategory: SteamCloudFailureCategory? = null,
     )
 
     data class UiState(
@@ -556,6 +560,10 @@ class MainScreenViewModel : ViewModel() {
 
     internal fun onLaunchRequested(host: Activity): LaunchRequestAction {
         if (uiState.busy || launchInFlight) {
+        if (SteamAuthenticationCircuitBreaker.isOpen()) {
+            clearSteamCloudIndicatorState()
+            return false
+        }
             return LaunchRequestAction.NONE
         }
         if (steamCloudCheckInFlight || steamCloudSyncInFlight) {
@@ -3158,7 +3166,15 @@ class MainScreenViewModel : ViewModel() {
         steamCloudSyncCancelRequested = false
         pendingSteamCloudAutoLaunchAfterSync = false
         lastSteamCloudCheckAtMs = failedAtMs
-        publishSteamCloudIndicatorFailure(summary, failedAtMs)
+        if (SteamAuthenticationCircuitBreaker.trip(failureCategory)) {
+            forceSteamAccountLogoutAfterCircuitTrip(
+                appContext = appContext,
+                category = failureCategory,
+                failureSummary = summary,
+            )
+            return
+        }
+        publishSteamCloudIndicatorFailure(summary, failedAtMs, failureCategory)
         if (userInitiated && !isCancellation) {
             _effects.tryEmit(
                 Effect.ShowSnackbar(
@@ -3749,6 +3765,8 @@ class MainScreenViewModel : ViewModel() {
         intent.removeExtra(LauncherActivity.EXTRA_CRASH_OCCURRED)
         intent.removeExtra(LauncherActivity.EXTRA_CRASH_CODE)
         intent.removeExtra(LauncherActivity.EXTRA_CRASH_IS_SIGNAL)
+        val failureCategory = data.steamCloudFailureCategoryOrNull()
+            ?: if (isCancellation) SteamCloudFailureCategory.CANCELLED else SteamCloudFailureCategory.UNKNOWN
         intent.removeExtra(LauncherActivity.EXTRA_CRASH_DETAIL)
     }
 
@@ -3827,6 +3845,10 @@ class MainScreenViewModel : ViewModel() {
             hasStsLib = dependencyAvailability.hasStsLib,
             hasRuntimeCompat = dependencyAvailability.hasRuntimeCompat,
             hasFloatingTools = dependencyAvailability.hasFloatingTools,
+    private fun Bundle.steamCloudFailureCategoryOrNull(): SteamCloudFailureCategory? =
+        getString(SteamCloudSyncProcessService.EXTRA_FAILURE_CATEGORY)?.let { value ->
+            runCatching { SteamCloudFailureCategory.valueOf(value) }.getOrNull()
+        }
             hasRamSaver = dependencyAvailability.hasRamSaver,
             storageIssue = detectStorageIssue(host)
         )
@@ -3872,13 +3894,54 @@ class MainScreenViewModel : ViewModel() {
             controlsEnabled = resolveControlsEnabled(currentBusy, currentBusyOperation, storageIssue != null),
             gameProcessRunning = gameProcessRunning,
             launchInFlight = launchInFlight,
+        failureCategory: SteamCloudFailureCategory = SteamCloudFailureCategory.UNKNOWN,
             showModFileName = false,
             modSuggestions = currentModSuggestions,
             readModSuggestionKeys = currentReadModSuggestionKeys,
             pendingLaunchUnreadSuggestionModNames = pendingLaunchUnreadSuggestionModNames,
             modLaunchProfiles = snapshot.modLaunchProfiles,
             activeModLaunchProfileId = snapshot.activeModLaunchProfileId,
+                failureCategory = failureCategory,
             modFolders = snapshot.modFolders,
+    private fun forceSteamAccountLogoutAfterCircuitTrip(
+        appContext: Context,
+        category: SteamCloudFailureCategory,
+        failureSummary: String,
+    ) {
+        clearSteamCloudIndicatorState()
+        diagnosticsExecutor.execute {
+            val logoutFailure = runCatching {
+                SteamAccountLogoutCoordinator.logout(
+                    context = appContext,
+                    clearDiagnostics = false,
+                )
+            }.exceptionOrNull()
+            Handler(Looper.getMainLooper()).post {
+                clearSteamCloudIndicatorState()
+                _effects.tryEmit(
+                    Effect.ShowDialog(
+                        title = UiText.StringResource(R.string.main_steam_auth_circuit_logout_title),
+                        message = when {
+                            logoutFailure != null -> UiText.StringResource(
+                                R.string.main_steam_auth_circuit_logout_failed_message,
+                                logoutFailure.message ?: logoutFailure.javaClass.simpleName,
+                            )
+
+                            category == SteamCloudFailureCategory.RATE_LIMITED -> UiText.StringResource(
+                                R.string.main_steam_auth_circuit_rate_limited_message,
+                            )
+
+                            else -> UiText.StringResource(
+                                R.string.main_steam_auth_circuit_rejected_message,
+                                failureSummary,
+                            )
+                        },
+                    )
+                )
+            }
+        }
+    }
+
             folderAssignments = snapshot.folderAssignments,
             folderCollapsed = snapshot.folderCollapsed,
             unassignedCollapsed = snapshot.unassignedCollapsed,

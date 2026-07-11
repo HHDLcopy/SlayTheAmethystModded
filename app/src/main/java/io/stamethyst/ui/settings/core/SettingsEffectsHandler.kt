@@ -158,6 +158,14 @@ fun SettingsEffectsHandler(
                 SettingsScreenViewModel.Effect.OpenFeedback -> {
                     navigator.push(Route.Feedback)
                 }
+
+                is SettingsScreenViewModel.Effect.ShowDialog -> {
+                    androidx.appcompat.app.AlertDialog.Builder(activity)
+                        .setTitle(effect.title)
+                        .setMessage(effect.message)
+                        .setPositiveButton(R.string.common_action_confirm, null)
+                        .show()
+                }
             }
         }
     }

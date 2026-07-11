@@ -1458,6 +1458,10 @@
     <string name="main_steam_cloud_action_start_without_sync">直接开始游戏</string>
     <string name="main_steam_cloud_launch_warning_title">跳过云同步并开始游戏？</string>
     <string name="main_steam_cloud_launch_warning_message">Steam Cloud 同步失败，无法确认云端是否有更新进度。现在开始游戏会使用当前本地存档，云存档可能会在下次成功同步前保持不同步。</string>
+    <string name="main_steam_auth_circuit_logout_title">Steam 登录已退出</string>
+    <string name="main_steam_auth_circuit_rate_limited_message">Steam 已拒绝频繁的认证请求。启动器已退出当前 Steam 账号并停止自动重试，请稍后手动重新登录。</string>
+    <string name="main_steam_auth_circuit_rejected_message">Steam 已拒绝保存的登录会话。启动器已退出当前 Steam 账号并停止自动重试。详情：%1$s</string>
+    <string name="main_steam_auth_circuit_logout_failed_message">Steam 认证已熔断，但启动器未能完整退出账号：%1$s</string>
     <string name="main_steam_cloud_launch_warning_cancel">返回</string>
     <string name="main_steam_cloud_direct_mode_prompt_title">切换为直连模式？</string>
     <string name="main_steam_cloud_direct_mode_prompt_message">检测到当前使用代理或加速器，是否切换为直连模式？</string>

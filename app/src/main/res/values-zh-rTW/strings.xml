@@ -1457,6 +1457,10 @@
     <string name="main_steam_cloud_action_start_without_sync">直接開始遊戲</string>
     <string name="main_steam_cloud_launch_warning_title">跳過雲同步並開始遊戲？</string>
     <string name="main_steam_cloud_launch_warning_message">Steam Cloud 同步失敗，無法確認雲端是否有更新進度。現在開始遊戲會使用當前本地存檔，雲存檔可能會在下次成功同步前保持不同步。</string>
+    <string name="main_steam_auth_circuit_logout_title">Steam 登入已登出</string>
+    <string name="main_steam_auth_circuit_rate_limited_message">Steam 已拒絕頻繁的驗證請求。啟動器已登出目前 Steam 帳號並停止自動重試，請稍後手動重新登入。</string>
+    <string name="main_steam_auth_circuit_rejected_message">Steam 已拒絕儲存的登入工作階段。啟動器已登出目前 Steam 帳號並停止自動重試。詳情：%1$s</string>
+    <string name="main_steam_auth_circuit_logout_failed_message">Steam 驗證已熔斷，但啟動器未能完整登出帳號：%1$s</string>
     <string name="main_steam_cloud_launch_warning_cancel">返回</string>
     <string name="main_steam_cloud_direct_mode_prompt_title">切換為直連模式？</string>
     <string name="main_steam_cloud_direct_mode_prompt_message">偵測到目前使用代理或加速器，是否切換為直連模式？</string>

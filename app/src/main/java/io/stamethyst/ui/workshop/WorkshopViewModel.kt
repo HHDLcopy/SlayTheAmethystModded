@@ -75,6 +75,12 @@ internal class WorkshopViewModel : ViewModel() {
     private val translationClient = BaiduAiTextTranslationClient()
     private val downloadTaskPersistenceMutex = Mutex()
 
+    override fun onCleared() {
+        service?.close()
+        service = null
+        super.onCleared()
+    }
+
     fun load(context: Context, initialListMode: WorkshopListMode = WorkshopListMode.Browse) {
         WorkshopDownloadCenterStore.initialize(context)
         if (loaded) {

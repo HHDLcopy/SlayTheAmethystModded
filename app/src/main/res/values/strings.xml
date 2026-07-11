@@ -1459,6 +1459,10 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="main_steam_cloud_action_start_without_sync">Start game</string>
     <string name="main_steam_cloud_launch_warning_title">Start without Steam Cloud sync?</string>
     <string name="main_steam_cloud_launch_warning_message">Steam Cloud sync failed, so your latest cloud progress could not be verified. Starting now uses the current local saves and may leave cloud progress out of date until the next successful sync.</string>
+    <string name="main_steam_auth_circuit_logout_title">Steam sign-in ended</string>
+    <string name="main_steam_auth_circuit_rate_limited_message">Steam rejected repeated authentication requests. The launcher has signed out this Steam account and stopped automatic retries. Please sign in again manually.</string>
+    <string name="main_steam_auth_circuit_rejected_message">Steam rejected the saved sign-in session. The launcher has signed out this Steam account and stopped automatic retries. Details: %1$s</string>
+    <string name="main_steam_auth_circuit_logout_failed_message">Steam authentication was blocked, but the launcher could not completely sign out the account: %1$s</string>
     <string name="main_steam_cloud_launch_warning_cancel">Go back</string>
     <string name="main_steam_cloud_direct_mode_prompt_title">Steam Cloud network mode</string>
     <string name="main_steam_cloud_direct_mode_prompt_message">Detected that the current Steam connection is using a proxy or accelerator. Switch to direct mode?</string>

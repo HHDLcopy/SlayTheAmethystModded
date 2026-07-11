@@ -29,6 +29,7 @@ server push for sessions and stats, so it no longer polls the HTTP endpoints.
 - Cloud-control config: `GET /cloud-control.json`
 - EasyTier room session start: `POST /api/lan/session/start`
 - EasyTier room session stop: `POST /api/lan/session/stop`
+- EasyTier room runtime report: `POST /api/lan/session/runtime`
 - EasyTier room session status: `GET /api/lan/session/status?sessionId=...`
 - EasyTier room info: `GET /api/lan/rooms/{roomId}`
 - Protected EasyTier runtime status: `GET /api/easytier/runtime/status?token=...`
@@ -276,6 +277,16 @@ Invoke-RestMethod `
   -Uri "http://127.0.0.1:3001/api/lan/session/status?sessionId=lan_xxx"
 ```
 
+Report the runtime-assigned virtual IPv4 after EasyTier has started:
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri http://127.0.0.1:3001/api/lan/session/runtime `
+  -ContentType 'application/json' `
+  -Body '{"sessionId":"lan_xxx","assignedIpv4Cidr":"10.144.0.1/24"}'
+```
+
 Query room info:
 
 ```powershell
@@ -300,8 +311,12 @@ Business rules in the current MVP:
   active session.
 - Room session responses include short-lived `sessionId`, `aclGroup`,
   `networkSecret`, and `expiresAt` fields expected by the Android client.
+- Once the EasyTier runtime is connected, the launcher reports
+  `assignedIpv4Cidr` back through `POST /api/lan/session/runtime`, and
+  `GET /api/lan/session/status` starts returning `sessionState: "connected"`.
 - `GET /api/lan/rooms/{roomId}` returns the latest known member identity for
-  each player and whether that player currently has an active unexpired session.
+  each player, whether that player currently has an active unexpired session,
+  and the latest reported `assignedIpv4Cidr` for that player.
 
 ## WebSocket Messages
 

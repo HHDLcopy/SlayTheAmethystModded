@@ -197,10 +197,74 @@ test('lan room session api issues status and room members for easytier room mode
         playerId: 'alice',
         displayName: 'Alice',
         role: 'owner',
-        online: true
+        online: true,
+        assignedIpv4Cidr: ''
       }
     ]
   });
+});
+
+test('lan room runtime report updates session status and room member ip', async (t) => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-presence-'));
+  const server = await buildServer({
+    ...loadConfig({
+      LOG_LEVEL: 'silent',
+      EASYTIER_ENABLED: 'true'
+    }),
+    dbPath: path.join(tmpDir, 'presence.sqlite'),
+    publicBaseUrl: 'https://online.example.com',
+    presencePanelToken: 'panel-secret',
+    logLevel: 'silent'
+  });
+  t.after(async () => {
+    await server.close();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+  await server.ready();
+
+  const started = await server.inject({
+    method: 'POST',
+    url: '/api/lan/session/start',
+    payload: {
+      roomId: 'runtime-room',
+      playerId: 'alice',
+      displayName: 'Alice'
+    }
+  });
+  assert.equal(started.statusCode, 200);
+
+  const runtime = await server.inject({
+    method: 'POST',
+    url: '/api/lan/session/runtime',
+    payload: {
+      sessionId: started.json().sessionId,
+      assignedIpv4Cidr: '10.144.0.1/24',
+      relayServerDescription: 'relay://runtime-room'
+    }
+  });
+  assert.equal(runtime.statusCode, 200);
+  assert.deepEqual(runtime.json(), {
+    ok: true,
+    sessionId: started.json().sessionId,
+    roomId: 'runtime-room',
+    sessionState: 'connected',
+    roomState: 'active',
+    peerCount: 1,
+    assignedIpv4Cidr: '10.144.0.1/24',
+    relayServerDescription: 'relay://runtime-room'
+  });
+
+  const roomInfo = await server.inject('/api/lan/rooms/runtime-room');
+  assert.equal(roomInfo.statusCode, 200);
+  assert.deepEqual(roomInfo.json().members, [
+    {
+      playerId: 'alice',
+      displayName: 'Alice',
+      role: 'owner',
+      online: true,
+      assignedIpv4Cidr: '10.144.0.1/24'
+    }
+  ]);
 });
 
 test('lan room session api supersedes previous session and supports stop', async (t) => {
@@ -283,7 +347,8 @@ test('lan room session api supersedes previous session and supports stop', async
       playerId: 'alice',
       displayName: 'Alice-2',
       role: 'owner',
-      online: false
+      online: false,
+      assignedIpv4Cidr: ''
     }
   ]);
 });
@@ -331,7 +396,8 @@ test('lan room api supports explicit room creation and listing', async (t) => {
         playerId: 'alice',
         displayName: 'Alice',
         role: 'owner',
-        online: false
+        online: false,
+        assignedIpv4Cidr: ''
       }
     ]
   });
@@ -559,7 +625,8 @@ test('lan room api supports owner lock unlock and close lifecycle', async (t) =>
       playerId: 'alice',
       displayName: 'Alice',
       role: 'owner',
-      online: false
+      online: false,
+      assignedIpv4Cidr: ''
     }
   ]);
 

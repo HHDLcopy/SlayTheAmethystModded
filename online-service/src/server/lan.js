@@ -338,6 +338,50 @@ class LanStore {
     };
   }
 
+  async reportSessionRuntime(rawBody, options = {}) {
+    const request = parseSessionRuntimeRequest(rawBody || {});
+    const nowMs = normalizeNowMs(options.nowMs);
+    await this.expireSessions(nowMs);
+
+    const session = await this.findSession(request.sessionId);
+    if (!session) {
+      throw httpError(404, 'LAN session not found');
+    }
+
+    const sessionState = deriveSessionState(session, nowMs);
+    if (session.endedAtMs > 0 || TERMINAL_SESSION_STATES.has(sessionState)) {
+      throw httpError(409, 'LAN session is no longer active');
+    }
+
+    const relayServerDescription =
+      request.relayServerDescription || session.relayServerDescription;
+
+    await this.database.run(`
+      UPDATE lan_sessions
+      SET
+        session_state = 'connected',
+        assigned_ipv4_cidr = ?,
+        relay_server_description = ?,
+        updated_at_ms = ?
+      WHERE session_id = ?
+    `, [
+      request.assignedIpv4Cidr,
+      relayServerDescription,
+      nowMs,
+      request.sessionId
+    ]);
+    await this.database.run(`
+      UPDATE lan_rooms
+      SET updated_at_ms = ?
+      WHERE room_id = ?
+    `, [
+      nowMs,
+      session.roomId
+    ]);
+
+    return this.getSessionStatus(request.sessionId, { nowMs });
+  }
+
   async getSessionStatus(rawQuery, options = {}) {
     const sessionId = parseSessionIdentifier(rawQuery);
     const nowMs = normalizeNowMs(options.nowMs);
@@ -607,6 +651,7 @@ class LanStore {
         sessions.player_id,
         sessions.display_name,
         sessions.session_state,
+        sessions.assigned_ipv4_cidr,
         sessions.expires_at_ms,
         sessions.ended_at_ms,
         sessions.created_at_ms
@@ -635,7 +680,8 @@ class LanStore {
         playerId: memberSession.playerId,
         displayName: memberSession.displayName || memberSession.playerId,
         role: memberSession.playerId === room.ownerPlayerId ? 'owner' : 'member',
-        online: isSessionOnline(memberSession, nowMs)
+        online: isSessionOnline(memberSession, nowMs),
+        assignedIpv4Cidr: memberSession.assignedIpv4Cidr
       };
     });
 
@@ -644,7 +690,8 @@ class LanStore {
         playerId: room.ownerPlayerId,
         displayName: room.ownerDisplayName || room.ownerPlayerId,
         role: 'owner',
-        online: false
+        online: false,
+        assignedIpv4Cidr: ''
       });
     }
 
@@ -716,6 +763,20 @@ function parseUpdateRoomRequest(body) {
   };
 }
 
+function parseSessionRuntimeRequest(body) {
+  return {
+    sessionId: parseSessionIdentifier(body),
+    assignedIpv4Cidr: normalizeRequiredIpv4Cidr(
+      firstNonEmpty(body.assignedIpv4Cidr, body.assigned_ipv4_cidr),
+      'assignedIpv4Cidr'
+    ),
+    relayServerDescription: normalizeOptionalText(
+      firstNonEmpty(body.relayServerDescription, body.relay_server_description),
+      MAX_TEXT_LENGTH
+    )
+  };
+}
+
 function parseSessionIdentifier(value) {
   const sessionId = normalizeRequiredIdentifier(
     typeof value === 'string'
@@ -750,6 +811,48 @@ function normalizeRequiredIdentifier(value, fieldName) {
     throw httpError(400, `Missing required ${fieldName}`);
   }
   return normalized;
+}
+
+function normalizeRequiredIpv4Cidr(value, fieldName) {
+  const normalized = normalizeOptionalIpv4Cidr(value);
+  if (!normalized) {
+    throw httpError(400, `Missing required ${fieldName}`);
+  }
+  return normalized;
+}
+
+function normalizeOptionalIpv4Cidr(value) {
+  const normalized = normalizeOptionalText(value, MAX_TEXT_LENGTH);
+  if (!normalized) {
+    return '';
+  }
+  const segments = normalized.split('/');
+  if (segments.length !== 2) {
+    throw httpError(400, 'Invalid IPv4 CIDR');
+  }
+  const octets = segments[0].trim().split('.');
+  if (octets.length !== 4) {
+    throw httpError(400, 'Invalid IPv4 CIDR');
+  }
+  const normalizedOctets = octets.map((octet) => {
+    if (!/^\d+$/.test(octet)) {
+      throw httpError(400, 'Invalid IPv4 CIDR');
+    }
+    const parsed = Number(octet);
+    if (!Number.isInteger(parsed) || parsed < 0 || parsed > 255) {
+      throw httpError(400, 'Invalid IPv4 CIDR');
+    }
+    return String(parsed);
+  });
+  const prefixText = segments[1].trim();
+  if (!/^\d+$/.test(prefixText)) {
+    throw httpError(400, 'Invalid IPv4 CIDR');
+  }
+  const prefix = Number(prefixText);
+  if (!Number.isInteger(prefix) || prefix < 0 || prefix > 32) {
+    throw httpError(400, 'Invalid IPv4 CIDR');
+  }
+  return `${normalizedOctets.join('.')}/${prefix}`;
 }
 
 function normalizeOptionalText(value, maxLength = MAX_TEXT_LENGTH) {

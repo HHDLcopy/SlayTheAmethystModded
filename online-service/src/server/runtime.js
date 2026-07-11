@@ -535,6 +535,14 @@ function resolveRestartDelayMs(config) {
 }
 
 function buildMappedListeners(config) {
+  const explicitEntryNodeUrl = normalizeMappedListenerUrl(
+    config && config.easyTierEntryNodeUrl,
+    config && config.easyTierEntryNodePort
+  );
+  if (explicitEntryNodeUrl) {
+    return [explicitEntryNodeUrl];
+  }
+
   const listeners = [];
   const publicHost = extractAdvertiseHost(config);
   if (!publicHost) {
@@ -543,6 +551,21 @@ function buildMappedListeners(config) {
   listeners.push(`tcp://${publicHost}:${config.easyTierEntryNodePort}`);
   listeners.push(`udp://${publicHost}:${config.easyTierEntryNodePort}`);
   return listeners;
+}
+
+function normalizeMappedListenerUrl(value, fallbackPort) {
+  try {
+    const parsed = new URL(String(value || '').trim());
+    const scheme = String(parsed.protocol || '').replace(/:$/, '').toLowerCase();
+    const host = formatHostForUrl(parsed.hostname || '');
+    const port = parsePositiveInteger(parsed.port, fallbackPort);
+    if (!scheme || !host || !port) {
+      return '';
+    }
+    return `${scheme}://${host}:${port}`;
+  } catch (_error) {
+    return '';
+  }
 }
 
 function extractAdvertiseHost(config) {

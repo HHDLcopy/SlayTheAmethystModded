@@ -39,7 +39,7 @@ services:
       EASYTIER_SHARED_NODE_RPC_PORTAL: 127.0.0.1:15888
       LOG_LEVEL: info
     volumes:
-      - online-service-data:/app/data
+      - presence-data:/app/data
 
 volumes:
-  online-service-data:
+  presence-data:

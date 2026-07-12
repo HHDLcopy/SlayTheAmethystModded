@@ -208,6 +208,16 @@ public class AgentSessionTest {
     }
 
     @Test
+    public void consoleReturnsErrorWhenBaseModNotLoaded() throws Exception {
+        BufferedReader serverReader = startSession();
+        writer.println("CONSOLE gold 999");
+        String response = serverReader.readLine();
+        assertTrue(response, response.startsWith("RESULT "));
+        assertTrue(response, response.contains("\"executed\":false"));
+        assertTrue(response, response.contains("DevConsole not loaded"));
+    }
+
+    @Test
     public void multipleAgentsSimultaneously() throws Exception {
         BufferedReader serverReader = startSession();
 

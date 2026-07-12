@@ -6,7 +6,7 @@
 
 ```
 Harness.run()
-  └── run_command(ctx, out_dir)  ──→  21 个命令分发
+  └── run_command(ctx, out_dir)  ──→  22 个命令分发
         ├── doctor               → harness/doctor.run_doctor(ctx)
         ├── install              → harness/install.run_install(ctx)
         ├── start / stop         → harness/run.run_start/stop(ctx)
@@ -18,6 +18,7 @@ Harness.run()
         ├── decompil             → harness/decompil.run_decompil(ctx, out_dir)
         ├── agent-attach/detach/list/status → harness/agent.*(ctx, out_dir)
         ├── play                 → harness/play.run_play(ctx, out_dir)
+        ├── console              → harness/console.run_console(ctx, out_dir)
         ├── hotreload            → harness/hotreload.run_hotreload(ctx, out_dir)
         ├── perf                 → harness/perf.run_perf(ctx, out_dir)
         └── startup-cache-profile → harness/startup_cache.run_startup_cache_profile(ctx, out_dir)
@@ -50,6 +51,7 @@ Harness.run()
 | `decompil.py` | decompil 命令 |
 | `agent.py` | agent-attach/detach/list/status 命令 |
 | `play.py` | play 命令 |
+| `console.py` | console 命令（BaseMod DevConsole 交互式/单发控制） |
 | `hotreload.py` | hotreload 命令 |
 | `perf.py` | perf 命令 |
 | `smoke.py` | smoke 命令 |

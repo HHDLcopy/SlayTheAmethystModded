@@ -38,8 +38,8 @@ class DecompilCliTest(unittest.TestCase):
         self.assertEqual(args.command, "decompil")
         self.assertEqual(args.decompil_targets, [])
 
-
 class StartupCacheProfileCliTest(unittest.TestCase):
+
     def test_startup_cache_profile_command_in_choices(self):
         parser = create_parser()
         command_actions = [action for action in parser._actions if action.dest == "command"]
@@ -56,6 +56,40 @@ class StartupCacheProfileCliTest(unittest.TestCase):
         self.assertEqual(args.command, "startup-cache-profile")
         self.assertEqual(args.cache_hit_runs, 3)
         self.assertTrue(args.no_clear_startup_cache)
+
+
+class ConsoleCliTest(unittest.TestCase):
+    def test_console_command_in_choices(self):
+        parser = create_parser()
+        command_actions = [action for action in parser._actions if action.dest == "command"]
+        self.assertEqual(len(command_actions), 1)
+        self.assertIn("console", command_actions[0].choices)
+
+    def test_console_command_one_shot(self):
+        parser = create_parser()
+        args = parser.parse_args([
+            "-Command", "console",
+            "-ConsoleCommand", "gold 999",
+        ])
+        self.assertEqual(args.command, "console")
+        self.assertEqual(args.console_command, "gold 999")
+
+    def test_console_command_empty_defaults(self):
+        parser = create_parser()
+        args = parser.parse_args(["-Command", "console"])
+        self.assertEqual(args.command, "console")
+        self.assertEqual(args.console_command, "")
+
+    def test_console_command_with_device_serial(self):
+        parser = create_parser()
+        args = parser.parse_args([
+            "-Command", "console",
+            "-ConsoleCommand", "unlock Ironclad",
+            "-DeviceSerial", "localhost:15555",
+        ])
+        self.assertEqual(args.command, "console")
+        self.assertEqual(args.console_command, "unlock Ironclad")
+        self.assertEqual(args.device_serial, "localhost:15555")
 
 
 if __name__ == "__main__":

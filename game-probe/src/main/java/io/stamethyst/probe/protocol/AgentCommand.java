@@ -14,7 +14,8 @@ public enum AgentCommand {
     PERF_STOP,
     DUMP_CLASS,
     REDEFINE_CLASS,
-    LOAD_AGENT;
+    LOAD_AGENT,
+    CONSOLE;
 
     public static AgentCommand parse(String text) {
         if (text == null) {

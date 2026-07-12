@@ -13,6 +13,7 @@ import io.stamethyst.probe.protocol.AgentResponse;
 
 import java.io.*;
 import java.lang.instrument.Instrumentation;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.net.Socket;
 import java.net.URL;
@@ -106,6 +107,9 @@ public class AgentSession implements Runnable {
                 break;
             case LOAD_AGENT:
                 handleLoadAgent(req.getSpec(), req.getArgsJson());
+                break;
+            case CONSOLE:
+                handleConsole(req);
                 break;
             case QUIT:
                 handleQuit();
@@ -226,6 +230,67 @@ public class AgentSession implements Runnable {
             return;
         }
         writer.println(AgentResponse.result(play.execute(req.getSpec(), req.getArgsJson())));
+    }
+
+    private void handleConsole(AgentRequest req) {
+        String commandText = req.getSpec();
+        if (commandText == null || commandText.trim().isEmpty()) {
+            writer.println(AgentResponse.result("{\"executed\":false,\"error\":\"empty console command\"}"));
+            return;
+        }
+        try {
+            String result = invokeDevConsole(commandText.trim());
+            writer.println(AgentResponse.result("{\"executed\":true,\"command\":\"" + escapeJson(commandText.trim()) +
+                "\",\"output\":\"" + escapeJson(result) + "\"}"));
+        } catch (Exception e) {
+            String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getName();
+            writer.println(AgentResponse.result("{\"executed\":false,\"error\":\"" + escapeJson(msg) + "\"}"));
+        }
+    }
+
+    private String invokeDevConsole(String commandText) throws Exception {
+        Class<?> devConsoleClass;
+        try {
+            devConsoleClass = Class.forName("basemod.DevConsole");
+        } catch (ClassNotFoundException e) {
+            throw new RuntimeException("BaseMod DevConsole not loaded");
+        }
+
+        try {
+            Method executeMethod = devConsoleClass.getMethod("execute", String.class);
+            Object result = executeMethod.invoke(null, commandText);
+            return result != null ? result.toString() : "ok";
+        } catch (NoSuchMethodException e) {
+            // fall through to commands-map approach
+        }
+
+        Field commandsField = devConsoleClass.getDeclaredField("commands");
+        commandsField.setAccessible(true);
+        Object commandsObj = commandsField.get(null);
+        if (!(commandsObj instanceof java.util.Map)) {
+            throw new RuntimeException("DevConsole.commands is not a Map");
+        }
+        java.util.Map<?, ?> commands = (java.util.Map<?, ?>) commandsObj;
+
+        String[] tokens = commandText.split("\\s+");
+        String commandName = tokens[0];
+        String[] args = new String[tokens.length - 1];
+        System.arraycopy(tokens, 1, args, 0, args.length);
+
+        Object consoleCommand = commands.get(commandName);
+        if (consoleCommand == null) {
+            throw new RuntimeException("unknown console command: " + commandName);
+        }
+
+        Method execMethod = consoleCommand.getClass().getMethod("execute", String[].class);
+        execMethod.invoke(consoleCommand, (Object) args);
+        return "ok";
+    }
+
+    private static String escapeJson(String s) {
+        if (s == null) return "";
+        return s.replace("\\", "\\\\").replace("\"", "\\\"")
+                .replace("\n", "\\n").replace("\r", "\\r");
     }
 
     private void handlePerfStart(String agentId) {

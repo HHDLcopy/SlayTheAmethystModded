@@ -36,6 +36,8 @@ public class AgentRequest {
                     throw new IllegalArgumentException("DETACH requires a target agent ID");
                 case ATTACH:
                     throw new IllegalArgumentException("ATTACH requires a spec");
+                case CONSOLE:
+                    throw new IllegalArgumentException("CONSOLE requires a command string");
                 default:
                     throw new IllegalArgumentException("missing required argument");
             }
@@ -59,6 +61,7 @@ public class AgentRequest {
             case PERF_STOP:
             case DUMP_CLASS:
             case REDEFINE_CLASS:
+            case CONSOLE:
                 return new AgentRequest(cmd, remaining, null, null);
             default:
                 throw new IllegalArgumentException("unexpected command with arguments: " + cmd);

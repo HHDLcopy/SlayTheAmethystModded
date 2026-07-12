@@ -18,6 +18,7 @@ def run_play(ctx: HarnessContext, resolved_out_dir: Path) -> None:
             "\n=== Agent Play Mode ===\n"
             f"Agent: {agent_id}\n"
             "Commands: observe, play_card, end_turn, skip_room, exit\n"
+            "Console: console <cmd> (e.g. console gold 999)\n"
         )
         while True:
             try:
@@ -31,6 +32,10 @@ def run_play(ctx: HarnessContext, resolved_out_dir: Path) -> None:
             if line == "observe":
                 state = proto.observe()
                 print(json.dumps(state, indent=2))
+            elif line.startswith("console "):
+                cmd = line[len("console "):].strip()
+                result = proto.console_exec(cmd)
+                print(json.dumps(result, indent=2))
             elif line.startswith("play_card"):
                 proto.execute("PLAY_CARD", {})
                 state = proto.observe()

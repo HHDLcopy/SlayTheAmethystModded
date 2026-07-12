@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import tempfile
 import unittest
 from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+TEST_DEVICE_SERIAL = os.environ["TEST_DEVICE_SERIAL"]
 
 from scripts.tools.lib.sts_harness import Harness, HarnessOptions, COMMANDS
 
@@ -321,6 +324,59 @@ class StartupCacheProfileTest(unittest.TestCase):
                     summary = clear_startup_caches(ctx)
         self.assertEqual(summary["externalExitCode"], 0)
         self.assertEqual(summary["privateExitCode"], 0)
+
+
+
+class ConsoleRoutingTest(unittest.TestCase):
+    def test_console_command_is_registered(self):
+        self.assertIn("console", COMMANDS)
+
+    def test_console_run_command_routes(self):
+        from scripts.tools.lib.sts_harness import Harness, HarnessOptions
+        from unittest.mock import MagicMock
+
+        options = HarnessOptions(
+            command="console", launch_mode="mts_basemod", device_serial=TEST_DEVICE_SERIAL,
+            out_dir="", timeout_seconds=120, poll_interval_seconds=2,
+            force_jvm_crash=False, force_runtime_crash=False, debug_mode=False,
+            autoplay=False, skip_install=False, no_stop_after_smoke=False,
+            mods=[], mod_list_file="", enable_all_mods=False, disable_all_mods=False,
+            console_command="gold 999",
+        )
+        harness = Harness(options)
+        harness.initialize = MagicMock()
+        out = MagicMock()
+        harness.result = {"artifacts": {}}
+
+        with unittest.mock.patch(
+            "scripts.tools.harness.console.run_console",
+        ) as mock_func:
+            exit_code = harness.run_command(out)
+            self.assertEqual(exit_code, 0)
+            mock_func.assert_called_once()
+
+    def test_console_command_without_console_command_arg(self):
+        from scripts.tools.lib.sts_harness import Harness, HarnessOptions
+        from unittest.mock import MagicMock
+
+        options = HarnessOptions(
+            command="console", launch_mode="mts_basemod", device_serial=TEST_DEVICE_SERIAL,
+            out_dir="", timeout_seconds=120, poll_interval_seconds=2,
+            force_jvm_crash=False, force_runtime_crash=False, debug_mode=False,
+            autoplay=False, skip_install=False, no_stop_after_smoke=False,
+            mods=[], mod_list_file="", enable_all_mods=False, disable_all_mods=False,
+            console_command="",
+        )
+        harness = Harness(options)
+        harness.initialize = MagicMock()
+        out = MagicMock()
+        harness.result = {"artifacts": {}}
+
+        with unittest.mock.patch(
+            "scripts.tools.harness.console.run_console",
+        ) as mock_func:
+            harness.run_command(out)
+            mock_func.assert_called_once()
 
 
 

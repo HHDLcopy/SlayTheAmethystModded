@@ -109,4 +109,25 @@ public class AgentRequestTest {
     public void parseEmptyLine() {
         AgentRequest.parse("");
     }
+
+    @Test
+    public void parseConsoleCommand() {
+        AgentRequest req = AgentRequest.parse("CONSOLE gold 999");
+        assertEquals(AgentCommand.CONSOLE, req.getCommand());
+        assertEquals("gold 999", req.getSpec());
+        assertNull(req.getTarget());
+        assertNull(req.getArgsJson());
+    }
+
+    @Test
+    public void parseConsoleCommandSingleWord() {
+        AgentRequest req = AgentRequest.parse("CONSOLE help");
+        assertEquals(AgentCommand.CONSOLE, req.getCommand());
+        assertEquals("help", req.getSpec());
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void parseConsoleWithoutArgs() {
+        AgentRequest.parse("CONSOLE");
+    }
 }

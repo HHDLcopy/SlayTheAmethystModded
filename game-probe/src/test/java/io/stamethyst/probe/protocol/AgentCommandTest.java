@@ -42,6 +42,11 @@ public class AgentCommandTest {
     }
 
     @Test
+    public void parseConsole() {
+        assertEquals(AgentCommand.CONSOLE, AgentCommand.parse("CONSOLE"));
+    }
+
+    @Test
     public void parseCaseInsensitive() {
         assertEquals(AgentCommand.ATTACH, AgentCommand.parse("attach"));
         assertEquals(AgentCommand.LIST, AgentCommand.parse("List"));

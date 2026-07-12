@@ -111,6 +111,24 @@ class AgentProtocol:
         if resp != "OK":
             raise AgentBridgeError(resp)
 
+    # ── Console ─────────────────────────────────────────────────────
+
+    def console_exec(self, command: str) -> dict[str, Any]:
+        """Execute a BaseMod DevConsole command.
+
+        Args:
+            command: The full console command text (e.g. "gold 999").
+
+        Returns:
+            dict with keys executed, command, output (on success) or error (on failure).
+        """
+        resp = self._conn.send_command(f"CONSOLE {command}")
+        if resp.startswith("RESULT "):
+            return json.loads(resp[7:])
+        if resp.startswith("ERROR "):
+            raise AgentBridgeError(resp)
+        return {"executed": False, "error": f"unexpected response: {resp}"}
+
     # ── Convenience: full hot-reload cycle ───────────────────────────
 
     def dump_and_save(self, class_name: str, output_path: str) -> bytes:

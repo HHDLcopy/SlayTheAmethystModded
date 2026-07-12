@@ -31,6 +31,7 @@ COMMANDS = (
     "hotreload",
     "single-room",
     "startup-cache-profile",
+    "console",
 )
 LAUNCH_MODES = ("mts_basemod", "mts", "vanilla")
 AGENT_COMMANDS = ("attach", "detach", "list", "status")
@@ -216,6 +217,7 @@ class HarnessOptions:
     agent_port: int = 9090
     agent_duration: float = 0.0
     redefine_class_file: str = ""
+    console_command: str = ""
     cache_hit_runs: int = 1
     no_clear_startup_cache: bool = False
 
@@ -352,7 +354,7 @@ class Harness:
         if command in ("doctor", "install", "start", "stop", "logs", "screenshot", "status",
                        "mods", "set-mods", "smoke", "decompil", "agent-attach", "agent-detach",
                        "agent-list", "agent-status", "play", "hotreload", "perf", "single-room",
-                       "startup-cache-profile"):
+                       "startup-cache-profile", "console"):
             if command == "doctor":
                 from scripts.tools.harness.doctor import run_doctor
                 run_doctor(ctx)
@@ -414,6 +416,10 @@ class Harness:
             elif command == "play":
                 from scripts.tools.harness.play import run_play
                 run_play(ctx, resolved_out_dir)
+                return 0
+            elif command == "console":
+                from scripts.tools.harness.console import run_console
+                run_console(ctx, resolved_out_dir)
                 return 0
             elif command == "hotreload":
                 from scripts.tools.harness.hotreload import run_hotreload

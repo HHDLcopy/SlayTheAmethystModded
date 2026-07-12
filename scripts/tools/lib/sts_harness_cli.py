@@ -171,6 +171,13 @@ def create_parser() -> argparse.ArgumentParser:
         default="",
         help="For -Command hotreload, provide a .class file to redefine in the JVM.",
     )
+    parser.add_argument(
+        "-ConsoleCommand",
+        "--console-command",
+        dest="console_command",
+        default="",
+        help="One-shot BaseMod DevConsole command (e.g. 'gold 999'). If omitted, enters interactive REPL mode.",
+    )
     return parser
 
 
@@ -216,6 +223,7 @@ def main(argv: list[str] | None = None) -> int:
         agent_port=args.agent_port,
         agent_duration=args.agent_duration,
         redefine_class_file=args.redefine_class_file,
+        console_command=args.console_command,
         cache_hit_runs=args.cache_hit_runs,
         no_clear_startup_cache=args.no_clear_startup_cache,
     )

@@ -78,4 +78,36 @@ class MainScreenEasyTierCardTest {
             easyTierCreateRoomProgressMessageResId(MainScreenViewModel.EasyTierIndicatorState.SESSION_READY),
         )
     }
+
+    @Test
+    fun easyTierRoomContentMode_mapsPageAndMembershipStates() {
+        assertEquals(
+            EasyTierRoomContentMode.Create,
+            easyTierRoomContentMode(
+                page = EasyTierRoomSheetPage.Create,
+                panelMode = EasyTierRoomPanelMode.JoinedOwner,
+            ),
+        )
+        assertEquals(
+            EasyTierRoomContentMode.Unjoined,
+            easyTierRoomContentMode(
+                page = EasyTierRoomSheetPage.Rooms,
+                panelMode = EasyTierRoomPanelMode.Unjoined,
+            ),
+        )
+        assertEquals(
+            EasyTierRoomContentMode.JoinedMember,
+            easyTierRoomContentMode(
+                page = EasyTierRoomSheetPage.Rooms,
+                panelMode = EasyTierRoomPanelMode.JoinedMember,
+            ),
+        )
+        assertEquals(
+            EasyTierRoomContentMode.JoinedOwner,
+            easyTierRoomContentMode(
+                page = EasyTierRoomSheetPage.Rooms,
+                panelMode = EasyTierRoomPanelMode.JoinedOwner,
+            ),
+        )
+    }
 }

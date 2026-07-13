@@ -17,7 +17,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
@@ -1256,15 +1258,34 @@ private fun easyTierIndicatorTint(
     MainScreenViewModel.EasyTierIndicatorState.DISCONNECTED -> MaterialTheme.colorScheme.outline
 }
 
-private enum class EasyTierRoomSheetPage {
+internal enum class EasyTierRoomSheetPage {
     Rooms,
     Create,
 }
 
-private enum class EasyTierRoomPanelMode {
+internal enum class EasyTierRoomPanelMode {
     Unjoined,
     JoinedMember,
     JoinedOwner,
+}
+
+internal enum class EasyTierRoomContentMode {
+    Unjoined,
+    JoinedMember,
+    JoinedOwner,
+    Create,
+}
+
+internal fun easyTierRoomContentMode(
+    page: EasyTierRoomSheetPage,
+    panelMode: EasyTierRoomPanelMode,
+): EasyTierRoomContentMode = when (page) {
+    EasyTierRoomSheetPage.Create -> EasyTierRoomContentMode.Create
+    EasyTierRoomSheetPage.Rooms -> when (panelMode) {
+        EasyTierRoomPanelMode.Unjoined -> EasyTierRoomContentMode.Unjoined
+        EasyTierRoomPanelMode.JoinedMember -> EasyTierRoomContentMode.JoinedMember
+        EasyTierRoomPanelMode.JoinedOwner -> EasyTierRoomContentMode.JoinedOwner
+    }
 }
 
 @Composable
@@ -1297,16 +1318,22 @@ private fun EasyTierOnlineRoomsSection(
         }
         visibleRooms.forEach { room ->
             val selected = room.roomId == preferredRoomId
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onSelectRoom(room.roomId) },
-                shape = RoundedCornerShape(18.dp),
-                color = if (selected) {
+            val roomColor by animateColorAsState(
+                targetValue = if (selected) {
                     MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
                 } else {
                     MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
-                }
+                },
+                animationSpec = tween(durationMillis = 200),
+                label = "easyTierRoomSelectionColor",
+            )
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .animateContentSize(animationSpec = tween(durationMillis = 220))
+                    .clickable { onSelectRoom(room.roomId) },
+                shape = RoundedCornerShape(18.dp),
+                color = roomColor,
             ) {
                 Column(
                     modifier = Modifier
@@ -1329,15 +1356,24 @@ private fun EasyTierOnlineRoomsSection(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Text(
-                        text = if (room.allowNewJoins) {
-                            stringResource(R.string.main_easytier_room_joinable)
-                        } else {
-                            stringResource(R.string.main_easytier_room_locked)
+                    AnimatedContent(
+                        targetState = room.allowNewJoins,
+                        transitionSpec = {
+                            fadeIn(animationSpec = tween(durationMillis = 160)) togetherWith
+                                fadeOut(animationSpec = tween(durationMillis = 100))
                         },
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                        label = "easyTierRoomJoinPolicy",
+                    ) { allowNewJoins ->
+                        Text(
+                            text = if (allowNewJoins) {
+                                stringResource(R.string.main_easytier_room_joinable)
+                            } else {
+                                stringResource(R.string.main_easytier_room_locked)
+                            },
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
         }
@@ -1363,6 +1399,9 @@ private fun EasyTierRoomMembersSection(
                 localIpv4Cidr = localIpv4Cidr,
             )
             Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .animateContentSize(animationSpec = tween(durationMillis = 220)),
                 shape = RoundedCornerShape(18.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
             ) {
@@ -1377,24 +1416,42 @@ private fun EasyTierRoomMembersSection(
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                     )
-                    Text(
-                        text = stringResource(
-                            R.string.main_easytier_room_member_summary,
-                            localizedEasyTierRoomMemberRole(member),
-                            localizedEasyTierRoomMemberPresence(member),
-                        ),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = if (assignedIpv4Cidr.isNotBlank()) {
-                            stringResource(R.string.main_easytier_detail_ip, assignedIpv4Cidr)
-                        } else {
-                            stringResource(R.string.main_easytier_member_ip_unavailable)
+                    AnimatedContent(
+                        targetState = member.online to assignedIpv4Cidr,
+                        transitionSpec = {
+                            (fadeIn(animationSpec = tween(durationMillis = 170)) +
+                                slideInVertically(
+                                    initialOffsetY = { height -> height / 4 },
+                                    animationSpec = tween(durationMillis = 210),
+                                )) togetherWith fadeOut(animationSpec = tween(durationMillis = 100))
                         },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                        label = "easyTierRoomMemberState",
+                    ) { (online, ipv4Cidr) ->
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                text = stringResource(
+                                    R.string.main_easytier_room_member_summary,
+                                    localizedEasyTierRoomMemberRole(member),
+                                    if (online) {
+                                        stringResource(R.string.main_easytier_member_online)
+                                    } else {
+                                        stringResource(R.string.main_easytier_member_offline)
+                                    },
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Text(
+                                text = if (ipv4Cidr.isNotBlank()) {
+                                    stringResource(R.string.main_easytier_detail_ip, ipv4Cidr)
+                                } else {
+                                    stringResource(R.string.main_easytier_member_ip_unavailable)
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -1409,17 +1466,6 @@ private fun localizedEasyTierRoomMemberRole(
         stringResource(R.string.main_easytier_role_owner)
     } else {
         stringResource(R.string.main_easytier_role_member)
-    }
-}
-
-@Composable
-private fun localizedEasyTierRoomMemberPresence(
-    member: EasyTierRoomMember,
-): String {
-    return if (member.online) {
-        stringResource(R.string.main_easytier_member_online)
-    } else {
-        stringResource(R.string.main_easytier_member_offline)
     }
 }
 
@@ -1443,6 +1489,229 @@ internal fun easyTierCreateRoomProgressMessageResId(
     MainScreenViewModel.EasyTierIndicatorState.RECONNECTING ->
         R.string.main_easytier_create_room_progress_joining
     else -> R.string.main_easytier_create_room_progress_creating
+}
+
+@Composable
+private fun EasyTierOwnerActionsSection(
+    room: EasyTierRoomInfo,
+    mutating: Boolean,
+    onLockRoom: () -> Unit,
+    onUnlockRoom: () -> Unit,
+    onCloseRoom: () -> Unit,
+) {
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.38f),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.main_easytier_room_owner_actions_title),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = stringResource(
+                    R.string.main_easytier_manage_room_summary,
+                    room.roomId,
+                    room.memberCount,
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            AnimatedContent(
+                targetState = room.allowNewJoins,
+                transitionSpec = {
+                    (fadeIn(animationSpec = tween(durationMillis = 160)) +
+                        slideInVertically(
+                            initialOffsetY = { height -> height / 3 },
+                            animationSpec = tween(durationMillis = 200),
+                        )) togetherWith fadeOut(animationSpec = tween(durationMillis = 100))
+                },
+                label = "easyTierOwnerJoinPolicy",
+            ) { allowNewJoins ->
+                Text(
+                    text = if (allowNewJoins) {
+                        stringResource(R.string.main_easytier_room_joinable)
+                    } else {
+                        stringResource(R.string.main_easytier_room_locked)
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        if (room.allowNewJoins) onLockRoom() else onUnlockRoom()
+                    },
+                    enabled = !mutating,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    AnimatedContent(
+                        targetState = room.allowNewJoins,
+                        transitionSpec = {
+                            fadeIn(animationSpec = tween(durationMillis = 150)) togetherWith
+                                fadeOut(animationSpec = tween(durationMillis = 90))
+                        },
+                        label = "easyTierOwnerJoinPolicyAction",
+                    ) { allowNewJoins ->
+                        Text(
+                            if (allowNewJoins) {
+                                stringResource(R.string.main_easytier_action_lock_room)
+                            } else {
+                                stringResource(R.string.main_easytier_action_unlock_room)
+                            }
+                        )
+                    }
+                }
+                Button(
+                    onClick = onCloseRoom,
+                    enabled = !mutating,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
+                    ),
+                ) {
+                    Text(stringResource(R.string.main_easytier_action_close_room))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EasyTierCreateRoomPanel(
+    roomId: String,
+    allowNewJoins: Boolean,
+    creating: Boolean,
+    mutating: Boolean,
+    connectionState: MainScreenViewModel.EasyTierIndicatorState,
+    onRoomIdChange: (String) -> Unit,
+    onAllowNewJoinsChange: (Boolean) -> Unit,
+    onCreateRoom: (String, Boolean) -> Unit,
+) {
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            OutlinedTextField(
+                value = roomId,
+                onValueChange = onRoomIdChange,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(stringResource(R.string.main_easytier_create_room_label)) },
+                singleLine = true,
+                enabled = !creating,
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .toggleable(
+                        value = allowNewJoins,
+                        role = Role.Checkbox,
+                        enabled = !creating,
+                        onValueChange = onAllowNewJoinsChange,
+                    ),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Checkbox(
+                    checked = allowNewJoins,
+                    onCheckedChange = null,
+                )
+                Text(
+                    text = stringResource(R.string.main_easytier_create_room_allow_joins),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            Button(
+                onClick = { onCreateRoom(roomId.trim(), allowNewJoins) },
+                enabled = roomId.isNotBlank() && !creating && !mutating,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                AnimatedContent(
+                    targetState = creating,
+                    transitionSpec = {
+                        (fadeIn(animationSpec = tween(durationMillis = 160)) +
+                            scaleIn(
+                                initialScale = 0.94f,
+                                animationSpec = tween(durationMillis = 190),
+                            )) togetherWith
+                            (fadeOut(animationSpec = tween(durationMillis = 90)) +
+                                scaleOut(
+                                    targetScale = 0.94f,
+                                    animationSpec = tween(durationMillis = 90),
+                                )) using SizeTransform(clip = false)
+                    },
+                    contentAlignment = Alignment.Center,
+                    label = "easyTierCreateRoomAction",
+                ) { isCreating ->
+                    if (isCreating) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                strokeWidth = 2.dp,
+                            )
+                            Text(stringResource(R.string.main_easytier_action_create_room_loading))
+                        }
+                    } else {
+                        Text(stringResource(R.string.main_easytier_action_create_room))
+                    }
+                }
+            }
+            AnimatedVisibility(
+                visible = creating,
+                enter = fadeIn(animationSpec = tween(durationMillis = 140)) +
+                    slideInVertically(
+                        initialOffsetY = { height -> -height / 3 },
+                        animationSpec = tween(durationMillis = 180),
+                    ),
+                exit = fadeOut(animationSpec = tween(durationMillis = 100)),
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    AnimatedContent(
+                        targetState = easyTierCreateRoomProgressMessageResId(connectionState),
+                        transitionSpec = {
+                            (fadeIn(animationSpec = tween(durationMillis = 160)) +
+                                slideInVertically(
+                                    initialOffsetY = { height -> height / 3 },
+                                    animationSpec = tween(durationMillis = 190),
+                                )) togetherWith fadeOut(animationSpec = tween(durationMillis = 90))
+                        },
+                        label = "easyTierCreateRoomProgress",
+                    ) { messageResId ->
+                        Text(
+                            text = stringResource(messageResId),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -1476,6 +1745,7 @@ private fun EasyTierBottomSheetContent(
         joinedSelectedRoom -> EasyTierRoomPanelMode.JoinedMember
         else -> EasyTierRoomPanelMode.Unjoined
     }
+    val contentMode = easyTierRoomContentMode(page, panelMode)
     val troubleshootingMessageResId = easyTierTroubleshootingMessageResId(
         state = indicator.state,
         failureCategory = indicator.failureCategory,
@@ -1504,55 +1774,98 @@ private fun EasyTierBottomSheetContent(
             .navigationBarsPadding(),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Row(
+        AnimatedContent(
+            targetState = page,
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+            transitionSpec = {
+                val enteringCreate = targetState == EasyTierRoomSheetPage.Create
+                val enter = fadeIn(animationSpec = tween(durationMillis = 180)) +
+                    slideInHorizontally(
+                        initialOffsetX = { width -> if (enteringCreate) width / 5 else -width / 5 },
+                        animationSpec = tween(durationMillis = 240),
+                    )
+                val exit = fadeOut(animationSpec = tween(durationMillis = 120)) +
+                    slideOutHorizontally(
+                        targetOffsetX = { width -> if (enteringCreate) -width / 6 else width / 6 },
+                        animationSpec = tween(durationMillis = 180),
+                    )
+                enter togetherWith exit using SizeTransform(clip = false)
+            },
+            label = "easyTierRoomHeader",
+        ) { targetPage ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = if (page == EasyTierRoomSheetPage.Create) {
-                        stringResource(R.string.main_easytier_create_room_title)
-                    } else {
-                        stringResource(R.string.main_easytier_sheet_title)
-                    },
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    text = if (page == EasyTierRoomSheetPage.Create) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        text = if (targetPage == EasyTierRoomSheetPage.Create) {
+                            stringResource(R.string.main_easytier_create_room_title)
+                        } else {
+                            stringResource(R.string.main_easytier_sheet_title)
+                        },
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    val summary = if (targetPage == EasyTierRoomSheetPage.Create) {
                         stringResource(R.string.main_easytier_create_room_summary)
                     } else {
                         easyTierOverviewSummary(indicator)
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            if (page == EasyTierRoomSheetPage.Create) {
-                TextButton(
-                    onClick = { page = EasyTierRoomSheetPage.Rooms },
-                    enabled = !roomBrowser.creating,
-                ) {
-                    Text(stringResource(R.string.common_content_desc_back))
+                    }
+                    AnimatedContent(
+                        targetState = summary,
+                        transitionSpec = {
+                            (fadeIn(animationSpec = tween(durationMillis = 160)) +
+                                slideInVertically(
+                                    initialOffsetY = { height -> height / 3 },
+                                    animationSpec = tween(durationMillis = 200),
+                                )) togetherWith fadeOut(animationSpec = tween(durationMillis = 100))
+                        },
+                        label = "easyTierRoomHeaderSummary",
+                    ) { targetSummary ->
+                        Text(
+                            text = targetSummary,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
-            } else {
-                OutlinedButton(
-                    onClick = onRefreshRooms,
-                    enabled = !roomBrowser.loading && !roomBrowser.creating && !roomBrowser.mutating,
-                ) {
-                    Text(stringResource(R.string.main_easytier_action_refresh_rooms))
+                if (targetPage == EasyTierRoomSheetPage.Create) {
+                    TextButton(
+                        onClick = { page = EasyTierRoomSheetPage.Rooms },
+                        enabled = !roomBrowser.creating,
+                    ) {
+                        Text(stringResource(R.string.common_content_desc_back))
+                    }
+                } else {
+                    OutlinedButton(
+                        onClick = onRefreshRooms,
+                        enabled = !roomBrowser.loading && !roomBrowser.creating && !roomBrowser.mutating,
+                    ) {
+                        Text(stringResource(R.string.main_easytier_action_refresh_rooms))
+                    }
                 }
             }
         }
 
-        if (troubleshootingMessageResId != null) {
-            EasyTierTroubleshootingCard(
-                messageResId = troubleshootingMessageResId,
-            )
+        AnimatedContent(
+            targetState = troubleshootingMessageResId,
+            transitionSpec = {
+                (fadeIn(animationSpec = tween(durationMillis = 180)) +
+                    slideInVertically(
+                        initialOffsetY = { height -> height / 4 },
+                        animationSpec = tween(durationMillis = 220),
+                    )) togetherWith fadeOut(animationSpec = tween(durationMillis = 120))
+            },
+            label = "easyTierTroubleshooting",
+        ) { messageResId ->
+            if (messageResId != null) {
+                EasyTierTroubleshootingCard(messageResId = messageResId)
+            }
         }
 
         // Keep refresh feedback above the room content without shifting the panel layout.
@@ -1589,228 +1902,151 @@ private fun EasyTierBottomSheetContent(
                 }
             }
         }
-        if (roomBrowser.errorSummary.isNotBlank()) {
-            Text(
-                text = roomBrowser.errorSummary,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-            )
+        AnimatedContent(
+            targetState = roomBrowser.errorSummary.takeIf { it.isNotBlank() },
+            transitionSpec = {
+                (fadeIn(animationSpec = tween(durationMillis = 160)) +
+                    slideInVertically(
+                        initialOffsetY = { height -> height / 3 },
+                        animationSpec = tween(durationMillis = 200),
+                    )) togetherWith fadeOut(animationSpec = tween(durationMillis = 100))
+            },
+            label = "easyTierRoomError",
+        ) { errorSummary ->
+            if (errorSummary != null) {
+                Text(
+                    text = errorSummary,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
         }
 
-        if (page == EasyTierRoomSheetPage.Rooms) {
-            if (panelMode != EasyTierRoomPanelMode.Unjoined && selectedRoom != null) {
-                if (panelMode == EasyTierRoomPanelMode.JoinedOwner) {
-                    Surface(
-                        shape = RoundedCornerShape(18.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.38f),
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(14.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                        Text(
-                            text = stringResource(R.string.main_easytier_room_owner_actions_title),
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
+        AnimatedContent(
+            targetState = contentMode,
+            modifier = Modifier.fillMaxWidth(),
+            transitionSpec = {
+                val pageChange = initialState == EasyTierRoomContentMode.Create ||
+                    targetState == EasyTierRoomContentMode.Create
+                val movingToCreate = targetState == EasyTierRoomContentMode.Create
+                val enter = if (pageChange) {
+                    fadeIn(animationSpec = tween(durationMillis = 180)) +
+                        slideInHorizontally(
+                            initialOffsetX = { width -> if (movingToCreate) width / 4 else -width / 4 },
+                            animationSpec = tween(durationMillis = 240),
                         )
-                        Text(
-                            text = stringResource(
-                                R.string.main_easytier_manage_room_summary,
-                                selectedRoom.roomId,
-                                selectedRoom.memberCount,
-                            ),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                } else {
+                    fadeIn(animationSpec = tween(durationMillis = 180, delayMillis = 30)) +
+                        slideInVertically(
+                            initialOffsetY = { height -> height / 7 },
+                            animationSpec = tween(durationMillis = 230),
                         )
-                        Text(
-                            text = if (selectedRoom.allowNewJoins) {
-                                stringResource(R.string.main_easytier_room_joinable)
-                            } else {
-                                stringResource(R.string.main_easytier_room_locked)
-                            },
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                }
+                val exit = if (pageChange) {
+                    fadeOut(animationSpec = tween(durationMillis = 120)) +
+                        slideOutHorizontally(
+                            targetOffsetX = { width -> if (movingToCreate) -width / 5 else width / 5 },
+                            animationSpec = tween(durationMillis = 180),
                         )
-                        Row(
+                } else {
+                    fadeOut(animationSpec = tween(durationMillis = 120)) +
+                        slideOutVertically(
+                            targetOffsetY = { height -> -height / 10 },
+                            animationSpec = tween(durationMillis = 170),
+                        )
+                }
+                enter togetherWith exit using SizeTransform(clip = false)
+            },
+            label = "easyTierRoomContent",
+        ) { targetContentMode ->
+            if (targetContentMode != EasyTierRoomContentMode.Create) {
+                val contentPanelMode = when (targetContentMode) {
+                    EasyTierRoomContentMode.JoinedMember -> EasyTierRoomPanelMode.JoinedMember
+                    EasyTierRoomContentMode.JoinedOwner -> EasyTierRoomPanelMode.JoinedOwner
+                    EasyTierRoomContentMode.Unjoined -> EasyTierRoomPanelMode.Unjoined
+                    EasyTierRoomContentMode.Create -> error("Create mode has no room panel")
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    if (contentPanelMode != EasyTierRoomPanelMode.Unjoined && selectedRoom != null) {
+                        if (contentPanelMode == EasyTierRoomPanelMode.JoinedOwner) {
+                            EasyTierOwnerActionsSection(
+                                room = selectedRoom,
+                                mutating = roomBrowser.mutating,
+                                onLockRoom = onLockRoom,
+                                onUnlockRoom = onUnlockRoom,
+                                onCloseRoom = onCloseRoom,
+                            )
+                        }
+                        EasyTierRoomMembersSection(
+                            room = selectedRoom,
+                            currentPlayerId = roomBrowser.currentPlayerId,
+                            localIpv4Cidr = indicator.assignedIpv4Cidr,
+                        )
+                    }
+
+                    if (contentPanelMode == EasyTierRoomPanelMode.Unjoined) {
+                        Button(
+                            onClick = { page = EasyTierRoomSheetPage.Create },
+                            enabled = !roomBrowser.creating && !roomBrowser.mutating,
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            OutlinedButton(
-                                onClick = {
-                                    if (selectedRoom.allowNewJoins) onLockRoom() else onUnlockRoom()
-                                },
-                                enabled = !roomBrowser.mutating,
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text(
-                                    if (selectedRoom.allowNewJoins) {
-                                        stringResource(R.string.main_easytier_action_lock_room)
-                                    } else {
-                                        stringResource(R.string.main_easytier_action_unlock_room)
-                                    }
-                                )
-                            }
-                            Button(
-                                onClick = onCloseRoom,
-                                enabled = !roomBrowser.mutating,
-                                modifier = Modifier.weight(1f),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.error,
-                                    contentColor = MaterialTheme.colorScheme.onError,
-                                )
-                            ) {
-                                Text(stringResource(R.string.main_easytier_action_close_room))
-                            }
-                        }
-                        }
-                    }
-                }
-                EasyTierRoomMembersSection(
-                    room = selectedRoom,
-                    currentPlayerId = roomBrowser.currentPlayerId,
-                    localIpv4Cidr = indicator.assignedIpv4Cidr,
-                )
-            }
-
-            if (panelMode == EasyTierRoomPanelMode.Unjoined) {
-                Button(
-                    onClick = { page = EasyTierRoomSheetPage.Create },
-                    enabled = !roomBrowser.creating && !roomBrowser.mutating,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(stringResource(R.string.main_easytier_action_create_room))
-                }
-            }
-
-            if (panelMode == EasyTierRoomPanelMode.Unjoined) {
-                EasyTierOnlineRoomsSection(
-                    visibleRooms = visibleRooms,
-                    preferredRoomId = roomBrowser.preferredRoomId,
-                    loading = roomBrowser.loading,
-                    onSelectRoom = onSelectRoom,
-                )
-            }
-
-            if (panelMode != EasyTierRoomPanelMode.Unjoined || hasSelectedOpenRoom) {
-                Button(
-                    onClick = {
-                        if (disconnectAction) onDisconnect() else onConnect()
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = if (disconnectAction) {
-                        indicator.state != MainScreenViewModel.EasyTierIndicatorState.DISCONNECTING
-                    } else {
-                        hasSelectedOpenRoom &&
-                            !roomBrowser.creating &&
-                            !roomBrowser.mutating
-                    }
-                ) {
-                    Text(
-                        if (disconnectAction) {
-                            if (panelMode == EasyTierRoomPanelMode.JoinedOwner) {
-                                stringResource(R.string.main_easytier_action_close_room_and_leave)
-                            } else {
-                                stringResource(R.string.main_easytier_action_disconnect)
-                            }
-                        } else {
-                            stringResource(R.string.main_easytier_action_connect_selected_room)
-                        }
-                    )
-                }
-            }
-        } else {
-            Surface(
-                shape = RoundedCornerShape(18.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    OutlinedTextField(
-                        value = createRoomId,
-                        onValueChange = { createRoomId = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text(stringResource(R.string.main_easytier_create_room_label)) },
-                        singleLine = true,
-                        enabled = !creatingRoom,
-                    )
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .toggleable(
-                            value = createAllowNewJoins,
-                            role = Role.Checkbox,
-                            enabled = !creatingRoom,
-                            onValueChange = { createAllowNewJoins = it },
-                            ),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Checkbox(
-                            checked = createAllowNewJoins,
-                            onCheckedChange = null,
-                        )
-                        Text(
-                            text = stringResource(R.string.main_easytier_create_room_allow_joins),
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    }
-                    Button(
-                        onClick = {
-                            val normalizedRoomId = createRoomId.trim()
-                            submittedCreateRoomId = normalizedRoomId
-                            onCreateRoom(normalizedRoomId, createAllowNewJoins)
-                        },
-                        enabled = createRoomId.isNotBlank() &&
-                            !creatingRoom &&
-                            !roomBrowser.mutating,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        if (creatingRoom) {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(18.dp),
-                                    color = MaterialTheme.colorScheme.onPrimary,
-                                    strokeWidth = 2.dp,
-                                )
-                                Text(stringResource(R.string.main_easytier_action_create_room_loading))
-                            }
-                        } else {
                             Text(stringResource(R.string.main_easytier_action_create_room))
                         }
+                        EasyTierOnlineRoomsSection(
+                            visibleRooms = visibleRooms,
+                            preferredRoomId = roomBrowser.preferredRoomId,
+                            loading = roomBrowser.loading,
+                            onSelectRoom = onSelectRoom,
+                        )
                     }
-                    AnimatedVisibility(
-                        visible = creatingRoom,
-                        enter = fadeIn(animationSpec = tween(durationMillis = 140)) +
-                            slideInVertically(
-                                initialOffsetY = { height -> -height / 3 },
-                                animationSpec = tween(durationMillis = 180),
-                            ),
-                        exit = fadeOut(animationSpec = tween(durationMillis = 100)),
-                    ) {
-                        Column(
+
+                    if (contentPanelMode != EasyTierRoomPanelMode.Unjoined || hasSelectedOpenRoom) {
+                        Button(
+                            onClick = {
+                                if (disconnectAction) onDisconnect() else onConnect()
+                            },
                             modifier = Modifier.fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            enabled = if (disconnectAction) {
+                                indicator.state !=
+                                    MainScreenViewModel.EasyTierIndicatorState.DISCONNECTING
+                            } else {
+                                hasSelectedOpenRoom &&
+                                    !roomBrowser.creating &&
+                                    !roomBrowser.mutating
+                            },
                         ) {
                             Text(
-                                text = stringResource(
-                                    easyTierCreateRoomProgressMessageResId(indicator.state)
-                                ),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                if (disconnectAction) {
+                                    if (contentPanelMode == EasyTierRoomPanelMode.JoinedOwner) {
+                                        stringResource(
+                                            R.string.main_easytier_action_close_room_and_leave
+                                        )
+                                    } else {
+                                        stringResource(R.string.main_easytier_action_disconnect)
+                                    }
+                                } else {
+                                    stringResource(
+                                        R.string.main_easytier_action_connect_selected_room
+                                    )
+                                }
                             )
-                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                         }
                     }
                 }
+            } else {
+                EasyTierCreateRoomPanel(
+                    roomId = createRoomId,
+                    allowNewJoins = createAllowNewJoins,
+                    creating = creatingRoom,
+                    mutating = roomBrowser.mutating,
+                    connectionState = indicator.state,
+                    onRoomIdChange = { createRoomId = it },
+                    onAllowNewJoinsChange = { createAllowNewJoins = it },
+                    onCreateRoom = { roomId, allowNewJoins ->
+                        submittedCreateRoomId = roomId
+                        onCreateRoom(roomId, allowNewJoins)
+                    },
+                )
             }
         }
     }

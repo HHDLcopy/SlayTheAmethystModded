@@ -3,6 +3,8 @@ package io.stamethyst.ui.main
 import io.stamethyst.R
 import io.stamethyst.backend.easytier.EasyTierFailureCategory
 import io.stamethyst.backend.easytier.EasyTierConnectionStatus
+import io.stamethyst.backend.easytier.EasyTierConnectionSnapshot
+import io.stamethyst.backend.easytier.EasyTierNetworkMode
 import io.stamethyst.backend.easytier.EasyTierProcessService
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -11,6 +13,43 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MainScreenViewModelEasyTierResultCodeTest {
+    @Test
+    fun resolveEasyTierRoomCreationOutcome_requiresMatchingConnectedRoom() {
+        val base = EasyTierConnectionSnapshot(
+            enabled = true,
+            canConnect = true,
+            status = EasyTierConnectionStatus.SESSION_READY,
+            mode = EasyTierNetworkMode.Room,
+            roomId = "room-1",
+        )
+
+        assertEquals(
+            EasyTierRoomCreationOutcome.PENDING,
+            resolveEasyTierRoomCreationOutcome("room-1", base),
+        )
+        assertEquals(
+            EasyTierRoomCreationOutcome.COMPLETED,
+            resolveEasyTierRoomCreationOutcome(
+                "room-1",
+                base.copy(status = EasyTierConnectionStatus.CONNECTED),
+            ),
+        )
+        assertEquals(
+            EasyTierRoomCreationOutcome.PENDING,
+            resolveEasyTierRoomCreationOutcome(
+                "room-2",
+                base.copy(status = EasyTierConnectionStatus.CONNECTED),
+            ),
+        )
+        assertEquals(
+            EasyTierRoomCreationOutcome.FAILED,
+            resolveEasyTierRoomCreationOutcome(
+                "room-1",
+                base.copy(status = EasyTierConnectionStatus.FAILED),
+            ),
+        )
+    }
+
     @Test
     fun shouldPublishEasyTierIndicatorForResultCode_includesSessionReady() {
         assertTrue(shouldPublishEasyTierIndicatorForResultCode(EasyTierProcessService.RESULT_SESSION_READY))

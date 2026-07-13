@@ -737,7 +737,7 @@ function enforceLanRateLimit(buckets, request, nowMs = Date.now()) {
     return;
   }
   if (path.endsWith('/action')) {
-    enforceLanRateLimitBucket(buckets, `owner:${ownerToken || ip}`, 30, nowMs);
+    enforceLanRateLimitBucket(buckets, `owner:${ownerToken || sessionToken || ip}`, 30, nowMs);
     enforceLanRateLimitBucket(buckets, `ip:${ip}`, 1200, nowMs);
     return;
   }
@@ -787,10 +787,11 @@ function withSessionCredential(request, body) {
 }
 
 function withOwnerCredential(request, body) {
-  const { ownerToken, owner_token, ...remaining } = body || {};
+  const { sessionToken, session_token, ownerToken, owner_token, ...remaining } = body || {};
   return {
     ...remaining,
-    ownerToken: firstHeaderValue(request && request.headers && request.headers['x-lan-owner-token'])
+    ownerToken: firstHeaderValue(request && request.headers && request.headers['x-lan-owner-token']),
+    sessionToken: readBearerToken(request)
   };
 }
 

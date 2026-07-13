@@ -1433,6 +1433,18 @@ internal fun resolveEasyTierRoomMemberIpv4Cidr(
     }
 }
 
+@StringRes
+internal fun easyTierCreateRoomProgressMessageResId(
+    state: MainScreenViewModel.EasyTierIndicatorState,
+): Int = when (state) {
+    MainScreenViewModel.EasyTierIndicatorState.SESSION_READY ->
+        R.string.main_easytier_create_room_progress_starting
+    MainScreenViewModel.EasyTierIndicatorState.CONNECTING,
+    MainScreenViewModel.EasyTierIndicatorState.RECONNECTING ->
+        R.string.main_easytier_create_room_progress_joining
+    else -> R.string.main_easytier_create_room_progress_creating
+}
+
 @Composable
 private fun EasyTierBottomSheetContent(
     indicator: MainScreenViewModel.EasyTierIndicatorUi,
@@ -1450,6 +1462,7 @@ private fun EasyTierBottomSheetContent(
     var createRoomId by remember { mutableStateOf("") }
     var createAllowNewJoins by remember { mutableStateOf(true) }
     var submittedCreateRoomId by remember { mutableStateOf("") }
+    val creatingRoom = page == EasyTierRoomSheetPage.Create && roomBrowser.creating
     val disconnectAction = shouldDisconnectEasyTierUiState(indicator.state)
     val selectedRoom = roomBrowser.selectedRoom
     val ownsSelectedRoom = roomBrowser.currentUserOwnsSelectedRoom
@@ -1724,14 +1737,16 @@ private fun EasyTierBottomSheetContent(
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text(stringResource(R.string.main_easytier_create_room_label)) },
                         singleLine = true,
+                        enabled = !creatingRoom,
                     )
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .toggleable(
-                                value = createAllowNewJoins,
-                                role = Role.Checkbox,
-                                onValueChange = { createAllowNewJoins = it },
+                            value = createAllowNewJoins,
+                            role = Role.Checkbox,
+                            enabled = !creatingRoom,
+                            onValueChange = { createAllowNewJoins = it },
                             ),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1752,11 +1767,48 @@ private fun EasyTierBottomSheetContent(
                             onCreateRoom(normalizedRoomId, createAllowNewJoins)
                         },
                         enabled = createRoomId.isNotBlank() &&
-                            !roomBrowser.creating &&
+                            !creatingRoom &&
                             !roomBrowser.mutating,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text(stringResource(R.string.main_easytier_action_create_room))
+                        if (creatingRoom) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    strokeWidth = 2.dp,
+                                )
+                                Text(stringResource(R.string.main_easytier_action_create_room_loading))
+                            }
+                        } else {
+                            Text(stringResource(R.string.main_easytier_action_create_room))
+                        }
+                    }
+                    AnimatedVisibility(
+                        visible = creatingRoom,
+                        enter = fadeIn(animationSpec = tween(durationMillis = 140)) +
+                            slideInVertically(
+                                initialOffsetY = { height -> -height / 3 },
+                                animationSpec = tween(durationMillis = 180),
+                            ),
+                        exit = fadeOut(animationSpec = tween(durationMillis = 100)),
+                    ) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Text(
+                                text = stringResource(
+                                    easyTierCreateRoomProgressMessageResId(indicator.state)
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        }
                     }
                 }
             }

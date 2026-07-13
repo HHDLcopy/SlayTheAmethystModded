@@ -518,8 +518,8 @@ class EasyTierProcessService : Service() {
                 }
             },
         )
-        if (previous.roomOwnerPlayerId == previous.currentPlayerId && previous.roomId.isNotBlank()) {
-            EasyTierCredentialStore.clearRoom(
+        if (previous.roomId.isNotBlank() && previous.currentPlayerId.isNotBlank()) {
+            EasyTierCredentialStore.clearSession(
                 applicationContext,
                 previous.roomId,
                 previous.currentPlayerId,
@@ -748,8 +748,8 @@ class EasyTierProcessService : Service() {
         EasyTierJniBridge.stopAllInstances().exceptionOrNull()?.let { error ->
             Log.w(TAG, "Failed to stop EasyTier runtime instances after terminal session state", error)
         }
-        if (current.roomId.isNotBlank()) {
-            EasyTierCredentialStore.clearRoom(
+        if (current.roomId.isNotBlank() && current.currentPlayerId.isNotBlank()) {
+            EasyTierCredentialStore.clearSession(
                 applicationContext,
                 current.roomId,
                 current.currentPlayerId,
@@ -962,8 +962,8 @@ class EasyTierProcessService : Service() {
         }
         StsEasyTierVpnService.stopSession(applicationContext)
         EasyTierJniBridge.stopAllInstances()
-        if (current.roomOwnerPlayerId == current.currentPlayerId && current.roomId.isNotBlank()) {
-            EasyTierCredentialStore.clearRoom(
+        if (current.roomId.isNotBlank() && current.currentPlayerId.isNotBlank()) {
+            EasyTierCredentialStore.clearSession(
                 applicationContext,
                 current.roomId,
                 current.currentPlayerId,

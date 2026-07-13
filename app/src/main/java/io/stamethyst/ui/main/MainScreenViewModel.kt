@@ -42,6 +42,7 @@ import io.stamethyst.backend.easytier.EasyTierConnectionStatus
 import io.stamethyst.backend.easytier.EasyTierConfigRepository
 import io.stamethyst.backend.easytier.EasyTierCredentialStore
 import io.stamethyst.backend.easytier.EasyTierRoomApiClient
+import io.stamethyst.backend.easytier.EasyTierRoomApiHttpException
 import io.stamethyst.backend.easytier.EasyTierRoomInfo
 import io.stamethyst.backend.easytier.EasyTierRoomListItem
 import io.stamethyst.backend.easytier.EasyTierRoomMember
@@ -114,6 +115,7 @@ import io.stamethyst.ui.workshop.WorkshopDownloadTaskUi
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.lang.ref.WeakReference
 import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -258,6 +260,7 @@ class MainScreenViewModel : ViewModel() {
         val currentPlayerId: String = "",
         val loading: Boolean = false,
         val creating: Boolean = false,
+        val creatingRoomId: String = "",
         val mutating: Boolean = false,
         val refreshingRoomInfo: Boolean = false,
         val errorSummary: String = "",
@@ -366,6 +369,7 @@ class MainScreenViewModel : ViewModel() {
     private var steamCloudProcessEventReceiverContext: Context? = null
     private var easyTierProcessEventReceiver: BroadcastReceiver? = null
     private var easyTierProcessEventReceiverContext: Context? = null
+    private var easyTierHostActivityReference: WeakReference<Activity>? = null
     private var lastFullRefreshAtElapsedMs: Long? = null
     @Volatile
     private var launchInFlight = false
@@ -399,6 +403,8 @@ class MainScreenViewModel : ViewModel() {
     private var mtsComponentUpdateDismissedForSession = false
     @Volatile
     private var easyTierRoomBrowserLoadInFlight = false
+    @Volatile
+    private var easyTierRoomBrowserReloadPending = false
 
     var uiState by mutableStateOf(UiState())
         private set
@@ -638,6 +644,11 @@ class MainScreenViewModel : ViewModel() {
             return
         }
         val deniedSummary = host.getString(R.string.main_easytier_vpn_permission_denied)
+        pendingEasyTierRoomCreation = null
+        clearEasyTierRoomCreation(
+            host = host,
+            errorSummary = deniedSummary,
+        )
         publishEasyTierPermissionRequired(
             host = host,
             summaryOverride = deniedSummary,
@@ -652,7 +663,15 @@ class MainScreenViewModel : ViewModel() {
     }
 
     fun queueEasyTierRoomCreation(roomId: String, allowNewJoins: Boolean) {
-        pendingEasyTierRoomCreation = PendingEasyTierRoomCreation(roomId.trim(), allowNewJoins)
+        val normalizedRoomId = roomId.trim()
+        pendingEasyTierRoomCreation = PendingEasyTierRoomCreation(normalizedRoomId, allowNewJoins)
+        uiState = uiState.copy(
+            easyTierRoomBrowser = uiState.easyTierRoomBrowser.copy(
+                creating = true,
+                creatingRoomId = normalizedRoomId,
+                errorSummary = "",
+            )
+        )
     }
 
     fun onConnectEasyTier(
@@ -671,6 +690,10 @@ class MainScreenViewModel : ViewModel() {
                 extraLines = listOf("connect_blocked_from_ui=config_unavailable"),
             )
             publishEasyTierIndicator(snapshot)
+            clearEasyTierRoomCreation(
+                host = host,
+                errorSummary = host.getString(R.string.main_easytier_config_missing),
+            )
             _effects.tryEmit(
                 Effect.ShowSnackbar(
                     message = UiText.StringResource(R.string.main_easytier_config_missing),
@@ -730,6 +753,7 @@ class MainScreenViewModel : ViewModel() {
             return
         }
         if (easyTierRoomBrowserLoadInFlight) {
+            easyTierRoomBrowserReloadPending = easyTierRoomBrowserReloadPending || forceRoomInfoReload
             return
         }
         easyTierRoomBrowserLoadInFlight = true
@@ -764,16 +788,29 @@ class MainScreenViewModel : ViewModel() {
             }
             host.runOnUiThread {
                 easyTierRoomBrowserLoadInFlight = false
+                val selectionChangedDuringLoad =
+                    uiState.easyTierRoomBrowser.preferredRoomId != previous.preferredRoomId
                 result.onSuccess { (rooms, selectedRoomId, selectedRoom) ->
-                    if (selectedRoomId.isBlank() && uiState.easyTierRoomBrowser.preferredRoomId.isNotBlank()) {
+                    if (!selectionChangedDuringLoad &&
+                        selectedRoomId.isBlank() &&
+                        uiState.easyTierRoomBrowser.preferredRoomId.isNotBlank()
+                    ) {
                         persistEasyTierRoomSelection(host, "")
                     }
                     uiState = uiState.copy(
                         easyTierRoomBrowser = uiState.easyTierRoomBrowser.copy(
                             currentPlayerId = resolveEasyTierCurrentPlayerId(host),
-                            preferredRoomId = selectedRoomId,
+                            preferredRoomId = if (selectionChangedDuringLoad) {
+                                uiState.easyTierRoomBrowser.preferredRoomId
+                            } else {
+                                selectedRoomId
+                            },
                             rooms = rooms,
-                            selectedRoom = selectedRoom?.takeIf { room -> room.closedAtMs <= 0L },
+                            selectedRoom = if (selectionChangedDuringLoad) {
+                                uiState.easyTierRoomBrowser.selectedRoom
+                            } else {
+                                selectedRoom?.takeIf { room -> room.closedAtMs <= 0L }
+                            },
                             loading = false,
                             refreshingRoomInfo = false,
                             errorSummary = "",
@@ -781,18 +818,32 @@ class MainScreenViewModel : ViewModel() {
                         )
                     )
                 }.onFailure { error ->
-                    persistEasyTierRoomSelection(host, "")
+                    if (!selectionChangedDuringLoad) {
+                        persistEasyTierRoomSelection(host, "")
+                    }
                     uiState = uiState.copy(
                         easyTierRoomBrowser = uiState.easyTierRoomBrowser.copy(
                             currentPlayerId = resolveEasyTierCurrentPlayerId(host),
-                            preferredRoomId = "",
-                            selectedRoom = null,
+                            preferredRoomId = if (selectionChangedDuringLoad) {
+                                uiState.easyTierRoomBrowser.preferredRoomId
+                            } else {
+                                ""
+                            },
+                            selectedRoom = if (selectionChangedDuringLoad) {
+                                uiState.easyTierRoomBrowser.selectedRoom
+                            } else {
+                                null
+                            },
                             loading = false,
                             refreshingRoomInfo = false,
                             errorSummary = error.message.orEmpty(),
                             lastLoadedAtMs = System.currentTimeMillis(),
                         )
                     )
+                }
+                if (easyTierRoomBrowserReloadPending) {
+                    easyTierRoomBrowserReloadPending = false
+                    refreshEasyTierRooms(host, forceRoomInfoReload = true)
                 }
             }
         }
@@ -863,6 +914,7 @@ class MainScreenViewModel : ViewModel() {
                 easyTierRoomBrowser = uiState.easyTierRoomBrowser.copy(
                     currentPlayerId = resolveEasyTierCurrentPlayerId(host),
                     creating = false,
+                    creatingRoomId = "",
                     errorSummary = message,
                 )
             )
@@ -879,14 +931,17 @@ class MainScreenViewModel : ViewModel() {
             easyTierRoomBrowser = previous.copy(
                 currentPlayerId = resolveEasyTierCurrentPlayerId(host),
                 creating = true,
+                creatingRoomId = normalized,
                 errorSummary = "",
             )
         )
         val currentPlayerId = resolveEasyTierCurrentPlayerId(host)
+        persistEasyTierRoomSelection(host, normalized)
         uiState = uiState.copy(
             easyTierRoomBrowser = uiState.easyTierRoomBrowser.copy(
                 currentPlayerId = currentPlayerId,
-                creating = false,
+                preferredRoomId = normalized,
+                selectedRoom = null,
             )
         )
         onConnectEasyTier(
@@ -924,24 +979,36 @@ class MainScreenViewModel : ViewModel() {
         diagnosticsExecutor.execute {
             val result = runCatching {
                 val client = EasyTierRoomApiClient(host)
+                val ownerToken = EasyTierCredentialStore.ownerToken(host, selectedRoom.roomId)
+                val sessionToken = EasyTierCredentialStore.sessionToken(
+                    host,
+                    selectedRoom.roomId,
+                    currentPlayerId,
+                )
                 when (action) {
                     "lock" -> client.lockRoom(
                         selectedRoom.roomId,
-                        EasyTierCredentialStore.ownerToken(host, selectedRoom.roomId),
+                        ownerToken,
+                        sessionToken,
                     )
                     "unlock" -> client.unlockRoom(
                         selectedRoom.roomId,
-                        EasyTierCredentialStore.ownerToken(host, selectedRoom.roomId),
+                        ownerToken,
+                        sessionToken,
                     )
                     "close" -> client.closeRoom(
                         selectedRoom.roomId,
-                        EasyTierCredentialStore.ownerToken(host, selectedRoom.roomId),
+                        ownerToken,
+                        sessionToken,
                     )
                     else -> error("Unsupported room action: $action")
                 }
             }
             host.runOnUiThread {
                 result.onSuccess { room ->
+                    if (action == "close") {
+                        EasyTierCredentialStore.clearRoom(host, room.roomId, currentPlayerId)
+                    }
                     uiState = uiState.copy(
                         easyTierRoomBrowser = if (action == "close") {
                             persistEasyTierRoomSelection(host, "")
@@ -984,6 +1051,29 @@ class MainScreenViewModel : ViewModel() {
                         )
                     )
                 }.onFailure { error ->
+                    if (action == "close" &&
+                        error is EasyTierRoomApiHttpException &&
+                        error.statusCode in setOf(404, 410)
+                    ) {
+                        EasyTierCredentialStore.clearRoom(host, selectedRoom.roomId, currentPlayerId)
+                        persistEasyTierRoomSelection(host, "")
+                        uiState = uiState.copy(
+                            easyTierRoomBrowser = uiState.easyTierRoomBrowser.copy(
+                                currentPlayerId = currentPlayerId,
+                                preferredRoomId = "",
+                                selectedRoom = null,
+                                rooms = uiState.easyTierRoomBrowser.rooms.filterNot { item ->
+                                    item.roomId == selectedRoom.roomId
+                                },
+                                mutating = false,
+                                errorSummary = "",
+                                lastLoadedAtMs = System.currentTimeMillis(),
+                            )
+                        )
+                        refreshEasyTierRooms(host, forceRoomInfoReload = true)
+                        disconnectEasyTierLocally(host)
+                        return@onFailure
+                    }
                     uiState = uiState.copy(
                         easyTierRoomBrowser = uiState.easyTierRoomBrowser.copy(
                             currentPlayerId = currentPlayerId,
@@ -3534,6 +3624,7 @@ class MainScreenViewModel : ViewModel() {
     }
 
     private fun syncEasyTierProcessEventReceiver(host: Activity) {
+        easyTierHostActivityReference = WeakReference(host)
         ensureEasyTierProcessEventReceiverRegistered(host.applicationContext)
     }
 
@@ -3595,12 +3686,76 @@ class MainScreenViewModel : ViewModel() {
         appContext: Context,
         resultCode: Int,
         data: Bundle,
+        hostActivity: Activity? = null,
     ) {
         val snapshot = data.easyTierSnapshotOrNull()
             ?: EasyTierSessionController.currentSnapshot(appContext)
         if (shouldPublishEasyTierIndicatorForResultCode(resultCode)) {
             publishEasyTierIndicator(snapshot)
         }
+        updateEasyTierRoomCreationState(
+            host = appContext,
+            snapshot = snapshot,
+            hostActivity = hostActivity ?: easyTierHostActivityReference?.get(),
+        )
+    }
+
+    private fun updateEasyTierRoomCreationState(
+        host: Context,
+        snapshot: EasyTierConnectionSnapshot,
+        hostActivity: Activity?,
+    ) {
+        val roomBrowser = uiState.easyTierRoomBrowser
+        val creatingRoomId = roomBrowser.creatingRoomId.trim()
+        if (!roomBrowser.creating) {
+            return
+        }
+        when (resolveEasyTierRoomCreationOutcome(creatingRoomId, snapshot)) {
+            EasyTierRoomCreationOutcome.COMPLETED -> {
+                uiState = uiState.copy(
+                    easyTierRoomBrowser = roomBrowser.copy(
+                        creating = false,
+                        creatingRoomId = "",
+                        errorSummary = "",
+                    )
+                )
+                hostActivity?.let { activity ->
+                    refreshEasyTierRooms(activity, forceRoomInfoReload = true)
+                }
+            }
+
+            EasyTierRoomCreationOutcome.FAILED -> {
+                clearEasyTierRoomCreation(
+                    host = host,
+                    errorSummary = snapshot.lastErrorSummary,
+                )
+            }
+
+            EasyTierRoomCreationOutcome.PENDING -> Unit
+        }
+    }
+
+    private fun clearEasyTierRoomCreation(
+        host: Context,
+        errorSummary: String,
+    ) {
+        val roomBrowser = uiState.easyTierRoomBrowser
+        val creatingRoomId = roomBrowser.creatingRoomId.trim()
+        if (!roomBrowser.creating) {
+            return
+        }
+        if (creatingRoomId.isNotBlank() && roomBrowser.preferredRoomId == creatingRoomId) {
+            persistEasyTierRoomSelection(host, "")
+        }
+        uiState = uiState.copy(
+            easyTierRoomBrowser = roomBrowser.copy(
+                preferredRoomId = roomBrowser.preferredRoomId.takeUnless { it == creatingRoomId }.orEmpty(),
+                selectedRoom = roomBrowser.selectedRoom?.takeUnless { it.roomId == creatingRoomId },
+                creating = false,
+                creatingRoomId = "",
+                errorSummary = errorSummary,
+            )
+        )
     }
 
     private fun buildEasyTierConnectionReceiver(host: Activity): ResultReceiver {
@@ -3611,6 +3766,7 @@ class MainScreenViewModel : ViewModel() {
                     appContext = appContext,
                     resultCode = resultCode,
                     data = resultData ?: Bundle.EMPTY,
+                    hostActivity = host,
                 )
             }
         }
@@ -4889,7 +5045,7 @@ class MainScreenViewModel : ViewModel() {
         )
     }
 
-    private fun persistEasyTierRoomSelection(host: Activity, roomId: String) {
+    private fun persistEasyTierRoomSelection(host: Context, roomId: String) {
         runCatching {
             EasyTierRoomSelectionStore.write(
                 host,
@@ -5007,6 +5163,7 @@ class MainScreenViewModel : ViewModel() {
     }
 
     override fun onCleared() {
+        easyTierHostActivityReference = null
         unregisterEasyTierProcessEventReceiver()
         unregisterSteamCloudProcessEventReceiver()
         importedStsJarValidationExecutor.shutdownNow()
@@ -5036,6 +5193,28 @@ internal fun shouldCloseEasyTierRoomWhenOwnerLeaves(
         state != EasyTierConnectionStatus.PERMISSION_REQUIRED &&
         state != EasyTierConnectionStatus.DISCONNECTED &&
         state != EasyTierConnectionStatus.FAILED
+}
+
+internal enum class EasyTierRoomCreationOutcome {
+    PENDING,
+    COMPLETED,
+    FAILED,
+}
+
+internal fun resolveEasyTierRoomCreationOutcome(
+    creatingRoomId: String,
+    snapshot: EasyTierConnectionSnapshot,
+): EasyTierRoomCreationOutcome {
+    if (creatingRoomId.trim().isBlank() || snapshot.roomId.trim() != creatingRoomId.trim()) {
+        return EasyTierRoomCreationOutcome.PENDING
+    }
+    return when (snapshot.status) {
+        EasyTierConnectionStatus.CONNECTED -> EasyTierRoomCreationOutcome.COMPLETED
+        EasyTierConnectionStatus.FAILED,
+        EasyTierConnectionStatus.DISCONNECTED,
+        EasyTierConnectionStatus.PERMISSION_REQUIRED -> EasyTierRoomCreationOutcome.FAILED
+        else -> EasyTierRoomCreationOutcome.PENDING
+    }
 }
 
 internal fun shouldPublishEasyTierIndicatorForResultCode(resultCode: Int): Boolean {

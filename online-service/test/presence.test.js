@@ -54,6 +54,7 @@ test('presence config reads easytier single-server cloud-control options', () =>
   assert.equal(config.easyTierSessionTtlSeconds, 2700);
   assert.equal(config.easyTierAllowSharedCommunityNetwork, true);
   assert.equal(config.easyTierDefaultMode, 'community');
+  assert.equal(loadConfig({ LOG_LEVEL: 'silent' }).easyTierSessionTtlSeconds, 90);
 });
 
 test('sqlite transactions use an isolated connection', async (t) => {
@@ -345,6 +346,58 @@ test('lan runtime reports renew a session lease and expiry releases its credenti
   assert.equal(await lanStore.findRoom('lease-room'), null);
 });
 
+test('lan runtime lease removes offline members and then deletes an offline owner room', async (t) => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-presence-'));
+  const database = await openDatabase(path.join(tmpDir, 'presence.sqlite'));
+  const lanStore = new LanStore(database, loadConfig({
+    LOG_LEVEL: 'silent',
+    EASYTIER_ENABLED: 'true',
+    EASYTIER_SESSION_TTL_SECONDS: '90'
+  }));
+  t.after(async () => {
+    await database.close();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+  const easyTier = {
+    enabled: true,
+    entryNodeUrl: 'tcp://online.example.com:11010',
+    configServerUrl: 'udp://online.example.com:22020'
+  };
+  const owner = await lanStore.startSession({
+    roomId: 'offline-room', playerId: 'alice', displayName: 'Alice'
+  }, { nowMs: 1_000, easyTier });
+  const member = await lanStore.startSession({
+    roomId: 'offline-room', playerId: 'bob', displayName: 'Bob'
+  }, { nowMs: 2_000, easyTier });
+
+  await lanStore.reportSessionRuntime({
+    sessionId: owner.sessionId,
+    sessionToken: owner.sessionToken,
+    assignedIpv4Cidr: '10.144.0.1/24'
+  }, { nowMs: 80_000 });
+  await lanStore.reportSessionRuntime({
+    sessionId: owner.sessionId,
+    sessionToken: owner.sessionToken,
+    assignedIpv4Cidr: '10.144.0.1/24'
+  }, { nowMs: 160_000 });
+
+  const activeRoom = await lanStore.getRoomInfo('offline-room', { nowMs: 160_000 });
+  assert.equal(activeRoom.memberCount, 1);
+  assert.deepEqual(activeRoom.members.map((item) => item.playerId), ['alice']);
+  const expiredMember = await lanStore.findSession(member.sessionId);
+  assert.equal(expiredMember.sessionState, 'expired');
+  assert.equal(expiredMember.networkSecret, '');
+  assert.equal(expiredMember.endedAtMs, 160_000);
+
+  const rejoinedMember = await lanStore.startSession({
+    roomId: 'offline-room', playerId: 'bob', displayName: 'Bob'
+  }, { nowMs: 161_000, easyTier });
+  assert.notEqual(rejoinedMember.sessionId, member.sessionId);
+
+  await lanStore.expireSessions(250_001);
+  assert.equal(await lanStore.findRoom('offline-room'), null);
+});
+
 test('lan room limits active sessions from one source network', async (t) => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-presence-'));
   const database = await openDatabase(path.join(tmpDir, 'presence.sqlite'));
@@ -410,7 +463,7 @@ test('lan room session api supersedes previous session and supports stop', async
   const second = await server.inject({
     method: 'POST',
     url: '/api/lan/session/start',
-    headers: { 'x-lan-owner-token': first.json().ownerToken },
+    headers: { authorization: `Bearer ${first.json().sessionToken}` },
     payload: {
       roomId: 'reconnect-room',
       playerId: 'alice',
@@ -422,6 +475,8 @@ test('lan room session api supersedes previous session and supports stop', async
   assert.equal(second.statusCode, 200);
   assert.notEqual(first.json().sessionId, second.json().sessionId);
   assert.equal(second.json().roomId, 'reconnect-room');
+  assert.match(second.json().ownerToken, /^[A-Za-z0-9_-]{32,}$/);
+  assert.notEqual(second.json().ownerToken, first.json().ownerToken);
 
   const firstStatus = await server.inject({
     method: 'GET',
@@ -590,7 +645,7 @@ test('lan room api supports owner lock unlock and close lifecycle', async (t) =>
   const locked = await server.inject({
     method: 'POST',
     url: '/api/lan/rooms/owner-room/action',
-    headers: { 'x-lan-owner-token': created.json().ownerToken },
+    headers: { authorization: `Bearer ${created.json().sessionToken}` },
     payload: {
       action: 'lock'
     }
@@ -633,6 +688,14 @@ test('lan room api supports owner lock unlock and close lifecycle', async (t) =>
   });
   assert.equal(joined.statusCode, 200);
 
+  const memberCannotLock = await server.inject({
+    method: 'POST',
+    url: '/api/lan/rooms/owner-room/action',
+    headers: { authorization: `Bearer ${joined.json().sessionToken}` },
+    payload: { action: 'lock' }
+  });
+  assert.equal(memberCannotLock.statusCode, 403);
+
   const closed = await server.inject({
     method: 'POST',
     url: '/api/lan/rooms/owner-room/action',
@@ -644,7 +707,7 @@ test('lan room api supports owner lock unlock and close lifecycle', async (t) =>
   assert.equal(closed.statusCode, 200);
   assert.equal(closed.json().allowNewJoins, false);
   assert.ok(closed.json().closedAtMs > 0);
-  assert.equal(closed.json().memberCount, 1);
+  assert.equal(closed.json().memberCount, 0);
 
   const afterCloseInfo = await server.inject('/api/lan/rooms/owner-room');
   assert.equal(afterCloseInfo.statusCode, 404);

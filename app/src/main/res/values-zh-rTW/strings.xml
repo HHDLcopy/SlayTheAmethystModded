@@ -2622,6 +2622,10 @@
     <string name="main_easytier_create_room_missing_id">請先填寫房間 ID。</string>
     <string name="main_easytier_create_room_allow_joins">允許新玩家加入</string>
     <string name="main_easytier_action_create_room">建立房間</string>
+    <string name="main_easytier_action_create_room_loading">正在建立並加入…</string>
+    <string name="main_easytier_create_room_progress_creating">正在建立房間…</string>
+    <string name="main_easytier_create_room_progress_joining">房間已建立，正在加入虛擬區域網路…</string>
+    <string name="main_easytier_create_room_progress_starting">正在啟動本機虛擬區域網路…</string>
     <string name="main_easytier_action_lock_room">鎖定房間</string>
     <string name="main_easytier_action_unlock_room">解除鎖定</string>
     <string name="main_easytier_action_close_room">關閉房間</string>

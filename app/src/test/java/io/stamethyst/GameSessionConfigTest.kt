@@ -46,6 +46,7 @@ class GameSessionConfigTest {
             requestedTargetFps = 60,
             effectiveTargetFps = 60,
             launchMode = "vanilla",
+            debugMode = false,
             backBehavior = BackBehavior.EXIT_TO_LAUNCHER,
             manualDismissBootOverlay = false,
             forceJvmCrash = false,

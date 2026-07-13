@@ -267,25 +267,37 @@ internal class EasyTierRoomApiClient(
         }
     }
 
-    fun lockRoom(roomId: String, ownerToken: String): EasyTierRoomInfo =
-        mutateRoom(roomId, ownerToken, "lock")
+    fun lockRoom(
+        roomId: String,
+        ownerToken: String,
+        sessionToken: String = "",
+    ): EasyTierRoomInfo = mutateRoom(roomId, ownerToken, sessionToken, "lock")
 
-    fun unlockRoom(roomId: String, ownerToken: String): EasyTierRoomInfo =
-        mutateRoom(roomId, ownerToken, "unlock")
+    fun unlockRoom(
+        roomId: String,
+        ownerToken: String,
+        sessionToken: String = "",
+    ): EasyTierRoomInfo = mutateRoom(roomId, ownerToken, sessionToken, "unlock")
 
-    fun closeRoom(roomId: String, ownerToken: String): EasyTierRoomInfo =
-        mutateRoom(roomId, ownerToken, "close")
+    fun closeRoom(
+        roomId: String,
+        ownerToken: String,
+        sessionToken: String = "",
+    ): EasyTierRoomInfo = mutateRoom(roomId, ownerToken, sessionToken, "close")
 
     private fun mutateRoom(
         roomId: String,
         ownerToken: String,
+        sessionToken: String,
         action: String,
     ): EasyTierRoomInfo {
         val config = EasyTierConfigRepository.current()
         val baseUrl = config.roomApiBaseUrl.trim()
         require(baseUrl.isNotEmpty()) { "EasyTier room API base URL is unavailable." }
         require(roomId.isNotBlank()) { "Room ID is required." }
-        require(ownerToken.isNotBlank()) { "Room owner credential is required." }
+        require(ownerToken.isNotBlank() || sessionToken.isNotBlank()) {
+            "An active room owner session is required."
+        }
 
         val requestBody = json.encodeToString(
             UpdateRoomRequest.serializer(),
@@ -298,7 +310,7 @@ internal class EasyTierRoomApiClient(
             .header("User-Agent", "SlayTheAmethyst/${BuildConfig.VERSION_NAME}")
             .header("Accept", "application/json")
             .post(requestBody.toRequestBody(JSON_MEDIA_TYPE))
-            .applyLanOwnerToken(ownerToken)
+            .applyLanCredentials(sessionToken, ownerToken)
             .build()
 
         client.newCall(request).execute().use { response ->

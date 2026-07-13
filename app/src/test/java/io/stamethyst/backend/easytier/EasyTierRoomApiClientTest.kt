@@ -476,6 +476,7 @@ class EasyTierRoomApiClientTest {
             val room = client.lockRoom(
                 roomId = "alpha-room",
                 ownerToken = "A".repeat(43),
+                sessionToken = "B".repeat(43),
             )
 
             val request = server.takeRequest()
@@ -484,6 +485,7 @@ class EasyTierRoomApiClientTest {
             val body = request.body?.utf8().orEmpty()
             assertFalse(body.contains("ownerToken"))
             assertEquals("A".repeat(43), request.headers["X-Lan-Owner-Token"])
+            assertEquals("Bearer ${"B".repeat(43)}", request.headers["Authorization"])
             assertTrue(body.contains("\"action\":\"lock\""))
             assertEquals(false, room.allowNewJoins)
         } finally {

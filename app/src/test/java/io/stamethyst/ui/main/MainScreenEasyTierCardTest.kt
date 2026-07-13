@@ -62,4 +62,20 @@ class MainScreenEasyTierCardTest {
         )
         assertEquals(false, isEasyTierRoomJoined(active, "room-2"))
     }
+
+    @Test
+    fun easyTierCreateRoomProgressMessageResId_tracksConnectionPhases() {
+        assertEquals(
+            io.stamethyst.R.string.main_easytier_create_room_progress_creating,
+            easyTierCreateRoomProgressMessageResId(MainScreenViewModel.EasyTierIndicatorState.IDLE),
+        )
+        assertEquals(
+            io.stamethyst.R.string.main_easytier_create_room_progress_joining,
+            easyTierCreateRoomProgressMessageResId(MainScreenViewModel.EasyTierIndicatorState.CONNECTING),
+        )
+        assertEquals(
+            io.stamethyst.R.string.main_easytier_create_room_progress_starting,
+            easyTierCreateRoomProgressMessageResId(MainScreenViewModel.EasyTierIndicatorState.SESSION_READY),
+        )
+    }
 }

@@ -8,7 +8,7 @@ const {
 } = require('./config');
 const { httpError } = require('./presence');
 
-const DEFAULT_EASYTIER_SESSION_TTL_SECONDS = 30 * 60;
+const DEFAULT_EASYTIER_SESSION_TTL_SECONDS = 90;
 const MIN_EASYTIER_SESSION_TTL_SECONDS = 60;
 const MAX_EASYTIER_SESSION_TTL_SECONDS = 24 * 60 * 60;
 const DEFAULT_LAN_ROOM_LIST_LIMIT = 20;
@@ -45,25 +45,42 @@ class LanStore {
   async startSessionInTransaction(request, nowMs, easyTier) {
     const roomResult = await this.getOrCreateRoom(request, nowMs);
     const room = roomResult.room;
-    const ownerToken = roomResult.ownerToken || request.ownerToken;
+    let ownerToken = roomResult.ownerToken || request.ownerToken;
     if (isRoomClosed(room)) {
       throw httpError(403, 'This room has been closed');
     }
     const priorSession = await this.findLatestSessionForPlayer(room.roomId, request.playerId);
-    if (!roomResult.created && request.playerId === room.ownerPlayerId &&
-      !tokensEqual(room.ownerTokenHash, request.ownerToken)) {
-      throw httpError(403, 'Room owner credential is required');
+    const activePriorSession = priorSession && isSessionOnline(priorSession, nowMs)
+      ? priorSession
+      : null;
+    if (!roomResult.created && request.playerId === room.ownerPlayerId) {
+      const validOwnerToken = tokensEqual(room.ownerTokenHash, request.ownerToken);
+      const validOwnerSession = activePriorSession &&
+        tokensEqual(activePriorSession.sessionTokenHash, request.sessionToken);
+      if (!validOwnerToken && !validOwnerSession) {
+        throw httpError(403, 'Room owner credential is required');
+      }
+      if (!validOwnerToken && validOwnerSession) {
+        ownerToken = generateAccessToken();
+        room.ownerTokenHash = hashToken(ownerToken);
+        await this.database.run(`
+          UPDATE lan_rooms
+          SET owner_token_hash = ?, updated_at_ms = ?
+          WHERE room_id = ?
+        `, [room.ownerTokenHash, nowMs, room.roomId]);
+      }
     }
-    if (!roomResult.created && request.playerId !== room.ownerPlayerId && priorSession &&
-      !tokensEqual(priorSession.sessionTokenHash, request.sessionToken)) {
+    if (!roomResult.created && request.playerId !== room.ownerPlayerId && activePriorSession &&
+      !tokensEqual(activePriorSession.sessionTokenHash, request.sessionToken)) {
       throw httpError(403, 'Existing player credential is required');
     }
     if (!room.allowNewJoins && request.playerId !== room.ownerPlayerId) {
-      if (!priorSession || !tokensEqual(priorSession.sessionTokenHash, request.sessionToken)) {
+      if (!activePriorSession ||
+        !tokensEqual(activePriorSession.sessionTokenHash, request.sessionToken)) {
         throw httpError(403, 'This room is not accepting new joins');
       }
     }
-    if (request.playerId !== room.ownerPlayerId && !priorSession) {
+    if (request.playerId !== room.ownerPlayerId && !activePriorSession) {
       if (await this.countActiveSessions(room.roomId, nowMs) >= MAX_LAN_ROOM_MEMBERS) {
         throw httpError(429, 'This room is full');
       }
@@ -197,7 +214,13 @@ class LanStore {
     if (!room) {
       throw httpError(404, 'LAN room not found');
     }
-    if (!tokensEqual(room.ownerTokenHash, request.ownerToken)) {
+    const ownerSession = request.sessionToken
+      ? await this.findLatestSessionForPlayer(room.roomId, room.ownerPlayerId)
+      : null;
+    const validOwnerSession = ownerSession &&
+      isSessionOnline(ownerSession, nowMs) &&
+      tokensEqual(ownerSession.sessionTokenHash, request.sessionToken);
+    if (!tokensEqual(room.ownerTokenHash, request.ownerToken) && !validOwnerSession) {
       throw httpError(403, 'Only the room owner can manage this room');
     }
     if (isRoomClosed(room) && request.action !== 'close') {
@@ -502,6 +525,7 @@ class LanStore {
   }
 
   async expireSessions(nowMs = Date.now()) {
+    const staleBeforeMs = nowMs - (resolveEasyTierSessionTtlSeconds(this.config) * 1000);
     await this.database.run(`
       UPDATE lan_sessions
       SET
@@ -514,12 +538,13 @@ class LanStore {
         network_secret = ''
       WHERE ended_at_ms = 0
         AND expires_at_ms > 0
-        AND expires_at_ms <= ?
+        AND (expires_at_ms <= ? OR updated_at_ms <= ?)
         AND session_state NOT IN ('expired', 'stopped', 'superseded')
     `, [
       nowMs,
       nowMs,
-      nowMs
+      nowMs,
+      staleBeforeMs
     ]);
     await this.deleteRoomsWithoutActiveOwner(nowMs);
   }
@@ -798,16 +823,6 @@ class LanStore {
       };
     });
 
-    if (!members.some((member) => member.playerId === room.ownerPlayerId)) {
-      members.push({
-        playerId: room.ownerPlayerId,
-        displayName: room.ownerDisplayName || room.ownerPlayerId,
-        role: 'owner',
-        online: false,
-        assignedIpv4Cidr: ''
-      });
-    }
-
     members.sort((left, right) => {
       if (left.role !== right.role) {
         return left.role === 'owner' ? -1 : 1;
@@ -875,9 +890,15 @@ function parseUpdateRoomRequest(body) {
   if (!ROOM_MUTATION_ACTIONS.has(action)) {
     throw httpError(400, 'Invalid LAN room action');
   }
+  const ownerToken = normalizeOptionalAccessToken(firstNonEmpty(body.ownerToken, body.owner_token));
+  const sessionToken = normalizeOptionalAccessToken(firstNonEmpty(body.sessionToken, body.session_token));
+  if (!ownerToken && !sessionToken) {
+    throw httpError(400, 'Missing room owner credential');
+  }
   return {
     action,
-    ownerToken: normalizeRequiredAccessToken(firstNonEmpty(body.ownerToken, body.owner_token), 'ownerToken')
+    ownerToken,
+    sessionToken
   };
 }
 

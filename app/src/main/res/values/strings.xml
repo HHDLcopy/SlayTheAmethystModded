@@ -2626,6 +2626,10 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="main_easytier_create_room_missing_id">Enter a room ID before creating the room.</string>
     <string name="main_easytier_create_room_allow_joins">Allow new players to join</string>
     <string name="main_easytier_action_create_room">Create room</string>
+    <string name="main_easytier_action_create_room_loading">Creating and joining…</string>
+    <string name="main_easytier_create_room_progress_creating">Creating your room…</string>
+    <string name="main_easytier_create_room_progress_joining">Room created. Joining the virtual network…</string>
+    <string name="main_easytier_create_room_progress_starting">Starting the local virtual network…</string>
     <string name="main_easytier_action_lock_room">Lock room</string>
     <string name="main_easytier_action_unlock_room">Unlock room</string>
     <string name="main_easytier_action_close_room">Close room</string>

@@ -84,7 +84,7 @@ EASYTIER_ENTRY_NODE_PORT=11010
 EASYTIER_ENTRY_NODE_URL=
 EASYTIER_CONNECT_TIMEOUT_SECONDS=12
 EASYTIER_STATUS_POLL_INTERVAL_SECONDS=5
-EASYTIER_SESSION_TTL_SECONDS=1800
+EASYTIER_SESSION_TTL_SECONDS=90
 EASYTIER_ALLOW_SHARED_COMMUNITY_NETWORK=false
 EASYTIER_DEFAULT_MODE=room
 EASYTIER_MANAGED=false
@@ -121,7 +121,7 @@ default to the same host with `udp://:22020` and `tcp://:11010`. You can
 override either address with `EASYTIER_CONFIG_SERVER_URL` or
 `EASYTIER_ENTRY_NODE_URL`. `EASYTIER_SESSION_TTL_SECONDS` is the runtime lease
 timeout: every active client renews it through `POST /api/lan/session/runtime`.
-If a client stops reporting before the timeout, the server expires the session
+The default is 90 seconds. If a client stops reporting before the timeout, the server expires the session
 and deletes the room when the missing session belongs to its owner. Rooms are
 created atomically by the owner's `POST /api/lan/session/start` request; a room
 with no active owner, or no active members, is removed with all of its sessions.

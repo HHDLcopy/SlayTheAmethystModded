@@ -30,6 +30,7 @@ const VUETIFY_STYLE_PATH = require.resolve('vuetify/dist/vuetify.min.css');
 const ECHARTS_SCRIPT_PATH = require.resolve('echarts/dist/echarts.min.js');
 const MDI_STYLE_PATH = require.resolve('@mdi/font/css/materialdesignicons.min.css');
 const MDI_FONT_DIR = path.resolve(path.dirname(require.resolve('@mdi/font/package.json')), 'fonts');
+const LAN_SESSION_SWEEP_INTERVAL_MS = 5 * 1000;
 
 async function buildServer(config = loadConfig()) {
   const fastify = Fastify({
@@ -38,7 +39,7 @@ async function buildServer(config = loadConfig()) {
   });
   const database = await openDatabase(config.dbPath);
   const store = new PresenceStore(database, config);
-  const lanStore = new LanStore(database, config);
+  const lanStore = new LanStore(config);
   const easyTierRuntime = new EasyTierRuntimeManager(config, fastify.log);
   const panelSockets = new Map();
   const lanRateLimits = new Map();
@@ -429,6 +430,11 @@ async function buildServer(config = loadConfig()) {
     broadcastPanelStats().catch((error) => fastify.log.warn(error));
   }, Math.max(1, config.panelStatsPushIntervalSeconds) * 1000);
   timers.add(statsPushTimer);
+
+  const lanSessionSweepTimer = setInterval(() => {
+    lanStore.expireSessions();
+  }, LAN_SESSION_SWEEP_INTERVAL_MS);
+  timers.add(lanSessionSweepTimer);
 
   const firstSnapshotDelayMs = (HOUR_MS - (Date.now() % HOUR_MS)) + 1000;
   const snapshotScheduleTimeout = setTimeout(() => {

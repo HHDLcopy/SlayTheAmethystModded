@@ -260,10 +260,15 @@ single-server connection entrypoint and room/control-plane base URLs.
 
 ## EasyTier Room API
 
-The current service-side MVP keeps Room API state in the same SQLite database
-as presence snapshots. It does not call the real EasyTier server or web console
-yet; instead, it signs short-lived launcher sessions so the Android client can
-finish protocol integration against `/api/lan/*`.
+The Room API keeps rooms, membership, credentials, leases, and runtime IP state
+in process memory. Service restarts intentionally dissolve every room and
+session, so clients must leave their stale local session and create or join a
+new room. Presence device records and hourly online snapshots remain in SQLite
+and survive service or container restarts.
+
+The service does not call the EasyTier web console for room state. It signs
+short-lived launcher sessions so the Android client can use `/api/lan/*`, while
+a periodic in-memory sweep releases expired sessions and ownerless rooms.
 
 Start a room session:
 

@@ -57,36 +57,81 @@ test('presence config reads easytier single-server cloud-control options', () =>
   assert.equal(loadConfig({ LOG_LEVEL: 'silent' }).easyTierSessionTtlSeconds, 90);
 });
 
-test('sqlite transactions use an isolated connection', async (t) => {
+test('LAN state resets on restart while presence records and hourly snapshots persist', async (t) => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-presence-'));
-  const database = await openDatabase(path.join(tmpDir, 'presence.sqlite'));
+  const dbPath = path.join(tmpDir, 'presence.sqlite');
+  const config = {
+    ...loadConfig({ LOG_LEVEL: 'silent', EASYTIER_ENABLED: 'true' }),
+    dbPath,
+    publicBaseUrl: 'https://online.example.com',
+    presencePanelToken: 'panel-secret',
+    logLevel: 'silent'
+  };
+  let server = await buildServer(config);
   t.after(async () => {
-    await database.close();
+    if (server) {
+      await server.close();
+    }
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
-  await database.exec('CREATE TABLE transaction_evidence (value TEXT NOT NULL)');
+  await server.ready();
 
-  let releaseTransaction;
-  let transactionEntered;
-  const entered = new Promise((resolve) => { transactionEntered = resolve; });
-  const gate = new Promise((resolve) => { releaseTransaction = resolve; });
-  const transaction = database.transaction(async (transactionDatabase) => {
-    await transactionDatabase.run('INSERT INTO transaction_evidence(value) VALUES (?)', ['inside']);
-    transactionEntered();
-    await gate;
-    throw new Error('rollback transaction');
-  }).catch(() => {});
+  const heartbeat = await server.inject({
+    method: 'POST',
+    url: '/api/presence/heartbeat',
+    payload: { client_id: 'persisted-client', state: 'launcher' }
+  });
+  assert.equal(heartbeat.statusCode, 200);
+  const room = await server.inject({
+    method: 'POST',
+    url: '/api/lan/session/start',
+    payload: { roomId: 'memory-room', playerId: 'owner' }
+  });
+  assert.equal(room.statusCode, 200);
+  assert.equal((await server.inject('/api/lan/rooms')).json().rooms.length, 1);
 
-  await entered;
-  const outsideWrite = database.run('INSERT INTO transaction_evidence(value) VALUES (?)', ['outside']);
-  releaseTransaction();
-  await transaction;
-  await outsideWrite;
+  await server.close();
+  server = null;
 
+  const database = await openDatabase(dbPath);
+  const store = new PresenceStore(database, config);
+  await store.recordHourlySnapshot(Date.now(), { minUpdateIntervalMs: 0 });
+  await database.exec(`
+    CREATE TABLE lan_rooms (room_id TEXT PRIMARY KEY);
+    CREATE TABLE lan_sessions (session_id TEXT PRIMARY KEY);
+  `);
+  await database.close();
+
+  server = await buildServer(config);
+  await server.ready();
+  const roomsAfterRestart = await server.inject('/api/lan/rooms');
+  assert.equal(roomsAfterRestart.statusCode, 200);
+  assert.deepEqual(roomsAfterRestart.json().rooms, []);
+
+  const summaryAfterRestart = await server.inject('/api/presence/summary');
+  assert.equal(summaryAfterRestart.statusCode, 200);
+  assert.equal(summaryAfterRestart.json().totalDevices, 1);
+
+  await server.close();
+  server = null;
+  const verificationDatabase = await openDatabase(dbPath);
   assert.deepEqual(
-    await database.all('SELECT value FROM transaction_evidence ORDER BY value'),
-    [{ value: 'outside' }]
+    await verificationDatabase.all(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'lan_%' ORDER BY name"
+    ),
+    []
   );
+  assert.equal(
+    Number((await verificationDatabase.get('SELECT COUNT(*) AS count FROM presence_sessions')).count),
+    1
+  );
+  assert.equal(
+    Number((await verificationDatabase.get(
+      'SELECT COUNT(*) AS count FROM presence_hourly_snapshots'
+    )).count),
+    1
+  );
+  await verificationDatabase.close();
 });
 
 test('presence config reads managed easytier runtime options', () => {
@@ -304,18 +349,72 @@ test('lan room runtime report updates session status and room member ip', async 
   ]);
 });
 
-test('lan runtime reports renew a session lease and expiry releases its credentials', async (t) => {
+test('concurrent LAN operations do not contend with presence database writes', async (t) => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-presence-'));
-  const database = await openDatabase(path.join(tmpDir, 'presence.sqlite'));
-  const lanStore = new LanStore(database, loadConfig({
+  const server = await buildServer({
+    ...loadConfig({ LOG_LEVEL: 'silent', EASYTIER_ENABLED: 'true' }),
+    dbPath: path.join(tmpDir, 'presence.sqlite'),
+    publicBaseUrl: 'https://online.example.com',
+    presencePanelToken: 'panel-secret',
+    logLevel: 'silent'
+  });
+  t.after(async () => {
+    await server.close();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+  await server.ready();
+
+  const owner = await server.inject({
+    method: 'POST',
+    url: '/api/lan/session/start',
+    payload: { roomId: 'concurrent-room', playerId: 'owner' }
+  });
+  assert.equal(owner.statusCode, 200);
+
+  const memberStarts = await Promise.all(Array.from({ length: 6 }, (_, index) => server.inject({
+    method: 'POST',
+    url: '/api/lan/session/start',
+    payload: { roomId: 'concurrent-room', playerId: `member-${index}` }
+  })));
+  assert.equal(memberStarts.every((response) => response.statusCode === 200), true);
+
+  const sessions = [owner, ...memberStarts].map((response, index) => ({
+    ...response.json(),
+    assignedIpv4Cidr: `10.144.0.${index + 1}/24`
+  }));
+  const responses = await Promise.all([
+    ...sessions.map((session) => server.inject({
+      method: 'POST',
+      url: '/api/lan/session/runtime',
+      headers: { authorization: `Bearer ${session.sessionToken}` },
+      payload: {
+        sessionId: session.sessionId,
+        assignedIpv4Cidr: session.assignedIpv4Cidr
+      }
+    })),
+    ...Array.from({ length: 20 }, () => server.inject('/api/lan/rooms')),
+    ...Array.from({ length: 20 }, (_, index) => server.inject({
+      method: 'POST',
+      url: '/api/presence/heartbeat',
+      payload: { client_id: `concurrent-client-${index}`, state: 'launcher' }
+    }))
+  ]);
+  assert.equal(responses.every((response) => response.statusCode === 200), true);
+
+  const roomInfo = await server.inject('/api/lan/rooms/concurrent-room');
+  assert.equal(roomInfo.statusCode, 200);
+  assert.equal(roomInfo.json().memberCount, 7);
+  const summary = await server.inject('/api/presence/summary');
+  assert.equal(summary.statusCode, 200);
+  assert.equal(summary.json().totalDevices, 20);
+});
+
+test('lan runtime reports renew a session lease and expiry releases its credentials', async () => {
+  const lanStore = new LanStore(loadConfig({
     LOG_LEVEL: 'silent',
     EASYTIER_ENABLED: 'true',
     EASYTIER_SESSION_TTL_SECONDS: '1800'
   }));
-  t.after(async () => {
-    await database.close();
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-  });
 
   const started = await lanStore.startSession({
     roomId: 'lease-room',
@@ -346,18 +445,12 @@ test('lan runtime reports renew a session lease and expiry releases its credenti
   assert.equal(await lanStore.findRoom('lease-room'), null);
 });
 
-test('lan runtime lease removes offline members and then deletes an offline owner room', async (t) => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-presence-'));
-  const database = await openDatabase(path.join(tmpDir, 'presence.sqlite'));
-  const lanStore = new LanStore(database, loadConfig({
+test('lan runtime lease removes offline members and then deletes an offline owner room', async () => {
+  const lanStore = new LanStore(loadConfig({
     LOG_LEVEL: 'silent',
     EASYTIER_ENABLED: 'true',
     EASYTIER_SESSION_TTL_SECONDS: '90'
   }));
-  t.after(async () => {
-    await database.close();
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-  });
   const easyTier = {
     enabled: true,
     entryNodeUrl: 'tcp://online.example.com:11010',
@@ -398,14 +491,8 @@ test('lan runtime lease removes offline members and then deletes an offline owne
   assert.equal(await lanStore.findRoom('offline-room'), null);
 });
 
-test('lan room limits active sessions from one source network', async (t) => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-presence-'));
-  const database = await openDatabase(path.join(tmpDir, 'presence.sqlite'));
-  const lanStore = new LanStore(database, loadConfig({ LOG_LEVEL: 'silent', EASYTIER_ENABLED: 'true' }));
-  t.after(async () => {
-    await database.close();
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-  });
+test('lan room limits active sessions from one source network', async () => {
+  const lanStore = new LanStore(loadConfig({ LOG_LEVEL: 'silent', EASYTIER_ENABLED: 'true' }));
   const easyTier = {
     enabled: true,
     entryNodeUrl: 'tcp://online.example.com:11010',

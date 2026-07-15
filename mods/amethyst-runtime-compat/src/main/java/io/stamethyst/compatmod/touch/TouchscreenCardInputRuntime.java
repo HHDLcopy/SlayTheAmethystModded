@@ -357,6 +357,19 @@ public final class TouchscreenCardInputRuntime {
         releaseSelectedCard(player);
     }
 
+    public static boolean tryPlayTargetedCardOnRelease(AbstractPlayer player) {
+        if (player == null || !isTargetedCard(player.hoveredCard)) {
+            return false;
+        }
+        AbstractMonster monster = findTapPlayMonster();
+        if (monster == null) {
+            return false;
+        }
+        boolean handled = playSelectedTapCard(player, player.hoveredCard, monster);
+        clearGesture();
+        return handled;
+    }
+
     public static void refreshSelectedCardHoldStateForAndroidBridge(AbstractPlayer player) {
         if (!isCardHoldRightClickGuardEnabled() || !isCardGestureTrackingActive()) {
             clearCardHoldState();

@@ -19,12 +19,23 @@ object EasyTierSessionController {
         val storedSnapshot = stored ?: buildInitialSnapshot(context, config, nowMs)
         // The foreground service and VPN are process-bound. A persisted active snapshot from a
         // previous process cannot prove that the tunnel still exists after a reboot/force-stop.
-        val base = if (storedSnapshot.isConnectionActive && !EasyTierProcessService.isRunning()) {
+        val processCheckedSnapshot = if (
+            storedSnapshot.isConnectionActive && !EasyTierProcessService.isRunning(context)
+        ) {
             buildDisconnectedSnapshot(storedSnapshot, nowMs = nowMs).also { snapshot ->
                 runCatching { EasyTierStateStore.writeSnapshot(context, snapshot) }
             }
         } else {
             storedSnapshot
+        }
+        val base = if (
+            config.canConnect &&
+            !processCheckedSnapshot.isConnectionActive &&
+            processCheckedSnapshot.failureCategory == EasyTierFailureCategory.ConfigMissing
+        ) {
+            buildInitialSnapshot(context, config, nowMs)
+        } else {
+            processCheckedSnapshot
         }
         if (!config.canConnect && !base.isConnectionActive) {
             return buildInitialSnapshot(context, config, nowMs)
@@ -51,6 +62,7 @@ object EasyTierSessionController {
         userInitiated: Boolean = true,
         receiver: ResultReceiver? = null,
         allowNewJoinsWhenCreating: Boolean? = null,
+        createOnly: Boolean = false,
     ): Boolean = EasyTierProcessService.startConnect(
         context,
         mode,
@@ -58,6 +70,7 @@ object EasyTierSessionController {
         userInitiated,
         receiver,
         allowNewJoinsWhenCreating,
+        createOnly,
     )
 
     fun requestDisconnect(

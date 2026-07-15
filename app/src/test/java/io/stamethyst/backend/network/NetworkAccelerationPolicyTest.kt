@@ -81,4 +81,26 @@ class NetworkAccelerationPolicyTest {
             },
         )
     }
+
+    @Test
+    fun isExternalVpnActive_ignoresTheLaunchersConnectedEasyTierTunnel() {
+        assertFalse(
+            NetworkAccelerationPolicy.isExternalVpnActive(
+                vpnTransportActive = true,
+                easyTierVpnActive = { true },
+            ),
+        )
+        assertTrue(
+            NetworkAccelerationPolicy.isExternalVpnActive(
+                vpnTransportActive = true,
+                easyTierVpnActive = { false },
+            ),
+        )
+        assertFalse(
+            NetworkAccelerationPolicy.isExternalVpnActive(
+                vpnTransportActive = false,
+                easyTierVpnActive = { true },
+            ),
+        )
+    }
 }

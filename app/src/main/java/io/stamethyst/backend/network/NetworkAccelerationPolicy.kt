@@ -4,6 +4,8 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
+import io.stamethyst.backend.easytier.EasyTierConnectionStatus
+import io.stamethyst.backend.easytier.EasyTierSessionController
 import java.util.Locale
 
 object NetworkAccelerationPolicy {
@@ -34,9 +36,15 @@ object NetworkAccelerationPolicy {
         runCatching {
             val connectivityManager =
                 context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-            hasVpnTransport(connectivityManager) { network ->
-                connectivityManager?.getNetworkCapabilities(network)
-            }
+            isExternalVpnActive(
+                vpnTransportActive = hasVpnTransport(connectivityManager) { network ->
+                    connectivityManager?.getNetworkCapabilities(network)
+                },
+                easyTierVpnActive = {
+                    EasyTierSessionController.currentSnapshot(context).status ==
+                        EasyTierConnectionStatus.CONNECTED
+                },
+            )
         }.getOrDefault(false)
 
     internal fun shouldUseAcceleratedLinks(
@@ -74,6 +82,11 @@ object NetworkAccelerationPolicy {
 
     internal fun hasVpnTransport(hasTransport: (Int) -> Boolean): Boolean =
         hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+
+    internal fun isExternalVpnActive(
+        vpnTransportActive: Boolean,
+        easyTierVpnActive: () -> Boolean,
+    ): Boolean = vpnTransportActive && !easyTierVpnActive()
 
     private const val CHINA_COUNTRY_CODE = "CN"
 }

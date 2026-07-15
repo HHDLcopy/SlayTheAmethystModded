@@ -103,6 +103,34 @@ class MainScreenViewModelEasyTierResultCodeTest {
     }
 
     @Test
+    fun shouldPreserveEasyTierRoomSelection_keepsActiveRoomOnNotFoundButCleansInactiveRoom() {
+        assertTrue(
+            shouldPreserveEasyTierRoomSelection(
+                selectedRoomId = "room-1",
+                activeRoomId = "room-1",
+                activeState = EasyTierConnectionStatus.CONNECTED,
+                errorStatusCode = 404,
+            )
+        )
+        assertFalse(
+            shouldPreserveEasyTierRoomSelection(
+                selectedRoomId = "room-1",
+                activeRoomId = "",
+                activeState = EasyTierConnectionStatus.DISCONNECTED,
+                errorStatusCode = 404,
+            )
+        )
+        assertTrue(
+            shouldPreserveEasyTierRoomSelection(
+                selectedRoomId = "room-1",
+                activeRoomId = "",
+                activeState = EasyTierConnectionStatus.DISCONNECTED,
+                errorStatusCode = 503,
+            )
+        )
+    }
+
+    @Test
     fun easyTierTroubleshootingMessageResId_showsTerminalDisconnectedCauses() {
         assertEquals(
             R.string.main_easytier_troubleshooting_room_closed,

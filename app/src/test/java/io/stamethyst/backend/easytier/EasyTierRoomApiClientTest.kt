@@ -146,6 +146,48 @@ class EasyTierRoomApiClientTest {
     }
 
     @Test
+    fun startSession_summarizesStructuredServerErrorsWithoutDumpingTheWholePayload() {
+        val roots = TestRoots.create("easytier-room-api-error-summary")
+        val server = MockWebServer()
+        try {
+            server.enqueue(
+                MockResponse(
+                    code = 403,
+                    body = """
+                        {
+                          "ok": false,
+                          "error": "bad_request",
+                          "message": "Existing player credential is required",
+                          "debug": "do-not-show-this-payload"
+                        }
+                    """.trimIndent(),
+                )
+            )
+            server.start()
+
+            val client = EasyTierRoomApiClient(roots.context, OkHttpClient())
+            roots.overrideBaseUrl(server.url("/").toString().removeSuffix("/"))
+
+            val error = runCatching {
+                client.startSession(
+                    roomId = "room-error",
+                    playerId = "player-a",
+                    displayName = "Player A",
+                )
+            }.exceptionOrNull() as EasyTierRoomApiHttpException
+
+            assertEquals(403, error.statusCode)
+            assertTrue(error.message.orEmpty().contains("HTTP 403"))
+            assertTrue(error.message.orEmpty().contains("Existing player credential is required"))
+            assertFalse(error.message.orEmpty().contains("do-not-show-this-payload"))
+        } finally {
+            server.close()
+            roots.restoreDefaults()
+            roots.rootDir.deleteRecursively()
+        }
+    }
+
+    @Test
     fun fetchSessionStatus_parsesServerSnapshot() {
         val roots = TestRoots.create("easytier-room-api-status")
         val server = MockWebServer()
@@ -427,6 +469,7 @@ class EasyTierRoomApiClientTest {
                 playerId = "alice",
                 displayName = "Alice",
                 allowNewJoinsWhenCreating = false,
+                createOnly = true,
             )
 
             val request = server.takeRequest()
@@ -436,6 +479,7 @@ class EasyTierRoomApiClientTest {
             assertTrue(body.contains("\"roomId\":\"alpha-room\""))
             assertTrue(body.contains("\"playerId\":\"alice\""))
             assertTrue(body.contains("\"allowNewJoins\":false"))
+            assertTrue(body.contains("\"createOnly\":true"))
             assertEquals("lan_alpha", session.sessionId)
             assertEquals("alpha-room", session.roomId)
         } finally {

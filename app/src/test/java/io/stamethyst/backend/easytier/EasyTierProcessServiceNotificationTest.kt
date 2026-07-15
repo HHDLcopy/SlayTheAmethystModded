@@ -2,7 +2,9 @@ package io.stamethyst.backend.easytier
 
 import io.stamethyst.R
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class EasyTierProcessServiceNotificationTest {
@@ -252,5 +254,23 @@ class EasyTierProcessServiceNotificationTest {
                 nowMs = 13_000L,
             ),
         )
+    }
+
+    @Test
+    fun shouldClearEasyTierSessionCredential_preservesCredentialUntilServerReleaseIsConfirmed() {
+        assertTrue(shouldClearEasyTierSessionCredential(stopSucceeded = true))
+        assertTrue(
+            shouldClearEasyTierSessionCredential(
+                stopSucceeded = false,
+                stopFailureStatusCode = 404,
+            )
+        )
+        assertFalse(
+            shouldClearEasyTierSessionCredential(
+                stopSucceeded = false,
+                stopFailureStatusCode = 503,
+            )
+        )
+        assertFalse(shouldClearEasyTierSessionCredential(stopSucceeded = false))
     }
 }

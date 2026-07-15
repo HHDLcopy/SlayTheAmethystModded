@@ -1543,11 +1543,10 @@ private fun WorkshopChangeNotesDialog(
                                 contentColor = MaterialTheme.colorScheme.onErrorContainer,
                                 shape = RoundedCornerShape(16.dp),
                             ) {
-                                Text(
-                                    text = message,
-                                    modifier = Modifier.padding(12.dp),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                )
+                                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text(text = message, style = MaterialTheme.typography.bodyMedium)
+                                    WorkshopLoadFailureHint()
+                                }
                             }
                         }
                         Text(
@@ -1964,6 +1963,7 @@ private fun DetailCommentsCard(
                     ) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(message, style = MaterialTheme.typography.bodyMedium)
+                            WorkshopLoadFailureHint()
                             OutlinedButton(
                                 onClick = onRetry,
                                 enabled = !isLoading,
@@ -2125,6 +2125,7 @@ private fun DetailErrorCard(message: String, onRetry: () -> Unit) {
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onErrorContainer,
             )
+            WorkshopLoadFailureHint()
             Button(
                 onClick = onRetry,
                 modifier = Modifier

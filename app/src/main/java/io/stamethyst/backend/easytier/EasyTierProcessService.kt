@@ -1,5 +1,6 @@
 package io.stamethyst.backend.easytier
 
+import android.app.ActivityManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -11,17 +12,19 @@ import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
+import android.os.HandlerThread
 import android.os.IBinder
-import android.os.Looper
 import android.os.ResultReceiver
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import io.stamethyst.LauncherActivity
 import io.stamethyst.R
+import io.stamethyst.config.CloudControlConfig
 import io.stamethyst.config.LauncherConfig
 
 class EasyTierProcessService : Service() {
-    private val mainHandler = Handler(Looper.getMainLooper())
+    private lateinit var statusPollThread: HandlerThread
+    private lateinit var statusPollHandler: Handler
     private var statusPollRunnable: Runnable? = null
     @Volatile
     private var workerThread: Thread? = null
@@ -50,6 +53,7 @@ class EasyTierProcessService : Service() {
         const val EXTRA_CONNECT_MODE = "io.stamethyst.extra.EASYTIER_CONNECT_MODE"
         const val EXTRA_ROOM_ID = "io.stamethyst.extra.EASYTIER_ROOM_ID"
         const val EXTRA_ALLOW_NEW_JOINS = "io.stamethyst.extra.EASYTIER_ALLOW_NEW_JOINS"
+        const val EXTRA_CREATE_ONLY = "io.stamethyst.extra.EASYTIER_CREATE_ONLY"
 
         const val RESULT_CONNECTING = 1
         const val RESULT_CONNECTED = 2
@@ -65,7 +69,16 @@ class EasyTierProcessService : Service() {
         @Volatile
         private var running = false
 
-        fun isRunning(): Boolean = running
+        fun isRunning(context: Context): Boolean {
+            if (running) {
+                return true
+            }
+            val manager = context.getSystemService(ActivityManager::class.java) ?: return false
+            @Suppress("DEPRECATION")
+            return manager.getRunningServices(Int.MAX_VALUE).any { service ->
+                service.service.className == EasyTierProcessService::class.java.name
+            }
+        }
 
         fun startConnect(
             context: Context,
@@ -74,6 +87,7 @@ class EasyTierProcessService : Service() {
             userInitiated: Boolean,
             receiver: ResultReceiver? = null,
             allowNewJoinsWhenCreating: Boolean? = null,
+            createOnly: Boolean = false,
         ): Boolean {
             val appContext = context.applicationContext
             val intent = Intent(appContext, EasyTierProcessService::class.java).apply {
@@ -86,6 +100,9 @@ class EasyTierProcessService : Service() {
                 }
                 allowNewJoinsWhenCreating?.let {
                     putExtra(EXTRA_ALLOW_NEW_JOINS, it)
+                }
+                if (createOnly) {
+                    putExtra(EXTRA_CREATE_ONLY, true)
                 }
             }
             return try {
@@ -190,6 +207,13 @@ class EasyTierProcessService : Service() {
         }
     }
 
+    override fun onCreate() {
+        super.onCreate()
+        CloudControlConfig.refreshOnAppStart(applicationContext)
+        statusPollThread = HandlerThread("STS-EasyTierStatusPoll").also(HandlerThread::start)
+        statusPollHandler = Handler(statusPollThread.looper)
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -245,6 +269,7 @@ class EasyTierProcessService : Service() {
         workerThread?.interrupt()
         workerThread = null
         stopStatusPolling()
+        statusPollThread.quitSafely()
         StsEasyTierVpnService.stopSession(applicationContext)
         EasyTierJniBridge.stopAllInstances()
         if (previous?.isConnectionActive == true) {
@@ -278,6 +303,7 @@ class EasyTierProcessService : Service() {
             } else {
                 null
             }
+            val createOnly = intent.getBooleanExtra(EXTRA_CREATE_ONLY, false)
 
             if (!config.canConnect) {
                 val snapshot = EasyTierSessionController.persistSnapshot(
@@ -342,6 +368,7 @@ class EasyTierProcessService : Service() {
                         playerId = currentPlayerId,
                         displayName = playerName,
                         allowNewJoinsWhenCreating = allowNewJoinsWhenCreating,
+                        createOnly = createOnly,
                         sessionToken = EasyTierCredentialStore.sessionToken(
                             applicationContext,
                             roomId,
@@ -378,8 +405,7 @@ class EasyTierProcessService : Service() {
                         context = applicationContext,
                         snapshot = EasyTierSessionController.buildFailureSnapshot(
                             previous = connectingSnapshot,
-                            summary = error.message?.trim().takeUnless { it.isNullOrEmpty() }
-                                ?: getString(R.string.main_easytier_unknown_error),
+                            summary = localizedRoomSessionStartFailure(error),
                         ),
                         extraLines = listOf("room_session_start_failed=true"),
                         error = error,
@@ -487,10 +513,10 @@ class EasyTierProcessService : Service() {
         receiver: ResultReceiver?,
     ) {
         val previous = EasyTierSessionController.currentSnapshot(applicationContext)
-        if (previous.sessionId.isNotBlank()) {
+        val stopResult = previous.sessionId.takeIf { it.isNotBlank() }?.let { sessionId ->
             runCatching {
                 EasyTierRoomApiClient(applicationContext).stopSession(
-                    previous.sessionId,
+                    sessionId,
                     EasyTierCredentialStore.sessionToken(
                         applicationContext,
                         previous.roomId,
@@ -498,9 +524,14 @@ class EasyTierProcessService : Service() {
                     ),
                 )
             }.onFailure { error ->
-                Log.w(TAG, "Failed to stop EasyTier room session ${previous.sessionId}", error)
+                Log.w(TAG, "Failed to stop EasyTier room session $sessionId", error)
             }
         }
+        val clearSessionCredential = shouldClearEasyTierSessionCredential(
+            stopSucceeded = stopResult?.isSuccess == true,
+            stopFailureStatusCode = (stopResult?.exceptionOrNull() as? EasyTierRoomApiHttpException)
+                ?.statusCode,
+        )
         StsEasyTierVpnService.stopSession(applicationContext)
         EasyTierJniBridge.stopAllInstances().exceptionOrNull()?.let { error ->
             Log.w(TAG, "Failed to stop EasyTier runtime instances", error)
@@ -516,9 +547,13 @@ class EasyTierProcessService : Service() {
                 if (previous.sessionId.isNotBlank()) {
                     add("room_session_stop_requested=true")
                 }
+                add("session_credential_cleared=$clearSessionCredential")
             },
         )
-        if (previous.roomId.isNotBlank() && previous.currentPlayerId.isNotBlank()) {
+        if (clearSessionCredential &&
+            previous.roomId.isNotBlank() &&
+            previous.currentPlayerId.isNotBlank()
+        ) {
             EasyTierCredentialStore.clearSession(
                 applicationContext,
                 previous.roomId,
@@ -583,6 +618,25 @@ class EasyTierProcessService : Service() {
         }
     }
 
+    private fun localizedRoomSessionStartFailure(error: Throwable): String {
+        val apiError = error as? EasyTierRoomApiHttpException
+        return when {
+            apiError?.statusCode == 409 &&
+                apiError.message.orEmpty().contains("room already exists", ignoreCase = true) ->
+                getString(R.string.main_easytier_error_room_exists)
+            apiError?.statusCode == 403 &&
+                apiError.message.orEmpty().contains("Existing player credential", ignoreCase = true) ->
+                getString(R.string.main_easytier_error_existing_session)
+            apiError?.statusCode == 403 &&
+                apiError.message.orEmpty().contains("not accepting new joins", ignoreCase = true) ->
+                getString(R.string.main_easytier_error_room_locked)
+            apiError?.statusCode == 404 || apiError?.statusCode == 410 ->
+                getString(R.string.main_easytier_error_room_unavailable)
+            else -> error.message?.trim().takeUnless { it.isNullOrEmpty() }
+                ?: getString(R.string.main_easytier_unknown_error)
+        }
+    }
+
     private fun ensureNotificationChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = getSystemService(NotificationManager::class.java)
@@ -622,19 +676,15 @@ class EasyTierProcessService : Service() {
                 if (!running || sessionId.isBlank()) {
                     return
                 }
-                Thread(
-                    {
-                        runStatusPollIteration(sessionId, receiver)
-                        if (running && currentSessionId == sessionId) {
-                            mainHandler.postDelayed(this, intervalMs)
-                        }
-                    },
-                    "STS-EasyTierStatusPoll"
-                ).start()
+                runStatusPollIteration(sessionId, receiver)
+                if (running && currentSessionId == sessionId) {
+                    statusPollHandler.postDelayed(this, intervalMs)
+                }
             }
         }
         statusPollRunnable = runnable
-        mainHandler.post(runnable)
+        // Lease renewals must keep running after the launcher Activity is destroyed for game launch.
+        statusPollHandler.post(runnable)
     }
 
     private fun runStatusPollIteration(
@@ -930,7 +980,7 @@ class EasyTierProcessService : Service() {
     }
 
     private fun stopStatusPolling(clearRuntimeState: Boolean = true) {
-        statusPollRunnable?.let(mainHandler::removeCallbacks)
+        statusPollRunnable?.let(statusPollHandler::removeCallbacks)
         statusPollRunnable = null
         if (clearRuntimeState) {
             currentSessionId = ""
@@ -946,10 +996,10 @@ class EasyTierProcessService : Service() {
     ) {
         running = false
         stopStatusPolling(clearRuntimeState = false)
-        if (current.sessionId.isNotBlank()) {
+        val stopResult = current.sessionId.takeIf { it.isNotBlank() }?.let { sessionId ->
             runCatching {
                 EasyTierRoomApiClient(applicationContext).stopSession(
-                    current.sessionId,
+                    sessionId,
                     EasyTierCredentialStore.sessionToken(
                         applicationContext,
                         current.roomId,
@@ -957,12 +1007,20 @@ class EasyTierProcessService : Service() {
                     ),
                 )
             }.onFailure { error ->
-                Log.w(TAG, "Failed to release timed-out EasyTier session ${current.sessionId}", error)
+                Log.w(TAG, "Failed to release timed-out EasyTier session $sessionId", error)
             }
         }
+        val clearSessionCredential = shouldClearEasyTierSessionCredential(
+            stopSucceeded = stopResult?.isSuccess == true,
+            stopFailureStatusCode = (stopResult?.exceptionOrNull() as? EasyTierRoomApiHttpException)
+                ?.statusCode,
+        )
         StsEasyTierVpnService.stopSession(applicationContext)
         EasyTierJniBridge.stopAllInstances()
-        if (current.roomId.isNotBlank() && current.currentPlayerId.isNotBlank()) {
+        if (clearSessionCredential &&
+            current.roomId.isNotBlank() &&
+            current.currentPlayerId.isNotBlank()
+        ) {
             EasyTierCredentialStore.clearSession(
                 applicationContext,
                 current.roomId,
@@ -973,7 +1031,10 @@ class EasyTierProcessService : Service() {
         val failedSnapshot = EasyTierSessionController.persistSnapshot(
             context = applicationContext,
             snapshot = EasyTierSessionController.buildFailureSnapshot(current, summary),
-            extraLines = listOf("connection_timeout=true"),
+            extraLines = listOf(
+                "connection_timeout=true",
+                "session_credential_cleared=$clearSessionCredential",
+            ),
         )
         deliverSnapshot(applicationContext, receiver, RESULT_FAILURE, failedSnapshot)
         updateNotification(summary)
@@ -1002,6 +1063,11 @@ internal fun hasEasyTierConnectionTimedOut(
         EasyTierConnectionStatus.FAILED,
     ) && nowMs - startedAtMs >= config.connectTimeoutSeconds.coerceAtLeast(1) * 1000L
 }
+
+internal fun shouldClearEasyTierSessionCredential(
+    stopSucceeded: Boolean,
+    stopFailureStatusCode: Int? = null,
+): Boolean = stopSucceeded || stopFailureStatusCode == 404
 
 internal fun applyEasyTierRoomInfo(
     snapshot: EasyTierConnectionSnapshot,

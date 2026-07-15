@@ -81,6 +81,7 @@ internal data class MainScreenActions(
     val onConnectEasyTier: () -> Unit = {},
     val onDisconnectEasyTier: () -> Unit = {},
     val onRefreshEasyTierRooms: () -> Unit = {},
+    val onRefreshEasyTierRoomsSilently: () -> Unit = {},
     val onSelectEasyTierRoom: (String) -> Unit = {},
     val onCreateEasyTierRoom: (String, Boolean) -> Unit = { _, _ -> },
     val onLockEasyTierRoom: () -> Unit = {},
@@ -224,6 +225,13 @@ internal fun rememberMainScreenActions(
                 },
                 onRefreshEasyTierRooms = {
                     viewModel.refreshEasyTierRooms(activity, forceRoomInfoReload = true)
+                },
+                onRefreshEasyTierRoomsSilently = {
+                    viewModel.refreshEasyTierRooms(
+                        activity,
+                        forceRoomInfoReload = true,
+                        showLoading = false,
+                    )
                 },
                 onSelectEasyTierRoom = { roomId ->
                     viewModel.selectEasyTierRoom(activity, roomId)

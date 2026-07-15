@@ -32,6 +32,7 @@ internal class EasyTierRoomApiClient(
         playerId: String,
         displayName: String,
         allowNewJoinsWhenCreating: Boolean? = null,
+        createOnly: Boolean = false,
         sessionToken: String = "",
         ownerToken: String = "",
     ): EasyTierRoomSessionConfig {
@@ -49,6 +50,7 @@ internal class EasyTierRoomApiClient(
                 clientVersion = BuildConfig.VERSION_NAME,
                 deviceSummary = buildDeviceSummary(),
                 allowNewJoins = allowNewJoinsWhenCreating,
+                createOnly = createOnly,
             )
         )
         val request = Request.Builder()
@@ -64,16 +66,12 @@ internal class EasyTierRoomApiClient(
             if (!response.isSuccessful) {
                 throw EasyTierRoomApiHttpException(
                     statusCode = response.code,
-                    message = buildString {
-                        append("EasyTier Room API start session failed: HTTP ")
-                        append(response.code)
-                        response.message.takeIf { it.isNotBlank() }?.let {
-                            append(' ').append(it)
-                        }
-                        responseText.trim().takeIf { it.isNotEmpty() }?.let {
-                            append(" - ").append(it)
-                        }
-                    }
+                    message = buildHttpErrorMessage(
+                        operation = "start session",
+                        responseCode = response.code,
+                        responseMessage = response.message,
+                        responseText = responseText,
+                    ),
                 )
             }
             return parseStartSessionResponse(responseText)
@@ -102,9 +100,12 @@ internal class EasyTierRoomApiClient(
                 val responseText = response.body?.string().orEmpty()
                 throw EasyTierRoomApiHttpException(
                     statusCode = response.code,
-                    message = "EasyTier Room API stop session failed: HTTP ${response.code}" +
-                        response.message.takeIf { it.isNotBlank() }?.let { " $it" }.orEmpty() +
-                        responseText.trim().takeIf { it.isNotEmpty() }?.let { " - $it" }.orEmpty()
+                    message = buildHttpErrorMessage(
+                        operation = "stop session",
+                        responseCode = response.code,
+                        responseMessage = response.message,
+                        responseText = responseText,
+                    ),
                 )
             }
         }
@@ -139,7 +140,12 @@ internal class EasyTierRoomApiClient(
             if (!response.isSuccessful) {
                 throw EasyTierRoomApiHttpException(
                     statusCode = response.code,
-                    message = "EasyTier Room API session status failed: HTTP ${response.code}",
+                    message = buildHttpErrorMessage(
+                        operation = "session status",
+                        responseCode = response.code,
+                        responseMessage = response.message,
+                        responseText = responseText,
+                    ),
                 )
             }
             return parseSessionStatusResponse(responseText)
@@ -178,9 +184,12 @@ internal class EasyTierRoomApiClient(
             if (!response.isSuccessful) {
                 throw EasyTierRoomApiHttpException(
                     statusCode = response.code,
-                    message = "EasyTier Room API session runtime failed: HTTP ${response.code}" +
-                        response.message.takeIf { it.isNotBlank() }?.let { " $it" }.orEmpty() +
-                        responseText.trim().takeIf { it.isNotEmpty() }?.let { " - $it" }.orEmpty(),
+                    message = buildHttpErrorMessage(
+                        operation = "session runtime",
+                        responseCode = response.code,
+                        responseMessage = response.message,
+                        responseText = responseText,
+                    ),
                 )
             }
             return parseSessionStatusResponse(responseText)
@@ -204,7 +213,12 @@ internal class EasyTierRoomApiClient(
             if (!response.isSuccessful) {
                 throw EasyTierRoomApiHttpException(
                     statusCode = response.code,
-                    message = "EasyTier Room API room info failed: HTTP ${response.code}",
+                    message = buildHttpErrorMessage(
+                        operation = "room info",
+                        responseCode = response.code,
+                        responseMessage = response.message,
+                        responseText = responseText,
+                    ),
                 )
             }
             return parseRoomInfoResponse(responseText)
@@ -260,11 +274,47 @@ internal class EasyTierRoomApiClient(
             if (!response.isSuccessful) {
                 throw EasyTierRoomApiHttpException(
                     statusCode = response.code,
-                    message = "EasyTier Room API room list failed: HTTP ${response.code}",
+                    message = buildHttpErrorMessage(
+                        operation = "room list",
+                        responseCode = response.code,
+                        responseMessage = response.message,
+                        responseText = responseText,
+                    ),
                 )
             }
             return parseRoomListPage(responseText)
         }
+    }
+
+    private fun buildHttpErrorMessage(
+        operation: String,
+        responseCode: Int,
+        responseMessage: String,
+        responseText: String,
+    ): String = buildString {
+        append("EasyTier Room API ")
+        append(operation)
+        append(" failed: HTTP ")
+        append(responseCode)
+        responseMessage.takeIf { it.isNotBlank() }?.let {
+            append(' ').append(it)
+        }
+        summarizeServerError(responseText)?.let {
+            append(" - ").append(it)
+        }
+    }
+
+    private fun summarizeServerError(responseText: String): String? {
+        val normalized = responseText.replace(Regex("\\s+"), " ").trim()
+        if (normalized.isBlank()) {
+            return null
+        }
+        val structured = runCatching {
+            json.decodeFromString(ApiErrorResponse.serializer(), responseText)
+        }.getOrNull()
+        return (structured?.message?.trim().takeUnless { it.isNullOrBlank() }
+            ?: structured?.error?.trim().takeUnless { it.isNullOrBlank() }
+            ?: normalized).take(240)
     }
 
     fun lockRoom(
@@ -318,9 +368,12 @@ internal class EasyTierRoomApiClient(
             if (!response.isSuccessful) {
                 throw EasyTierRoomApiHttpException(
                     statusCode = response.code,
-                    message = "EasyTier Room API room action failed: HTTP ${response.code}" +
-                        response.message.takeIf { it.isNotBlank() }?.let { " $it" }.orEmpty() +
-                        responseText.trim().takeIf { it.isNotEmpty() }?.let { " - $it" }.orEmpty()
+                    message = buildHttpErrorMessage(
+                        operation = "room action",
+                        responseCode = response.code,
+                        responseMessage = response.message,
+                        responseText = responseText,
+                    ),
                 )
             }
             return parseRoomInfoResponse(responseText)
@@ -455,6 +508,13 @@ internal class EasyTierRoomApiClient(
         val clientVersion: String,
         val deviceSummary: String,
         val allowNewJoins: Boolean? = null,
+        val createOnly: Boolean = false,
+    )
+
+    @Serializable
+    private data class ApiErrorResponse(
+        val message: String = "",
+        val error: String = "",
     )
 
     @Serializable

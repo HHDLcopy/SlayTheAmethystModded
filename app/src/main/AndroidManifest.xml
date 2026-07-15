@@ -97,11 +97,13 @@
         <service
             android:name="io.stamethyst.backend.easytier.EasyTierProcessService"
             android:exported="false"
-            android:foregroundServiceType="dataSync" />
+            android:foregroundServiceType="dataSync"
+            android:process=":easytier" />
 
         <service
             android:name="io.stamethyst.backend.easytier.StsEasyTierVpnService"
             android:exported="true"
+            android:process=":easytier"
             android:permission="android.permission.BIND_VPN_SERVICE">
             <intent-filter>
                 <action android:name="android.net.VpnService" />

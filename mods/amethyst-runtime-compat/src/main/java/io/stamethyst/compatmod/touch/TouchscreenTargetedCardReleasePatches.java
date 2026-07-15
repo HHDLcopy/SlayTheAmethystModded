@@ -25,8 +25,11 @@ public final class TouchscreenTargetedCardReleasePatches {
     public static class AbstractPlayerClickAndDragCardsPatch {
         @SpirePrefixPatch
         public static SpireReturn<Boolean> before(AbstractPlayer __instance) {
-            if (!shouldCancelOptimizedTargetedRelease(__instance)) {
+            if (!isOptimizedTargetedRelease(__instance)) {
                 return SpireReturn.Continue();
+            }
+            if (TouchscreenCardInputRuntime.tryPlayTargetedCardOnRelease(__instance)) {
+                return SpireReturn.Return(Boolean.TRUE);
             }
             cancelOptimizedTargetedRelease(__instance);
             return SpireReturn.Return(Boolean.TRUE);
@@ -64,7 +67,10 @@ public final class TouchscreenTargetedCardReleasePatches {
     public static class AbstractPlayerUpdateSingleTargetInputPatch {
         @SpirePrefixPatch
         public static SpireReturn<Void> before(AbstractPlayer __instance) {
-            if (!shouldCancelOptimizedTargetedRelease(__instance)) {
+            if (!isOptimizedTargetedRelease(__instance)) {
+                return SpireReturn.Continue();
+            }
+            if (TouchscreenCardInputRuntime.isHoveringOrNearLiveMonster()) {
                 return SpireReturn.Continue();
             }
             cancelOptimizedTargetedRelease(__instance);
@@ -100,7 +106,7 @@ public final class TouchscreenTargetedCardReleasePatches {
         return TouchscreenCardInputRuntime.isTargetedCard(player.hoveredCard);
     }
 
-    private static boolean shouldCancelOptimizedTargetedRelease(AbstractPlayer player) {
+    private static boolean isOptimizedTargetedRelease(AbstractPlayer player) {
         if (!TouchscreenCardInputRuntime.isNativeTouchscreenCardPlayOptimizationActive()) {
             return false;
         }

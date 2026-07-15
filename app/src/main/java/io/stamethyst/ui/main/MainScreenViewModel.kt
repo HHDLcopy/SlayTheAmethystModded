@@ -263,6 +263,7 @@ class MainScreenViewModel : ViewModel() {
         val creatingRoomId: String = "",
         val mutating: Boolean = false,
         val refreshingRoomInfo: Boolean = false,
+        val roomInfoStale: Boolean = false,
         val errorSummary: String = "",
         val lastLoadedAtMs: Long? = null,
     ) {
@@ -405,6 +406,8 @@ class MainScreenViewModel : ViewModel() {
     private var easyTierRoomBrowserLoadInFlight = false
     @Volatile
     private var easyTierRoomBrowserReloadPending = false
+    @Volatile
+    private var easyTierRoomBrowserReloadPendingShowLoading = false
 
     var uiState by mutableStateOf(UiState())
         private set
@@ -669,6 +672,7 @@ class MainScreenViewModel : ViewModel() {
             easyTierRoomBrowser = uiState.easyTierRoomBrowser.copy(
                 creating = true,
                 creatingRoomId = normalizedRoomId,
+                roomInfoStale = false,
                 errorSummary = "",
             )
         )
@@ -678,6 +682,7 @@ class MainScreenViewModel : ViewModel() {
         host: Activity,
         roomIdOverride: String? = null,
         allowNewJoinsWhenCreating: Boolean? = null,
+        createOnly: Boolean = false,
     ) {
         if (uiState.busy) {
             return
@@ -733,10 +738,15 @@ class MainScreenViewModel : ViewModel() {
             userInitiated = true,
             receiver = buildEasyTierConnectionReceiver(host),
             allowNewJoinsWhenCreating = allowNewJoinsWhenCreating,
+            createOnly = createOnly,
         )
     }
 
-    fun refreshEasyTierRooms(host: Activity, forceRoomInfoReload: Boolean = false) {
+    fun refreshEasyTierRooms(
+        host: Activity,
+        forceRoomInfoReload: Boolean = false,
+        showLoading: Boolean = true,
+    ) {
         val config = EasyTierConfigRepository.current()
         if (config.roomApiBaseUrl.isBlank()) {
             uiState = uiState.copy(
@@ -746,6 +756,7 @@ class MainScreenViewModel : ViewModel() {
                     selectedRoom = null,
                     loading = false,
                     refreshingRoomInfo = false,
+                    roomInfoStale = false,
                     errorSummary = host.getString(R.string.main_easytier_config_missing),
                     lastLoadedAtMs = System.currentTimeMillis(),
                 )
@@ -754,6 +765,8 @@ class MainScreenViewModel : ViewModel() {
         }
         if (easyTierRoomBrowserLoadInFlight) {
             easyTierRoomBrowserReloadPending = easyTierRoomBrowserReloadPending || forceRoomInfoReload
+            easyTierRoomBrowserReloadPendingShowLoading =
+                easyTierRoomBrowserReloadPendingShowLoading || showLoading
             return
         }
         easyTierRoomBrowserLoadInFlight = true
@@ -761,7 +774,7 @@ class MainScreenViewModel : ViewModel() {
         uiState = uiState.copy(
             easyTierRoomBrowser = previous.copy(
                 currentPlayerId = resolveEasyTierCurrentPlayerId(host),
-                loading = true,
+                loading = previous.loading || showLoading,
                 errorSummary = "",
             )
         )
@@ -778,72 +791,126 @@ class MainScreenViewModel : ViewModel() {
                 val shouldLoadSelected = forceRoomInfoReload ||
                     previous.selectedRoom?.roomId != selectedRoomId
                 val selectedRoom = if (selectedRoomId.isNotBlank() && shouldLoadSelected) {
-                    runCatching { client.fetchRoomInfo(selectedRoomId) }.getOrNull()
+                    client.fetchRoomInfo(selectedRoomId)
                 } else if (previous.selectedRoom?.roomId == selectedRoomId) {
                     previous.selectedRoom
                 } else {
                     null
                 }
-                Triple(rooms, selectedRoomId, selectedRoom)
+                val snapshot = EasyTierSessionController.currentSnapshot(host)
+                val preserveActiveSelection = previous.selectedRoom != null &&
+                    previous.selectedRoom.roomId == snapshot.roomId.trim() &&
+                    snapshot.status !in setOf(
+                        EasyTierConnectionStatus.IDLE,
+                        EasyTierConnectionStatus.PERMISSION_REQUIRED,
+                        EasyTierConnectionStatus.DISCONNECTED,
+                        EasyTierConnectionStatus.FAILED,
+                    )
+                val effectiveSelectedRoomId = selectedRoomId.ifBlank {
+                    previous.selectedRoom?.roomId.takeIf { preserveActiveSelection }.orEmpty()
+                }
+                Triple(
+                    rooms,
+                    effectiveSelectedRoomId,
+                    selectedRoom ?: previous.selectedRoom.takeIf { preserveActiveSelection },
+                )
             }
             host.runOnUiThread {
                 easyTierRoomBrowserLoadInFlight = false
                 val selectionChangedDuringLoad =
                     uiState.easyTierRoomBrowser.preferredRoomId != previous.preferredRoomId
                 result.onSuccess { (rooms, selectedRoomId, selectedRoom) ->
-                    if (!selectionChangedDuringLoad &&
-                        selectedRoomId.isBlank() &&
-                        uiState.easyTierRoomBrowser.preferredRoomId.isNotBlank()
-                    ) {
-                        persistEasyTierRoomSelection(host, "")
-                    }
+                    val preservedActiveSelection = selectedRoomId.isNotBlank() &&
+                        rooms.none { room -> room.roomId == selectedRoomId } &&
+                        selectedRoom?.roomId == selectedRoomId
+                    val currentBrowser = uiState.easyTierRoomBrowser
                     uiState = uiState.copy(
-                        easyTierRoomBrowser = uiState.easyTierRoomBrowser.copy(
+                        easyTierRoomBrowser = currentBrowser.copy(
                             currentPlayerId = resolveEasyTierCurrentPlayerId(host),
                             preferredRoomId = if (selectionChangedDuringLoad) {
-                                uiState.easyTierRoomBrowser.preferredRoomId
+                                currentBrowser.preferredRoomId
                             } else {
                                 selectedRoomId
                             },
                             rooms = rooms,
                             selectedRoom = if (selectionChangedDuringLoad) {
-                                uiState.easyTierRoomBrowser.selectedRoom
+                                currentBrowser.selectedRoom
                             } else {
                                 selectedRoom?.takeIf { room -> room.closedAtMs <= 0L }
                             },
                             loading = false,
-                            refreshingRoomInfo = false,
-                            errorSummary = "",
+                            refreshingRoomInfo = if (selectionChangedDuringLoad) {
+                                currentBrowser.refreshingRoomInfo
+                            } else {
+                                false
+                            },
+                            roomInfoStale = if (selectionChangedDuringLoad) {
+                                currentBrowser.roomInfoStale
+                            } else {
+                                preservedActiveSelection
+                            },
+                            errorSummary = if (selectionChangedDuringLoad) {
+                                currentBrowser.errorSummary
+                            } else if (preservedActiveSelection) {
+                                host.getString(R.string.main_easytier_room_info_stale)
+                            } else {
+                                ""
+                            },
                             lastLoadedAtMs = System.currentTimeMillis(),
                         )
                     )
                 }.onFailure { error ->
-                    if (!selectionChangedDuringLoad) {
+                    val currentBrowser = uiState.easyTierRoomBrowser
+                    val activeSnapshot = EasyTierSessionController.currentSnapshot(host)
+                    val preserveSelectedRoom = currentBrowser.selectedRoom?.let { room ->
+                        shouldPreserveEasyTierRoomSelection(
+                            selectedRoomId = room.roomId,
+                            activeRoomId = activeSnapshot.roomId,
+                            activeState = activeSnapshot.status,
+                            errorStatusCode = (error as? EasyTierRoomApiHttpException)?.statusCode,
+                        )
+                    } == true
+                    if (!selectionChangedDuringLoad && !preserveSelectedRoom) {
                         persistEasyTierRoomSelection(host, "")
                     }
                     uiState = uiState.copy(
-                        easyTierRoomBrowser = uiState.easyTierRoomBrowser.copy(
+                        easyTierRoomBrowser = currentBrowser.copy(
                             currentPlayerId = resolveEasyTierCurrentPlayerId(host),
-                            preferredRoomId = if (selectionChangedDuringLoad) {
-                                uiState.easyTierRoomBrowser.preferredRoomId
+                            preferredRoomId = if (selectionChangedDuringLoad || preserveSelectedRoom) {
+                                currentBrowser.preferredRoomId
                             } else {
                                 ""
                             },
-                            selectedRoom = if (selectionChangedDuringLoad) {
-                                uiState.easyTierRoomBrowser.selectedRoom
+                            selectedRoom = if (selectionChangedDuringLoad || preserveSelectedRoom) {
+                                currentBrowser.selectedRoom
                             } else {
                                 null
                             },
                             loading = false,
-                            refreshingRoomInfo = false,
-                            errorSummary = error.message.orEmpty(),
+                            refreshingRoomInfo = if (selectionChangedDuringLoad) {
+                                currentBrowser.refreshingRoomInfo
+                            } else {
+                                false
+                            },
+                            roomInfoStale = if (selectionChangedDuringLoad) {
+                                currentBrowser.roomInfoStale
+                            } else {
+                                preserveSelectedRoom
+                            },
+                            errorSummary = easyTierRoomErrorMessage(host, error),
                             lastLoadedAtMs = System.currentTimeMillis(),
                         )
                     )
                 }
                 if (easyTierRoomBrowserReloadPending) {
                     easyTierRoomBrowserReloadPending = false
-                    refreshEasyTierRooms(host, forceRoomInfoReload = true)
+                    val pendingShowLoading = easyTierRoomBrowserReloadPendingShowLoading
+                    easyTierRoomBrowserReloadPendingShowLoading = false
+                    refreshEasyTierRooms(
+                        host,
+                        forceRoomInfoReload = true,
+                        showLoading = pendingShowLoading,
+                    )
                 }
             }
         }
@@ -856,7 +923,9 @@ class MainScreenViewModel : ViewModel() {
             easyTierRoomBrowser = uiState.easyTierRoomBrowser.copy(
                 currentPlayerId = resolveEasyTierCurrentPlayerId(host),
                 preferredRoomId = normalized,
+                selectedRoom = null,
                 refreshingRoomInfo = normalized.isNotBlank(),
+                roomInfoStale = false,
                 errorSummary = "",
             )
         )
@@ -880,6 +949,7 @@ class MainScreenViewModel : ViewModel() {
                                 currentPlayerId = resolveEasyTierCurrentPlayerId(host),
                                 selectedRoom = room,
                                 refreshingRoomInfo = false,
+                                roomInfoStale = false,
                                 errorSummary = "",
                             )
                         )
@@ -893,7 +963,8 @@ class MainScreenViewModel : ViewModel() {
                                 preferredRoomId = "",
                                 selectedRoom = null,
                                 refreshingRoomInfo = false,
-                                errorSummary = error.message.orEmpty(),
+                                roomInfoStale = false,
+                                errorSummary = easyTierRoomErrorMessage(host, error),
                             )
                         )
                     }
@@ -915,6 +986,7 @@ class MainScreenViewModel : ViewModel() {
                     currentPlayerId = resolveEasyTierCurrentPlayerId(host),
                     creating = false,
                     creatingRoomId = "",
+                    roomInfoStale = false,
                     errorSummary = message,
                 )
             )
@@ -932,6 +1004,7 @@ class MainScreenViewModel : ViewModel() {
                 currentPlayerId = resolveEasyTierCurrentPlayerId(host),
                 creating = true,
                 creatingRoomId = normalized,
+                roomInfoStale = false,
                 errorSummary = "",
             )
         )
@@ -942,12 +1015,15 @@ class MainScreenViewModel : ViewModel() {
                 currentPlayerId = currentPlayerId,
                 preferredRoomId = normalized,
                 selectedRoom = null,
+                refreshingRoomInfo = false,
+                roomInfoStale = false,
             )
         )
         onConnectEasyTier(
             host = host,
             roomIdOverride = normalized,
             allowNewJoinsWhenCreating = allowNewJoins,
+            createOnly = true,
         )
     }
 
@@ -1020,6 +1096,7 @@ class MainScreenViewModel : ViewModel() {
                                     item.roomId == room.roomId
                                 },
                                 mutating = false,
+                                roomInfoStale = false,
                                 errorSummary = "",
                                 lastLoadedAtMs = System.currentTimeMillis(),
                             )
@@ -1028,6 +1105,7 @@ class MainScreenViewModel : ViewModel() {
                                 currentPlayerId = currentPlayerId,
                                 selectedRoom = room.takeIf { it.closedAtMs <= 0L },
                                 mutating = false,
+                                roomInfoStale = false,
                                 errorSummary = "",
                                 lastLoadedAtMs = System.currentTimeMillis(),
                             )
@@ -1066,6 +1144,7 @@ class MainScreenViewModel : ViewModel() {
                                     item.roomId == selectedRoom.roomId
                                 },
                                 mutating = false,
+                                roomInfoStale = false,
                                 errorSummary = "",
                                 lastLoadedAtMs = System.currentTimeMillis(),
                             )
@@ -1078,21 +1157,17 @@ class MainScreenViewModel : ViewModel() {
                         easyTierRoomBrowser = uiState.easyTierRoomBrowser.copy(
                             currentPlayerId = currentPlayerId,
                             mutating = false,
-                            errorSummary = error.message.orEmpty(),
+                            errorSummary = easyTierRoomErrorMessage(host, error),
                         )
                     )
                     _effects.tryEmit(
                         Effect.ShowSnackbar(
                             message = UiText.DynamicString(
-                                error.message?.takeIf { it.isNotBlank() }
-                                    ?: host.getString(R.string.main_easytier_unknown_error)
+                                easyTierRoomErrorMessage(host, error)
                             ),
                             duration = LauncherTransientNoticeDuration.LONG,
                         )
                     )
-                    if (action == "close") {
-                        disconnectEasyTierLocally(host)
-                    }
                 }
             }
         }
@@ -3716,6 +3791,7 @@ class MainScreenViewModel : ViewModel() {
                     easyTierRoomBrowser = roomBrowser.copy(
                         creating = false,
                         creatingRoomId = "",
+                        roomInfoStale = false,
                         errorSummary = "",
                     )
                 )
@@ -3753,6 +3829,7 @@ class MainScreenViewModel : ViewModel() {
                 selectedRoom = roomBrowser.selectedRoom?.takeUnless { it.roomId == creatingRoomId },
                 creating = false,
                 creatingRoomId = "",
+                roomInfoStale = false,
                 errorSummary = errorSummary,
             )
         )
@@ -5073,6 +5150,25 @@ class MainScreenViewModel : ViewModel() {
             .trim()
     }
 
+    private fun easyTierRoomErrorMessage(host: Activity, error: Throwable): String {
+        val apiError = error as? EasyTierRoomApiHttpException
+        return when {
+            apiError?.statusCode == 403 &&
+                apiError.message.orEmpty().contains("Existing player credential", ignoreCase = true) ->
+                host.getString(R.string.main_easytier_error_existing_session)
+            apiError?.statusCode == 403 &&
+                apiError.message.orEmpty().contains("not accepting new joins", ignoreCase = true) ->
+                host.getString(R.string.main_easytier_error_room_locked)
+            apiError?.statusCode == 409 &&
+                apiError.message.orEmpty().contains("room already exists", ignoreCase = true) ->
+                host.getString(R.string.main_easytier_error_room_exists)
+            apiError?.statusCode == 404 || apiError?.statusCode == 410 ->
+                host.getString(R.string.main_easytier_error_room_unavailable)
+            else -> error.message?.trim()?.takeUnless { it.isNullOrBlank() }
+                ?: host.getString(R.string.main_easytier_unknown_error)
+        }
+    }
+
     private fun markLaunchInFlight() {
         launchInFlight = true
         if (!uiState.launchInFlight) {
@@ -5193,6 +5289,25 @@ internal fun shouldCloseEasyTierRoomWhenOwnerLeaves(
         state != EasyTierConnectionStatus.PERMISSION_REQUIRED &&
         state != EasyTierConnectionStatus.DISCONNECTED &&
         state != EasyTierConnectionStatus.FAILED
+}
+
+internal fun shouldPreserveEasyTierRoomSelection(
+    selectedRoomId: String,
+    activeRoomId: String,
+    activeState: EasyTierConnectionStatus,
+    errorStatusCode: Int?,
+): Boolean {
+    if (selectedRoomId.isBlank()) {
+        return false
+    }
+    val activeSelection = selectedRoomId.trim() == activeRoomId.trim() &&
+        activeState !in setOf(
+            EasyTierConnectionStatus.IDLE,
+            EasyTierConnectionStatus.PERMISSION_REQUIRED,
+            EasyTierConnectionStatus.DISCONNECTED,
+            EasyTierConnectionStatus.FAILED,
+        )
+    return activeSelection || errorStatusCode !in setOf(404, 410)
 }
 
 internal enum class EasyTierRoomCreationOutcome {

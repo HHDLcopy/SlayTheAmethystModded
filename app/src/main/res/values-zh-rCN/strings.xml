@@ -2346,6 +2346,7 @@
     <string name="workshop_action_install_and_download">安装并下载</string>
     <string name="workshop_action_download_without_dependencies">跳过前置</string>
     <string name="workshop_error_loading_title">加载失败</string>
+    <string name="workshop_load_failure_steam_hint">此页面由 Steam 创意工坊驱动，启动器侧的 Steam 链路优选不能 100% 解决问题。如果一直加载失败，请使用任意加速器加速 Steam 商店后重新打开该页面。</string>
     <string name="workshop_empty_title">没有找到条目</string>
     <string name="workshop_empty_description">换个关键词试试，或稍后刷新 Steam 创意工坊。</string>
     <string name="workshop_download_state_downloaded">已下载</string>
@@ -2638,6 +2639,14 @@
     <string name="main_easytier_room_locked_success">已锁定房间：%1$s</string>
     <string name="main_easytier_room_unlocked_success">已解除锁定房间：%1$s</string>
     <string name="main_easytier_room_closed_success">已关闭房间：%1$s</string>
+    <string name="main_easytier_room_info_stale">房间信息暂时无法刷新，当前显示上一次获取的状态。</string>
+    <string name="main_easytier_error_existing_session">这台设备仍有一个未结束的房间会话。请稍等片刻或先断开旧连接后重试。（HTTP 403）</string>
+    <string name="main_easytier_error_room_locked">该房间已锁定，暂不接受新玩家加入。（HTTP 403）</string>
+    <string name="main_easytier_error_room_unavailable">该房间已不存在或已经关闭，请刷新房间列表后重新选择。</string>
+    <string name="main_easytier_error_room_exists">该房间 ID 已被使用，请更换一个房间 ID。</string>
+    <string name="main_easytier_close_room_confirm_title">确定关闭房间？</string>
+    <string name="main_easytier_close_room_confirm_message">房间 %1$s 当前有 %2$d 名玩家。关闭后所有玩家都会断开连接。</string>
+    <string name="main_easytier_action_cancel">取消</string>
     <string name="main_workshop_checking_notice">正在检查模组更新</string>
     <string name="main_open_workshop">打开创意工坊</string>
     <string name="main_mod_workshop_origin_message">该模组从市场中下载，将会自动检查更新。</string>

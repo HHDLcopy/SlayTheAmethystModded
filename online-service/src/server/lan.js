@@ -37,6 +37,9 @@ class LanStore {
     ensureEasyTierSessionAvailability(easyTier);
 
     this.expireSessions(nowMs);
+    if (request.createOnly && this.findRoom(request.roomId)) {
+      throw httpError(409, 'LAN room already exists');
+    }
     return this.startSessionInMemory(request, nowMs, easyTier);
   }
 
@@ -629,6 +632,10 @@ function parseStartSessionRequest(body) {
     deviceSummary: normalizeOptionalText(
       firstNonEmpty(body.deviceSummary, body.device_summary),
       MAX_TEXT_LENGTH
+    ),
+    createOnly: normalizeBoolean(
+      body.createOnly !== undefined ? body.createOnly : body.create_only,
+      false
     ),
     sessionToken: normalizeOptionalAccessToken(firstNonEmpty(body.sessionToken, body.session_token)),
     ownerToken: normalizeOptionalAccessToken(firstNonEmpty(body.ownerToken, body.owner_token)),

@@ -2343,6 +2343,7 @@
     <string name="workshop_action_install_and_download">安裝並下載</string>
     <string name="workshop_action_download_without_dependencies">跳過前置</string>
     <string name="workshop_error_loading_title">載入失敗</string>
+    <string name="workshop_load_failure_steam_hint">此頁面由 Steam 創意工坊驅動，啟動器側的 Steam 線路優選不能 100% 解決問題。如果一直載入失敗，請使用任意加速器加速 Steam 商店後重新開啟該頁面。</string>
     <string name="workshop_empty_title">沒有找到條目</string>
     <string name="workshop_empty_description">換個關鍵詞試試，或稍後重新整理 Steam 創意工坊。</string>
     <string name="workshop_download_state_downloaded">已下載</string>
@@ -2635,6 +2636,14 @@
     <string name="main_easytier_room_locked_success">已鎖定房間：%1$s</string>
     <string name="main_easytier_room_unlocked_success">已解除鎖定房間：%1$s</string>
     <string name="main_easytier_room_closed_success">已關閉房間：%1$s</string>
+    <string name="main_easytier_room_info_stale">房間資訊暫時無法重新整理，目前顯示上一次取得的狀態。</string>
+    <string name="main_easytier_error_existing_session">這台裝置仍有一個尚未結束的房間工作階段。請稍候片刻或先中斷舊連線後重試。（HTTP 403）</string>
+    <string name="main_easytier_error_room_locked">該房間已鎖定，暫不接受新玩家加入。（HTTP 403）</string>
+    <string name="main_easytier_error_room_unavailable">該房間已不存在或已經關閉，請重新整理房間清單後再選擇。</string>
+    <string name="main_easytier_error_room_exists">該房間 ID 已被使用，請更換一個房間 ID。</string>
+    <string name="main_easytier_close_room_confirm_title">確定關閉房間？</string>
+    <string name="main_easytier_close_room_confirm_message">房間 %1$s 目前有 %2$d 名玩家。關閉後所有玩家都會中斷連線。</string>
+    <string name="main_easytier_action_cancel">取消</string>
     <string name="main_workshop_checking_notice">正在檢查模組更新</string>
     <string name="main_open_workshop">開啟創意工坊</string>
     <string name="main_mod_workshop_origin_message">該模組從市場中下載，將會自動檢查更新。</string>

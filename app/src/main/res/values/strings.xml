@@ -2347,6 +2347,7 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="workshop_action_install_and_download">Install and download</string>
     <string name="workshop_action_download_without_dependencies">Skip dependencies</string>
     <string name="workshop_error_loading_title">Loading failed</string>
+    <string name="workshop_load_failure_steam_hint">This page is powered by Steam Workshop. The launcher\'s preferred Steam connection route cannot solve every issue. If loading keeps failing, use any accelerator for the Steam Store, then reopen this page.</string>
     <string name="workshop_empty_title">No entries found</string>
     <string name="workshop_empty_description">Try another keyword, or refresh Steam Workshop later.</string>
     <string name="workshop_download_state_downloaded">Downloaded</string>
@@ -2639,6 +2640,14 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="main_easytier_room_locked_success">Room locked: %1$s</string>
     <string name="main_easytier_room_unlocked_success">Room unlocked: %1$s</string>
     <string name="main_easytier_room_closed_success">Room closed: %1$s</string>
+    <string name="main_easytier_room_info_stale">Room information could not be refreshed. Showing the last known state.</string>
+    <string name="main_easytier_error_existing_session">This device still has an active room session. Wait briefly or disconnect the previous connection, then try again. (HTTP 403)</string>
+    <string name="main_easytier_error_room_locked">This room is locked and is not accepting new players. (HTTP 403)</string>
+    <string name="main_easytier_error_room_unavailable">This room no longer exists or has been closed. Refresh the room list and choose another room.</string>
+    <string name="main_easytier_error_room_exists">That room ID is already in use. Choose another room ID.</string>
+    <string name="main_easytier_close_room_confirm_title">Close this room?</string>
+    <string name="main_easytier_close_room_confirm_message">Room %1$s currently has %2$d players. Closing it will disconnect everyone.</string>
+    <string name="main_easytier_action_cancel">Cancel</string>
     <string name="main_workshop_checking_notice">Checking mod updates</string>
     <string name="main_open_workshop">Open Workshop</string>
     <string name="main_mod_workshop_origin_message">This mod was downloaded from the market and will be checked for updates automatically.</string>

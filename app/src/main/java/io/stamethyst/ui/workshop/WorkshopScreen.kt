@@ -1647,6 +1647,7 @@ private fun ErrorPanel(
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(stringResource(R.string.workshop_error_loading_title), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onErrorContainer)
             Text(message, color = MaterialTheme.colorScheme.onErrorContainer)
+            WorkshopLoadFailureHint()
             OutlinedButton(onClick = onRetry) { Text(stringResource(R.string.workshop_action_retry)) }
         }
     }

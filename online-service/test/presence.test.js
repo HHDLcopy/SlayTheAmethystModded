@@ -666,6 +666,66 @@ test('lan room session start creates a joined room and preserves its join policy
   assert.equal(betaRoom.onlineMemberCount, 1);
 });
 
+test('lan room create-only rejects an existing room without changing normal joins', async (t) => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-presence-'));
+  const server = await buildServer({
+    ...loadConfig({
+      LOG_LEVEL: 'silent',
+      EASYTIER_ENABLED: 'true'
+    }),
+    dbPath: path.join(tmpDir, 'presence.sqlite'),
+    publicBaseUrl: 'https://online.example.com',
+    presencePanelToken: 'panel-secret',
+    logLevel: 'silent'
+  });
+  t.after(async () => {
+    await server.close();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+  await server.ready();
+
+  const created = await server.inject({
+    method: 'POST',
+    url: '/api/lan/session/start',
+    payload: {
+      roomId: 'create-only-room',
+      playerId: 'alice',
+      displayName: 'Alice',
+      createOnly: true
+    }
+  });
+  assert.equal(created.statusCode, 200);
+
+  const duplicateCreate = await server.inject({
+    method: 'POST',
+    url: '/api/lan/session/start',
+    payload: {
+      roomId: 'create-only-room',
+      playerId: 'bob',
+      displayName: 'Bob',
+      createOnly: true
+    }
+  });
+  assert.equal(duplicateCreate.statusCode, 409);
+  assert.match(duplicateCreate.json().message, /room already exists/);
+
+  const normalJoin = await server.inject({
+    method: 'POST',
+    url: '/api/lan/session/start',
+    payload: {
+      roomId: 'create-only-room',
+      playerId: 'bob',
+      displayName: 'Bob'
+    }
+  });
+  assert.equal(normalJoin.statusCode, 200);
+  assert.notEqual(normalJoin.json().sessionId, created.json().sessionId);
+
+  const room = await server.inject('/api/lan/rooms/create-only-room');
+  assert.equal(room.statusCode, 200);
+  assert.equal(room.json().memberCount, 2);
+});
+
 test('lan room api rejects ownerless room creation', async (t) => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-presence-'));
   const server = await buildServer({

@@ -184,6 +184,10 @@ final class FloatingToolPanel {
             return;
         }
         switch (button.action) {
+            case ONLINE:
+                expanded = false;
+                FloatingToolInputBridge.requestOnlinePanel("floating_tools_drawer");
+                break;
             case CTRL:
                 ctrlDown = toggleKey(Keyboard.KEY_LCONTROL, ctrlDown);
                 break;
@@ -330,6 +334,7 @@ final class FloatingToolPanel {
         float yPos = Settings.HEIGHT - RELIC_START_TOP * Settings.yScale;
         float spaceY = RELIC_SPACE_Y * s;
 
+        addButton(Action.ONLINE, "Online", currentX, yPos, hit, hit);
         addButton(Action.CTRL, "Ctrl", currentX, yPos -= spaceY, hit, hit);
         addButton(Action.SHIFT, "Shift", currentX, yPos -= spaceY, hit, hit);
         addButton(Action.TAB, "Tab", currentX, yPos -= spaceY, hit, hit);
@@ -552,6 +557,9 @@ final class FloatingToolPanel {
         }
         String filename = null;
         switch (action) {
+            case ONLINE:
+                filename = "online.png";
+                break;
             case CTRL:
                 filename = "ctrl.png";
                 break;
@@ -700,6 +708,7 @@ final class FloatingToolPanel {
     }
 
     private enum Action {
+        ONLINE,
         CTRL,
         SHIFT,
         TAB,
@@ -740,6 +749,8 @@ final class FloatingToolPanel {
 
         private static String descriptionFor(Action action, String label) {
             switch (action) {
+                case ONLINE:
+                    return "打开 Android 联机窗口，可查看房间、连接状态、玩家 IP 和房主管理操作。";
                 case CTRL:
                     return "切换 Ctrl 修饰键。启用后保持 Ctrl 按下，再点一次释放。";
                 case SHIFT:

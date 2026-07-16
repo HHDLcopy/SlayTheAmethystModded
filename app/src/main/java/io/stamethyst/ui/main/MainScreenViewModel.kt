@@ -483,6 +483,14 @@ class MainScreenViewModel : ViewModel() {
         refresh(host)
     }
 
+    fun syncEasyTierUi(host: Activity) {
+        syncEasyTierProcessEventReceiver(host)
+        syncEasyTierRoomSelection(host)
+        uiState = uiState.copy(
+            easyTierIndicator = resolveEasyTierIndicatorAvailability(host),
+        )
+    }
+
     suspend fun refreshWorkshopDownloadCards(host: Activity): Boolean {
         val loadedTasks = withContext(Dispatchers.IO) {
             WorkshopDownloadCenterStore.loadLauncherCardTasksWithRecovery(host)

@@ -29,6 +29,7 @@ import io.stamethyst.backend.launch.AutoplayMode
 import io.stamethyst.backend.launch.AutoplaySaveMode
 import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.config.BackBehavior
+import io.stamethyst.config.CloudControlConfig
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.input.GameInputHandler
@@ -143,6 +144,8 @@ class StsGameActivity : AppCompatActivity() {
             finish()
             return
         }
+        // The game Activity runs in :game, which has its own CloudControlConfig singleton.
+        CloudControlConfig.refreshOnAppStart(applicationContext)
         setContentView(R.layout.activity_game)
         setVolumeControlStream(AudioManager.STREAM_MUSIC)
 

@@ -39,6 +39,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -173,6 +174,7 @@ private enum class SteamCloudNetworkPromptAction {
 
 private const val MODS_CONTENT_MOUNT_DELAY_MS = 80L
 private val EASY_TIER_ONLINE_ROOMS_VIEWPORT_HEIGHT = 240.dp
+private const val EASY_TIER_BOTTOM_SHEET_VIEWPORT_HEIGHT_FRACTION = 0.88f
 private const val EASY_TIER_ROOM_AUTO_REFRESH_INTERVAL_MS = 5_000L
 
 @Composable
@@ -1914,7 +1916,7 @@ private fun EasyTierCreateRoomPanel(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun EasyTierBottomSheetContent(
+internal fun EasyTierBottomSheetContent(
     indicator: MainScreenViewModel.EasyTierIndicatorUi,
     roomBrowser: MainScreenViewModel.EasyTierRoomBrowserUi,
     onRefreshRooms: () -> Unit,
@@ -1925,6 +1927,7 @@ private fun EasyTierBottomSheetContent(
     onCloseRoom: () -> Unit,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     var page by remember { mutableStateOf(EasyTierRoomSheetPage.Rooms) }
     var createRoomId by remember { mutableStateOf("") }
@@ -2004,6 +2007,7 @@ private fun EasyTierBottomSheetContent(
             }
         },
         modifier = Modifier
+            .then(modifier)
             .fillMaxWidth(),
     ) {
         Column(
@@ -3441,6 +3445,9 @@ private fun LauncherMainScreenContent(
                 onCloseRoom = actions.onCloseEasyTierRoom,
                 onConnect = actions.onConnectEasyTier,
                 onDisconnect = actions.onDisconnectEasyTier,
+                modifier = Modifier.fillMaxHeight(
+                    EASY_TIER_BOTTOM_SHEET_VIEWPORT_HEIGHT_FRACTION,
+                ),
             )
         }
     }

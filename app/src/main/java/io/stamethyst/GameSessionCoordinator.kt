@@ -6,6 +6,7 @@ import android.os.SystemClock
 import android.view.KeyEvent
 import android.widget.TextView
 import android.widget.Toast
+import androidx.lifecycle.ViewModelProvider
 import io.stamethyst.backend.audio.ForegroundAudioPolicy
 import io.stamethyst.backend.diag.MemoryDiagnosticsLogger
 import io.stamethyst.backend.launch.progressText
@@ -25,6 +26,7 @@ import io.stamethyst.config.RuntimePaths
 import io.stamethyst.config.SpecialKeyInputMode
 import io.stamethyst.input.GameInputHandler
 import io.stamethyst.ui.LauncherTransientNoticeBus
+import io.stamethyst.ui.main.MainScreenViewModel
 import net.kdt.pojavlaunch.LwjglGlfwKeycode
 import org.lwjgl.glfw.CallbackBridge
 import java.io.File
@@ -83,6 +85,12 @@ internal class GameSessionCoordinator(
     private var pendingAudioDeviceRecovery = false
     private val foregroundAudioRestoreRunnables = mutableListOf<Runnable>()
     private val foregroundAudioPolicy = ForegroundAudioPolicy()
+    private val inGameEasyTierOverlayController by lazy {
+        InGameEasyTierOverlayController(
+            activity = activity,
+            viewModel = ViewModelProvider(activity)[MainScreenViewModel::class.java],
+        )
+    }
     private val startCheckRunnable = Runnable {
         startCheckPosted = false
         tryStartJvmWhenSurfaceReady()
@@ -194,6 +202,7 @@ internal class GameSessionCoordinator(
 
     fun initSessionUi(overlayView: TextView) {
         bootOverlayController.init()
+        inGameEasyTierOverlayController.attachToHost(activity.findViewById(R.id.gameHost))
         if (performanceOverlayController == null) {
             performanceOverlayController = GamePerformanceOverlayController(
                 activity = activity,
@@ -219,6 +228,7 @@ internal class GameSessionCoordinator(
         stopKeyboardRequestPolling()
         stopFilePickerRequestPolling()
         stopRescueToastRequestPolling()
+        inGameEasyTierOverlayController.onDestroy()
         RuntimePaths.touchscreenCardHoldStateFile(activity).delete()
         cancelForegroundAudioRestoreRetries()
         activityResumed = false
@@ -1021,7 +1031,9 @@ internal class GameSessionCoordinator(
         }
         lastKeyboardRequestPayload = payload
         val source = payload.lineSequence().firstOrNull()?.trim().orEmpty()
-        if (source.startsWith("custom_button:")) {
+        if (source.startsWith("online_panel:")) {
+            inGameEasyTierOverlayController.show()
+        } else if (source.startsWith("custom_button:")) {
             inputHandler.requestCustomSoftKeyButtonForGameInput("game_custom_button")
         } else if (source.startsWith("system_keyboard:")) {
             inputHandler.requestSystemSoftKeyboardForGameTextInput("game_text_input_system")

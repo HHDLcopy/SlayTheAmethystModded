@@ -52,6 +52,7 @@ class EasyTierProcessService : Service() {
         const val EXTRA_USER_INITIATED = "io.stamethyst.extra.EASYTIER_USER_INITIATED"
         const val EXTRA_CONNECT_MODE = "io.stamethyst.extra.EASYTIER_CONNECT_MODE"
         const val EXTRA_ROOM_ID = "io.stamethyst.extra.EASYTIER_ROOM_ID"
+        const val EXTRA_ROOM_DESCRIPTION = "io.stamethyst.extra.EASYTIER_ROOM_DESCRIPTION"
         const val EXTRA_ALLOW_NEW_JOINS = "io.stamethyst.extra.EASYTIER_ALLOW_NEW_JOINS"
         const val EXTRA_CREATE_ONLY = "io.stamethyst.extra.EASYTIER_CREATE_ONLY"
 
@@ -86,6 +87,7 @@ class EasyTierProcessService : Service() {
             roomId: String = "",
             userInitiated: Boolean,
             receiver: ResultReceiver? = null,
+            roomDescriptionWhenCreating: String = "",
             allowNewJoinsWhenCreating: Boolean? = null,
             createOnly: Boolean = false,
         ): Boolean {
@@ -97,6 +99,9 @@ class EasyTierProcessService : Service() {
                 mode?.let { putExtra(EXTRA_CONNECT_MODE, it.cloudControlValue) }
                 if (roomId.isNotBlank()) {
                     putExtra(EXTRA_ROOM_ID, roomId)
+                }
+                if (roomDescriptionWhenCreating.isNotBlank()) {
+                    putExtra(EXTRA_ROOM_DESCRIPTION, roomDescriptionWhenCreating)
                 }
                 allowNewJoinsWhenCreating?.let {
                     putExtra(EXTRA_ALLOW_NEW_JOINS, it)
@@ -298,6 +303,8 @@ class EasyTierProcessService : Service() {
                 requestedRoomId = intent.getStringExtra(EXTRA_ROOM_ID).orEmpty(),
             )
             val userInitiated = intent.getBooleanExtra(EXTRA_USER_INITIATED, false)
+            val roomDescriptionWhenCreating =
+                intent.getStringExtra(EXTRA_ROOM_DESCRIPTION).orEmpty()
             val allowNewJoinsWhenCreating = if (intent.hasExtra(EXTRA_ALLOW_NEW_JOINS)) {
                 intent.getBooleanExtra(EXTRA_ALLOW_NEW_JOINS, true)
             } else {
@@ -367,6 +374,7 @@ class EasyTierProcessService : Service() {
                         roomId = roomId,
                         playerId = currentPlayerId,
                         displayName = playerName,
+                        roomDescriptionWhenCreating = roomDescriptionWhenCreating,
                         allowNewJoinsWhenCreating = allowNewJoinsWhenCreating,
                         createOnly = createOnly,
                         sessionToken = EasyTierCredentialStore.sessionToken(

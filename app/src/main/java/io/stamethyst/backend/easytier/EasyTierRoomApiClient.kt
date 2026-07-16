@@ -31,6 +31,7 @@ internal class EasyTierRoomApiClient(
         roomId: String,
         playerId: String,
         displayName: String,
+        roomDescriptionWhenCreating: String = "",
         allowNewJoinsWhenCreating: Boolean? = null,
         createOnly: Boolean = false,
         sessionToken: String = "",
@@ -49,6 +50,9 @@ internal class EasyTierRoomApiClient(
                 displayName = displayName.trim(),
                 clientVersion = BuildConfig.VERSION_NAME,
                 deviceSummary = buildDeviceSummary(),
+                description = roomDescriptionWhenCreating
+                    .trim()
+                    .take(EASY_TIER_ROOM_DESCRIPTION_MAX_LENGTH),
                 allowNewJoins = allowNewJoinsWhenCreating,
                 createOnly = createOnly,
             )
@@ -415,6 +419,7 @@ internal class EasyTierRoomApiClient(
             roomId = payload.roomId.trim(),
             ownerPlayerId = payload.ownerPlayerId.trim(),
             ownerDisplayName = payload.ownerDisplayName.trim(),
+            description = payload.description.trim(),
             mode = EasyTierNetworkMode.fromCloudControl(payload.mode),
             allowNewJoins = payload.allowNewJoins,
             closedAtMs = payload.closedAtMs,
@@ -443,6 +448,7 @@ internal class EasyTierRoomApiClient(
                 roomId = room.roomId.trim(),
                 ownerPlayerId = room.ownerPlayerId.trim(),
                 ownerDisplayName = room.ownerDisplayName.trim(),
+                description = room.description.trim(),
                 mode = EasyTierNetworkMode.fromCloudControl(room.mode),
                 allowNewJoins = room.allowNewJoins,
                 closedAtMs = room.closedAtMs,
@@ -507,6 +513,7 @@ internal class EasyTierRoomApiClient(
         val displayName: String,
         val clientVersion: String,
         val deviceSummary: String,
+        val description: String = "",
         val allowNewJoins: Boolean? = null,
         val createOnly: Boolean = false,
     )
@@ -565,6 +572,7 @@ internal class EasyTierRoomApiClient(
         val roomId: String,
         val ownerPlayerId: String,
         val ownerDisplayName: String = "",
+        val description: String = "",
         val mode: String = "room",
         val allowNewJoins: Boolean = false,
         val closedAtMs: Long = 0L,
@@ -583,6 +591,7 @@ internal class EasyTierRoomApiClient(
         val roomId: String,
         val ownerPlayerId: String,
         val ownerDisplayName: String = "",
+        val description: String = "",
         val mode: String = "room",
         val allowNewJoins: Boolean = false,
         val closedAtMs: Long = 0L,

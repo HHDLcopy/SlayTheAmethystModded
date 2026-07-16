@@ -7,6 +7,7 @@ import io.stamethyst.BuildConfig
 import io.stamethyst.backend.easytier.EasyTierConnectionSnapshot
 import io.stamethyst.backend.easytier.EasyTierConnectionStatus
 import io.stamethyst.backend.easytier.EasyTierSessionController
+import io.stamethyst.backend.easytier.EasyTierStateStore
 import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.backend.render.RendererBackendResolver
@@ -29,6 +30,10 @@ import java.util.TimeZone
 object StsLaunchSpec {
     private const val TAG = "STS-LaunchSpec"
     private const val EASYTIER_TOGETHER_IN_SPIRE_PORT = "33455"
+    private const val TOGETHER_IN_SPIRE_ROUTE_LOCK_PROPERTY =
+        "amethyst.runtime_compat.together_in_spire_route_lock"
+    private const val TOGETHER_IN_SPIRE_EASYTIER_AUTOFILL_PROPERTY =
+        "amethyst.runtime_compat.together_in_spire_easytier_autofill"
     private const val DEFAULT_G1_MAX_PAUSE_MILLIS = 80
     private const val DEFAULT_ACTIVE_PROCESSOR_COUNT = 3
     private const val DEFAULT_TIERED_STOP_AT_LEVEL = 2
@@ -225,6 +230,7 @@ object StsLaunchSpec {
         args.add("-Damethyst.in_game_file_picker_result=${RuntimePaths.inGameFilePickerResultFile(context).absolutePath}")
         args.add("-Damethyst.runtime_rescue_toast_request=${RuntimePaths.runtimeRescueToastRequestFile(context).absolutePath}")
         args.add("-Damethyst.touchscreen_card_hold_state=${RuntimePaths.touchscreenCardHoldStateFile(context).absolutePath}")
+        args.add("-Damethyst.easytier.runtime_state_file=${EasyTierStateStore.stateFile(context).absolutePath}")
         args.add(
             "-Damethyst.touchscreen_card_hold_right_click_guard=" +
                 if (LauncherConfig.readIgnoreLongPressRightClickWhilePlayingCard(context)) "true" else "false"
@@ -341,7 +347,14 @@ object StsLaunchSpec {
             "-Damethyst.floating_tools.built_in_keyboard=" +
                 if (LauncherConfig.isBuiltInSoftKeyboardEnabled(context)) "true" else "false"
         )
-        buildEasyTierTogetherInSpireJvmProperties(easyTierSnapshot).forEach { (key, value) ->
+        args.add(
+            "-D$TOGETHER_IN_SPIRE_ROUTE_LOCK_PROPERTY=" +
+                LauncherConfig.isTogetherInSpireRouteLockEnabled(context)
+        )
+        buildEasyTierTogetherInSpireJvmProperties(
+            snapshot = easyTierSnapshot,
+            autofillEnabled = LauncherConfig.isTogetherInSpireEasyTierAutofillEnabled(context),
+        ).forEach { (key, value) ->
             args.add("-D$key=$value")
         }
         args.add("-Duser.language=${Locale.getDefault().language}")
@@ -832,10 +845,16 @@ object StsLaunchSpec {
 
     internal fun buildEasyTierTogetherInSpireJvmProperties(
         snapshot: EasyTierConnectionSnapshot?,
+        autofillEnabled: Boolean,
     ): Map<String, String> {
         val properties = linkedMapOf(
-            "amethyst.easytier.together_in_spire.port" to EASYTIER_TOGETHER_IN_SPIRE_PORT,
+            TOGETHER_IN_SPIRE_EASYTIER_AUTOFILL_PROPERTY to autofillEnabled.toString(),
         )
+        if (!autofillEnabled) {
+            return properties
+        }
+        properties["amethyst.easytier.together_in_spire.port"] =
+            EASYTIER_TOGETHER_IN_SPIRE_PORT
         if (snapshot == null || snapshot.status != EasyTierConnectionStatus.CONNECTED) {
             return properties
         }

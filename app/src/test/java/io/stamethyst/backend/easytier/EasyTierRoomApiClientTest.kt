@@ -63,6 +63,7 @@ class EasyTierRoomApiClientTest {
                   "roomId": "room-alpha",
                   "ownerPlayerId": "host-1",
                   "ownerDisplayName": "Host",
+                  "description": "A relaxed run for new players",
                   "mode": "room",
                   "allowNewJoins": true,
                   "closedAtMs": 0,
@@ -78,6 +79,7 @@ class EasyTierRoomApiClientTest {
             assertEquals("room-alpha", parsed.roomId)
             assertEquals("host-1", parsed.ownerPlayerId)
             assertEquals("Host", parsed.ownerDisplayName)
+            assertEquals("A relaxed run for new players", parsed.description)
             assertEquals(EasyTierNetworkMode.Room, parsed.mode)
             assertTrue(parsed.allowNewJoins)
             assertEquals(0L, parsed.closedAtMs)
@@ -126,6 +128,7 @@ class EasyTierRoomApiClientTest {
                 roomId = "room-http",
                 playerId = "player-a",
                 displayName = "Player A",
+                roomDescriptionWhenCreating = "Two players wanted",
             )
 
             val request = server.takeRequest()
@@ -135,6 +138,7 @@ class EasyTierRoomApiClientTest {
             assertTrue(body.contains("\"roomId\":\"room-http\""))
             assertTrue(body.contains("\"playerId\":\"player-a\""))
             assertTrue(body.contains("\"displayName\":\"Player A\""))
+            assertTrue(body.contains("\"description\":\"Two players wanted\""))
             assertEquals("sess-http", session.sessionId)
             assertEquals("room-http", session.roomId)
             assertEquals("temporary-key", session.networkSecret)
@@ -407,6 +411,7 @@ class EasyTierRoomApiClientTest {
                       "roomId": "alpha-room",
                       "ownerPlayerId": "alice",
                       "ownerDisplayName": "Alice",
+                      "description": "Two players wanted",
                       "mode": "room",
                       "allowNewJoins": true,
                       "closedAtMs": 0,
@@ -425,6 +430,7 @@ class EasyTierRoomApiClientTest {
             assertEquals("alpha-room", parsed[0].roomId)
             assertEquals("alice", parsed[0].ownerPlayerId)
             assertEquals("Alice", parsed[0].ownerDisplayName)
+            assertEquals("Two players wanted", parsed[0].description)
             assertEquals(EasyTierNetworkMode.Room, parsed[0].mode)
             assertTrue(parsed[0].allowNewJoins)
             assertEquals(0L, parsed[0].closedAtMs)

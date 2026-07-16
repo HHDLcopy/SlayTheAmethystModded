@@ -1,6 +1,7 @@
 package io.stamethyst
 
 import android.app.Activity
+import android.content.Intent
 import android.view.View
 import android.widget.FrameLayout
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -23,7 +24,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import io.stamethyst.backend.easytier.EasyTierPermissionCoordinator
+import io.stamethyst.backend.workshop.WorkshopItemSummary
 import io.stamethyst.config.LauncherConfig
+import io.stamethyst.ui.LauncherNavigationRequestBus
 import io.stamethyst.ui.main.EasyTierBottomSheetContent
 import io.stamethyst.ui.main.MainScreenViewModel
 import io.stamethyst.ui.theme.LauncherTheme
@@ -129,6 +132,15 @@ private fun InGameEasyTierDialogHost(
     }
 
     val uiState = viewModel.uiState
+    fun openTutorialWorkshopDetails(item: WorkshopItemSummary) {
+        LauncherNavigationRequestBus.requestWorkshopDetail(item)
+        onDismiss()
+        activity.startActivity(
+            Intent(activity, LauncherActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            }
+        )
+    }
     LaunchedEffect(Unit) {
         viewModel.syncEasyTierUi(activity)
         viewModel.refreshEasyTierRooms(activity, forceRoomInfoReload = true)
@@ -165,15 +177,15 @@ private fun InGameEasyTierDialogHost(
                 onSelectRoom = { roomId ->
                     viewModel.selectEasyTierRoom(activity, roomId)
                 },
-                onCreateRoom = { roomId, allowNewJoins ->
+                onCreateRoom = { roomId, description, allowNewJoins ->
                     val permissionIntent =
                         EasyTierPermissionCoordinator.prepareVpnPermissionIntent(activity)
                     if (permissionIntent != null) {
-                        viewModel.queueEasyTierRoomCreation(roomId, allowNewJoins)
+                        viewModel.queueEasyTierRoomCreation(roomId, description, allowNewJoins)
                         viewModel.onEasyTierVpnPermissionRequired(activity)
                         permissionLauncher.launch(permissionIntent)
                     } else {
-                        viewModel.createEasyTierRoom(activity, roomId, allowNewJoins)
+                        viewModel.createEasyTierRoom(activity, roomId, description, allowNewJoins)
                     }
                 },
                 onLockRoom = { viewModel.lockEasyTierRoom(activity) },
@@ -190,6 +202,8 @@ private fun InGameEasyTierDialogHost(
                     }
                 },
                 onDisconnect = { viewModel.onDisconnectEasyTier(activity) },
+                onOpenTutorialWorkshopDetails = ::openTutorialWorkshopDetails,
+                onDownloadTutorialWorkshopItem = ::openTutorialWorkshopDetails,
                 modifier = Modifier.fillMaxSize(),
             )
         }

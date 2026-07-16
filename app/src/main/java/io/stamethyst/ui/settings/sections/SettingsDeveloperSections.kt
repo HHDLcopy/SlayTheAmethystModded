@@ -58,6 +58,11 @@ internal data class DeveloperRuntimeSettingsActions(
     val onCompendiumUpgradeTouchFixEnabledChanged: (Boolean) -> Unit,
 )
 
+internal data class TogetherInSpireSettingsActions(
+    val onRouteLockEnabledChanged: (Boolean) -> Unit,
+    val onEasyTierAutofillEnabledChanged: (Boolean) -> Unit,
+)
+
 
 internal data class AdvancedRenderSettingsActions(
     val onRendererSelectionModeChanged: (RendererSelectionMode) -> Unit,
@@ -94,6 +99,8 @@ internal fun LauncherDeveloperSettingsScreenContent(
     onManualDismissBootOverlayChanged: (Boolean) -> Unit = {},
     onSustainedPerformanceModeChanged: (Boolean) -> Unit = {},
     onCompendiumUpgradeTouchFixEnabledChanged: (Boolean) -> Unit = {},
+    onTogetherInSpireRouteLockEnabledChanged: (Boolean) -> Unit = {},
+    onTogetherInSpireEasyTierAutofillEnabledChanged: (Boolean) -> Unit = {},
     onSaveSteamCloudPhase0Credentials: (String, String, String) -> Boolean = { _, _, _ -> false },
     onRunSteamCloudPhase0Probe: () -> Unit = {},
     onClearSteamCloudPhase0Credentials: () -> Unit = {},
@@ -149,6 +156,22 @@ internal fun LauncherDeveloperSettingsScreenContent(
                         onSustainedPerformanceModeChanged = onSustainedPerformanceModeChanged,
                         onCompendiumUpgradeTouchFixEnabledChanged =
                             onCompendiumUpgradeTouchFixEnabledChanged,
+                    ),
+                )
+            }
+        }
+
+        item {
+            SettingsSectionCard(
+                title = stringResource(R.string.settings_together_in_spire_title)
+            ) {
+                SettingsTogetherInSpireSection(
+                    uiState = uiState,
+                    actions = TogetherInSpireSettingsActions(
+                        onRouteLockEnabledChanged =
+                            onTogetherInSpireRouteLockEnabledChanged,
+                        onEasyTierAutofillEnabledChanged =
+                            onTogetherInSpireEasyTierAutofillEnabledChanged,
                     ),
                 )
             }
@@ -241,6 +264,34 @@ internal fun LauncherDeveloperSettingsScreenContent(
             },
         )
     }
+}
+
+@Composable
+internal fun SettingsTogetherInSpireSection(
+    uiState: SettingsScreenViewModel.UiState,
+    actions: TogetherInSpireSettingsActions,
+) {
+    SettingsSwitchItem(
+        SettingsSwitchSpec(
+            checked = uiState.togetherInSpireRouteLockEnabled,
+            enabled = !uiState.busy,
+            enabledText = stringResource(R.string.settings_together_in_spire_route_lock_enabled),
+            disabledText = stringResource(R.string.settings_together_in_spire_route_lock_disabled),
+            description = stringResource(R.string.settings_together_in_spire_route_lock_desc),
+            onCheckedChange = actions.onRouteLockEnabledChanged,
+        )
+    )
+
+    SettingsSwitchItem(
+        SettingsSwitchSpec(
+            checked = uiState.togetherInSpireEasyTierAutofillEnabled,
+            enabled = !uiState.busy,
+            enabledText = stringResource(R.string.settings_together_in_spire_autofill_enabled),
+            disabledText = stringResource(R.string.settings_together_in_spire_autofill_disabled),
+            description = stringResource(R.string.settings_together_in_spire_autofill_desc),
+            onCheckedChange = actions.onEasyTierAutofillEnabledChanged,
+        )
+    )
 }
 
 

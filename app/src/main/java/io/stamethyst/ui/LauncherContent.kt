@@ -112,7 +112,9 @@ import io.stamethyst.ui.main.MainScreenViewModel
 import io.stamethyst.ui.modimport.ModImportHost
 import io.stamethyst.ui.workshop.WorkshopScreen
 import io.stamethyst.ui.workshop.WorkshopDownloadCenterScreen
+import io.stamethyst.ui.workshop.WorkshopDownloadCenterStore
 import io.stamethyst.ui.workshop.WorkshopDetailScreen
+import io.stamethyst.ui.workshop.resolveWorkshopModDownloadState
 import io.stamethyst.ui.workshop.WorkshopSubscriptionsScreen
 import io.stamethyst.ui.workshop.WorkshopViewModel
 import io.stamethyst.ui.quickstart.QuickStartScreen
@@ -141,6 +143,7 @@ import io.stamethyst.ui.settings.core.StsJarIntegrityDialogHost
 import io.stamethyst.ui.preferences.LauncherPreferences
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
 private const val PAGE_TRANSITION_DURATION_MS = 420
@@ -353,6 +356,10 @@ fun LauncherContent(
     fun openInstalledWorkshopDetails(mod: ModItemUi) {
         val workshop = mod.workshop ?: return
         openWorkshopDetail(workshop.appId, workshop.publishedFileId)
+    }
+
+    LaunchedEffect(Unit) {
+        LauncherNavigationRequestBus.workshopDetailRequests.collect(::openWorkshopItemDetails)
     }
 
     LaunchedEffect(currentRoute) {
@@ -1200,6 +1207,8 @@ private fun LauncherDockPager(
         )
     }
     val workshopUpdateCheckState by WorkshopUpdateCheckCoordinator.uiState.collectAsState()
+    val workshopUiState = workshopViewModel.uiState
+    val workshopDownloadTaskStatuses = WorkshopDownloadCenterStore.taskStatuses
     val currentDockRoute = pagerState.currentLauncherDockRoute()
     val shouldPollMainWorkshopDownloads = handleMainEffects &&
         (currentDockRoute == Route.Main || currentDockRoute == Route.Mods)
@@ -1244,6 +1253,18 @@ private fun LauncherDockPager(
                         onOpenFeedbackSubscriptions = onOpenFeedbackSubscriptions,
                         onUpdateNoticeClick = settingsViewModel::showUpdatePrompt,
                         showSteamCloudBottomSheetHost = currentDockRoute == Route.Main,
+                        tutorialWorkshopDownloadState = { item ->
+                            resolveWorkshopModDownloadState(
+                                item = item,
+                                installedMods = workshopUiState.installedMods,
+                                downloadTaskStatuses = workshopDownloadTaskStatuses,
+                                preparingDownloadIds = workshopUiState.preparingDownloadIds,
+                            )
+                        },
+                        onOpenTutorialWorkshopDetails = onOpenWorkshopDetails,
+                        onDownloadTutorialWorkshopItem = { item ->
+                            workshopViewModel.download(context.applicationContext, item)
+                        },
                     )
                 }
 

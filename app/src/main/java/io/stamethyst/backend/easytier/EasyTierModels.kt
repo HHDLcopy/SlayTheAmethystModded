@@ -21,6 +21,7 @@ enum class EasyTierNetworkMode(
 }
 
 const val DEFAULT_EASYTIER_SHARED_ROOM_ID = "sts-public-lobby"
+const val EASY_TIER_ROOM_DESCRIPTION_MAX_LENGTH = 120
 
 data class EasyTierResolvedConfig(
     val enabled: Boolean,
@@ -65,6 +66,7 @@ data class EasyTierRoomInfo(
     val roomId: String,
     val ownerPlayerId: String,
     val ownerDisplayName: String,
+    val description: String = "",
     val mode: EasyTierNetworkMode,
     val allowNewJoins: Boolean,
     val closedAtMs: Long = 0L,
@@ -77,6 +79,7 @@ data class EasyTierRoomListItem(
     val roomId: String,
     val ownerPlayerId: String,
     val ownerDisplayName: String,
+    val description: String = "",
     val mode: EasyTierNetworkMode,
     val allowNewJoins: Boolean,
     val closedAtMs: Long = 0L,

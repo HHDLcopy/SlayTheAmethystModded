@@ -355,6 +355,12 @@ fun LauncherDeveloperSettingsScreen(
         onCompendiumUpgradeTouchFixEnabledChanged = { enabled ->
             viewModel.onCompendiumUpgradeTouchFixEnabledChanged(activity, enabled)
         },
+        onTogetherInSpireRouteLockEnabledChanged = { enabled ->
+            viewModel.onTogetherInSpireRouteLockEnabledChanged(activity, enabled)
+        },
+        onTogetherInSpireEasyTierAutofillEnabledChanged = { enabled ->
+            viewModel.onTogetherInSpireEasyTierAutofillEnabledChanged(activity, enabled)
+        },
         onSaveSteamCloudPhase0Credentials = { accountName, refreshToken, proxyUrl ->
             viewModel.onSaveSteamCloudPhase0Credentials(activity, accountName, refreshToken, proxyUrl)
         },

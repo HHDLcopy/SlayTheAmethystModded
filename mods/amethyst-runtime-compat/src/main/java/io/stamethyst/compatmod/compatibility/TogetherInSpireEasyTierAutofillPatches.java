@@ -4,19 +4,40 @@ import com.evacipated.cardcrawl.modthespire.lib.SpirePatch2;
 import com.evacipated.cardcrawl.modthespire.lib.SpirePostfixPatch;
 import com.evacipated.cardcrawl.modthespire.lib.SpirePrefixPatch;
 
+import java.io.File;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.Collections;
+import java.util.Map;
+import java.util.WeakHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public final class TogetherInSpireEasyTierAutofillPatches {
     private static final String MOD_ID = "spireTogether";
     private static final String SPIRE_TOGETHER_MOD_CLASS = "spireTogether.SpireTogetherMod";
+    private static final String JOIN_SCREEN_CLASS = "spireTogether.screens.lobby.MPJoinScreen";
     private static final String INPUT_FIELD_CLASS = "spireTogether.ui.elements.mixed.InputField";
     private static final String HOST_IP_PROPERTY = "amethyst.easytier.together_in_spire.host_ip";
     private static final String PORT_PROPERTY = "amethyst.easytier.together_in_spire.port";
+    private static final String RUNTIME_STATE_FILE_PROPERTY = "amethyst.easytier.runtime_state_file";
     private static final String DEFAULT_PORT = "33455";
+    private static final long MAX_RUNTIME_STATE_FILE_BYTES = 64L * 1024L;
+    private static final long RUNTIME_STATE_REFRESH_INTERVAL_MS = 500L;
+    private static final Pattern CONNECTED_STATUS_PATTERN = Pattern.compile(
+        "\\\"status\\\"\\s*:\\s*\\\"CONNECTED\\\""
+    );
+    private static final Pattern ROOM_OWNER_IPV4_PATTERN = Pattern.compile(
+        "\\\"roomOwnerIpv4Cidr\\\"\\s*:\\s*\\\"([^\\\"]*)\\\""
+    );
 
     private static volatile Class<?> spireTogetherModClass;
     private static volatile Method inputFieldSetTextMethod;
+    private static volatile long nextRuntimeStateRefreshAtMs;
+    private static final Map<Object, String> autoFilledJoinHostIps =
+        Collections.synchronizedMap(new WeakHashMap<Object, String>());
 
     private TogetherInSpireEasyTierAutofillPatches() {
     }
@@ -66,6 +87,9 @@ public final class TogetherInSpireEasyTierAutofillPatches {
     }
 
     private static void applySharedDefaults() {
+        if (!TogetherInSpireCompatRuntime.isEasyTierAutofillEnabled()) {
+            return;
+        }
         String port = resolvePort();
         setSpireStaticString("HostPort", port);
         setSpireStaticString("ConnectPort", port);
@@ -76,18 +100,76 @@ public final class TogetherInSpireEasyTierAutofillPatches {
     }
 
     private static void applyJoinScreenDefaults(Object joinScreen) {
-        if (joinScreen == null) {
+        if (!TogetherInSpireCompatRuntime.isEasyTierAutofillEnabled() || joinScreen == null) {
             return;
         }
-        String hostIp = resolveHostIp();
-        if (!hostIp.isEmpty()) {
-            setInputFieldText(joinScreen, "IPInputfield", hostIp);
-        }
+        applyJoinScreenHostIp(joinScreen, resolveHostIp());
         setInputFieldText(joinScreen, "PortInputfield", resolvePort());
     }
 
+    private static void refreshJoinScreenRuntimeHostIp(Object joinScreen) {
+        if (!TogetherInSpireCompatRuntime.isEasyTierAutofillEnabled() || joinScreen == null) {
+            return;
+        }
+        long nowMs = System.currentTimeMillis();
+        if (nowMs < nextRuntimeStateRefreshAtMs) {
+            return;
+        }
+        nextRuntimeStateRefreshAtMs = nowMs + RUNTIME_STATE_REFRESH_INTERVAL_MS;
+        applyJoinScreenHostIp(joinScreen, resolveRuntimeStateHostIp());
+    }
+
+    private static void applyJoinScreenHostIp(Object joinScreen, String hostIp) {
+        if (hostIp.isEmpty() || hostIp.equals(autoFilledJoinHostIps.get(joinScreen))) {
+            return;
+        }
+        setSpireStaticString("IP", hostIp);
+        setInputFieldText(joinScreen, "IPInputfield", hostIp);
+        autoFilledJoinHostIps.put(joinScreen, hostIp);
+    }
+
     private static String resolveHostIp() {
+        String runtimeHostIp = resolveRuntimeStateHostIp();
+        if (!runtimeHostIp.isEmpty()) {
+            return runtimeHostIp;
+        }
         return normalizeIpv4Host(System.getProperty(HOST_IP_PROPERTY, ""));
+    }
+
+    private static String resolveRuntimeStateHostIp() {
+        String stateFilePath = System.getProperty(RUNTIME_STATE_FILE_PROPERTY, "").trim();
+        if (stateFilePath.isEmpty()) {
+            return "";
+        }
+        File stateFile = new File(stateFilePath);
+        if (!stateFile.isFile() || stateFile.length() > MAX_RUNTIME_STATE_FILE_BYTES) {
+            return "";
+        }
+        try {
+            String stateText = new String(Files.readAllBytes(stateFile.toPath()), StandardCharsets.UTF_8);
+            if (!CONNECTED_STATUS_PATTERN.matcher(stateText).find()) {
+                return "";
+            }
+            Matcher ownerIpv4 = ROOM_OWNER_IPV4_PATTERN.matcher(stateText);
+            return ownerIpv4.find() ? normalizeIpv4Host(ownerIpv4.group(1)) : "";
+        } catch (Exception ignored) {
+            return "";
+        }
+    }
+
+    @SpirePatch2(
+        cls = "spireTogether.screens.Screen",
+        method = "update",
+        requiredModId = MOD_ID,
+        optional = true
+    )
+    public static class JoinScreenUpdatePatch {
+        @SpirePostfixPatch
+        public static void Postfix(Object __instance) {
+            if (__instance != null && JOIN_SCREEN_CLASS.equals(__instance.getClass().getName())) {
+                refreshJoinScreenRuntimeHostIp(__instance);
+            }
+        }
     }
 
     private static String resolvePort() {

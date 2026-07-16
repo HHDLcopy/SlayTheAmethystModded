@@ -125,6 +125,9 @@ The default is 90 seconds. If a client stops reporting before the timeout, the s
 and deletes the room when the missing session belongs to its owner. Rooms are
 created atomically by the owner's `POST /api/lan/session/start` request; a room
 with no active owner, or no active members, is removed with all of its sessions.
+The creation request may include an optional `description` (up to 120
+characters). It is immutable for the room lifetime and is returned by both the
+room list and room-info endpoints.
 
 When `EASYTIER_MANAGED=true`, the Node service can manage local EasyTier child
 processes in development:

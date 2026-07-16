@@ -1180,6 +1180,51 @@ private fun WorkshopItemCard(
     onClick: () -> Unit,
     onDownload: () -> Unit,
 ) {
+    WorkshopSummaryCard(
+        modifier = modifier,
+        publishedFileId = item.publishedFileId,
+        previewUrl = item.previewUrl,
+        title = item.title,
+        supportingText = item.authorName.ifBlank {
+            item.description.ifBlank { stringResource(R.string.workshop_open_detail_hint) }
+        },
+        onClick = onClick,
+        footerContent = {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                WorkshopRatingIndicator(
+                    rating = item.rating,
+                    modifier = Modifier.width(WorkshopRatingIndicatorWidth),
+                )
+                WorkshopDownloadCountIndicator(
+                    downloadCount = item.downloadCount,
+                    modifier = Modifier.width(WorkshopDownloadCountIndicatorWidth),
+                )
+            }
+        },
+        trailingContent = {
+            WorkshopDownloadActionButton(
+                state = downloadState,
+                onClick = onDownload,
+                iconOnly = true,
+            )
+        },
+    )
+}
+
+@Composable
+internal fun WorkshopSummaryCard(
+    publishedFileId: ULong,
+    previewUrl: String,
+    title: String,
+    supportingText: String,
+    onClick: () -> Unit,
+    footerContent: @Composable () -> Unit,
+    trailingContent: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Card(
         onClick = onClick,
         modifier = modifier
@@ -1192,38 +1237,22 @@ private fun WorkshopItemCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             WorkshopPreviewImage(
-                publishedFileId = item.publishedFileId,
-                url = item.previewUrl,
-                contentDescription = stringResource(R.string.workshop_preview_content_description, item.title),
+                publishedFileId = publishedFileId,
+                url = previewUrl,
+                contentDescription = stringResource(R.string.workshop_preview_content_description, title),
             )
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(item.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Text(
-                    text = item.authorName.ifBlank { item.description.ifBlank { stringResource(R.string.workshop_open_detail_hint) } },
+                    text = supportingText,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    WorkshopRatingIndicator(
-                        rating = item.rating,
-                        modifier = Modifier.width(WorkshopRatingIndicatorWidth),
-                    )
-                    WorkshopDownloadCountIndicator(
-                        downloadCount = item.downloadCount,
-                        modifier = Modifier.width(WorkshopDownloadCountIndicatorWidth),
-                    )
-                }
+                footerContent()
             }
-            WorkshopDownloadActionButton(
-                state = downloadState,
-                onClick = onDownload,
-                iconOnly = true,
-            )
+            trailingContent()
         }
     }
 }

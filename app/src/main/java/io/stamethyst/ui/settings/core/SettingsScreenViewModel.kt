@@ -373,6 +373,10 @@ class SettingsScreenViewModel : ViewModel() {
         val mobileHudEnabled: Boolean = LauncherPreferences.DEFAULT_MOBILE_HUD_ENABLED,
         val compendiumUpgradeTouchFixEnabled: Boolean =
             LauncherPreferences.DEFAULT_COMPENDIUM_UPGRADE_TOUCH_FIX_ENABLED,
+        val togetherInSpireRouteLockEnabled: Boolean =
+            LauncherPreferences.DEFAULT_TOGETHER_IN_SPIRE_ROUTE_LOCK_ENABLED,
+        val togetherInSpireEasyTierAutofillEnabled: Boolean =
+            LauncherPreferences.DEFAULT_TOGETHER_IN_SPIRE_EASYTIER_AUTOFILL_ENABLED,
         val avoidDisplayCutout: Boolean = LauncherPreferences.DEFAULT_AVOID_DISPLAY_CUTOUT,
         val cropScreenBottom: Boolean = LauncherPreferences.DEFAULT_CROP_SCREEN_BOTTOM,
         val ramSaverEnabled: Boolean = LauncherPreferences.DEFAULT_RAM_SAVER_ENABLED,
@@ -3178,6 +3182,24 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(host)
     }
 
+    fun onTogetherInSpireRouteLockEnabledChanged(host: Activity, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        uiState = uiState.copy(togetherInSpireRouteLockEnabled = enabled)
+        LauncherPreferences.setTogetherInSpireRouteLockEnabled(host, enabled)
+        refreshStatus(host)
+    }
+
+    fun onTogetherInSpireEasyTierAutofillEnabledChanged(host: Activity, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        uiState = uiState.copy(togetherInSpireEasyTierAutofillEnabled = enabled)
+        LauncherPreferences.setTogetherInSpireEasyTierAutofillEnabled(host, enabled)
+        refreshStatus(host)
+    }
+
     fun onDisplayCutoutAvoidanceChanged(host: Activity, enabled: Boolean) {
         if (uiState.busy) {
             return
@@ -3843,6 +3865,9 @@ class SettingsScreenViewModel : ViewModel() {
             showModFileName = input.showModFileName,
             mobileHudEnabled = input.mobileHudEnabled,
             compendiumUpgradeTouchFixEnabled = input.compendiumUpgradeTouchFixEnabled,
+            togetherInSpireRouteLockEnabled = input.togetherInSpireRouteLockEnabled,
+            togetherInSpireEasyTierAutofillEnabled =
+                input.togetherInSpireEasyTierAutofillEnabled,
             avoidDisplayCutout = input.avoidDisplayCutout,
             cropScreenBottom = input.cropScreenBottom,
             ramSaverEnabled = input.ramSaverEnabled,

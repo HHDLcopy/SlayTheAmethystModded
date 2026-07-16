@@ -798,6 +798,12 @@ void critical_send_cursor_pos(jfloat x, jfloat y) {
 #ifdef DEBUG
     ;
 #endif
+    if (pojav_environ == NULL) {
+        return;
+    }
+    // Keep glfwGetCursorPos/nativeGetCursor* consistent with callback delivery.
+    pojav_environ->cursorX = x;
+    pojav_environ->cursorY = y;
     if (pojav_environ->GLFW_invoke_CursorPos && pojav_environ->isInputReady) {
 #ifdef DEBUG
         ;
@@ -818,10 +824,9 @@ void critical_send_cursor_pos(jfloat x, jfloat y) {
         }
 
         if (!pojav_environ->isUseStackQueueCall) {
+            pojav_environ->cLastX = x;
+            pojav_environ->cLastY = y;
             pojav_environ->GLFW_invoke_CursorPos((void*) pojav_environ->showingWindow, (double) (x), (double) (y));
-        } else {
-            pojav_environ->cursorX = x;
-            pojav_environ->cursorY = y;
         }
     }
 }

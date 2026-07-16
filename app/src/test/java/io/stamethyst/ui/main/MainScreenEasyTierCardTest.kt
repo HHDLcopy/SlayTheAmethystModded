@@ -93,6 +93,14 @@ class MainScreenEasyTierCardTest {
             ),
         )
         assertEquals(
+            EasyTierRoomContentMode.Tutorial,
+            easyTierRoomContentMode(
+                page = EasyTierRoomSheetPage.Tutorial,
+                panelMode = EasyTierRoomPanelMode.Unjoined,
+                roomsLoading = true,
+            ),
+        )
+        assertEquals(
             EasyTierRoomContentMode.Unjoined,
             easyTierRoomContentMode(
                 page = EasyTierRoomSheetPage.Rooms,

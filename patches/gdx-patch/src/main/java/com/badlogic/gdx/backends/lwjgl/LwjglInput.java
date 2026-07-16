@@ -889,8 +889,8 @@ final public class LwjglInput implements Input {
 		if (hasSyntheticCursorPosition) {
 			return syntheticCursorY;
 		}
-		int logicalY = height - 1 - Math.round(CallbackBridge.nativeGetCursorY());
-		return clampToRange(logicalY, height);
+		// GDX Input and GLFW cursor callbacks both use a top-left origin.
+		return clampToRange(Math.round(CallbackBridge.nativeGetCursorY()), height);
 	}
 
 	private int clampToRange (int value, int exclusiveMax) {

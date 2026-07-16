@@ -293,10 +293,13 @@ static void abort_waiter_setup() {
 static jint launchJVM(int margc, char** margv) {
    void* libjli = dlopen("libjli.so", RTLD_LAZY | RTLD_GLOBAL);
 
-   // Unset all signal handlers to create a good slate for JVM signal detection.
+   // Preserve bionic's reserved runtime handlers, including libcore's signal 34.
    struct sigaction clean_sa;
    memset(&clean_sa, 0, sizeof (struct sigaction));
    for(int sigid = SIGHUP; sigid < NSIG; sigid++) {
+       if(sigid >= __SIGRTMIN && sigid <= __SIGRTMIN + 9) {
+           continue;
+       }
        clean_sa.sa_handler = SIG_DFL;
        sigaction(sigid, &clean_sa, NULL);
    }

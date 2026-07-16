@@ -5,6 +5,12 @@ internal data class WindowCoords(
     val y: Float
 )
 
+internal fun glfwCursorYFromMappedViewY(mappedY: Float, windowHeight: Int): Float {
+    // Android view and GLFW cursor coordinates both use a top-left origin.
+    val height = maxOf(1, windowHeight)
+    return mappedY.coerceIn(0f, height - 1f)
+}
+
 internal inline fun mapViewToWindowCoords(
     viewX: Float,
     viewY: Float,

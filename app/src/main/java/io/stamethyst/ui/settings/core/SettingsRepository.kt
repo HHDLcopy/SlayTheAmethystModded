@@ -101,6 +101,8 @@ internal object SettingsRepository {
         val showModFileName: Boolean,
         val mobileHudEnabled: Boolean,
         val compendiumUpgradeTouchFixEnabled: Boolean,
+        val togetherInSpireRouteLockEnabled: Boolean,
+        val togetherInSpireEasyTierAutofillEnabled: Boolean,
         val avoidDisplayCutout: Boolean,
         val cropScreenBottom: Boolean,
         val ramSaverEnabled: Boolean,
@@ -247,6 +249,10 @@ internal object SettingsRepository {
                 mobileHudEnabled = LauncherPreferences.readMobileHudEnabled(context),
                 compendiumUpgradeTouchFixEnabled =
                     LauncherPreferences.readCompendiumUpgradeTouchFixEnabled(context),
+                togetherInSpireRouteLockEnabled =
+                    LauncherPreferences.isTogetherInSpireRouteLockEnabled(context),
+                togetherInSpireEasyTierAutofillEnabled =
+                    LauncherPreferences.isTogetherInSpireEasyTierAutofillEnabled(context),
                 avoidDisplayCutout = LauncherPreferences.isDisplayCutoutAvoidanceEnabled(context),
                 cropScreenBottom = LauncherPreferences.isScreenBottomCropEnabled(context),
                 ramSaverEnabled = LauncherPreferences.isRamSaverEnabled(context),
@@ -413,6 +419,14 @@ internal object SettingsRepository {
         LauncherPreferences.saveCompendiumUpgradeTouchFixEnabled(
             context,
             LauncherPreferences.DEFAULT_COMPENDIUM_UPGRADE_TOUCH_FIX_ENABLED
+        )
+        LauncherPreferences.setTogetherInSpireRouteLockEnabled(
+            context,
+            LauncherPreferences.DEFAULT_TOGETHER_IN_SPIRE_ROUTE_LOCK_ENABLED
+        )
+        LauncherPreferences.setTogetherInSpireEasyTierAutofillEnabled(
+            context,
+            LauncherPreferences.DEFAULT_TOGETHER_IN_SPIRE_EASYTIER_AUTOFILL_ENABLED
         )
         LauncherPreferences.setDisplayCutoutAvoidanceEnabled(
             context,

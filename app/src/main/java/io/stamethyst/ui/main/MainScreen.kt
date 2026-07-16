@@ -24,12 +24,14 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Column
@@ -102,9 +104,11 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -114,6 +118,7 @@ import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
@@ -129,6 +134,7 @@ import io.stamethyst.backend.easytier.EasyTierFailureCategory
 import io.stamethyst.backend.easytier.EasyTierRoomInfo
 import io.stamethyst.backend.easytier.EasyTierRoomListItem
 import io.stamethyst.backend.easytier.EasyTierRoomMember
+import io.stamethyst.backend.easytier.EASY_TIER_ROOM_DESCRIPTION_MAX_LENGTH
 import io.stamethyst.backend.render.RendererBackendResolver
 import io.stamethyst.backend.steamcloud.SteamCloudFailureCategory
 import io.stamethyst.backend.steamcloud.SteamCloudSyncDirection
@@ -136,12 +142,14 @@ import io.stamethyst.backend.steamcloud.SteamCloudUserWarning
 import io.stamethyst.backend.steamcloud.SteamCloudUploadPlan
 import io.stamethyst.backend.workshop.WorkshopUpdateCheckCoordinator
 import io.stamethyst.backend.workshop.WorkshopUpdateCheckUiState
+import io.stamethyst.backend.workshop.WorkshopItemSummary
 import io.stamethyst.backend.workshop.isActiveDownload
 import io.stamethyst.ui.CollapsibleFloatingGlassHeader
 import io.stamethyst.ui.FloatingGlassHeader
 import io.stamethyst.ui.LauncherTransientNoticeBus
 import io.stamethyst.ui.LoadingSkeletonBlock
 import io.stamethyst.ui.UiText
+import io.stamethyst.ui.rememberCloudControlSettings
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.model.WorkshopModState
 import io.stamethyst.ui.Icons
@@ -152,6 +160,9 @@ import io.stamethyst.ui.icon.Settings
 import io.stamethyst.ui.modimport.ModImportRequestBus
 import io.stamethyst.ui.preferences.LauncherPreferences
 import io.stamethyst.ui.workshop.WorkshopDownloadCenterStore
+import io.stamethyst.ui.workshop.WorkshopDownloadActionButton
+import io.stamethyst.ui.workshop.WorkshopModDownloadState
+import io.stamethyst.ui.workshop.WorkshopSummaryCard
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
@@ -175,6 +186,12 @@ private enum class SteamCloudNetworkPromptAction {
 private const val MODS_CONTENT_MOUNT_DELAY_MS = 80L
 private val EASY_TIER_ONLINE_ROOMS_VIEWPORT_HEIGHT = 240.dp
 private const val EASY_TIER_BOTTOM_SHEET_VIEWPORT_HEIGHT_FRACTION = 0.88f
+private const val TOGETHER_IN_SPIRE_WORKSHOP_ID = 2384072973UL
+private const val TOGETHER_IN_SPIRE_CHINESE_PATCH_WORKSHOP_ID = 3437013024UL
+private const val TOGETHER_IN_SPIRE_PREVIEW_URL =
+    "https://images.steamusercontent.com/ugc/1847035764735395146/39A52A0B3EEE28127C403167CC7F2D87400691B8/"
+private const val TOGETHER_IN_SPIRE_CHINESE_PATCH_PREVIEW_URL =
+    "https://images.steamusercontent.com/ugc/61465446613181762/80882D085E6E5EF35E795498B925C8D81C448A60/"
 private const val EASY_TIER_ROOM_AUTO_REFRESH_INTERVAL_MS = 5_000L
 
 @Composable
@@ -1277,6 +1294,7 @@ private fun easyTierIndicatorTint(
 internal enum class EasyTierRoomSheetPage {
     Rooms,
     Create,
+    Tutorial,
 }
 
 internal enum class EasyTierRoomPanelMode {
@@ -1291,6 +1309,7 @@ internal enum class EasyTierRoomContentMode {
     JoinedMember,
     JoinedOwner,
     Create,
+    Tutorial,
 }
 
 internal fun easyTierRoomContentMode(
@@ -1299,6 +1318,7 @@ internal fun easyTierRoomContentMode(
     roomsLoading: Boolean = false,
 ): EasyTierRoomContentMode = when {
     page == EasyTierRoomSheetPage.Create -> EasyTierRoomContentMode.Create
+    page == EasyTierRoomSheetPage.Tutorial -> EasyTierRoomContentMode.Tutorial
     roomsLoading -> EasyTierRoomContentMode.Loading
     else -> when (panelMode) {
         EasyTierRoomPanelMode.Unjoined -> EasyTierRoomContentMode.Unjoined
@@ -1450,6 +1470,15 @@ private fun EasyTierOnlineRoomsSection(
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.SemiBold,
                             )
+                            room.description.trim().takeIf(String::isNotEmpty)?.let { description ->
+                                Text(
+                                    text = description,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
                             Text(
                                 text = stringResource(
                                     R.string.main_easytier_room_item_summary,
@@ -1502,6 +1531,13 @@ private fun EasyTierRoomMembersSection(
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.SemiBold,
         )
+        room.description.trim().takeIf(String::isNotEmpty)?.let { description ->
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         room.members.forEach { member ->
             val assignedIpv4Cidr = resolveEasyTierRoomMemberIpv4Cidr(
                 member = member,
@@ -1789,16 +1825,204 @@ private fun EasyTierRoomDetailLoadingSkeleton() {
 }
 
 @Composable
+private fun EasyTierTutorialPanel(
+    downloadStateFor: (WorkshopItemSummary) -> WorkshopModDownloadState,
+    onOpenDetails: (WorkshopItemSummary) -> Unit,
+    onDownload: (WorkshopItemSummary) -> Unit,
+) {
+    val togetherInSpire = WorkshopItemSummary(
+        publishedFileId = TOGETHER_IN_SPIRE_WORKSHOP_ID,
+        appId = 646570u,
+        title = stringResource(R.string.main_easytier_tutorial_together_in_spire_title),
+        previewUrl = TOGETHER_IN_SPIRE_PREVIEW_URL,
+        description = "",
+        authorName = stringResource(
+            R.string.main_easytier_tutorial_workshop_id,
+            TOGETHER_IN_SPIRE_WORKSHOP_ID.toString(),
+        ),
+    )
+    val chinesePatch = WorkshopItemSummary(
+        publishedFileId = TOGETHER_IN_SPIRE_CHINESE_PATCH_WORKSHOP_ID,
+        appId = 646570u,
+        title = stringResource(R.string.main_easytier_tutorial_chinese_patch_title),
+        previewUrl = TOGETHER_IN_SPIRE_CHINESE_PATCH_PREVIEW_URL,
+        description = "",
+        authorName = stringResource(
+            R.string.main_easytier_tutorial_workshop_id,
+            TOGETHER_IN_SPIRE_CHINESE_PATCH_WORKSHOP_ID.toString(),
+        ),
+    )
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(22.dp),
+    ) {
+        EasyTierTutorialStep(
+            stepNumber = 1,
+            title = stringResource(R.string.main_easytier_tutorial_step_mods_title),
+            body = stringResource(R.string.main_easytier_tutorial_step_mods_body),
+        ) {
+            WorkshopSummaryCard(
+                publishedFileId = togetherInSpire.publishedFileId,
+                previewUrl = togetherInSpire.previewUrl,
+                title = togetherInSpire.title,
+                supportingText = togetherInSpire.authorName,
+                onClick = { onOpenDetails(togetherInSpire) },
+                footerContent = {
+                    Text(
+                        text = stringResource(R.string.main_easytier_tutorial_mod_required),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                },
+                trailingContent = {
+                    WorkshopDownloadActionButton(
+                        state = downloadStateFor(togetherInSpire),
+                        onClick = { onDownload(togetherInSpire) },
+                        iconOnly = true,
+                    )
+                },
+            )
+            WorkshopSummaryCard(
+                publishedFileId = chinesePatch.publishedFileId,
+                previewUrl = chinesePatch.previewUrl,
+                title = chinesePatch.title,
+                supportingText = chinesePatch.authorName,
+                onClick = { onOpenDetails(chinesePatch) },
+                footerContent = {
+                    Text(
+                        text = stringResource(R.string.main_easytier_tutorial_mod_recommended),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.secondary,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                },
+                trailingContent = {
+                    WorkshopDownloadActionButton(
+                        state = downloadStateFor(chinesePatch),
+                        onClick = { onDownload(chinesePatch) },
+                        iconOnly = true,
+                    )
+                },
+            )
+        }
+
+        EasyTierTutorialStep(
+            stepNumber = 2,
+            title = stringResource(R.string.main_easytier_tutorial_step_room_title),
+            body = stringResource(R.string.main_easytier_tutorial_step_room_body),
+        ) {
+            EasyTierTutorialImage(
+                imageResId = R.drawable.easytier_tutorial_room_flow,
+                contentDescription = stringResource(R.string.main_easytier_tutorial_room_image_description),
+                aspectRatio = 1040f / 1030f,
+            )
+        }
+
+        EasyTierTutorialStep(
+            stepNumber = 3,
+            title = stringResource(R.string.main_easytier_tutorial_step_game_title),
+            body = stringResource(R.string.main_easytier_tutorial_step_game_body),
+        ) {
+            EasyTierTutorialImage(
+                imageResId = R.drawable.easytier_tutorial_game_roles,
+                contentDescription = stringResource(R.string.main_easytier_tutorial_game_image_description),
+                aspectRatio = 1280f / 820f,
+            )
+            Text(
+                text = stringResource(R.string.main_easytier_tutorial_autofill_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Medium,
+            )
+        }
+    }
+}
+
+@Composable
+private fun EasyTierTutorialStep(
+    stepNumber: Int,
+    title: String,
+    body: String,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Surface(
+            modifier = Modifier.size(32.dp),
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Text(
+                    text = stepNumber.toString(),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = body,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            content()
+        }
+    }
+}
+
+@Composable
+private fun EasyTierTutorialImage(
+    @DrawableRes imageResId: Int,
+    contentDescription: String,
+    aspectRatio: Float,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+    ) {
+        Image(
+            painter = painterResource(imageResId),
+            contentDescription = contentDescription,
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(aspectRatio),
+            contentScale = ContentScale.Crop,
+        )
+    }
+}
+
+@Composable
 private fun EasyTierCreateRoomPanel(
     roomId: String,
+    roomDescription: String,
     allowNewJoins: Boolean,
     creating: Boolean,
     mutating: Boolean,
     connectionState: MainScreenViewModel.EasyTierIndicatorState,
     onRoomIdChange: (String) -> Unit,
+    onRoomDescriptionChange: (String) -> Unit,
     onAllowNewJoinsChange: (Boolean) -> Unit,
-    onCreateRoom: (String, Boolean) -> Unit,
+    onCreateRoom: (String, String, Boolean) -> Unit,
 ) {
+    val uriHandler = LocalUriHandler.current
+    val cloudControlSettings by rememberCloudControlSettings()
     Surface(
         shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
@@ -1815,6 +2039,17 @@ private fun EasyTierCreateRoomPanel(
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text(stringResource(R.string.main_easytier_create_room_label)) },
                 singleLine = true,
+                enabled = !creating,
+            )
+            OutlinedTextField(
+                value = roomDescription,
+                onValueChange = { description ->
+                    onRoomDescriptionChange(description.take(EASY_TIER_ROOM_DESCRIPTION_MAX_LENGTH))
+                },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(stringResource(R.string.main_easytier_create_room_description_label)) },
+                minLines = 2,
+                maxLines = 3,
                 enabled = !creating,
             )
             Row(
@@ -1839,7 +2074,7 @@ private fun EasyTierCreateRoomPanel(
                 )
             }
             Button(
-                onClick = { onCreateRoom(roomId.trim(), allowNewJoins) },
+                onClick = { onCreateRoom(roomId.trim(), roomDescription.trim(), allowNewJoins) },
                 enabled = roomId.isNotBlank() && !creating && !mutating,
                 modifier = Modifier.fillMaxWidth(),
             ) {
@@ -1877,6 +2112,18 @@ private fun EasyTierCreateRoomPanel(
                     }
                 }
             }
+            Text(
+                text = stringResource(R.string.main_easytier_create_room_join_group),
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .clickable {
+                        uriHandler.openUri(cloudControlSettings.qqGroupUrl)
+                },
+                style = MaterialTheme.typography.labelMedium.copy(
+                    color = Color(0xFF1565C0),
+                    textDecoration = TextDecoration.Underline,
+                ),
+            )
             AnimatedVisibility(
                 visible = creating,
                 enter = fadeIn(animationSpec = tween(durationMillis = 140)) +
@@ -1921,16 +2168,22 @@ internal fun EasyTierBottomSheetContent(
     roomBrowser: MainScreenViewModel.EasyTierRoomBrowserUi,
     onRefreshRooms: () -> Unit,
     onSelectRoom: (String) -> Unit,
-    onCreateRoom: (String, Boolean) -> Unit,
+    onCreateRoom: (String, String, Boolean) -> Unit,
     onLockRoom: () -> Unit,
     onUnlockRoom: () -> Unit,
     onCloseRoom: () -> Unit,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
+    tutorialWorkshopDownloadState: (WorkshopItemSummary) -> WorkshopModDownloadState = {
+        WorkshopModDownloadState.NotDownloaded
+    },
+    onOpenTutorialWorkshopDetails: (WorkshopItemSummary) -> Unit = {},
+    onDownloadTutorialWorkshopItem: (WorkshopItemSummary) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var page by remember { mutableStateOf(EasyTierRoomSheetPage.Rooms) }
     var createRoomId by remember { mutableStateOf("") }
+    var createRoomDescription by remember { mutableStateOf("") }
     var createAllowNewJoins by remember { mutableStateOf(true) }
     var submittedCreateRoomId by remember { mutableStateOf("") }
     var closeConfirmationRoom by remember { mutableStateOf<EasyTierRoomInfo?>(null) }
@@ -1976,6 +2229,7 @@ internal fun EasyTierBottomSheetContent(
         }
         if (selectedRoom?.roomId == submittedCreateRoomId) {
             createRoomId = ""
+            createRoomDescription = ""
             createAllowNewJoins = true
             submittedCreateRoomId = ""
             page = EasyTierRoomSheetPage.Rooms
@@ -2021,15 +2275,15 @@ internal fun EasyTierBottomSheetContent(
             targetState = page,
             modifier = Modifier.fillMaxWidth(),
             transitionSpec = {
-                val enteringCreate = targetState == EasyTierRoomSheetPage.Create
+                val enteringSecondaryPage = targetState != EasyTierRoomSheetPage.Rooms
                 val enter = fadeIn(animationSpec = tween(durationMillis = 180)) +
                     slideInHorizontally(
-                        initialOffsetX = { width -> if (enteringCreate) width / 5 else -width / 5 },
+                        initialOffsetX = { width -> if (enteringSecondaryPage) width / 5 else -width / 5 },
                         animationSpec = tween(durationMillis = 240),
                     )
                 val exit = fadeOut(animationSpec = tween(durationMillis = 120)) +
                     slideOutHorizontally(
-                        targetOffsetX = { width -> if (enteringCreate) -width / 6 else width / 6 },
+                        targetOffsetX = { width -> if (enteringSecondaryPage) -width / 6 else width / 6 },
                         animationSpec = tween(durationMillis = 180),
                     )
                 enter togetherWith exit using SizeTransform(clip = false)
@@ -2046,18 +2300,18 @@ internal fun EasyTierBottomSheetContent(
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     Text(
-                        text = if (targetPage == EasyTierRoomSheetPage.Create) {
-                            stringResource(R.string.main_easytier_create_room_title)
-                        } else {
-                            stringResource(R.string.main_easytier_sheet_title)
+                        text = when (targetPage) {
+                            EasyTierRoomSheetPage.Rooms -> stringResource(R.string.main_easytier_sheet_title)
+                            EasyTierRoomSheetPage.Create -> stringResource(R.string.main_easytier_create_room_title)
+                            EasyTierRoomSheetPage.Tutorial -> stringResource(R.string.main_easytier_tutorial_title)
                         },
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.SemiBold,
                     )
-                    val summary = if (targetPage == EasyTierRoomSheetPage.Create) {
-                        stringResource(R.string.main_easytier_create_room_summary)
-                    } else {
-                        easyTierOverviewSummary(indicator)
+                    val summary = when (targetPage) {
+                        EasyTierRoomSheetPage.Rooms -> easyTierOverviewSummary(indicator)
+                        EasyTierRoomSheetPage.Create -> stringResource(R.string.main_easytier_create_room_summary)
+                        EasyTierRoomSheetPage.Tutorial -> stringResource(R.string.main_easytier_tutorial_summary)
                     }
                     AnimatedContent(
                         targetState = summary,
@@ -2077,7 +2331,7 @@ internal fun EasyTierBottomSheetContent(
                         )
                     }
                 }
-                if (targetPage == EasyTierRoomSheetPage.Create) {
+                if (targetPage != EasyTierRoomSheetPage.Rooms) {
                     TextButton(
                         onClick = { page = EasyTierRoomSheetPage.Rooms },
                         enabled = !roomBrowser.creating,
@@ -2089,7 +2343,7 @@ internal fun EasyTierBottomSheetContent(
         }
 
         AnimatedContent(
-            targetState = troubleshootingMessageResId,
+            targetState = troubleshootingMessageResId.takeIf { page != EasyTierRoomSheetPage.Tutorial },
             transitionSpec = {
                 (fadeIn(animationSpec = tween(durationMillis = 180)) +
                     slideInVertically(
@@ -2114,7 +2368,7 @@ internal fun EasyTierBottomSheetContent(
                 .zIndex(1f),
         ) {
             androidx.compose.animation.AnimatedVisibility(
-                visible = roomBrowser.refreshingRoomInfo,
+                visible = page != EasyTierRoomSheetPage.Tutorial && roomBrowser.refreshingRoomInfo,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .offset(y = 8.dp),
@@ -2140,7 +2394,7 @@ internal fun EasyTierBottomSheetContent(
                 }
             }
         }
-        if (roomBrowser.roomInfoStale) {
+        if (page != EasyTierRoomSheetPage.Tutorial && roomBrowser.roomInfoStale) {
             Text(
                 text = stringResource(R.string.main_easytier_room_info_stale),
                 modifier = Modifier.padding(top = 8.dp),
@@ -2149,7 +2403,9 @@ internal fun EasyTierBottomSheetContent(
             )
         }
         AnimatedContent(
-            targetState = roomBrowser.errorSummary.takeIf { it.isNotBlank() },
+            targetState = roomBrowser.errorSummary.takeIf {
+                page != EasyTierRoomSheetPage.Tutorial && it.isNotBlank()
+            },
             transitionSpec = {
                 (fadeIn(animationSpec = tween(durationMillis = 160)) +
                     slideInVertically(
@@ -2176,12 +2432,15 @@ internal fun EasyTierBottomSheetContent(
                 .padding(top = 10.dp),
             transitionSpec = {
                 val pageChange = initialState == EasyTierRoomContentMode.Create ||
-                    targetState == EasyTierRoomContentMode.Create
-                val movingToCreate = targetState == EasyTierRoomContentMode.Create
+                    initialState == EasyTierRoomContentMode.Tutorial ||
+                    targetState == EasyTierRoomContentMode.Create ||
+                    targetState == EasyTierRoomContentMode.Tutorial
+                val movingToSecondaryPage = targetState == EasyTierRoomContentMode.Create ||
+                    targetState == EasyTierRoomContentMode.Tutorial
                 val enter = if (pageChange) {
                     fadeIn(animationSpec = tween(durationMillis = 180)) +
                         slideInHorizontally(
-                            initialOffsetX = { width -> if (movingToCreate) width / 4 else -width / 4 },
+                            initialOffsetX = { width -> if (movingToSecondaryPage) width / 4 else -width / 4 },
                             animationSpec = tween(durationMillis = 240),
                         )
                 } else {
@@ -2194,7 +2453,7 @@ internal fun EasyTierBottomSheetContent(
                 val exit = if (pageChange) {
                     fadeOut(animationSpec = tween(durationMillis = 120)) +
                         slideOutHorizontally(
-                            targetOffsetX = { width -> if (movingToCreate) -width / 5 else width / 5 },
+                            targetOffsetX = { width -> if (movingToSecondaryPage) -width / 5 else width / 5 },
                             animationSpec = tween(durationMillis = 180),
                         )
                 } else {
@@ -2210,17 +2469,24 @@ internal fun EasyTierBottomSheetContent(
         ) { targetContentMode ->
             when (targetContentMode) {
                 EasyTierRoomContentMode.Loading -> EasyTierRoomDetailLoadingSkeleton()
+                EasyTierRoomContentMode.Tutorial -> EasyTierTutorialPanel(
+                    downloadStateFor = tutorialWorkshopDownloadState,
+                    onOpenDetails = onOpenTutorialWorkshopDetails,
+                    onDownload = onDownloadTutorialWorkshopItem,
+                )
                 EasyTierRoomContentMode.Create -> EasyTierCreateRoomPanel(
                     roomId = createRoomId,
+                    roomDescription = createRoomDescription,
                     allowNewJoins = createAllowNewJoins,
                     creating = creatingRoom,
                     mutating = roomBrowser.mutating,
                     connectionState = indicator.state,
                     onRoomIdChange = { createRoomId = it },
+                    onRoomDescriptionChange = { createRoomDescription = it },
                     onAllowNewJoinsChange = { createAllowNewJoins = it },
-                    onCreateRoom = { roomId, allowNewJoins ->
+                    onCreateRoom = { roomId, description, allowNewJoins ->
                         submittedCreateRoomId = roomId
-                        onCreateRoom(roomId, allowNewJoins)
+                        onCreateRoom(roomId, description, allowNewJoins)
                     },
                 )
                 EasyTierRoomContentMode.Unjoined,
@@ -2231,7 +2497,8 @@ internal fun EasyTierBottomSheetContent(
                         EasyTierRoomContentMode.JoinedOwner -> EasyTierRoomPanelMode.JoinedOwner
                         EasyTierRoomContentMode.Unjoined -> EasyTierRoomPanelMode.Unjoined
                         EasyTierRoomContentMode.Loading,
-                        EasyTierRoomContentMode.Create -> error("Non-panel mode has no room panel")
+                        EasyTierRoomContentMode.Create,
+                        EasyTierRoomContentMode.Tutorial -> error("Non-panel mode has no room panel")
                     }
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     if (contentPanelMode != EasyTierRoomPanelMode.Unjoined && selectedRoom != null) {
@@ -2252,12 +2519,38 @@ internal fun EasyTierBottomSheetContent(
                     }
 
                     if (contentPanelMode == EasyTierRoomPanelMode.Unjoined) {
-                        Button(
-                            onClick = { page = EasyTierRoomSheetPage.Create },
-                            enabled = !roomBrowser.creating && !roomBrowser.mutating,
+                        Row(
                             modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
-                            Text(stringResource(R.string.main_easytier_action_create_room))
+                            Button(
+                                onClick = { page = EasyTierRoomSheetPage.Create },
+                                enabled = !roomBrowser.creating && !roomBrowser.mutating,
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 12.dp),
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_add_circle),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(stringResource(R.string.main_easytier_action_create_room))
+                            }
+                            OutlinedButton(
+                                onClick = { page = EasyTierRoomSheetPage.Tutorial },
+                                enabled = !roomBrowser.creating && !roomBrowser.mutating,
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 12.dp),
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_info_outline),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(stringResource(R.string.main_easytier_action_view_tutorial))
+                            }
                         }
                         EasyTierOnlineRoomsSection(
                             visibleRooms = visibleRooms,
@@ -2974,6 +3267,11 @@ internal fun LauncherGameScreenContent(
     onOpenFeedbackSubscriptions: () -> Unit = {},
     onUpdateNoticeClick: () -> Unit = {},
     showSteamCloudBottomSheetHost: Boolean = true,
+    tutorialWorkshopDownloadState: (WorkshopItemSummary) -> WorkshopModDownloadState = {
+        WorkshopModDownloadState.NotDownloaded
+    },
+    onOpenTutorialWorkshopDetails: (WorkshopItemSummary) -> Unit = {},
+    onDownloadTutorialWorkshopItem: (WorkshopItemSummary) -> Unit = {},
 ) {
     LauncherMainScreenContent(
         modifier = modifier,
@@ -2987,6 +3285,9 @@ internal fun LauncherGameScreenContent(
         onOpenFeedbackSubscriptions = onOpenFeedbackSubscriptions,
         onUpdateNoticeClick = onUpdateNoticeClick,
         showSteamCloudBottomSheetHost = showSteamCloudBottomSheetHost,
+        tutorialWorkshopDownloadState = tutorialWorkshopDownloadState,
+        onOpenTutorialWorkshopDetails = onOpenTutorialWorkshopDetails,
+        onDownloadTutorialWorkshopItem = onDownloadTutorialWorkshopItem,
     )
 }
 
@@ -3038,6 +3339,11 @@ private fun LauncherMainScreenContent(
     onBatchSelectionModeChange: (Boolean) -> Unit = {},
     onCheckWorkshopUpdates: () -> Unit = {},
     showSteamCloudBottomSheetHost: Boolean = true,
+    tutorialWorkshopDownloadState: (WorkshopItemSummary) -> WorkshopModDownloadState = {
+        WorkshopModDownloadState.NotDownloaded
+    },
+    onOpenTutorialWorkshopDetails: (WorkshopItemSummary) -> Unit = {},
+    onDownloadTutorialWorkshopItem: (WorkshopItemSummary) -> Unit = {},
 ) {
     val density = LocalDensity.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -3445,6 +3751,9 @@ private fun LauncherMainScreenContent(
                 onCloseRoom = actions.onCloseEasyTierRoom,
                 onConnect = actions.onConnectEasyTier,
                 onDisconnect = actions.onDisconnectEasyTier,
+                tutorialWorkshopDownloadState = tutorialWorkshopDownloadState,
+                onOpenTutorialWorkshopDetails = onOpenTutorialWorkshopDetails,
+                onDownloadTutorialWorkshopItem = onDownloadTutorialWorkshopItem,
                 modifier = Modifier.fillMaxHeight(
                     EASY_TIER_BOTTOM_SHEET_VIEWPORT_HEIGHT_FRACTION,
                 ),

@@ -116,6 +116,10 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_MOBILE_HUD_ENABLED
     val DEFAULT_COMPENDIUM_UPGRADE_TOUCH_FIX_ENABLED: Boolean
         get() = LauncherConfig.DEFAULT_COMPENDIUM_UPGRADE_TOUCH_FIX_ENABLED
+    val DEFAULT_TOGETHER_IN_SPIRE_ROUTE_LOCK_ENABLED: Boolean
+        get() = LauncherConfig.DEFAULT_TOGETHER_IN_SPIRE_ROUTE_LOCK_ENABLED
+    val DEFAULT_TOGETHER_IN_SPIRE_EASYTIER_AUTOFILL_ENABLED: Boolean
+        get() = LauncherConfig.DEFAULT_TOGETHER_IN_SPIRE_EASYTIER_AUTOFILL_ENABLED
     val DEFAULT_VIRTUAL_RESOLUTION_MODE: VirtualResolutionMode
         get() = LauncherConfig.DEFAULT_VIRTUAL_RESOLUTION_MODE
     val DEFAULT_AVOID_DISPLAY_CUTOUT: Boolean
@@ -440,6 +444,22 @@ object LauncherPreferences {
 
     fun saveCompendiumUpgradeTouchFixEnabled(context: Context, enabled: Boolean) {
         LauncherConfig.saveCompendiumUpgradeTouchFixEnabled(context, enabled)
+    }
+
+    fun isTogetherInSpireRouteLockEnabled(context: Context): Boolean {
+        return LauncherConfig.isTogetherInSpireRouteLockEnabled(context)
+    }
+
+    fun setTogetherInSpireRouteLockEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setTogetherInSpireRouteLockEnabled(context, enabled)
+    }
+
+    fun isTogetherInSpireEasyTierAutofillEnabled(context: Context): Boolean {
+        return LauncherConfig.isTogetherInSpireEasyTierAutofillEnabled(context)
+    }
+
+    fun setTogetherInSpireEasyTierAutofillEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setTogetherInSpireEasyTierAutofillEnabled(context, enabled)
     }
 
     fun readVirtualResolutionMode(context: Context): VirtualResolutionMode {

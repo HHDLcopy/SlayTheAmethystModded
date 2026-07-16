@@ -269,6 +269,7 @@ test('lan room session api issues status and room members for easytier room mode
     roomId: 'alpha-room',
     ownerPlayerId: 'alice',
     ownerDisplayName: 'Alice',
+    description: '',
     mode: 'room',
     allowNewJoins: true,
     closedAtMs: 0,
@@ -626,6 +627,7 @@ test('lan room session start creates a joined room and preserves its join policy
       roomId: 'alpha-room',
       playerId: 'alice',
       displayName: 'Alice',
+      description: 'Looking for two players for a relaxed run',
       allowNewJoins: false
     }
   });
@@ -654,6 +656,7 @@ test('lan room session start creates a joined room and preserves its join policy
     roomId: 'alpha-room',
     ownerPlayerId: 'alice',
     ownerDisplayName: 'Alice',
+    description: 'Looking for two players for a relaxed run',
     mode: 'room',
     allowNewJoins: false,
     closedAtMs: 0,
@@ -664,6 +667,10 @@ test('lan room session start creates a joined room and preserves its join policy
     updatedAtMs: alphaRoom.updatedAtMs
   });
   assert.equal(betaRoom.onlineMemberCount, 1);
+
+  const roomInfo = await server.inject('/api/lan/rooms/alpha-room');
+  assert.equal(roomInfo.statusCode, 200);
+  assert.equal(roomInfo.json().description, 'Looking for two players for a relaxed run');
 });
 
 test('lan room create-only rejects an existing room without changing normal joins', async (t) => {

@@ -282,8 +282,10 @@ class GameInputHandler(
     private fun moveCursor(x: Float, y: Float) {
         if (!isInputDispatchReady()) return
         mapToWindowCoords(x, y) { mappedX, mappedY, windowHeight ->
-            val rawCursorY = (windowHeight - 1f - mappedY).coerceIn(0f, windowHeight - 1f)
-            CallbackBridge.sendCursorPos(mappedX, rawCursorY)
+            CallbackBridge.sendCursorPos(
+                mappedX,
+                glfwCursorYFromMappedViewY(mappedY, windowHeight)
+            )
         }
     }
 

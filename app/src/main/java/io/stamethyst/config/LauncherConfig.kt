@@ -196,6 +196,10 @@ object LauncherConfig {
     private const val PREF_KEY_GPU_RESOURCE_DIAG_ENABLED = "gpu_resource_diag_enabled"
     private const val PREF_KEY_GDX_PAD_CURSOR_DEBUG = "gdx_pad_cursor_debug"
     private const val PREF_KEY_GLBRIDGE_SWAP_HEARTBEAT_DEBUG = "glbridge_swap_heartbeat_debug"
+    private const val PREF_KEY_TOGETHER_IN_SPIRE_ROUTE_LOCK_ENABLED =
+        "together_in_spire_route_lock_enabled"
+    private const val PREF_KEY_TOGETHER_IN_SPIRE_EASYTIER_AUTOFILL_ENABLED =
+        "together_in_spire_easytier_autofill_enabled"
     private const val PREF_KEY_AUTO_CHECK_UPDATES_ENABLED = "auto_check_updates_enabled"
     private const val PREF_KEY_STEAM_CLOUD_WATT_ACCELERATION_ENABLED =
         "steam_cloud_watt_acceleration_enabled"
@@ -306,6 +310,8 @@ object LauncherConfig {
     const val DEFAULT_GPU_RESOURCE_DIAG_ENABLED = false
     const val DEFAULT_GDX_PAD_CURSOR_DEBUG = false
     const val DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG = false
+    const val DEFAULT_TOGETHER_IN_SPIRE_ROUTE_LOCK_ENABLED = true
+    const val DEFAULT_TOGETHER_IN_SPIRE_EASYTIER_AUTOFILL_ENABLED = true
     const val DEFAULT_AUTO_CHECK_UPDATES_ENABLED = true
     const val DEFAULT_STEAM_CLOUD_WATT_ACCELERATION_ENABLED = true
     const val DEFAULT_STEAM_CLOUD_AUTO_LAUNCH_AFTER_SYNC_ENABLED = false
@@ -978,6 +984,32 @@ object LauncherConfig {
     fun saveCompendiumUpgradeTouchFixEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_COMPENDIUM_UPGRADE_TOUCH_FIX_ENABLED, enabled)
+        }
+    }
+
+    fun isTogetherInSpireRouteLockEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_TOGETHER_IN_SPIRE_ROUTE_LOCK_ENABLED,
+            DEFAULT_TOGETHER_IN_SPIRE_ROUTE_LOCK_ENABLED
+        )
+    }
+
+    fun setTogetherInSpireRouteLockEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_TOGETHER_IN_SPIRE_ROUTE_LOCK_ENABLED, enabled)
+        }
+    }
+
+    fun isTogetherInSpireEasyTierAutofillEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_TOGETHER_IN_SPIRE_EASYTIER_AUTOFILL_ENABLED,
+            DEFAULT_TOGETHER_IN_SPIRE_EASYTIER_AUTOFILL_ENABLED
+        )
+    }
+
+    fun setTogetherInSpireEasyTierAutofillEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_TOGETHER_IN_SPIRE_EASYTIER_AUTOFILL_ENABLED, enabled)
         }
     }
 

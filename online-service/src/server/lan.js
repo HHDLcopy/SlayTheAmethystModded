@@ -18,6 +18,7 @@ const MAX_LAN_ROOM_MEMBERS_PER_SOURCE_IP = 8;
 const MAX_LAN_ROOMS_PER_SOURCE_IP = 10;
 const MAX_ID_LENGTH = 128;
 const MAX_TEXT_LENGTH = 256;
+const MAX_LAN_ROOM_DESCRIPTION_LENGTH = 120;
 const TERMINAL_SESSION_STATES = new Set(['expired', 'stopped', 'superseded']);
 const ROOM_MUTATION_ACTIONS = new Set(['lock', 'unlock', 'close']);
 
@@ -221,6 +222,7 @@ class LanStore {
         roomId: closedRoom.roomId,
         ownerPlayerId: closedRoom.ownerPlayerId,
         ownerDisplayName: closedRoom.ownerDisplayName,
+        description: closedRoom.description,
         mode: closedRoom.mode,
         allowNewJoins: closedRoom.allowNewJoins,
         closedAtMs: closedRoom.closedAtMs,
@@ -355,6 +357,7 @@ class LanStore {
         roomId: room.roomId,
         ownerPlayerId: room.ownerPlayerId,
         ownerDisplayName: room.ownerDisplayName,
+        description: room.description,
         mode: room.mode,
         allowNewJoins: room.allowNewJoins,
         closedAtMs: room.closedAtMs,
@@ -406,6 +409,7 @@ class LanStore {
       roomId: room.roomId,
       ownerPlayerId: room.ownerPlayerId,
       ownerDisplayName: room.ownerDisplayName,
+      description: room.description,
       mode: room.mode,
       allowNewJoins: room.allowNewJoins,
       closedAtMs: room.closedAtMs,
@@ -448,6 +452,7 @@ class LanStore {
       roomId: request.roomId,
       playerId: request.playerId,
       displayName: request.displayName || request.playerId,
+      description: request.description,
       allowNewJoins: request.allowNewJoins,
       sourceIp: request.sourceIp,
       ownerToken
@@ -474,6 +479,7 @@ class LanStore {
       roomId: request.roomId,
       ownerPlayerId: request.playerId,
       ownerDisplayName: request.displayName,
+      description: request.description,
       mode: 'room',
       allowNewJoins: request.allowNewJoins,
       closedAtMs: 0,
@@ -625,6 +631,10 @@ function parseStartSessionRequest(body) {
     roomId,
     playerId,
     displayName: normalizeOptionalText(firstNonEmpty(body.displayName, body.display_name), MAX_ID_LENGTH),
+    description: normalizeOptionalText(
+      firstNonEmpty(body.description, body.roomDescription, body.room_description),
+      MAX_LAN_ROOM_DESCRIPTION_LENGTH
+    ),
     clientVersion: normalizeOptionalText(
       firstNonEmpty(body.clientVersion, body.client_version),
       MAX_TEXT_LENGTH

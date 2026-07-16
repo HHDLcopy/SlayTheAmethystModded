@@ -83,7 +83,7 @@ internal data class MainScreenActions(
     val onRefreshEasyTierRooms: () -> Unit = {},
     val onRefreshEasyTierRoomsSilently: () -> Unit = {},
     val onSelectEasyTierRoom: (String) -> Unit = {},
-    val onCreateEasyTierRoom: (String, Boolean) -> Unit = { _, _ -> },
+    val onCreateEasyTierRoom: (String, String, Boolean) -> Unit = { _, _, _ -> },
     val onLockEasyTierRoom: () -> Unit = {},
     val onUnlockEasyTierRoom: () -> Unit = {},
     val onCloseEasyTierRoom: () -> Unit = {},
@@ -236,14 +236,14 @@ internal fun rememberMainScreenActions(
                 onSelectEasyTierRoom = { roomId ->
                     viewModel.selectEasyTierRoom(activity, roomId)
                 },
-                onCreateEasyTierRoom = { roomId, allowNewJoins ->
+                onCreateEasyTierRoom = { roomId, description, allowNewJoins ->
                     val permissionIntent = EasyTierPermissionCoordinator.prepareVpnPermissionIntent(activity)
                     if (permissionIntent != null) {
-                        viewModel.queueEasyTierRoomCreation(roomId, allowNewJoins)
+                        viewModel.queueEasyTierRoomCreation(roomId, description, allowNewJoins)
                         viewModel.onEasyTierVpnPermissionRequired(activity)
                         easyTierVpnPermissionLauncher.launch(permissionIntent)
                     } else {
-                        viewModel.createEasyTierRoom(activity, roomId, allowNewJoins)
+                        viewModel.createEasyTierRoom(activity, roomId, description, allowNewJoins)
                     }
                 },
                 onLockEasyTierRoom = {

@@ -61,6 +61,7 @@ object EasyTierSessionController {
         roomId: String = "",
         userInitiated: Boolean = true,
         receiver: ResultReceiver? = null,
+        roomDescriptionWhenCreating: String = "",
         allowNewJoinsWhenCreating: Boolean? = null,
         createOnly: Boolean = false,
     ): Boolean = EasyTierProcessService.startConnect(
@@ -69,6 +70,7 @@ object EasyTierSessionController {
         roomId,
         userInitiated,
         receiver,
+        roomDescriptionWhenCreating,
         allowNewJoinsWhenCreating,
         createOnly,
     )

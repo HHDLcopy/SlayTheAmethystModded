@@ -105,6 +105,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -114,6 +115,7 @@ import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
@@ -129,6 +131,7 @@ import io.stamethyst.backend.easytier.EasyTierFailureCategory
 import io.stamethyst.backend.easytier.EasyTierRoomInfo
 import io.stamethyst.backend.easytier.EasyTierRoomListItem
 import io.stamethyst.backend.easytier.EasyTierRoomMember
+import io.stamethyst.backend.easytier.EASY_TIER_ROOM_DESCRIPTION_MAX_LENGTH
 import io.stamethyst.backend.render.RendererBackendResolver
 import io.stamethyst.backend.steamcloud.SteamCloudFailureCategory
 import io.stamethyst.backend.steamcloud.SteamCloudSyncDirection
@@ -142,6 +145,7 @@ import io.stamethyst.ui.FloatingGlassHeader
 import io.stamethyst.ui.LauncherTransientNoticeBus
 import io.stamethyst.ui.LoadingSkeletonBlock
 import io.stamethyst.ui.UiText
+import io.stamethyst.ui.rememberCloudControlSettings
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.model.WorkshopModState
 import io.stamethyst.ui.Icons
@@ -1450,6 +1454,15 @@ private fun EasyTierOnlineRoomsSection(
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.SemiBold,
                             )
+                            room.description.trim().takeIf(String::isNotEmpty)?.let { description ->
+                                Text(
+                                    text = description,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
                             Text(
                                 text = stringResource(
                                     R.string.main_easytier_room_item_summary,
@@ -1502,6 +1515,13 @@ private fun EasyTierRoomMembersSection(
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.SemiBold,
         )
+        room.description.trim().takeIf(String::isNotEmpty)?.let { description ->
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         room.members.forEach { member ->
             val assignedIpv4Cidr = resolveEasyTierRoomMemberIpv4Cidr(
                 member = member,
@@ -1791,14 +1811,18 @@ private fun EasyTierRoomDetailLoadingSkeleton() {
 @Composable
 private fun EasyTierCreateRoomPanel(
     roomId: String,
+    roomDescription: String,
     allowNewJoins: Boolean,
     creating: Boolean,
     mutating: Boolean,
     connectionState: MainScreenViewModel.EasyTierIndicatorState,
     onRoomIdChange: (String) -> Unit,
+    onRoomDescriptionChange: (String) -> Unit,
     onAllowNewJoinsChange: (Boolean) -> Unit,
-    onCreateRoom: (String, Boolean) -> Unit,
+    onCreateRoom: (String, String, Boolean) -> Unit,
 ) {
+    val uriHandler = LocalUriHandler.current
+    val cloudControlSettings by rememberCloudControlSettings()
     Surface(
         shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
@@ -1815,6 +1839,17 @@ private fun EasyTierCreateRoomPanel(
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text(stringResource(R.string.main_easytier_create_room_label)) },
                 singleLine = true,
+                enabled = !creating,
+            )
+            OutlinedTextField(
+                value = roomDescription,
+                onValueChange = { description ->
+                    onRoomDescriptionChange(description.take(EASY_TIER_ROOM_DESCRIPTION_MAX_LENGTH))
+                },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(stringResource(R.string.main_easytier_create_room_description_label)) },
+                minLines = 2,
+                maxLines = 3,
                 enabled = !creating,
             )
             Row(
@@ -1839,7 +1874,7 @@ private fun EasyTierCreateRoomPanel(
                 )
             }
             Button(
-                onClick = { onCreateRoom(roomId.trim(), allowNewJoins) },
+                onClick = { onCreateRoom(roomId.trim(), roomDescription.trim(), allowNewJoins) },
                 enabled = roomId.isNotBlank() && !creating && !mutating,
                 modifier = Modifier.fillMaxWidth(),
             ) {
@@ -1877,6 +1912,18 @@ private fun EasyTierCreateRoomPanel(
                     }
                 }
             }
+            Text(
+                text = stringResource(R.string.main_easytier_create_room_join_group),
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .clickable {
+                        uriHandler.openUri(cloudControlSettings.qqGroupUrl)
+                },
+                style = MaterialTheme.typography.labelMedium.copy(
+                    color = Color(0xFF1565C0),
+                    textDecoration = TextDecoration.Underline,
+                ),
+            )
             AnimatedVisibility(
                 visible = creating,
                 enter = fadeIn(animationSpec = tween(durationMillis = 140)) +
@@ -1921,7 +1968,7 @@ internal fun EasyTierBottomSheetContent(
     roomBrowser: MainScreenViewModel.EasyTierRoomBrowserUi,
     onRefreshRooms: () -> Unit,
     onSelectRoom: (String) -> Unit,
-    onCreateRoom: (String, Boolean) -> Unit,
+    onCreateRoom: (String, String, Boolean) -> Unit,
     onLockRoom: () -> Unit,
     onUnlockRoom: () -> Unit,
     onCloseRoom: () -> Unit,
@@ -1931,6 +1978,7 @@ internal fun EasyTierBottomSheetContent(
 ) {
     var page by remember { mutableStateOf(EasyTierRoomSheetPage.Rooms) }
     var createRoomId by remember { mutableStateOf("") }
+    var createRoomDescription by remember { mutableStateOf("") }
     var createAllowNewJoins by remember { mutableStateOf(true) }
     var submittedCreateRoomId by remember { mutableStateOf("") }
     var closeConfirmationRoom by remember { mutableStateOf<EasyTierRoomInfo?>(null) }
@@ -1976,6 +2024,7 @@ internal fun EasyTierBottomSheetContent(
         }
         if (selectedRoom?.roomId == submittedCreateRoomId) {
             createRoomId = ""
+            createRoomDescription = ""
             createAllowNewJoins = true
             submittedCreateRoomId = ""
             page = EasyTierRoomSheetPage.Rooms
@@ -2212,15 +2261,17 @@ internal fun EasyTierBottomSheetContent(
                 EasyTierRoomContentMode.Loading -> EasyTierRoomDetailLoadingSkeleton()
                 EasyTierRoomContentMode.Create -> EasyTierCreateRoomPanel(
                     roomId = createRoomId,
+                    roomDescription = createRoomDescription,
                     allowNewJoins = createAllowNewJoins,
                     creating = creatingRoom,
                     mutating = roomBrowser.mutating,
                     connectionState = indicator.state,
                     onRoomIdChange = { createRoomId = it },
+                    onRoomDescriptionChange = { createRoomDescription = it },
                     onAllowNewJoinsChange = { createAllowNewJoins = it },
-                    onCreateRoom = { roomId, allowNewJoins ->
+                    onCreateRoom = { roomId, description, allowNewJoins ->
                         submittedCreateRoomId = roomId
-                        onCreateRoom(roomId, allowNewJoins)
+                        onCreateRoom(roomId, description, allowNewJoins)
                     },
                 )
                 EasyTierRoomContentMode.Unjoined,

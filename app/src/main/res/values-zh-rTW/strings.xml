@@ -2620,10 +2620,12 @@
     <string name="main_easytier_create_room_title">建立房間</string>
     <string name="main_easytier_create_room_summary">在這裡填寫房間 ID 並建立房間。建立後返回房間頁連線或管理。</string>
     <string name="main_easytier_create_room_label">新房間 ID</string>
+    <string name="main_easytier_create_room_description_label">房間簡介（可選）</string>
     <string name="main_easytier_create_room_missing_id">請先填寫房間 ID。</string>
     <string name="main_easytier_create_room_allow_joins">允許新玩家加入</string>
     <string name="main_easytier_action_create_room">建立房間</string>
     <string name="main_easytier_action_create_room_loading">正在建立並加入…</string>
+    <string name="main_easytier_create_room_join_group">找不到夥伴？點我加入群聊！</string>
     <string name="main_easytier_create_room_progress_creating">正在建立房間…</string>
     <string name="main_easytier_create_room_progress_joining">房間已建立，正在加入虛擬區域網路…</string>
     <string name="main_easytier_create_room_progress_starting">正在啟動本機虛擬區域網路…</string>

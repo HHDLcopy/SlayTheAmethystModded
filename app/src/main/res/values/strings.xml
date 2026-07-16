@@ -2624,10 +2624,12 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="main_easytier_create_room_title">Create a room</string>
     <string name="main_easytier_create_room_summary">Choose a room ID and create it here. After creation, return to the room page to connect or manage it.</string>
     <string name="main_easytier_create_room_label">New room ID</string>
+    <string name="main_easytier_create_room_description_label">Room description (optional)</string>
     <string name="main_easytier_create_room_missing_id">Enter a room ID before creating the room.</string>
     <string name="main_easytier_create_room_allow_joins">Allow new players to join</string>
     <string name="main_easytier_action_create_room">Create room</string>
     <string name="main_easytier_action_create_room_loading">Creating and joining…</string>
+    <string name="main_easytier_create_room_join_group">Looking for players? Join the group chat!</string>
     <string name="main_easytier_create_room_progress_creating">Creating your room…</string>
     <string name="main_easytier_create_room_progress_joining">Room created. Joining the virtual network…</string>
     <string name="main_easytier_create_room_progress_starting">Starting the local virtual network…</string>

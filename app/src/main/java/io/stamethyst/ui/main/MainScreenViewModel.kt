@@ -41,6 +41,7 @@ import io.stamethyst.backend.easytier.EasyTierConnectionSnapshot
 import io.stamethyst.backend.easytier.EasyTierConnectionStatus
 import io.stamethyst.backend.easytier.EasyTierConfigRepository
 import io.stamethyst.backend.easytier.EasyTierCredentialStore
+import io.stamethyst.backend.easytier.EASY_TIER_ROOM_DESCRIPTION_MAX_LENGTH
 import io.stamethyst.backend.easytier.EasyTierRoomApiClient
 import io.stamethyst.backend.easytier.EasyTierRoomApiHttpException
 import io.stamethyst.backend.easytier.EasyTierRoomInfo
@@ -129,6 +130,7 @@ import kotlinx.coroutines.withContext
 class MainScreenViewModel : ViewModel() {
     private data class PendingEasyTierRoomCreation(
         val roomId: String,
+        val description: String,
         val allowNewJoins: Boolean,
     )
 
@@ -650,7 +652,7 @@ class MainScreenViewModel : ViewModel() {
         if (granted && EasyTierPermissionCoordinator.hasVpnPermission(host)) {
             pendingEasyTierRoomCreation?.let { pending ->
                 pendingEasyTierRoomCreation = null
-                createEasyTierRoom(host, pending.roomId, pending.allowNewJoins)
+                createEasyTierRoom(host, pending.roomId, pending.description, pending.allowNewJoins)
             } ?: onConnectEasyTier(host)
             return
         }
@@ -673,9 +675,17 @@ class MainScreenViewModel : ViewModel() {
         )
     }
 
-    fun queueEasyTierRoomCreation(roomId: String, allowNewJoins: Boolean) {
+    fun queueEasyTierRoomCreation(
+        roomId: String,
+        description: String,
+        allowNewJoins: Boolean,
+    ) {
         val normalizedRoomId = roomId.trim()
-        pendingEasyTierRoomCreation = PendingEasyTierRoomCreation(normalizedRoomId, allowNewJoins)
+        pendingEasyTierRoomCreation = PendingEasyTierRoomCreation(
+            roomId = normalizedRoomId,
+            description = description.trim().take(EASY_TIER_ROOM_DESCRIPTION_MAX_LENGTH),
+            allowNewJoins = allowNewJoins,
+        )
         uiState = uiState.copy(
             easyTierRoomBrowser = uiState.easyTierRoomBrowser.copy(
                 creating = true,
@@ -689,6 +699,7 @@ class MainScreenViewModel : ViewModel() {
     fun onConnectEasyTier(
         host: Activity,
         roomIdOverride: String? = null,
+        roomDescriptionWhenCreating: String = "",
         allowNewJoinsWhenCreating: Boolean? = null,
         createOnly: Boolean = false,
     ) {
@@ -745,6 +756,7 @@ class MainScreenViewModel : ViewModel() {
             roomId = requestedRoomId,
             userInitiated = true,
             receiver = buildEasyTierConnectionReceiver(host),
+            roomDescriptionWhenCreating = roomDescriptionWhenCreating,
             allowNewJoinsWhenCreating = allowNewJoinsWhenCreating,
             createOnly = createOnly,
         )
@@ -984,6 +996,7 @@ class MainScreenViewModel : ViewModel() {
     fun createEasyTierRoom(
         host: Activity,
         roomId: String,
+        description: String = "",
         allowNewJoins: Boolean = true,
     ) {
         val normalized = roomId.trim()
@@ -1030,6 +1043,9 @@ class MainScreenViewModel : ViewModel() {
         onConnectEasyTier(
             host = host,
             roomIdOverride = normalized,
+            roomDescriptionWhenCreating = description
+                .trim()
+                .take(EASY_TIER_ROOM_DESCRIPTION_MAX_LENGTH),
             allowNewJoinsWhenCreating = allowNewJoins,
             createOnly = true,
         )

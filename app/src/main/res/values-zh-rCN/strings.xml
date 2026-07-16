@@ -2623,10 +2623,12 @@
     <string name="main_easytier_create_room_title">创建房间</string>
     <string name="main_easytier_create_room_summary">在这里填写房间号并创建房间。创建后返回房间页连接或管理。</string>
     <string name="main_easytier_create_room_label">新房间 ID</string>
+    <string name="main_easytier_create_room_description_label">房间简介（可选）</string>
     <string name="main_easytier_create_room_missing_id">请先填写房间 ID。</string>
     <string name="main_easytier_create_room_allow_joins">允许新玩家加入</string>
     <string name="main_easytier_action_create_room">创建房间</string>
     <string name="main_easytier_action_create_room_loading">正在创建并加入…</string>
+    <string name="main_easytier_create_room_join_group">找不到搭子？点我加入群聊！</string>
     <string name="main_easytier_create_room_progress_creating">正在创建房间…</string>
     <string name="main_easytier_create_room_progress_joining">房间已创建，正在加入虚拟局域网…</string>
     <string name="main_easytier_create_room_progress_starting">正在启动本机虚拟局域网…</string>

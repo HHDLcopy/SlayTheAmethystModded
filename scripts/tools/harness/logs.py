@@ -11,7 +11,7 @@ def _gradle_device_properties(ctx: HarnessContext) -> list[str]:
     device_serial = ctx.resolved_device_serial.strip()
     if not device_serial:
         return []
-    return [f"-PandroidDeviceSerial={device_serial}"]
+    return [f"-PdeviceSerial={device_serial}"]
 
 
 def run_logs(ctx: HarnessContext, output_directory: Path) -> None:

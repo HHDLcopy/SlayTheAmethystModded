@@ -263,6 +263,17 @@ public class AgentSession implements Runnable {
             // fall through to commands-map approach
         }
 
+        Class<?> consoleCommandClass = ReflectionUtil.forName("basemod.devcommands.ConsoleCommand");
+        if (consoleCommandClass != null) {
+            try {
+                Method executeMethod = consoleCommandClass.getMethod("execute", String[].class);
+                executeMethod.invoke(null, (Object) commandText.split("\\s+"));
+                return "ok";
+            } catch (NoSuchMethodException e) {
+                // fall through to legacy commands-map approach
+            }
+        }
+
         Field commandsField = devConsoleClass.getDeclaredField("commands");
         commandsField.setAccessible(true);
         Object commandsObj = commandsField.get(null);

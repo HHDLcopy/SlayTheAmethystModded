@@ -244,6 +244,31 @@ public class AgentSessionTest {
         assertTrue(response, response.contains("crossspire status"));
     }
 
+    @Test
+    public void consoleUsesBaseModConsoleCommandApi() throws Exception {
+        GameProbe.GAME_CLASSLOADER = new ClassLoader(null) {
+            @Override
+            protected Class<?> findClass(String name) throws ClassNotFoundException {
+                byte[] bytes;
+                if ("basemod.DevConsole".equals(name)) {
+                    bytes = emptyClassBytes("basemod/DevConsole");
+                } else if ("basemod.devcommands.ConsoleCommand".equals(name)) {
+                    bytes = consoleCommandClassBytes();
+                } else {
+                    return super.findClass(name);
+                }
+                return defineClass(name, bytes, 0, bytes.length);
+            }
+        };
+
+        BufferedReader serverReader = startSession();
+        writer.println("CONSOLE crossspire status");
+        String response = serverReader.readLine();
+
+        assertTrue(response, response.startsWith("RESULT "));
+        assertTrue(response, response.contains("\"executed\":true"));
+    }
+
     private static byte[] devConsoleClassBytes() {
         ClassWriter writer = new ClassWriter(0);
         writer.visit(Opcodes.V1_8, Opcodes.ACC_PUBLIC, "basemod/DevConsole", null, "java/lang/Object", null);
@@ -258,6 +283,38 @@ public class AgentSessionTest {
         method.visitVarInsn(Opcodes.ALOAD, 0);
         method.visitInsn(Opcodes.ARETURN);
         method.visitMaxs(1, 1);
+        method.visitEnd();
+        writer.visitEnd();
+        return writer.toByteArray();
+    }
+
+    private static byte[] emptyClassBytes(String internalName) {
+        ClassWriter writer = new ClassWriter(0);
+        writer.visit(Opcodes.V1_8, Opcodes.ACC_PUBLIC, internalName, null, "java/lang/Object", null);
+        writer.visitEnd();
+        return writer.toByteArray();
+    }
+
+    private static byte[] consoleCommandClassBytes() {
+        ClassWriter writer = new ClassWriter(0);
+        writer.visit(
+            Opcodes.V1_8,
+            Opcodes.ACC_PUBLIC,
+            "basemod/devcommands/ConsoleCommand",
+            null,
+            "java/lang/Object",
+            null
+        );
+        MethodVisitor method = writer.visitMethod(
+            Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC,
+            "execute",
+            "([Ljava/lang/String;)V",
+            null,
+            null
+        );
+        method.visitCode();
+        method.visitInsn(Opcodes.RETURN);
+        method.visitMaxs(0, 1);
         method.visitEnd();
         writer.visitEnd();
         return writer.toByteArray();

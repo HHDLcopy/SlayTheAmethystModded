@@ -10,6 +10,7 @@ import io.stamethyst.probe.GameProbe;
 import io.stamethyst.probe.protocol.AgentCommand;
 import io.stamethyst.probe.protocol.AgentRequest;
 import io.stamethyst.probe.protocol.AgentResponse;
+import io.stamethyst.probe.util.ReflectionUtil;
 
 import java.io.*;
 import java.lang.instrument.Instrumentation;
@@ -249,10 +250,8 @@ public class AgentSession implements Runnable {
     }
 
     private String invokeDevConsole(String commandText) throws Exception {
-        Class<?> devConsoleClass;
-        try {
-            devConsoleClass = Class.forName("basemod.DevConsole");
-        } catch (ClassNotFoundException e) {
+        Class<?> devConsoleClass = ReflectionUtil.forName("basemod.DevConsole");
+        if (devConsoleClass == null) {
             throw new RuntimeException("BaseMod DevConsole not loaded");
         }
 

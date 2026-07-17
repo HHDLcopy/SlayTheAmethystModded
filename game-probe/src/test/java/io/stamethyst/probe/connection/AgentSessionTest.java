@@ -1,12 +1,16 @@
 package io.stamethyst.probe.connection;
 
 import io.stamethyst.probe.channel.AgentDataChannel;
+import io.stamethyst.probe.GameProbe;
 import io.stamethyst.probe.monitors.Monitor;
 import io.stamethyst.probe.monitors.MonitorCapability;
 import io.stamethyst.probe.monitors.MonitorRegistry;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.MethodVisitor;
+import org.objectweb.asm.Opcodes;
 
 import java.io.*;
 import java.lang.instrument.Instrumentation;
@@ -31,9 +35,11 @@ public class AgentSessionTest {
     private PrintWriter writer;
     private Thread sessionThread;
     private AgentSession currentSession;
+    private ClassLoader previousGameClassLoader;
 
     @Before
     public void setUp() throws Exception {
+        previousGameClassLoader = GameProbe.GAME_CLASSLOADER;
         registry = new MonitorRegistry();
         registry.register("mock", new MonitorRegistry.MonitorFactory() {
             @Override
@@ -68,6 +74,7 @@ public class AgentSessionTest {
 
     @After
     public void tearDown() throws Exception {
+        GameProbe.GAME_CLASSLOADER = previousGameClassLoader;
         try { clientSide.close(); } catch (Exception ignored) {}
         try { serverSide.close(); } catch (Exception ignored) {}
         try { server.close(); } catch (Exception ignored) {}
@@ -215,6 +222,45 @@ public class AgentSessionTest {
         assertTrue(response, response.startsWith("RESULT "));
         assertTrue(response, response.contains("\"executed\":false"));
         assertTrue(response, response.contains("DevConsole not loaded"));
+    }
+
+    @Test
+    public void consoleUsesCapturedGameClassLoader() throws Exception {
+        GameProbe.GAME_CLASSLOADER = new ClassLoader(null) {
+            @Override
+            protected Class<?> findClass(String name) throws ClassNotFoundException {
+                if (!"basemod.DevConsole".equals(name)) return super.findClass(name);
+                byte[] bytes = devConsoleClassBytes();
+                return defineClass(name, bytes, 0, bytes.length);
+            }
+        };
+
+        BufferedReader serverReader = startSession();
+        writer.println("CONSOLE crossspire status");
+        String response = serverReader.readLine();
+
+        assertTrue(response, response.startsWith("RESULT "));
+        assertTrue(response, response.contains("\"executed\":true"));
+        assertTrue(response, response.contains("crossspire status"));
+    }
+
+    private static byte[] devConsoleClassBytes() {
+        ClassWriter writer = new ClassWriter(0);
+        writer.visit(Opcodes.V1_8, Opcodes.ACC_PUBLIC, "basemod/DevConsole", null, "java/lang/Object", null);
+        MethodVisitor method = writer.visitMethod(
+            Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC,
+            "execute",
+            "(Ljava/lang/String;)Ljava/lang/String;",
+            null,
+            null
+        );
+        method.visitCode();
+        method.visitVarInsn(Opcodes.ALOAD, 0);
+        method.visitInsn(Opcodes.ARETURN);
+        method.visitMaxs(1, 1);
+        method.visitEnd();
+        writer.visitEnd();
+        return writer.toByteArray();
     }
 
     @Test

@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
-from lib import sts_harness_cli
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.tools.lib import sts_harness_cli
 
 
 def create_parser() -> argparse.ArgumentParser:

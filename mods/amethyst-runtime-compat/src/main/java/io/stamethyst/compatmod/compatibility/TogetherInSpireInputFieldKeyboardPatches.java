@@ -42,8 +42,7 @@ public final class TogetherInSpireInputFieldKeyboardPatches {
     }
 
     private static void requestAndroidKeyboard(Object inputFieldButton) {
-        String requestPath = System.getProperty(KEYBOARD_REQUEST_PROPERTY, "").trim();
-        if (requestPath.isEmpty() || inputFieldButton == null) {
+        if (!isAndroidKeyboardAvailable() || inputFieldButton == null) {
             return;
         }
         try {
@@ -51,14 +50,34 @@ public final class TogetherInSpireInputFieldKeyboardPatches {
             if (inputField == null) {
                 return;
             }
-            writeRequest(
-                new File(requestPath),
+            requestAndroidKeyboard(
                 readInputFieldText(inputField),
                 readAllowedCharacters(inputField),
                 readCharacterLimit(inputField)
             );
         } catch (ReflectiveOperationException | LinkageError | RuntimeException ignored) {
         }
+    }
+
+    static boolean isAndroidKeyboardAvailable() {
+        return !System.getProperty(KEYBOARD_REQUEST_PROPERTY, "").trim().isEmpty();
+    }
+
+    static void requestAndroidKeyboard(
+        String initialText,
+        String allowedCharacters,
+        int characterLimit
+    ) {
+        String requestPath = System.getProperty(KEYBOARD_REQUEST_PROPERTY, "").trim();
+        if (requestPath.isEmpty()) {
+            return;
+        }
+        writeRequest(
+            new File(requestPath),
+            initialText,
+            allowedCharacters,
+            characterLimit
+        );
     }
 
     private static Object readInputFieldOwner(Object button) throws ReflectiveOperationException {

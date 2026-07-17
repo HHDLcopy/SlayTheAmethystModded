@@ -28,6 +28,7 @@ object RuntimePaths {
     private const val EXTERNAL_RESOURCES_ABI_DIR_NAME = "arm64-v8a"
     private const val EXTERNAL_RESOURCES_MARKER_FILE_NAME = ".resource-pack-installed"
     private const val IN_GAME_KEYBOARD_REQUEST_FILE_NAME = ".in_game_keyboard_request"
+    private const val IN_GAME_LAN_GAME_STATE_REQUEST_FILE_NAME = ".in_game_lan_game_state_request"
     private const val IN_GAME_FILE_PICKER_REQUEST_FILE_NAME = ".in_game_file_picker_request"
     private const val IN_GAME_FILE_PICKER_RESULT_FILE_NAME = ".in_game_file_picker_result"
     private const val IN_GAME_FILE_PICKER_SELECTION_FILE_NAME = ".in_game_file_picker_selection"
@@ -197,6 +198,10 @@ object RuntimePaths {
 
     @JvmStatic
     fun inGameKeyboardRequestFile(context: Context): File = File(stsRoot(context), IN_GAME_KEYBOARD_REQUEST_FILE_NAME)
+
+    @JvmStatic
+    fun inGameLanGameStateRequestFile(context: Context): File =
+        File(stsRoot(context), IN_GAME_LAN_GAME_STATE_REQUEST_FILE_NAME)
 
     @JvmStatic
     fun inGameFilePickerRequestFile(context: Context): File =

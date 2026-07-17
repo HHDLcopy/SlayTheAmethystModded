@@ -1562,7 +1562,7 @@ private fun EasyTierRoomMembersSection(
                         fontWeight = FontWeight.SemiBold,
                     )
                     AnimatedContent(
-                        targetState = member.online to assignedIpv4Cidr,
+                        targetState = Triple(member.online, assignedIpv4Cidr, member.gameState),
                         transitionSpec = {
                             (fadeIn(animationSpec = tween(durationMillis = 170)) +
                                 slideInVertically(
@@ -1571,13 +1571,15 @@ private fun EasyTierRoomMembersSection(
                                 )) togetherWith fadeOut(animationSpec = tween(durationMillis = 100))
                         },
                         label = "easyTierRoomMemberState",
-                    ) { (online, ipv4Cidr) ->
+                    ) { (online, ipv4Cidr, gameState) ->
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(
                                 text = stringResource(
                                     R.string.main_easytier_room_member_summary,
                                     localizedEasyTierRoomMemberRole(member),
-                                    if (online) {
+                                    if (online && gameState.equals("game", ignoreCase = true)) {
+                                        stringResource(R.string.main_easytier_member_in_game)
+                                    } else if (online) {
                                         stringResource(R.string.main_easytier_member_online)
                                     } else {
                                         stringResource(R.string.main_easytier_member_offline)
@@ -1782,11 +1784,11 @@ private fun EasyTierRoomDetailLoadingSkeleton() {
             style = skeletonStyle,
             shape = RoundedCornerShape(6.dp),
         )
-        repeat(2) {
+        repeat(4) {
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(72.dp),
+                    .height(86.dp),
                 shape = RoundedCornerShape(18.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
             ) {
@@ -2178,6 +2180,7 @@ internal fun EasyTierBottomSheetContent(
     },
     onOpenTutorialWorkshopDetails: (WorkshopItemSummary) -> Unit = {},
     onDownloadTutorialWorkshopItem: (WorkshopItemSummary) -> Unit = {},
+    initialLoading: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     var page by remember { mutableStateOf(EasyTierRoomSheetPage.Rooms) }
@@ -2206,7 +2209,8 @@ internal fun EasyTierBottomSheetContent(
         joinedSelectedRoom -> EasyTierRoomPanelMode.JoinedMember
         else -> EasyTierRoomPanelMode.Unjoined
     }
-    val roomsLoading = page == EasyTierRoomSheetPage.Rooms && roomBrowser.loading
+    val roomsLoading = page == EasyTierRoomSheetPage.Rooms &&
+        (initialLoading || roomBrowser.loading)
     val contentMode = easyTierRoomContentMode(
         page = page,
         panelMode = panelMode,
@@ -3377,6 +3381,7 @@ private fun LauncherMainScreenContent(
     val steamCloudIndicator = uiState.steamCloudIndicator
     val easyTierRoomBrowser = uiState.easyTierRoomBrowser
     var showEasyTierBottomSheet by remember { mutableStateOf(false) }
+    var easyTierRoomLoadBaselineAtOpen by remember { mutableStateOf<Long?>(null) }
     var steamCloudAutoRetryAttemptIndex by remember { mutableIntStateOf(0) }
     var steamCloudAutoRetryCurrentDelaySeconds by remember {
         mutableIntStateOf(STEAM_CLOUD_AUTO_RETRY_INITIAL_DELAY_SECONDS)
@@ -3400,6 +3405,8 @@ private fun LauncherMainScreenContent(
         showSteamCloudBottomSheetHost && showSteamCloudBottomSheet && steamCloudIndicator.visible
     val steamCloudBottomSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val easyTierBottomSheetVisible = showEasyTierBottomSheet && uiState.easyTierIndicator.visible
+    val easyTierInitialLoadPending = easyTierBottomSheetVisible &&
+        easyTierRoomBrowser.lastLoadedAtMs == easyTierRoomLoadBaselineAtOpen
     val easyTierBottomSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var batchEditBarState by remember { mutableStateOf<BatchEditBarState?>(null) }
     var batchEditBarHeightPx by remember { mutableIntStateOf(0) }
@@ -3580,6 +3587,7 @@ private fun LauncherMainScreenContent(
                                 showSteamCloudBottomSheet = true
                             },
                             onEasyTierClick = {
+                                easyTierRoomLoadBaselineAtOpen = easyTierRoomBrowser.lastLoadedAtMs
                                 showEasyTierBottomSheet = true
                             },
                             onLaunch = {
@@ -3753,6 +3761,7 @@ private fun LauncherMainScreenContent(
                 tutorialWorkshopDownloadState = tutorialWorkshopDownloadState,
                 onOpenTutorialWorkshopDetails = onOpenTutorialWorkshopDetails,
                 onDownloadTutorialWorkshopItem = onDownloadTutorialWorkshopItem,
+                initialLoading = easyTierInitialLoadPending,
             )
         }
     }

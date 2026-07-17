@@ -19,8 +19,10 @@ const MAX_LAN_ROOMS_PER_SOURCE_IP = 10;
 const MAX_ID_LENGTH = 128;
 const MAX_TEXT_LENGTH = 256;
 const MAX_LAN_ROOM_DESCRIPTION_LENGTH = 120;
+const GAME_STATE_HEARTBEAT_TIMEOUT_MS = 75 * 1000;
 const TERMINAL_SESSION_STATES = new Set(['expired', 'stopped', 'superseded']);
 const ROOM_MUTATION_ACTIONS = new Set(['lock', 'unlock', 'close']);
+const GAME_SESSION_STATES = new Set(['online', 'game']);
 
 class LanStore {
   constructor(config) {
@@ -127,6 +129,8 @@ class LanStore {
       sourceIp: request.sourceIp,
       assignedIpv4Cidr: '',
       relayServerDescription,
+      gameState: 'online',
+      gameStateUpdatedAtMs: 0,
       createdAtMs: nowMs,
       updatedAtMs: nowMs,
       expiresAtMs,
@@ -304,6 +308,41 @@ class LanStore {
     }, { nowMs });
   }
 
+  async reportSessionGameState(rawBody, options = {}) {
+    const request = parseSessionGameStateRequest(rawBody || {});
+    const nowMs = normalizeNowMs(options.nowMs);
+    this.expireSessions(nowMs);
+
+    const session = this.findSession(request.sessionId);
+    if (!session) {
+      throw httpError(404, 'LAN session not found');
+    }
+    ensureSessionAccess(session, request.sessionToken);
+
+    const sessionState = deriveSessionState(session, nowMs);
+    if (session.endedAtMs > 0 || TERMINAL_SESSION_STATES.has(sessionState)) {
+      throw httpError(409, 'LAN session is no longer active');
+    }
+
+    session.gameState = request.gameState;
+    session.gameStateUpdatedAtMs = nowMs;
+    session.updatedAtMs = nowMs;
+    const room = this.findRoom(session.roomId);
+    if (room) {
+      room.updatedAtMs = nowMs;
+    }
+
+    const peerCount = this.countActiveSessions(session.roomId, nowMs);
+    return {
+      sessionId: session.sessionId,
+      roomId: session.roomId,
+      sessionState: deriveSessionState(session, nowMs),
+      gameState: session.gameState,
+      roomState: deriveRoomState(room, peerCount, this.countGameMembers(session.roomId, nowMs)),
+      peerCount
+    };
+  }
+
   async getSessionStatus(rawQuery, options = {}) {
     const request = parseSessionCredentialRequest(rawQuery);
     const sessionId = request.sessionId;
@@ -318,12 +357,13 @@ class LanStore {
 
     const room = this.findRoom(session.roomId);
     const peerCount = this.countActiveSessions(session.roomId, nowMs);
+    const gameMemberCount = this.countGameMembers(session.roomId, nowMs);
 
     return {
       sessionId: session.sessionId,
       roomId: session.roomId,
       sessionState: deriveSessionState(session, nowMs),
-      roomState: deriveRoomState(room, peerCount),
+      roomState: deriveRoomState(room, peerCount, gameMemberCount),
       peerCount,
       assignedIpv4Cidr: session.assignedIpv4Cidr,
       relayServerDescription: session.relayServerDescription
@@ -353,6 +393,7 @@ class LanStore {
     const rooms = visibleRooms.map((room) => {
       const members = this.buildRoomMembers(room, nowMs);
       const onlineMemberCount = members.filter((member) => member.online).length;
+      const inGameMemberCount = members.filter((member) => member.gameState === 'game').length;
       return {
         roomId: room.roomId,
         ownerPlayerId: room.ownerPlayerId,
@@ -363,7 +404,8 @@ class LanStore {
         closedAtMs: room.closedAtMs,
         memberCount: members.length,
         onlineMemberCount,
-        roomState: deriveRoomState(room, onlineMemberCount),
+        inGameMemberCount,
+        roomState: deriveRoomState(room, onlineMemberCount, inGameMemberCount),
         lastSessionStartedAtMs: room.lastSessionStartedAtMs,
         updatedAtMs: room.updatedAtMs
       };
@@ -405,6 +447,7 @@ class LanStore {
     }
 
     const members = this.buildRoomMembers(room, nowMs);
+    const inGameMemberCount = members.filter((member) => member.gameState === 'game').length;
     return {
       roomId: room.roomId,
       ownerPlayerId: room.ownerPlayerId,
@@ -414,6 +457,8 @@ class LanStore {
       allowNewJoins: room.allowNewJoins,
       closedAtMs: room.closedAtMs,
       memberCount: members.length,
+      inGameMemberCount,
+      roomState: deriveRoomState(room, members.length, inGameMemberCount),
       members
     };
   }
@@ -543,6 +588,22 @@ class LanStore {
       .length;
   }
 
+  countGameMembers(roomId, nowMs) {
+    const latestByPlayer = new Map();
+    for (const session of this.sessionsForRoom(roomId)) {
+      if (!isSessionOnline(session, nowMs)) {
+        continue;
+      }
+      const current = latestByPlayer.get(session.playerId);
+      if (!current || session.createdAtMs >= current.createdAtMs) {
+        latestByPlayer.set(session.playerId, session);
+      }
+    }
+    return Array.from(latestByPlayer.values())
+      .filter((session) => resolveGameSessionState(session, nowMs) === 'game')
+      .length;
+  }
+
   countActiveRoomsForSource(sourceIp, nowMs) {
     return Array.from(this.rooms.values()).filter((room) =>
       room.ownerSourceIp === sourceIp &&
@@ -573,6 +634,7 @@ class LanStore {
           displayName: memberSession.displayName || memberSession.playerId,
           role: memberSession.playerId === room.ownerPlayerId ? 'owner' : 'member',
           online: isSessionOnline(memberSession, nowMs),
+          gameState: resolveGameSessionState(memberSession, nowMs),
           assignedIpv4Cidr: memberSession.assignedIpv4Cidr
         };
       });
@@ -704,6 +766,20 @@ function parseSessionRuntimeRequest(body) {
       firstNonEmpty(body.relayServerDescription, body.relay_server_description),
       MAX_TEXT_LENGTH
     )
+  };
+}
+
+function parseSessionGameStateRequest(body) {
+  const gameState = normalizeOptionalText(
+    firstNonEmpty(body.gameState, body.game_state, body.state),
+    MAX_ID_LENGTH
+  ).toLowerCase();
+  if (!GAME_SESSION_STATES.has(gameState)) {
+    throw httpError(400, 'Invalid LAN game state');
+  }
+  return {
+    ...parseSessionCredentialRequest(body),
+    gameState
   };
 }
 
@@ -871,12 +947,22 @@ function isSessionOnline(session, nowMs) {
     !TERMINAL_SESSION_STATES.has(session.sessionState);
 }
 
-function deriveRoomState(room, peerCount) {
+function resolveGameSessionState(session, nowMs) {
+  return session.gameState === 'game' &&
+    Number(session.gameStateUpdatedAtMs) > nowMs - GAME_STATE_HEARTBEAT_TIMEOUT_MS
+    ? 'game'
+    : 'online';
+}
+
+function deriveRoomState(room, peerCount, gameMemberCount = 0) {
   if (!room) {
     return 'missing';
   }
   if (isRoomClosed(room)) {
     return 'closed';
+  }
+  if (gameMemberCount > 0) {
+    return 'in_game';
   }
   if (!room.allowNewJoins) {
     return peerCount > 0 ? 'locked' : 'closed';

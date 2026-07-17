@@ -2625,6 +2625,7 @@
     <string name="main_easytier_role_owner">房主</string>
     <string name="main_easytier_role_member">成员</string>
     <string name="main_easytier_member_online">在线</string>
+    <string name="main_easytier_member_in_game">游戏中</string>
     <string name="main_easytier_member_offline">离线</string>
     <string name="main_easytier_member_ip_unavailable">IP：等待分配</string>
     <string name="main_easytier_create_room_title">创建房间</string>

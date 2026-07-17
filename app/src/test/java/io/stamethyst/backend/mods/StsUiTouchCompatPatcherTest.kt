@@ -381,6 +381,15 @@ class StsUiTouchCompatPatcherTest {
                 "()V"
             )
         )
+        assertFalse(
+            containsMethodInvocation(
+                findMethod(patchedBytes, "updateFirst", "()V"),
+                Opcodes.INVOKESTATIC,
+                "com/megacrit/cardcrawl/helpers/Hitbox",
+                "refreshAllHoveredForFreshClick",
+                "()V"
+            )
+        )
 
         val patchedAgain = StsUiTouchCompatPatcher.mergePatchedClass(
             entryName = STS_PATCH_INPUT_HELPER_CLASS,
@@ -388,6 +397,47 @@ class StsUiTouchCompatPatcherTest {
             donorClassBytes = donorBytes
         )
         assertArrayEquals(patchedBytes, patchedAgain)
+
+        val legacyDirectRefreshBytes = replaceMethodInvocation(
+            classBytes = patchedBytes,
+            methodName = "updateFirst",
+            methodDesc = "()V",
+            targetInvocationName = "deferFreshPreClickHoverClick",
+            replacementInvocationName = "refreshAllHoveredForFreshClick"
+        )
+        assertTrue(
+            containsMethodInvocation(
+                findMethod(legacyDirectRefreshBytes, "updateFirst", "()V"),
+                Opcodes.INVOKESTATIC,
+                "com/megacrit/cardcrawl/helpers/Hitbox",
+                "refreshAllHoveredForFreshClick",
+                "()V"
+            )
+        )
+
+        val upgradedBytes = StsUiTouchCompatPatcher.mergePatchedClass(
+            entryName = STS_PATCH_INPUT_HELPER_CLASS,
+            targetClassBytes = legacyDirectRefreshBytes,
+            donorClassBytes = donorBytes
+        )
+        assertTrue(
+            containsMethodInvocation(
+                findMethod(upgradedBytes, "updateFirst", "()V"),
+                Opcodes.INVOKESTATIC,
+                "com/megacrit/cardcrawl/helpers/Hitbox",
+                "deferFreshPreClickHoverClick",
+                "()V"
+            )
+        )
+        assertFalse(
+            containsMethodInvocation(
+                findMethod(upgradedBytes, "updateFirst", "()V"),
+                Opcodes.INVOKESTATIC,
+                "com/megacrit/cardcrawl/helpers/Hitbox",
+                "refreshAllHoveredForFreshClick",
+                "()V"
+            )
+        )
     }
 
     private fun resolveFixtureFile(vararg candidates: String): File {
@@ -442,6 +492,39 @@ class StsUiTouchCompatPatcherTest {
         val classWriter = ClassWriter(0)
         targetClass.accept(classWriter)
         return classWriter.toByteArray()
+    }
+
+    private fun replaceMethodInvocation(
+        classBytes: ByteArray,
+        methodName: String,
+        methodDesc: String,
+        targetInvocationName: String,
+        replacementInvocationName: String
+    ): ByteArray {
+        val classNode = ClassNode()
+        ClassReader(classBytes).accept(classNode, 0)
+        val method = requireNotNull(
+            classNode.methods.firstOrNull { candidate ->
+                candidate.name == methodName && candidate.desc == methodDesc
+            }
+        ) { "Missing method $methodName$methodDesc" }
+        var current: AbstractInsnNode? = method.instructions.first
+        while (current != null) {
+            val invocation = current as? MethodInsnNode
+            if (invocation != null &&
+                invocation.opcode == Opcodes.INVOKESTATIC &&
+                invocation.owner == "com/megacrit/cardcrawl/helpers/Hitbox" &&
+                invocation.name == targetInvocationName &&
+                invocation.desc == "()V"
+            ) {
+                invocation.name = replacementInvocationName
+                val classWriter = ClassWriter(0)
+                classNode.accept(classWriter)
+                return classWriter.toByteArray()
+            }
+            current = current.next
+        }
+        error("Missing invocation $targetInvocationName()V")
     }
 
     private fun lineNumbers(method: MethodNode): List<Int> {

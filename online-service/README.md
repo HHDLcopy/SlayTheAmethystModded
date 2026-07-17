@@ -30,6 +30,7 @@ server push for sessions and stats, so it no longer polls the HTTP endpoints.
 - EasyTier room session start: `POST /api/lan/session/start`
 - EasyTier room session stop: `POST /api/lan/session/stop`
 - EasyTier room runtime report: `POST /api/lan/session/runtime`
+- EasyTier room game-state report: `POST /api/lan/session/game-state`
 - EasyTier room session status: `GET /api/lan/session/status?sessionId=...`
 - EasyTier room info: `GET /api/lan/rooms/{roomId}`
 - Protected EasyTier runtime status: `GET /api/easytier/runtime/status?token=...`
@@ -306,6 +307,17 @@ Invoke-RestMethod `
   -Body '{"sessionId":"lan_xxx","assignedIpv4Cidr":"10.144.0.1/24"}'
 ```
 
+Report that the active player has entered or left a Together in Spire game:
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri http://127.0.0.1:3001/api/lan/session/game-state `
+  -ContentType 'application/json' `
+  -Headers @{ Authorization = 'Bearer <sessionToken>' } `
+  -Body '{"sessionId":"lan_xxx","gameState":"game"}'
+```
+
 Query room info:
 
 ```powershell
@@ -337,7 +349,9 @@ Business rules in the current MVP:
   `GET /api/lan/session/status` starts returning `sessionState: "connected"`.
 - `GET /api/lan/rooms/{roomId}` returns the latest known member identity for
   each player, whether that player currently has an active unexpired session,
-  and the latest reported `assignedIpv4Cidr` for that player.
+  the latest reported `assignedIpv4Cidr`, and the member `gameState` (`online`
+  or `game`) for that player. Game-state reports do not renew the EasyTier
+  session lease and expire back to `online` after 75 seconds without a heartbeat.
 
 ## WebSocket Messages
 

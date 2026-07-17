@@ -310,11 +310,14 @@ internal object StsUiTouchCompatPatcher {
         var releaseDeferralCount = 0
         var current = updateFirstMethod.instructions.first
         while (current != null) {
-            val fieldInsn = current as? FieldInsnNode
-            if (isJustClickedLeftWrite(fieldInsn) && isTrueConstant(previousMeaningful(current.previous))) {
+            val fieldWrite = current as? FieldInsnNode
+            if (fieldWrite != null &&
+                isJustClickedLeftWrite(fieldWrite) &&
+                isTrueConstant(previousMeaningful(current.previous))
+            ) {
                 if (replaceOrInsertInputHelperCall(
                         updateFirstMethod,
-                        current,
+                        fieldWrite,
                         HITBOX_DEFER_FRESH_PRE_CLICK_HOVER_CLICK_METHOD_NAME,
                         HITBOX_DEFER_FRESH_PRE_CLICK_HOVER_CLICK_METHOD_DESC
                     )
@@ -322,12 +325,13 @@ internal object StsUiTouchCompatPatcher {
                     changed = true
                 }
                 freshClickDeferralCount++
-            } else if (isJustReleasedClickLeftWrite(fieldInsn) &&
+            } else if (fieldWrite != null &&
+                isJustReleasedClickLeftWrite(fieldWrite) &&
                 isTrueConstant(previousMeaningful(current.previous))
             ) {
                 if (replaceOrInsertInputHelperCall(
                         updateFirstMethod,
-                        current,
+                        fieldWrite,
                         HITBOX_DEFER_PRE_CLICK_HOVER_RELEASE_METHOD_NAME,
                         HITBOX_DEFER_PRE_CLICK_HOVER_RELEASE_METHOD_DESC
                     )

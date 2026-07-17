@@ -6,6 +6,10 @@ import com.evacipated.cardcrawl.modthespire.lib.SpireReturn;
 
 public final class TogetherInSpireCursorVisibilityPatches {
     private static final String CURSOR_CLASS = "spireTogether.ui.elements.presets.Cursor";
+    private static final String CHAT_FLAG_CURSOR_TYPE_PATCH_CLASS =
+        "spireTogether.chat.ChatTargeting$RenderPrefixPatcher";
+    private static final String CHAT_FLAG_CURSOR_RENDER_PATCH_CLASS =
+        "spireTogether.chat.ChatTargeting$RenderPatcher";
 
     private TogetherInSpireCursorVisibilityPatches() {
     }
@@ -31,5 +35,38 @@ public final class TogetherInSpireCursorVisibilityPatches {
             }
             return SpireReturn.Continue();
         }
+    }
+
+    @SpirePatch2(
+        cls = CHAT_FLAG_CURSOR_TYPE_PATCH_CLASS,
+        method = "Prefix",
+        requiredModId = TogetherInSpireCompatRuntime.MOD_ID,
+        optional = true
+    )
+    public static class ChatFlagCursorTypePatch {
+        @SpirePrefixPatch
+        public static SpireReturn<Void> Prefix() {
+            return suppressLocalCursorInHybridMode();
+        }
+    }
+
+    @SpirePatch2(
+        cls = CHAT_FLAG_CURSOR_RENDER_PATCH_CLASS,
+        method = "Postfix",
+        requiredModId = TogetherInSpireCompatRuntime.MOD_ID,
+        optional = true
+    )
+    public static class ChatFlagCursorRenderPatch {
+        @SpirePrefixPatch
+        public static SpireReturn<Void> Prefix() {
+            return suppressLocalCursorInHybridMode();
+        }
+    }
+
+    private static SpireReturn<Void> suppressLocalCursorInHybridMode() {
+        if (TogetherInSpireCompatRuntime.isHybridInputMode()) {
+            return SpireReturn.Return();
+        }
+        return SpireReturn.Continue();
     }
 }

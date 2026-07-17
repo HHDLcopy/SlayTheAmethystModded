@@ -9,6 +9,8 @@ import android.widget.Toast
 import androidx.lifecycle.ViewModelProvider
 import io.stamethyst.backend.audio.ForegroundAudioPolicy
 import io.stamethyst.backend.diag.MemoryDiagnosticsLogger
+import io.stamethyst.backend.easytier.EasyTierInGameSessionState
+import io.stamethyst.backend.easytier.EasyTierInGameStatusReporter
 import io.stamethyst.backend.launch.progressText
 import io.stamethyst.backend.crash.LatestLogCrashDetector
 import io.stamethyst.backend.launch.BackExitNotice
@@ -44,6 +46,7 @@ internal class GameSessionCoordinator(
         private const val BACK_FORCE_KILL_FALLBACK_MS = 1500L
         private const val CRASH_LAUNCHER_RESTART_DELAY_MS = 320L
         private const val KEYBOARD_REQUEST_POLL_MS = 120L
+        private const val LAN_GAME_STATE_REQUEST_POLL_MS = 300L
         private const val FILE_PICKER_REQUEST_POLL_MS = 120L
         private const val RESCUE_TOAST_REQUEST_POLL_MS = 120L
         private const val EXPECTED_GAME_EXIT_PROCESS_KILL_DELAY_MS = 1500L
@@ -73,9 +76,11 @@ internal class GameSessionCoordinator(
     private var jvmLaunchStartedWallTimeMs = 0L
     private var startCheckPosted = false
     private var lastKeyboardRequestPayload = ""
+    private var lastLanGameStateRequestPayload = ""
     private var lastFilePickerRequestPayload = ""
     private var lastRescueToastRequestPayload = ""
     private var keyboardRequestPollStarted = false
+    private var lanGameStateRequestPollStarted = false
     private var filePickerRequestPollStarted = false
     private var rescueToastRequestPollStarted = false
     private var rescueToastShown = false
@@ -119,6 +124,14 @@ internal class GameSessionCoordinator(
             pollInGameFilePickerRequest()
             if (!destroyed && filePickerRequestPollStarted) {
                 mainHandler.postDelayed(this, FILE_PICKER_REQUEST_POLL_MS)
+            }
+        }
+    }
+    private val lanGameStateRequestPollRunnable = object : Runnable {
+        override fun run() {
+            pollInGameLanGameStateRequest()
+            if (!destroyed && lanGameStateRequestPollStarted) {
+                mainHandler.postDelayed(this, LAN_GAME_STATE_REQUEST_POLL_MS)
             }
         }
     }
@@ -180,6 +193,7 @@ internal class GameSessionCoordinator(
                 applyForegroundWindowState()
                 updateFloatingMouseVisibility()
                 startKeyboardRequestPolling()
+                startLanGameStateRequestPolling()
                 startFilePickerRequestPolling()
                 startRescueToastRequestPolling()
                 updatePerformanceOverlayVisibility()
@@ -227,10 +241,12 @@ internal class GameSessionCoordinator(
         cancelBackExitForceRestart()
         cancelExpectedGameExitReturnWatchdog()
         stopKeyboardRequestPolling()
+        stopLanGameStateRequestPolling()
         stopFilePickerRequestPolling()
         stopRescueToastRequestPolling()
         inGameEasyTierOverlayController.onDestroy()
         RuntimePaths.touchscreenCardHoldStateFile(activity).delete()
+        reportEasyTierInGameState(EasyTierInGameSessionState.Online)
         cancelForegroundAudioRestoreRetries()
         activityResumed = false
         pendingAudioDeviceRecovery = false
@@ -979,6 +995,16 @@ internal class GameSessionCoordinator(
         mainHandler.post(keyboardRequestPollRunnable)
     }
 
+    private fun startLanGameStateRequestPolling() {
+        if (lanGameStateRequestPollStarted) {
+            return
+        }
+        lanGameStateRequestPollStarted = true
+        lastLanGameStateRequestPayload = ""
+        RuntimePaths.inGameLanGameStateRequestFile(activity).delete()
+        mainHandler.post(lanGameStateRequestPollRunnable)
+    }
+
     private fun startFilePickerRequestPolling() {
         if (filePickerRequestPollStarted) {
             return
@@ -1005,6 +1031,11 @@ internal class GameSessionCoordinator(
     private fun stopKeyboardRequestPolling() {
         keyboardRequestPollStarted = false
         mainHandler.removeCallbacks(keyboardRequestPollRunnable)
+    }
+
+    private fun stopLanGameStateRequestPolling() {
+        lanGameStateRequestPollStarted = false
+        mainHandler.removeCallbacks(lanGameStateRequestPollRunnable)
     }
 
     private fun stopFilePickerRequestPolling() {
@@ -1047,6 +1078,36 @@ internal class GameSessionCoordinator(
             inputHandler.requestSystemSoftKeyboardForGameTextInput("game_text_input_system")
         } else {
             inputHandler.requestSoftKeyboardForGameTextInput("game_text_input")
+        }
+    }
+
+    private fun pollInGameLanGameStateRequest() {
+        if (!jvmLaunchController.runtimeLifecycleReady || backExitRequested) {
+            return
+        }
+        val requestFile = RuntimePaths.inGameLanGameStateRequestFile(activity)
+        val payload = try {
+            if (requestFile.isFile) requestFile.readText().trim() else ""
+        } catch (_: Throwable) {
+            ""
+        }
+        if (payload.isEmpty() || payload == lastLanGameStateRequestPayload) {
+            return
+        }
+        lastLanGameStateRequestPayload = payload
+        val state = EasyTierInGameSessionState.fromWireValue(
+            payload.lineSequence().firstOrNull().orEmpty()
+        ) ?: return
+        reportEasyTierInGameState(state)
+    }
+
+    private fun reportEasyTierInGameState(state: EasyTierInGameSessionState) {
+        Thread(
+            { runCatching { EasyTierInGameStatusReporter.report(activity, state) } },
+            "STS-EasyTierInGameState-${state.wireValue}",
+        ).apply {
+            isDaemon = true
+            start()
         }
     }
 

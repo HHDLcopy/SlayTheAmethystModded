@@ -226,6 +226,10 @@ object StsLaunchSpec {
         args.add("-Duser.dir=${stsRoot.absolutePath}")
         args.add("-Damethyst.expected_exit_marker=${RuntimePaths.expectedGameExitMarker(context).absolutePath}")
         args.add("-Damethyst.in_game_keyboard_request=${RuntimePaths.inGameKeyboardRequestFile(context).absolutePath}")
+        args.add(
+            "-Damethyst.in_game_lan_game_state_request=" +
+                RuntimePaths.inGameLanGameStateRequestFile(context).absolutePath
+        )
         args.add("-Damethyst.in_game_file_picker_request=${RuntimePaths.inGameFilePickerRequestFile(context).absolutePath}")
         args.add("-Damethyst.in_game_file_picker_result=${RuntimePaths.inGameFilePickerResultFile(context).absolutePath}")
         args.add("-Damethyst.runtime_rescue_toast_request=${RuntimePaths.runtimeRescueToastRequestFile(context).absolutePath}")

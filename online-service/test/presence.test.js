@@ -274,12 +274,15 @@ test('lan room session api issues status and room members for easytier room mode
     allowNewJoins: true,
     closedAtMs: 0,
     memberCount: 1,
+    inGameMemberCount: 0,
+    roomState: 'active',
     members: [
       {
         playerId: 'alice',
         displayName: 'Alice',
         role: 'owner',
         online: true,
+        gameState: 'online',
         assignedIpv4Cidr: ''
       }
     ]
@@ -345,9 +348,89 @@ test('lan room runtime report updates session status and room member ip', async 
       displayName: 'Alice',
       role: 'owner',
       online: true,
+      gameState: 'online',
       assignedIpv4Cidr: '10.144.0.1/24'
     }
   ]);
+});
+
+test('lan game-state report marks active room members as in game', async (t) => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-presence-'));
+  const server = await buildServer({
+    ...loadConfig({ LOG_LEVEL: 'silent', EASYTIER_ENABLED: 'true' }),
+    dbPath: path.join(tmpDir, 'presence.sqlite'),
+    publicBaseUrl: 'https://online.example.com',
+    presencePanelToken: 'panel-secret',
+    logLevel: 'silent'
+  });
+  t.after(async () => {
+    await server.close();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+  await server.ready();
+
+  const started = await server.inject({
+    method: 'POST',
+    url: '/api/lan/session/start',
+    payload: { roomId: 'game-state-room', playerId: 'host' }
+  });
+  assert.equal(started.statusCode, 200);
+
+  const startedPayload = started.json();
+  const reported = await server.inject({
+    method: 'POST',
+    url: '/api/lan/session/game-state',
+    headers: { authorization: `Bearer ${startedPayload.sessionToken}` },
+    payload: { sessionId: startedPayload.sessionId, gameState: 'game' }
+  });
+  assert.equal(reported.statusCode, 200);
+  assert.equal(reported.json().gameState, 'game');
+  assert.equal(reported.json().roomState, 'in_game');
+
+  const room = await server.inject('/api/lan/rooms/game-state-room');
+  assert.equal(room.statusCode, 200);
+  assert.equal(room.json().roomState, 'in_game');
+  assert.equal(room.json().members[0].gameState, 'game');
+
+  const ended = await server.inject({
+    method: 'POST',
+    url: '/api/lan/session/game-state',
+    headers: { authorization: `Bearer ${startedPayload.sessionToken}` },
+    payload: { sessionId: startedPayload.sessionId, gameState: 'online' }
+  });
+  assert.equal(ended.statusCode, 200);
+  assert.equal(ended.json().gameState, 'online');
+  assert.equal(ended.json().roomState, 'active');
+});
+
+test('lan game-state automatically returns to online when its heartbeat expires', async () => {
+  const store = new LanStore({ easyTierSessionTtlSeconds: 90 });
+  const startedAtMs = 1_000_000;
+  const started = await store.startSession(
+    { roomId: 'game-state-timeout-room', playerId: 'host' },
+    {
+      nowMs: startedAtMs,
+      easyTier: { enabled: true, entryNodeUrl: 'tcp://relay.example.com:11010' }
+    }
+  );
+
+  await store.reportSessionGameState({
+    sessionId: started.sessionId,
+    sessionToken: started.sessionToken,
+    gameState: 'game'
+  }, { nowMs: startedAtMs });
+
+  const whileFresh = await store.getRoomInfo('game-state-timeout-room', {
+    nowMs: startedAtMs + 74_999
+  });
+  assert.equal(whileFresh.roomState, 'in_game');
+  assert.equal(whileFresh.members[0].gameState, 'game');
+
+  const afterTimeout = await store.getRoomInfo('game-state-timeout-room', {
+    nowMs: startedAtMs + 75_001
+  });
+  assert.equal(afterTimeout.roomState, 'active');
+  assert.equal(afterTimeout.members[0].gameState, 'online');
 });
 
 test('concurrent LAN operations do not contend with presence database writes', async (t) => {
@@ -662,6 +745,7 @@ test('lan room session start creates a joined room and preserves its join policy
     closedAtMs: 0,
     memberCount: 1,
     onlineMemberCount: 1,
+    inGameMemberCount: 0,
     roomState: 'locked',
     lastSessionStartedAtMs: alphaRoom.lastSessionStartedAtMs,
     updatedAtMs: alphaRoom.updatedAtMs

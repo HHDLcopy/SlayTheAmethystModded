@@ -200,6 +200,48 @@ internal class EasyTierRoomApiClient(
         }
     }
 
+    fun reportSessionGameState(
+        sessionId: String,
+        sessionToken: String,
+        gameState: String,
+    ) {
+        val config = EasyTierConfigRepository.current()
+        val baseUrl = config.roomApiBaseUrl.trim()
+        require(baseUrl.isNotEmpty()) { "EasyTier room API base URL is unavailable." }
+        require(sessionId.isNotBlank()) { "Session ID is required." }
+        require(sessionToken.isNotBlank()) { "Session token is required." }
+        require(gameState == "online" || gameState == "game") { "Invalid game state." }
+
+        val requestBody = json.encodeToString(
+            ReportSessionGameStateRequest.serializer(),
+            ReportSessionGameStateRequest(
+                sessionId = sessionId.trim(),
+                gameState = gameState,
+            )
+        )
+        val request = Request.Builder()
+            .url(apiUrl(baseUrl, "api", "lan", "session", "game-state"))
+            .header("User-Agent", "SlayTheAmethyst/${BuildConfig.VERSION_NAME}")
+            .header("Accept", "application/json")
+            .post(requestBody.toRequestBody(JSON_MEDIA_TYPE))
+            .applyLanSessionToken(sessionToken)
+            .build()
+        client.newCall(request).execute().use { response ->
+            val responseText = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                throw EasyTierRoomApiHttpException(
+                    statusCode = response.code,
+                    message = buildHttpErrorMessage(
+                        operation = "game state",
+                        responseCode = response.code,
+                        responseMessage = response.message,
+                        responseText = responseText,
+                    ),
+                )
+            }
+        }
+    }
+
     fun fetchRoomInfo(roomId: String): EasyTierRoomInfo {
         val config = EasyTierConfigRepository.current()
         val baseUrl = config.roomApiBaseUrl.trim()
@@ -424,12 +466,15 @@ internal class EasyTierRoomApiClient(
             allowNewJoins = payload.allowNewJoins,
             closedAtMs = payload.closedAtMs,
             memberCount = payload.memberCount,
+            inGameMemberCount = payload.inGameMemberCount,
+            roomState = payload.roomState.trim(),
             members = payload.members.map { member ->
                 EasyTierRoomMember(
                     playerId = member.playerId.trim(),
                     displayName = member.displayName.trim(),
                     role = member.role.trim(),
                     online = member.online,
+                    gameState = member.gameState.trim().ifBlank { "online" },
                     assignedIpv4Cidr = member.assignedIpv4Cidr.trim(),
                 )
             },
@@ -454,6 +499,7 @@ internal class EasyTierRoomApiClient(
                 closedAtMs = room.closedAtMs,
                 memberCount = room.memberCount,
                 onlineMemberCount = room.onlineMemberCount,
+                inGameMemberCount = room.inGameMemberCount,
                 roomState = room.roomState.trim(),
                 lastSessionStartedAtMs = room.lastSessionStartedAtMs,
                 updatedAtMs = room.updatedAtMs,
@@ -537,6 +583,12 @@ internal class EasyTierRoomApiClient(
     )
 
     @Serializable
+    private data class ReportSessionGameStateRequest(
+        val sessionId: String,
+        val gameState: String,
+    )
+
+    @Serializable
     private data class UpdateRoomRequest(
         val action: String,
     )
@@ -577,6 +629,8 @@ internal class EasyTierRoomApiClient(
         val allowNewJoins: Boolean = false,
         val closedAtMs: Long = 0L,
         val memberCount: Int = 0,
+        val inGameMemberCount: Int = 0,
+        val roomState: String = "",
         val members: List<RoomMemberResponse> = emptyList(),
     )
 
@@ -597,6 +651,7 @@ internal class EasyTierRoomApiClient(
         val closedAtMs: Long = 0L,
         val memberCount: Int = 0,
         val onlineMemberCount: Int = 0,
+        val inGameMemberCount: Int = 0,
         val roomState: String = "",
         val lastSessionStartedAtMs: Long = 0L,
         val updatedAtMs: Long = 0L,
@@ -608,6 +663,7 @@ internal class EasyTierRoomApiClient(
         val displayName: String = "",
         val role: String = "",
         val online: Boolean = false,
+        val gameState: String = "online",
         val assignedIpv4Cidr: String = "",
     )
 

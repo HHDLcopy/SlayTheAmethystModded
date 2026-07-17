@@ -2626,6 +2626,7 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="main_easytier_role_owner">Owner</string>
     <string name="main_easytier_role_member">Member</string>
     <string name="main_easytier_member_online">Online</string>
+    <string name="main_easytier_member_in_game">In game</string>
     <string name="main_easytier_member_offline">Offline</string>
     <string name="main_easytier_member_ip_unavailable">IP: pending assignment</string>
     <string name="main_easytier_create_room_title">Create a room</string>

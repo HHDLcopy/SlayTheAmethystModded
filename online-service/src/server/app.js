@@ -200,6 +200,14 @@ async function buildServer(config = loadConfig()) {
     };
   });
 
+  fastify.post('/api/lan/session/game-state', async (request, reply) => {
+    reply.header('Cache-Control', 'no-store');
+    return {
+      ok: true,
+      ...(await lanStore.reportSessionGameState(withSessionCredential(request, request.body || {})))
+    };
+  });
+
   fastify.get('/api/lan/session/status', async (request, reply) => {
     reply.header('Cache-Control', 'no-store');
     return {

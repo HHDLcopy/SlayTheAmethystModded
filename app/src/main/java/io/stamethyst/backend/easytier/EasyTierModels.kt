@@ -58,6 +58,7 @@ data class EasyTierRoomMember(
     val displayName: String,
     val role: String,
     val online: Boolean,
+    val gameState: String = "online",
     val assignedIpv4Cidr: String = "",
 )
 
@@ -71,6 +72,8 @@ data class EasyTierRoomInfo(
     val allowNewJoins: Boolean,
     val closedAtMs: Long = 0L,
     val memberCount: Int,
+    val inGameMemberCount: Int = 0,
+    val roomState: String = "",
     val members: List<EasyTierRoomMember> = emptyList(),
 )
 
@@ -85,6 +88,7 @@ data class EasyTierRoomListItem(
     val closedAtMs: Long = 0L,
     val memberCount: Int,
     val onlineMemberCount: Int = 0,
+    val inGameMemberCount: Int = 0,
     val roomState: String = "",
     val lastSessionStartedAtMs: Long = 0L,
     val updatedAtMs: Long = 0L,

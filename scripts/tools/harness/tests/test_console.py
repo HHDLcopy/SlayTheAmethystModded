@@ -2,7 +2,7 @@ import json
 import os
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 from scripts.tools.lib.agent_bridge import AgentBridgeError
 from scripts.tools.lib.agent_protocol import AgentProtocol
@@ -53,6 +53,17 @@ class ConsoleExecTest(unittest.TestCase):
             mock_proto.return_value.console_exec.assert_called_once_with("gold 999")
             self.assertTrue(ctx.result["success"])
             self.assertEqual(ctx.result["status"], "CONSOLE_EXECUTED")
+
+    def test_default_port_is_passed_to_harness_connection(self):
+        from scripts.tools.harness.agent import _connect_agent
+
+        ctx = self._make_ctx("gold 999")
+        with patch("scripts.tools.harness.agent.HarnessConnection") as connection_type:
+            connection = _connect_agent(ctx)
+
+        connection_type.assert_called_once_with(adb_runner=ANY, port=9099)
+        connection.setup_forward.assert_called_once_with()
+        connection.connect.assert_called_once_with()
 
     def test_interactive_mode_when_no_command(self):
         ctx = self._make_ctx("")

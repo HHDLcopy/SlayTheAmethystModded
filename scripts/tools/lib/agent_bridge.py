@@ -43,7 +43,7 @@ class AgentBridge:
     def __init__(
         self,
         host: str = "127.0.0.1",
-        port: int = 9090,
+        port: int = 9099,
         connection: Any = None,
     ) -> None:
         self._host = host

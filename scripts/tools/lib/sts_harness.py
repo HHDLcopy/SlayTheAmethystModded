@@ -218,7 +218,7 @@ class HarnessOptions:
     decompil_targets: list[str] = field(default_factory=list)
     agent_command: str = ""
     agent_spec: str = ""
-    agent_port: int = 9090
+    agent_port: int = 9099
     agent_duration: float = 0.0
     redefine_class_file: str = ""
     console_command: str = ""

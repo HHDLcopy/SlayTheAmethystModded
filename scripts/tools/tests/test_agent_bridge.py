@@ -8,6 +8,7 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
 from agent_bridge import AgentBridge, AgentBridgeError
@@ -104,6 +105,13 @@ def _handler_error(reader, writer):
 
 
 class AgentBridgeTest(unittest.TestCase):
+    def test_default_port_matches_game_probe(self):
+        with patch("agent_bridge.socket.socket") as socket_type:
+            bridge = AgentBridge()
+            bridge.connect()
+
+        socket_type.return_value.connect.assert_called_once_with(("127.0.0.1", 9099))
+
     def test_attach_returns_agent_id(self):
         server = _FakeServer()
         server.start(_handler_attach_ok)

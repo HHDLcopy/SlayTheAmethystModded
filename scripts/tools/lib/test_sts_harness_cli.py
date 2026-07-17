@@ -79,6 +79,14 @@ class ConsoleCliTest(unittest.TestCase):
         args = parser.parse_args(["-Command", "console"])
         self.assertEqual(args.command, "console")
         self.assertEqual(args.console_command, "")
+        self.assertEqual(args.agent_port, 9099)
+
+    def test_console_command_agent_port_override(self):
+        parser = create_parser()
+        for option in ("-AgentPort", "--agent-port"):
+            with self.subTest(option=option):
+                args = parser.parse_args(["-Command", "console", option, "19099"])
+                self.assertEqual(args.agent_port, 19099)
 
     def test_console_command_with_device_serial(self):
         parser = create_parser()

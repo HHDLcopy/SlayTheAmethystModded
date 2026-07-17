@@ -186,8 +186,8 @@ def create_parser() -> argparse.ArgumentParser:
         "--agent-port",
         dest="agent_port",
         type=int,
-        default=9090,
-        help="TCP port for game-probe.",
+        default=9099,
+        help="TCP port for game-probe (default: 9099).",
     )
     parser.add_argument(
         "-AgentDuration",

@@ -32,6 +32,12 @@ Harness.run()
 
 每个命令函数签名为 `(ctx: HarnessContext, ...) -> None` 或返回 `int`。
 
+## game-probe 连接
+
+`agent-*`、`play`、`console`、`hotreload` 和 `perf` 命令通过 adb forward 连接游戏 JVM 中的 game-probe，默认端口为 `9099`。可使用 `-AgentPort <port>` 或 `--agent-port <port>` 覆盖连接端口；该参数只控制 Harness 的连接和端口转发，不会重新配置已运行的 game-probe。
+
+`console` 需要以启用 game-probe 的方式启动游戏，并要求 BaseMod DevConsole 可用。不传命令时进入交互模式；可使用 `-ConsoleCommand "gold 999"` 或 `--console-command "gold 999"` 执行单条命令。
+
 ## 文件结构
 
 | 文件 | 职责 |

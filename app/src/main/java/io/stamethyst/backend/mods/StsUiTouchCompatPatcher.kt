@@ -26,12 +26,28 @@ internal object StsUiTouchCompatPatcher {
         "com/megacrit/cardcrawl/helpers/Hitbox"
     private const val INPUT_HELPER_UPDATE_FIRST_METHOD_NAME = "updateFirst"
     private const val INPUT_HELPER_UPDATE_FIRST_METHOD_DESC = "()V"
+    private const val HITBOX_BEGIN_PRE_CLICK_HOVER_FRAME_METHOD_NAME =
+        "beginPreClickHoverRefreshFrame"
+    private const val HITBOX_BEGIN_PRE_CLICK_HOVER_FRAME_METHOD_DESC = "()V"
+    private const val HITBOX_DISPATCH_DEFERRED_PRE_CLICK_HOVER_INPUT_METHOD_NAME =
+        "dispatchDeferredPreClickHoverInput"
+    private const val HITBOX_DISPATCH_DEFERRED_PRE_CLICK_HOVER_INPUT_METHOD_DESC = "()V"
+    private const val HITBOX_DEFER_FRESH_PRE_CLICK_HOVER_CLICK_METHOD_NAME =
+        "deferFreshPreClickHoverClick"
+    private const val HITBOX_DEFER_FRESH_PRE_CLICK_HOVER_CLICK_METHOD_DESC = "()V"
+    private const val HITBOX_DEFER_PRE_CLICK_HOVER_RELEASE_METHOD_NAME =
+        "deferPreClickHoverReleaseIfNeeded"
+    private const val HITBOX_DEFER_PRE_CLICK_HOVER_RELEASE_METHOD_DESC = "()V"
     private const val HITBOX_REFRESH_HOVER_METHOD_NAME = "refreshAllHoveredForFreshClick"
     private const val HITBOX_REFRESH_HOVER_METHOD_DESC = "()V"
     private const val HITBOX_REGISTER_METHOD_NAME = "registerForPreClickHoverRefresh"
     private const val HITBOX_REGISTER_METHOD_DESC = "(Lcom/megacrit/cardcrawl/helpers/Hitbox;)V"
+    private const val HITBOX_MARK_UPDATED_METHOD_NAME = "markUpdatedForPreClickHoverRefresh"
+    private const val HITBOX_MARK_UPDATED_METHOD_DESC = "(Lcom/megacrit/cardcrawl/helpers/Hitbox;)V"
     private const val HITBOX_CONSTRUCTOR_WITH_POSITION_DESC = "(FFFF)V"
+    private const val HITBOX_UPDATE_WITH_POSITION_DESC = "(FF)V"
     private const val JUST_CLICKED_LEFT_FIELD_NAME = "justClickedLeft"
+    private const val JUST_RELEASED_CLICK_LEFT_FIELD_NAME = "justReleasedClickLeft"
     private const val DROP_ZONE_HOVER_FIELD_NAME = "isHoveringDropZone"
     private const val TOUCH_MOUSE_DOWN_FIELD_NAME = "isMouseDown"
     private const val BOOLEAN_FIELD_DESC = "Z"
@@ -83,13 +99,28 @@ internal object StsUiTouchCompatPatcher {
         STS_PATCH_HITBOX_CLASS to MergeSpec(
             fields = listOf(
                 MemberRef("PRE_CLICK_HOVER_REFRESH_ENABLED_PROP", "Ljava/lang/String;"),
+                MemberRef("NATIVE_TOUCHSCREEN_ENABLED_PROP", "Ljava/lang/String;"),
                 MemberRef("preClickHoverRefreshEnabled", "Ljava/lang/Boolean;"),
-                MemberRef("registeredHitboxes", "Ljava/util/ArrayList;")
+                MemberRef("nativeTouchscreenEnabled", "Ljava/lang/Boolean;"),
+                MemberRef("registeredHitboxes", "Ljava/util/ArrayList;"),
+                MemberRef("preClickHoverRefreshFrame", "J"),
+                MemberRef("deferredPreClickHoverPress", "Z"),
+                MemberRef("deferredPreClickHoverRelease", "Z"),
+                MemberRef("deferredPreClickHoverPressDeliveredThisFrame", "Z"),
+                MemberRef("preClickHoverRefreshLastUpdatedFrame", "J")
             ),
             methods = listOf(
                 MemberRef("refreshAllHoveredForFreshClick", "()V"),
+                MemberRef("beginPreClickHoverRefreshFrame", "()V"),
+                MemberRef("dispatchDeferredPreClickHoverInput", "()V"),
+                MemberRef("deferFreshPreClickHoverClick", "()V"),
+                MemberRef("deferPreClickHoverReleaseIfNeeded", "()V"),
                 MemberRef("registerForPreClickHoverRefresh", "(Lcom/megacrit/cardcrawl/helpers/Hitbox;)V"),
+                MemberRef("markUpdatedForPreClickHoverRefresh", "(Lcom/megacrit/cardcrawl/helpers/Hitbox;)V"),
+                MemberRef("wasUpdatedInPreviousPreClickHoverFrame", "(Lcom/megacrit/cardcrawl/helpers/Hitbox;)Z"),
                 MemberRef("isPreClickHoverRefreshEnabled", "()Z"),
+                MemberRef("isPreClickHoverInputDeferralEnabled", "()Z"),
+                MemberRef("isNativeTouchscreenEnabled", "()Z"),
                 MemberRef("parseBooleanLike", "(Ljava/lang/String;)Ljava/lang/Boolean;"),
                 MemberRef("refreshHoveredForFreshClick", "(Lcom/megacrit/cardcrawl/helpers/Hitbox;)V"),
                 MemberRef("isPointerInside", "(Lcom/megacrit/cardcrawl/helpers/Hitbox;)Z")
@@ -182,6 +213,7 @@ internal object StsUiTouchCompatPatcher {
 
         if (entryName == STS_PATCH_HITBOX_CLASS) {
             patchHitboxConstructors(targetClass)
+            patchHitboxUpdateActivity(targetClass)
         }
 
         return writeClass(targetClass)
@@ -250,37 +282,75 @@ internal object StsUiTouchCompatPatcher {
                 method.desc == INPUT_HELPER_UPDATE_FIRST_METHOD_DESC
         } ?: throw IOException("Missing updateFirst method for $STS_PATCH_INPUT_HELPER_CLASS")
 
-        if (isInputHelperFreshClickHoverRefreshPatched(updateFirstMethod)) {
-            return targetClassBytes
+        var changed = false
+        if (!isInputHelperPreClickHoverFramePatched(updateFirstMethod)) {
+            updateFirstMethod.instructions.insert(
+                InsnList().apply {
+                    add(
+                        MethodInsnNode(
+                            Opcodes.INVOKESTATIC,
+                            HITBOX_INTERNAL_NAME,
+                            HITBOX_BEGIN_PRE_CLICK_HOVER_FRAME_METHOD_NAME,
+                            HITBOX_BEGIN_PRE_CLICK_HOVER_FRAME_METHOD_DESC,
+                            false
+                        )
+                    )
+                    add(newDeferredPreClickHoverDispatchInvocation())
+                }
+            )
+            changed = true
+        } else if (!isInputHelperDeferredPreClickHoverDispatchPatched(updateFirstMethod)) {
+            val frameInvocation = findInputHelperPreClickHoverFrameInvocation(updateFirstMethod)
+                ?: throw IOException("Missing InputHelper pre-click hover frame invocation")
+            updateFirstMethod.instructions.insert(frameInvocation, newDeferredPreClickHoverDispatchInvocation())
+            changed = true
         }
 
-        var insertedCount = 0
+        var freshClickDeferralCount = 0
+        var releaseDeferralCount = 0
         var current = updateFirstMethod.instructions.first
         while (current != null) {
             val fieldInsn = current as? FieldInsnNode
             if (isJustClickedLeftWrite(fieldInsn) && isTrueConstant(previousMeaningful(current.previous))) {
-                updateFirstMethod.instructions.insert(
-                    current,
-                    MethodInsnNode(
-                        Opcodes.INVOKESTATIC,
-                        HITBOX_INTERNAL_NAME,
-                        HITBOX_REFRESH_HOVER_METHOD_NAME,
-                        HITBOX_REFRESH_HOVER_METHOD_DESC,
-                        false
+                if (replaceOrInsertInputHelperCall(
+                        updateFirstMethod,
+                        current,
+                        HITBOX_DEFER_FRESH_PRE_CLICK_HOVER_CLICK_METHOD_NAME,
+                        HITBOX_DEFER_FRESH_PRE_CLICK_HOVER_CLICK_METHOD_DESC
                     )
-                )
-                insertedCount++
+                ) {
+                    changed = true
+                }
+                freshClickDeferralCount++
+            } else if (isJustReleasedClickLeftWrite(fieldInsn) &&
+                isTrueConstant(previousMeaningful(current.previous))
+            ) {
+                if (replaceOrInsertInputHelperCall(
+                        updateFirstMethod,
+                        current,
+                        HITBOX_DEFER_PRE_CLICK_HOVER_RELEASE_METHOD_NAME,
+                        HITBOX_DEFER_PRE_CLICK_HOVER_RELEASE_METHOD_DESC
+                    )
+                ) {
+                    changed = true
+                }
+                releaseDeferralCount++
             }
             current = current.next
         }
 
-        if (insertedCount == 0) {
+        if (freshClickDeferralCount == 0) {
             throw IOException(
                 "Unsupported InputHelper.updateFirst bytecode: justClickedLeft=true write not found"
             )
         }
+        if (releaseDeferralCount == 0) {
+            throw IOException(
+                "Unsupported InputHelper.updateFirst bytecode: justReleasedClickLeft=true write not found"
+            )
+        }
 
-        return writeClass(targetClass)
+        return if (changed) writeClass(targetClass) else targetClassBytes
     }
 
     @Throws(IOException::class)
@@ -309,6 +379,35 @@ internal object StsUiTouchCompatPatcher {
                         HITBOX_INTERNAL_NAME,
                         HITBOX_REGISTER_METHOD_NAME,
                         HITBOX_REGISTER_METHOD_DESC,
+                        false
+                    )
+                )
+            }
+        )
+    }
+
+    @Throws(IOException::class)
+    private fun patchHitboxUpdateActivity(targetClass: ClassNode) {
+        val updateMethod = targetClass.methods.firstOrNull { method ->
+            method.name == "update" && method.desc == HITBOX_UPDATE_WITH_POSITION_DESC
+        } ?: throw IOException("Missing Hitbox update method $HITBOX_UPDATE_WITH_POSITION_DESC")
+
+        if (isHitboxUpdateActivityPatched(updateMethod)) {
+            return
+        }
+
+        val firstInstruction = updateMethod.instructions.first
+            ?: throw IOException("Unsupported Hitbox update bytecode: method is empty")
+        updateMethod.instructions.insertBefore(
+            firstInstruction,
+            InsnList().apply {
+                add(VarInsnNode(Opcodes.ALOAD, 0))
+                add(
+                    MethodInsnNode(
+                        Opcodes.INVOKESTATIC,
+                        HITBOX_INTERNAL_NAME,
+                        HITBOX_MARK_UPDATED_METHOD_NAME,
+                        HITBOX_MARK_UPDATED_METHOD_DESC,
                         false
                     )
                 )
@@ -363,21 +462,102 @@ internal object StsUiTouchCompatPatcher {
         return mouseDownJump.opcode == Opcodes.IFEQ && mouseDownJump.label === hoverGuardJump.label
     }
 
-    private fun isInputHelperFreshClickHoverRefreshPatched(updateFirstMethod: MethodNode): Boolean {
-        var current = updateFirstMethod.instructions.first
+    private fun isInputHelperPreClickHoverFramePatched(updateFirstMethod: MethodNode): Boolean {
+        return findInputHelperPreClickHoverFrameInvocation(updateFirstMethod) != null
+    }
+
+    private fun findInputHelperPreClickHoverFrameInvocation(
+        updateFirstMethod: MethodNode
+    ): MethodInsnNode? {
+        return findHitboxStaticInvocation(
+            updateFirstMethod,
+            HITBOX_BEGIN_PRE_CLICK_HOVER_FRAME_METHOD_NAME,
+            HITBOX_BEGIN_PRE_CLICK_HOVER_FRAME_METHOD_DESC
+        )
+    }
+
+    private fun isInputHelperDeferredPreClickHoverDispatchPatched(
+        updateFirstMethod: MethodNode
+    ): Boolean {
+        return findHitboxStaticInvocation(
+            updateFirstMethod,
+            HITBOX_DISPATCH_DEFERRED_PRE_CLICK_HOVER_INPUT_METHOD_NAME,
+            HITBOX_DISPATCH_DEFERRED_PRE_CLICK_HOVER_INPUT_METHOD_DESC
+        ) != null
+    }
+
+    private fun replaceOrInsertInputHelperCall(
+        updateFirstMethod: MethodNode,
+        fieldWrite: FieldInsnNode,
+        methodName: String,
+        methodDesc: String
+    ): Boolean {
+        val nextInvocation = nextMeaningful(fieldWrite.next) as? MethodInsnNode
+        if (nextInvocation != null &&
+            nextInvocation.opcode == Opcodes.INVOKESTATIC &&
+            nextInvocation.owner == HITBOX_INTERNAL_NAME
+        ) {
+            if (nextInvocation.name == methodName && nextInvocation.desc == methodDesc) {
+                return false
+            }
+            if (nextInvocation.name == HITBOX_REFRESH_HOVER_METHOD_NAME &&
+                nextInvocation.desc == HITBOX_REFRESH_HOVER_METHOD_DESC
+            ) {
+                updateFirstMethod.instructions.set(
+                    nextInvocation,
+                    MethodInsnNode(
+                        Opcodes.INVOKESTATIC,
+                        HITBOX_INTERNAL_NAME,
+                        methodName,
+                        methodDesc,
+                        false
+                    )
+                )
+                return true
+            }
+        }
+        updateFirstMethod.instructions.insert(
+            fieldWrite,
+            MethodInsnNode(
+                Opcodes.INVOKESTATIC,
+                HITBOX_INTERNAL_NAME,
+                methodName,
+                methodDesc,
+                false
+            )
+        )
+        return true
+    }
+
+    private fun newDeferredPreClickHoverDispatchInvocation(): MethodInsnNode {
+        return MethodInsnNode(
+            Opcodes.INVOKESTATIC,
+            HITBOX_INTERNAL_NAME,
+            HITBOX_DISPATCH_DEFERRED_PRE_CLICK_HOVER_INPUT_METHOD_NAME,
+            HITBOX_DISPATCH_DEFERRED_PRE_CLICK_HOVER_INPUT_METHOD_DESC,
+            false
+        )
+    }
+
+    private fun findHitboxStaticInvocation(
+        method: MethodNode,
+        methodName: String,
+        methodDesc: String
+    ): MethodInsnNode? {
+        var current = method.instructions.first
         while (current != null) {
             val invoke = current as? MethodInsnNode
             if (invoke != null &&
                 invoke.opcode == Opcodes.INVOKESTATIC &&
                 invoke.owner == HITBOX_INTERNAL_NAME &&
-                invoke.name == HITBOX_REFRESH_HOVER_METHOD_NAME &&
-                invoke.desc == HITBOX_REFRESH_HOVER_METHOD_DESC
+                invoke.name == methodName &&
+                invoke.desc == methodDesc
             ) {
-                return true
+                return invoke
             }
             current = current.next
         }
-        return false
+        return null
     }
 
     private fun isHitboxRegistrationPatched(constructor: MethodNode): Boolean {
@@ -397,11 +577,36 @@ internal object StsUiTouchCompatPatcher {
         return false
     }
 
+    private fun isHitboxUpdateActivityPatched(updateMethod: MethodNode): Boolean {
+        var current = updateMethod.instructions.first
+        while (current != null) {
+            val invoke = current as? MethodInsnNode
+            if (invoke != null &&
+                invoke.opcode == Opcodes.INVOKESTATIC &&
+                invoke.owner == HITBOX_INTERNAL_NAME &&
+                invoke.name == HITBOX_MARK_UPDATED_METHOD_NAME &&
+                invoke.desc == HITBOX_MARK_UPDATED_METHOD_DESC
+            ) {
+                return true
+            }
+            current = current.next
+        }
+        return false
+    }
+
     private fun isJustClickedLeftWrite(fieldInsn: FieldInsnNode?): Boolean {
         return fieldInsn != null &&
             fieldInsn.opcode == Opcodes.PUTSTATIC &&
             fieldInsn.owner == INPUT_HELPER_INTERNAL_NAME &&
             fieldInsn.name == JUST_CLICKED_LEFT_FIELD_NAME &&
+            fieldInsn.desc == BOOLEAN_FIELD_DESC
+    }
+
+    private fun isJustReleasedClickLeftWrite(fieldInsn: FieldInsnNode?): Boolean {
+        return fieldInsn != null &&
+            fieldInsn.opcode == Opcodes.PUTSTATIC &&
+            fieldInsn.owner == INPUT_HELPER_INTERNAL_NAME &&
+            fieldInsn.name == JUST_RELEASED_CLICK_LEFT_FIELD_NAME &&
             fieldInsn.desc == BOOLEAN_FIELD_DESC
     }
 

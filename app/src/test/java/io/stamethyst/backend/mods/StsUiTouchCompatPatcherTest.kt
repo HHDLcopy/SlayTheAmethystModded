@@ -272,12 +272,44 @@ class StsUiTouchCompatPatcherTest {
 
         assertFalse("new patch should not be a whole-class donor copy", patchedBytes.contentEquals(donorBytes))
         findMethod(patchedBytes, "refreshAllHoveredForFreshClick", "()V")
+        findMethod(patchedBytes, "beginPreClickHoverRefreshFrame", "()V")
+        findMethod(patchedBytes, "dispatchDeferredPreClickHoverInput", "()V")
+        assertTrue(
+            classHasField(
+                patchedBytes,
+                "preClickHoverRefreshFrame",
+                "J"
+            )
+        )
+        assertTrue(
+            classHasField(
+                patchedBytes,
+                "preClickHoverRefreshLastUpdatedFrame",
+                "J"
+            )
+        )
+        assertTrue(
+            classHasField(
+                patchedBytes,
+                "deferredPreClickHoverPress",
+                "Z"
+            )
+        )
         assertTrue(
             containsMethodInvocation(
                 findMethod(patchedBytes, "<init>", "(FFFF)V"),
                 Opcodes.INVOKESTATIC,
                 "com/megacrit/cardcrawl/helpers/Hitbox",
                 "registerForPreClickHoverRefresh",
+                "(Lcom/megacrit/cardcrawl/helpers/Hitbox;)V"
+            )
+        )
+        assertTrue(
+            containsMethodInvocation(
+                findMethod(patchedBytes, "update", "(FF)V"),
+                Opcodes.INVOKESTATIC,
+                "com/megacrit/cardcrawl/helpers/Hitbox",
+                "markUpdatedForPreClickHoverRefresh",
                 "(Lcom/megacrit/cardcrawl/helpers/Hitbox;)V"
             )
         )
@@ -318,7 +350,34 @@ class StsUiTouchCompatPatcherTest {
                 findMethod(patchedBytes, "updateFirst", "()V"),
                 Opcodes.INVOKESTATIC,
                 "com/megacrit/cardcrawl/helpers/Hitbox",
-                "refreshAllHoveredForFreshClick",
+                "beginPreClickHoverRefreshFrame",
+                "()V"
+            )
+        )
+        assertTrue(
+            containsMethodInvocation(
+                findMethod(patchedBytes, "updateFirst", "()V"),
+                Opcodes.INVOKESTATIC,
+                "com/megacrit/cardcrawl/helpers/Hitbox",
+                "dispatchDeferredPreClickHoverInput",
+                "()V"
+            )
+        )
+        assertTrue(
+            containsMethodInvocation(
+                findMethod(patchedBytes, "updateFirst", "()V"),
+                Opcodes.INVOKESTATIC,
+                "com/megacrit/cardcrawl/helpers/Hitbox",
+                "deferFreshPreClickHoverClick",
+                "()V"
+            )
+        )
+        assertTrue(
+            containsMethodInvocation(
+                findMethod(patchedBytes, "updateFirst", "()V"),
+                Opcodes.INVOKESTATIC,
+                "com/megacrit/cardcrawl/helpers/Hitbox",
+                "deferPreClickHoverReleaseIfNeeded",
                 "()V"
             )
         )
@@ -424,6 +483,12 @@ class StsUiTouchCompatPatcherTest {
         val classNode = ClassNode()
         ClassReader(classBytes).accept(classNode, ClassReader.SKIP_FRAMES)
         return classNode.methods.any { method -> method.name == name && method.desc == desc }
+    }
+
+    private fun classHasField(classBytes: ByteArray, name: String, desc: String): Boolean {
+        val classNode = ClassNode()
+        ClassReader(classBytes).accept(classNode, ClassReader.SKIP_FRAMES)
+        return classNode.fields.any { field -> field.name == name && field.desc == desc }
     }
 
     private fun containsMethodInvocation(

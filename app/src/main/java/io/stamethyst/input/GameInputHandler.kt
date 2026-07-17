@@ -10,6 +10,7 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.ViewConfiguration
 import android.widget.FrameLayout
+import io.stamethyst.FloatingMouseImeController
 import io.stamethyst.FloatingMouseOverlayController
 import io.stamethyst.StsGameActivity
 import io.stamethyst.backend.bridge.AndroidGamepadGlfwMapper
@@ -174,6 +175,20 @@ class GameInputHandler(
 
     fun requestSystemSoftKeyboardForGameTextInput(reason: String) {
         floatingMouseController?.requestSystemSoftKeyboard(reason)
+    }
+
+    internal fun requestSystemSoftKeyboardPreviewForGameTextInput(
+        reason: String,
+        request: SystemKeyboardPreviewRequest,
+    ) {
+        floatingMouseController?.requestSystemSoftKeyboard(
+            reason = reason,
+            previewConfig = FloatingMouseImeController.PreviewConfig(
+                initialText = request.initialText,
+                allowedCharacters = request.allowedCharacters,
+                characterLimit = request.characterLimit,
+            ),
+        )
     }
 
     fun requestCustomSoftKeyButtonForGameInput(reason: String) {

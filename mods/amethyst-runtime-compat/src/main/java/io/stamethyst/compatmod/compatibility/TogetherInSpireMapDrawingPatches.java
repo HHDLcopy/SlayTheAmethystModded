@@ -74,6 +74,7 @@ public final class TogetherInSpireMapDrawingPatches {
     private static volatile Method clearOwnMarksMethod;
     private static volatile Method addStoredDotMethod;
     private static volatile Method setRoomMarkMethod;
+    private static volatile Method removeRoomMarkMethod;
     private static volatile Method sendChangedNodeMarkMethod;
     private static volatile Constructor<?> networkLocationNodeConstructor;
     private static volatile Field paintField;
@@ -360,7 +361,7 @@ public final class TogetherInSpireMapDrawingPatches {
 
             float radius = ERASER_RADIUS * Settings.scale;
             float radiusSquared = radius * radius;
-            boolean removed = false;
+            boolean dotRemoved = false;
             synchronized (paint) {
                 Iterator<?> iterator = paint.iterator();
                 while (iterator.hasNext()) {
@@ -370,22 +371,93 @@ public final class TogetherInSpireMapDrawingPatches {
                     }
                     float centerX = readFloat(dot, getDotXField(dot)) * Settings.xScale
                         + MAP_DOT_HALF_SIZE * Settings.xScale;
-                    float centerY = (
-                        readFloat(dot, getDotYField(dot))
-                            - readFloat(dot, getDotYOffsetField(dot))
-                            - DungeonMapScreen.offsetY / Settings.yScale
-                    ) * Settings.yScale + MAP_DOT_HALF_SIZE * Settings.yScale;
+                    float centerY = resolveRenderedDotCenterY(
+                        readFloat(dot, getDotYField(dot)),
+                        readFloat(dot, getDotYOffsetField(dot)),
+                        DungeonMapScreen.offsetY,
+                        Settings.yScale
+                    );
                     float deltaX = InputHelper.mX - centerX;
                     float deltaY = InputHelper.mY - centerY;
                     if (deltaX * deltaX + deltaY * deltaY <= radiusSquared) {
                         iterator.remove();
-                        removed = true;
+                        dotRemoved = true;
                     }
                 }
             }
-            eraserDirty |= removed;
+            eraseTouchedNodeMarks(selfId, radiusSquared);
+            eraserDirty |= dotRemoved;
         } catch (ReflectiveOperationException | LinkageError | RuntimeException ignored) {
         }
+    }
+
+    private static void eraseTouchedNodeMarks(Integer selfId, float radiusSquared)
+        throws ReflectiveOperationException {
+        if (AbstractDungeon.map == null) {
+            return;
+        }
+        for (List<MapRoomNode> row : AbstractDungeon.map) {
+            if (row == null) {
+                continue;
+            }
+            for (MapRoomNode node : row) {
+                if (node == null
+                    || node.hb == null
+                    || !circleIntersectsHitbox(
+                        InputHelper.mX,
+                        InputHelper.mY,
+                        radiusSquared,
+                        node.hb
+                    )) {
+                    continue;
+                }
+                Object location = createNetworkLocation(node);
+                Object room = getRoomByLocation(location);
+                if (room == null || !selfId.equals(readRoomMark(room))) {
+                    continue;
+                }
+                Method removeMark = removeRoomMarkMethod;
+                if (removeMark == null || removeMark.getDeclaringClass() != room.getClass()) {
+                    removeMark = room.getClass().getMethod("removeMark");
+                    removeRoomMarkMethod = removeMark;
+                }
+                removeMark.invoke(room);
+                sendNodeMarkChange(location, false);
+            }
+        }
+    }
+
+    private static boolean circleIntersectsHitbox(
+        float pointerX,
+        float pointerY,
+        float radiusSquared,
+        Hitbox hitbox
+    ) {
+        return circleIntersectsRectangle(
+            pointerX,
+            pointerY,
+            (float) Math.sqrt(radiusSquared),
+            hitbox.x,
+            hitbox.y,
+            hitbox.width,
+            hitbox.height
+        );
+    }
+
+    static boolean circleIntersectsRectangle(
+        float pointerX,
+        float pointerY,
+        float radius,
+        float left,
+        float bottom,
+        float width,
+        float height
+    ) {
+        float closestX = Math.max(left, Math.min(pointerX, left + width));
+        float closestY = Math.max(bottom, Math.min(pointerY, bottom + height));
+        float deltaX = pointerX - closestX;
+        float deltaY = pointerY - closestY;
+        return deltaX * deltaX + deltaY * deltaY <= radius * radius;
     }
 
     private static void finishPendingErasure() {
@@ -498,19 +570,27 @@ public final class TogetherInSpireMapDrawingPatches {
             setMark.invoke(mark.room, selfId);
         }
         for (PreservedNodeMark mark : marks) {
-            Method sendMark = sendChangedNodeMarkMethod;
-            if (sendMark == null) {
-                Class<?> locationClass = mark.location.getClass();
-                Class<?> sender = Class.forName(
-                    P2P_MESSAGE_SENDER_CLASS,
-                    false,
-                    TogetherInSpireMapDrawingPatches.class.getClassLoader()
-                );
-                sendMark = sender.getMethod("Send_ChangedNodeMark", locationClass, boolean.class);
-                sendChangedNodeMarkMethod = sendMark;
-            }
-            sendMark.invoke(null, mark.location, true);
+            sendNodeMarkChange(mark.location, true);
         }
+    }
+
+    private static void sendNodeMarkChange(Object location, boolean marked)
+        throws ReflectiveOperationException {
+        Method sendMark = sendChangedNodeMarkMethod;
+        if (sendMark == null) {
+            Class<?> sender = Class.forName(
+                P2P_MESSAGE_SENDER_CLASS,
+                false,
+                TogetherInSpireMapDrawingPatches.class.getClassLoader()
+            );
+            sendMark = sender.getMethod(
+                "Send_ChangedNodeMark",
+                location.getClass(),
+                boolean.class
+            );
+            sendChangedNodeMarkMethod = sendMark;
+        }
+        sendMark.invoke(null, location, marked);
     }
 
     private static Object createNetworkLocation(MapRoomNode node)
@@ -626,6 +706,17 @@ public final class TogetherInSpireMapDrawingPatches {
     private static float readFloat(Object target, Field field) throws IllegalAccessException {
         Object value = field.get(target);
         return value instanceof Number ? ((Number) value).floatValue() : 0.0f;
+    }
+
+    static float resolveRenderedDotCenterY(
+        float dotY,
+        float dotYOffset,
+        float mapOffsetY,
+        float yScale
+    ) {
+        // Match MapDot.render: y - (storedOffset - currentOffset), then center the 18px dot.
+        return (dotY - (dotYOffset - mapOffsetY / yScale)) * yScale
+            + MAP_DOT_HALF_SIZE * yScale;
     }
 
     private static void loadTextures() {

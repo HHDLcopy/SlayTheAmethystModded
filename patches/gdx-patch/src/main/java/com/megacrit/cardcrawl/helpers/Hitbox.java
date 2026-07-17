@@ -22,8 +22,16 @@ public class Hitbox {
     public boolean clicked = false;
     private static final String PRE_CLICK_HOVER_REFRESH_ENABLED_PROP =
         "amethyst.pre_click_hitbox_hover_refresh_enabled";
+    private static final String NATIVE_TOUCHSCREEN_ENABLED_PROP =
+        "amethyst.native_touchscreen_enabled";
     private static ArrayList<WeakReference<Hitbox>> registeredHitboxes;
     private static Boolean preClickHoverRefreshEnabled;
+    private static Boolean nativeTouchscreenEnabled;
+    private static long preClickHoverRefreshFrame;
+    private static boolean deferredPreClickHoverPress;
+    private static boolean deferredPreClickHoverRelease;
+    private static boolean deferredPreClickHoverPressDeliveredThisFrame;
+    private long preClickHoverRefreshLastUpdatedFrame;
 
     public Hitbox(float width, float height) {
         this(-10000.0f, -10000.0f, width, height);
@@ -51,10 +59,49 @@ public class Hitbox {
             Hitbox hitbox = hitboxes.get(i).get();
             if (hitbox == null) {
                 hitboxes.remove(i);
-            } else {
+            } else if (wasUpdatedInPreviousPreClickHoverFrame(hitbox)) {
+                // Match desktop hit-testing: inactive layers must not gain hover from a fresh touch.
                 refreshHoveredForFreshClick(hitbox);
             }
         }
+    }
+
+    public static void beginPreClickHoverRefreshFrame() {
+        ++preClickHoverRefreshFrame;
+        deferredPreClickHoverPressDeliveredThisFrame = false;
+    }
+
+    public static void dispatchDeferredPreClickHoverInput() {
+        if (!isPreClickHoverInputDeferralEnabled()) {
+            return;
+        }
+        if (deferredPreClickHoverPress) {
+            deferredPreClickHoverPress = false;
+            deferredPreClickHoverPressDeliveredThisFrame = true;
+            InputHelper.justClickedLeft = true;
+            refreshAllHoveredForFreshClick();
+        } else if (deferredPreClickHoverRelease) {
+            deferredPreClickHoverRelease = false;
+            InputHelper.justReleasedClickLeft = true;
+        }
+    }
+
+    public static void deferFreshPreClickHoverClick() {
+        if (!isPreClickHoverInputDeferralEnabled()) {
+            refreshAllHoveredForFreshClick();
+            return;
+        }
+        deferredPreClickHoverPress = true;
+        InputHelper.justClickedLeft = false;
+    }
+
+    public static void deferPreClickHoverReleaseIfNeeded() {
+        if (!isPreClickHoverInputDeferralEnabled()
+            || !deferredPreClickHoverPressDeliveredThisFrame) {
+            return;
+        }
+        deferredPreClickHoverRelease = true;
+        InputHelper.justReleasedClickLeft = false;
     }
 
     private static void registerForPreClickHoverRefresh(Hitbox hitbox) {
@@ -64,6 +111,17 @@ public class Hitbox {
         registeredHitboxes.add(new WeakReference<Hitbox>(hitbox));
     }
 
+    private static void markUpdatedForPreClickHoverRefresh(Hitbox hitbox) {
+        if (hitbox != null) {
+            hitbox.preClickHoverRefreshLastUpdatedFrame = preClickHoverRefreshFrame;
+        }
+    }
+
+    private static boolean wasUpdatedInPreviousPreClickHoverFrame(Hitbox hitbox) {
+        return hitbox != null
+            && hitbox.preClickHoverRefreshLastUpdatedFrame == preClickHoverRefreshFrame - 1L;
+    }
+
     private static boolean isPreClickHoverRefreshEnabled() {
         if (preClickHoverRefreshEnabled != null) {
             return preClickHoverRefreshEnabled.booleanValue();
@@ -71,6 +129,19 @@ public class Hitbox {
         Boolean parsed = parseBooleanLike(System.getProperty(PRE_CLICK_HOVER_REFRESH_ENABLED_PROP));
         preClickHoverRefreshEnabled = parsed == null ? Boolean.TRUE : parsed;
         return preClickHoverRefreshEnabled.booleanValue();
+    }
+
+    private static boolean isPreClickHoverInputDeferralEnabled() {
+        return isPreClickHoverRefreshEnabled() && isNativeTouchscreenEnabled();
+    }
+
+    private static boolean isNativeTouchscreenEnabled() {
+        if (nativeTouchscreenEnabled != null) {
+            return nativeTouchscreenEnabled.booleanValue();
+        }
+        Boolean parsed = parseBooleanLike(System.getProperty(NATIVE_TOUCHSCREEN_ENABLED_PROP));
+        nativeTouchscreenEnabled = parsed == null ? Boolean.FALSE : parsed;
+        return nativeTouchscreenEnabled.booleanValue();
     }
 
     private static Boolean parseBooleanLike(String rawValue) {

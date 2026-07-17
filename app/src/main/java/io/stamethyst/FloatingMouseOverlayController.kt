@@ -569,10 +569,17 @@ internal class FloatingMouseOverlayController(
         showSoftKeyboard(reason)
     }
 
-    fun requestSystemSoftKeyboard(reason: String) {
+    fun requestSystemSoftKeyboard(
+        reason: String,
+        previewConfig: FloatingMouseImeController.PreviewConfig? = null,
+    ) {
         hideFloatingMouseExpandedMenu()
         builtInKeyboardController?.hide(refocusRenderView = false)
-        imeController?.requestShow(reason = reason)
+        imeController?.requestShow(
+            reason = reason,
+            keepVisible = previewConfig == null,
+            previewConfig = previewConfig,
+        )
     }
 
     fun requestCustomSoftKeyButton(reason: String) {
@@ -2607,6 +2614,9 @@ internal class FloatingMouseOverlayController(
     private fun handlePerformEditorAction(actionCode: Int): Boolean {
         logIme("handlePerformEditorAction actionCode=$actionCode")
         sendSyntheticSoftKey(KeyEvent.KEYCODE_ENTER)
+        if (imeController?.isPreviewActive() == true) {
+            imeController?.requestHide(reason = "preview_editor_action")
+        }
         return true
     }
 

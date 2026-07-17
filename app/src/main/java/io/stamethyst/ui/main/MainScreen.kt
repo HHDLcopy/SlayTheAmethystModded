@@ -41,7 +41,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -184,8 +183,8 @@ private enum class SteamCloudNetworkPromptAction {
 }
 
 private const val MODS_CONTENT_MOUNT_DELAY_MS = 80L
-private val EASY_TIER_ONLINE_ROOMS_VIEWPORT_HEIGHT = 240.dp
-private const val EASY_TIER_BOTTOM_SHEET_VIEWPORT_HEIGHT_FRACTION = 0.88f
+// Four standard 86.dp room cards plus three 10.dp gaps.
+private val EASY_TIER_ONLINE_ROOMS_VIEWPORT_HEIGHT = 374.dp
 private const val TOGETHER_IN_SPIRE_WORKSHOP_ID = 2384072973UL
 private const val TOGETHER_IN_SPIRE_CHINESE_PATCH_WORKSHOP_ID = 3437013024UL
 private const val TOGETHER_IN_SPIRE_PREVIEW_URL =
@@ -1349,7 +1348,7 @@ private fun EasyTierOnlineRoomsLoadingSkeleton() {
             },
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        repeat(2) {
+        repeat(4) {
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1410,7 +1409,7 @@ private fun EasyTierOnlineRoomsSection(
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = EASY_TIER_ONLINE_ROOMS_VIEWPORT_HEIGHT),
+                    .height(EASY_TIER_ONLINE_ROOMS_VIEWPORT_HEIGHT),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 if (visibleRooms.isEmpty()) {
@@ -3754,9 +3753,6 @@ private fun LauncherMainScreenContent(
                 tutorialWorkshopDownloadState = tutorialWorkshopDownloadState,
                 onOpenTutorialWorkshopDetails = onOpenTutorialWorkshopDetails,
                 onDownloadTutorialWorkshopItem = onDownloadTutorialWorkshopItem,
-                modifier = Modifier.fillMaxHeight(
-                    EASY_TIER_BOTTOM_SHEET_VIEWPORT_HEIGHT_FRACTION,
-                ),
             )
         }
     }

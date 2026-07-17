@@ -2,11 +2,15 @@ package io.stamethyst
 
 import android.content.Context
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.os.SystemClock
+import android.text.InputFilter
 import android.text.InputType
+import android.util.TypedValue
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
+import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputConnectionWrapper
@@ -24,6 +28,12 @@ internal class FloatingMouseImeController(
     private val debugLogger: (String) -> Unit,
     private val callbacks: InputCallbacks
 ) {
+    data class PreviewConfig(
+        val initialText: String,
+        val allowedCharacters: Set<Char>?,
+        val characterLimit: Int?,
+    )
+
     interface InputCallbacks {
         fun onCommitText(
             text: CharSequence?,
@@ -93,6 +103,10 @@ internal class FloatingMouseImeController(
             )
         )
         ViewCompat.setOnApplyWindowInsetsListener(editor) { _, insets ->
+            updateEditorLayout(
+                editor = editor,
+                imeBottom = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom,
+            )
             syncVisibilitySnapshot(source = "insets")
             insets
         }
@@ -123,8 +137,14 @@ internal class FloatingMouseImeController(
 
     fun requestShow(
         reason: String,
-        keepVisible: Boolean = true
+        keepVisible: Boolean = true,
+        previewConfig: PreviewConfig? = null,
     ) {
+        editorView?.let { editor ->
+            editor.configurePreview(previewConfig)
+            updateEditorLayout(editor)
+            ViewCompat.requestApplyInsets(editor)
+        }
         keepKeyboardVisibleRequested = keepVisible
         lastExplicitShowRequestAtMs = SystemClock.uptimeMillis()
         cancelPendingUnexpectedHideRecovery()
@@ -160,6 +180,8 @@ internal class FloatingMouseImeController(
     }
 
     fun isVisible(): Boolean = isKeyboardVisible()
+
+    fun isPreviewActive(): Boolean = editorView?.isPreviewActive() == true
 
     fun shouldHoldRenderSurfaceStable(): Boolean {
         return keepKeyboardVisibleRequested ||
@@ -253,6 +275,8 @@ internal class FloatingMouseImeController(
         windowInsetsController(editor).hide(WindowInsetsCompat.Type.ime())
         val hideAccepted = imm.hideSoftInputFromWindow(editor.windowToken, 0)
         editor.clearFocus()
+        editor.configurePreview(null)
+        updateEditorLayout(editor)
         debugLogger(
             "hideKeyboard hideAccepted=$hideAccepted " +
                 snapshotState(editor = editor, imm = imm)
@@ -458,6 +482,12 @@ internal class FloatingMouseImeController(
             unexpectedHideRecoveryAttempts = 0
         } else {
             scheduleUnexpectedHideRecovery(trigger = "visibility:$source")
+            editorView?.let { editor ->
+                if (editor.isPreviewActive()) {
+                    editor.configurePreview(null)
+                    updateEditorLayout(editor)
+                }
+            }
         }
         callbacks.onKeyboardVisibilityChanged(visible)
     }
@@ -555,6 +585,42 @@ internal class FloatingMouseImeController(
     private fun windowInsetsController(editor: View) =
         WindowCompat.getInsetsController(activity.window, editor)
 
+    private fun updateEditorLayout(
+        editor: GameImeEditor,
+        imeBottom: Int = ViewCompat.getRootWindowInsets(editor)
+            ?.getInsets(WindowInsetsCompat.Type.ime())
+            ?.bottom
+            ?: 0,
+    ) {
+        val params = if (editor.isPreviewActive()) {
+            val horizontalMargin = dpToPx(PREVIEW_HORIZONTAL_MARGIN_DP)
+            val availableWidth = (activity.resources.displayMetrics.widthPixels - horizontalMargin * 2)
+                .coerceAtLeast(1)
+            FrameLayout.LayoutParams(
+                availableWidth.coerceAtMost(dpToPx(PREVIEW_MAX_WIDTH_DP)),
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL,
+            ).apply {
+                bottomMargin = imeBottom + dpToPx(PREVIEW_IME_GAP_DP)
+            }
+        } else {
+            FrameLayout.LayoutParams(
+                HIDDEN_EDITOR_SIZE_PX,
+                HIDDEN_EDITOR_SIZE_PX,
+                Gravity.TOP or Gravity.START,
+            )
+        }
+        editor.layoutParams = params
+    }
+
+    private fun dpToPx(value: Int): Int {
+        return TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP,
+            value.toFloat(),
+            activity.resources.displayMetrics,
+        ).toInt()
+    }
+
     private class GameImeEditor(
         context: Context,
         private val debugLogger: (String) -> Unit,
@@ -562,6 +628,8 @@ internal class FloatingMouseImeController(
         private val windowFocusChangedCallback: (Boolean) -> Unit,
         private val inputInteractionCallback: () -> Unit
     ) : AppCompatEditText(context) {
+        private var previewActive = false
+
         init {
             inputType = DEFAULT_INPUT_TYPE
             imeOptions = DEFAULT_IME_OPTIONS
@@ -577,6 +645,71 @@ internal class FloatingMouseImeController(
                 setText("", BufferType.EDITABLE)
             }
             setSelection(text?.length ?: 0)
+        }
+
+        fun isPreviewActive(): Boolean = previewActive
+
+        fun configurePreview(config: PreviewConfig?) {
+            previewActive = config != null
+            if (config == null) {
+                filters = emptyArray()
+                setSingleLine(false)
+                inputType = DEFAULT_INPUT_TYPE
+                imeOptions = DEFAULT_IME_OPTIONS
+                setText("", BufferType.EDITABLE)
+                setPadding(0, 0, 0, 0)
+                minWidth = 0
+                minHeight = 0
+                setTextColor(Color.TRANSPARENT)
+                highlightColor = Color.TRANSPARENT
+                background = null
+                elevation = 0f
+                isCursorVisible = false
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                return
+            }
+
+            val inputFilters = mutableListOf<InputFilter>()
+            config.allowedCharacters?.takeIf { it.isNotEmpty() }?.let { allowed ->
+                inputFilters += AllowedCharacterFilter(allowed)
+            }
+            config.characterLimit?.takeIf { it > 0 }?.let { limit ->
+                inputFilters += InputFilter.LengthFilter(limit)
+            }
+            filters = inputFilters.toTypedArray()
+            setSingleLine(true)
+            inputType = if (config.allowedCharacters?.all(Char::isDigit) == true) {
+                InputType.TYPE_CLASS_NUMBER
+            } else {
+                InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            }
+            imeOptions = EditorInfo.IME_ACTION_DONE or EditorInfo.IME_FLAG_NO_EXTRACT_UI
+            val horizontalPadding = dpToPx(PREVIEW_TEXT_HORIZONTAL_PADDING_DP)
+            val verticalPadding = dpToPx(PREVIEW_TEXT_VERTICAL_PADDING_DP)
+            setPadding(horizontalPadding, verticalPadding, horizontalPadding, verticalPadding)
+            minHeight = dpToPx(PREVIEW_MIN_HEIGHT_DP)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, PREVIEW_TEXT_SIZE_SP)
+            setTextColor(Color.WHITE)
+            highlightColor = Color.argb(96, 126, 184, 255)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dpToPx(PREVIEW_CORNER_RADIUS_DP).toFloat()
+                setColor(Color.argb(242, 30, 33, 38))
+                setStroke(dpToPx(PREVIEW_STROKE_WIDTH_DP).coerceAtLeast(1), Color.argb(210, 210, 216, 224))
+            }
+            elevation = dpToPx(PREVIEW_ELEVATION_DP).toFloat()
+            isCursorVisible = true
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+            setText(config.initialText, BufferType.EDITABLE)
+            setSelection(text?.length ?: 0)
+        }
+
+        private fun dpToPx(value: Int): Int {
+            return TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_DIP,
+                value.toFloat(),
+                resources.displayMetrics,
+            ).toInt()
         }
 
         override fun onAttachedToWindow() {
@@ -597,9 +730,18 @@ internal class FloatingMouseImeController(
 
         override fun onCheckIsTextEditor(): Boolean = true
 
+        override fun onSelectionChanged(selStart: Int, selEnd: Int) {
+            val textEnd = text?.length ?: 0
+            if (previewActive && (selStart != textEnd || selEnd != textEnd)) {
+                setSelection(textEnd)
+                return
+            }
+            super.onSelectionChanged(selStart, selEnd)
+        }
+
         override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection {
-            outAttrs.inputType = DEFAULT_INPUT_TYPE
-            outAttrs.imeOptions = DEFAULT_IME_OPTIONS
+            outAttrs.inputType = inputType
+            outAttrs.imeOptions = imeOptions
             val baseConnection = super.onCreateInputConnection(outAttrs)
             return object : InputConnectionWrapper(
                 baseConnection,
@@ -712,11 +854,46 @@ internal class FloatingMouseImeController(
                 }
             }
         }
+
+        private class AllowedCharacterFilter(
+            private val allowedCharacters: Set<Char>,
+        ) : InputFilter {
+            override fun filter(
+                source: CharSequence,
+                start: Int,
+                end: Int,
+                dest: android.text.Spanned,
+                dstart: Int,
+                dend: Int,
+            ): CharSequence? {
+                var changed = false
+                val accepted = StringBuilder(end - start)
+                for (index in start until end) {
+                    val character = source[index]
+                    if (character in allowedCharacters) {
+                        accepted.append(character)
+                    } else {
+                        changed = true
+                    }
+                }
+                return if (changed) accepted.toString() else null
+            }
+        }
     }
 
     companion object {
         private const val EDITOR_HOST_ALPHA = 1f
         private const val HIDDEN_EDITOR_SIZE_PX = 1
+        private const val PREVIEW_HORIZONTAL_MARGIN_DP = 16
+        private const val PREVIEW_MAX_WIDTH_DP = 640
+        private const val PREVIEW_IME_GAP_DP = 12
+        private const val PREVIEW_MIN_HEIGHT_DP = 52
+        private const val PREVIEW_TEXT_HORIZONTAL_PADDING_DP = 16
+        private const val PREVIEW_TEXT_VERTICAL_PADDING_DP = 10
+        private const val PREVIEW_CORNER_RADIUS_DP = 8
+        private const val PREVIEW_STROKE_WIDTH_DP = 1
+        private const val PREVIEW_ELEVATION_DP = 6
+        private const val PREVIEW_TEXT_SIZE_SP = 18f
         private const val SHOW_READY_RECHECK_DELAY_MS = 16L
         private const val SHOW_READY_MAX_CHECKS = 8
         private const val UNEXPECTED_HIDE_RECOVERY_DELAY_MS = 96L

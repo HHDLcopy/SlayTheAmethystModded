@@ -25,6 +25,7 @@ import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.config.SpecialKeyInputMode
 import io.stamethyst.input.GameInputHandler
+import io.stamethyst.input.SystemKeyboardPreviewRequest
 import io.stamethyst.ui.LauncherTransientNoticeBus
 import io.stamethyst.ui.main.MainScreenViewModel
 import net.kdt.pojavlaunch.LwjglGlfwKeycode
@@ -1035,6 +1036,13 @@ internal class GameSessionCoordinator(
             inGameEasyTierOverlayController.show()
         } else if (source.startsWith("custom_button:")) {
             inputHandler.requestCustomSoftKeyButtonForGameInput("game_custom_button")
+        } else if (source.startsWith("system_keyboard_preview:")) {
+            SystemKeyboardPreviewRequest.parse(payload)?.let { request ->
+                inputHandler.requestSystemSoftKeyboardPreviewForGameTextInput(
+                    reason = "game_text_input_preview",
+                    request = request,
+                )
+            }
         } else if (source.startsWith("system_keyboard:")) {
             inputHandler.requestSystemSoftKeyboardForGameTextInput("game_text_input_system")
         } else {

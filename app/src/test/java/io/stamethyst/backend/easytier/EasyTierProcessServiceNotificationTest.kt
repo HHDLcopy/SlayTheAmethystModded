@@ -105,6 +105,7 @@ class EasyTierProcessServiceNotificationTest {
         assertEquals(true, isTerminalSessionState("expired", "idle"))
         assertEquals(true, isTerminalSessionState("stopped", "idle"))
         assertEquals(true, isTerminalSessionState("superseded", "idle"))
+        assertEquals(true, isTerminalSessionState("kicked", "active"))
         assertEquals(false, isTerminalSessionState("issued", "active"))
     }
 
@@ -247,9 +248,31 @@ class EasyTierProcessServiceNotificationTest {
 
         assertEquals(true, hasEasyTierConnectionTimedOut(snapshot, config, nowMs = 13_000L))
         assertEquals(
-            false,
+            true,
             hasEasyTierConnectionTimedOut(
                 snapshot.copy(assignedIpv4Cidr = "10.144.0.2/24"),
+                config,
+                nowMs = 13_000L,
+            ),
+        )
+        assertEquals(
+            true,
+            hasEasyTierConnectionTimedOut(
+                snapshot.copy(
+                    status = EasyTierConnectionStatus.SESSION_READY,
+                    assignedIpv4Cidr = "10.126.42.17/24",
+                ),
+                config,
+                nowMs = 13_000L,
+            ),
+        )
+        assertEquals(
+            false,
+            hasEasyTierConnectionTimedOut(
+                snapshot.copy(
+                    status = EasyTierConnectionStatus.CONNECTED,
+                    assignedIpv4Cidr = "10.126.42.17/24",
+                ),
                 config,
                 nowMs = 13_000L,
             ),

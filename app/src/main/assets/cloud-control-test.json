@@ -1,7 +1,7 @@
 {
   "heartbeat": {
     "intervalSeconds": 30,
-    "wsUrl": "wss://heartbeat.nas.apricityx.top:23163/api/presence/ws"
+    "wsUrl": "ws://192.168.31.137:3001/api/presence/ws"
   },
   "qqGroup": {
     "number": "1051836431"
@@ -9,10 +9,10 @@
   "easyTier": {
     "enabled": true,
     "minimumOnlineLobbyCompatibleVersion": "1.5.1-dev1",
-    "roomApiBaseUrl": "https://heartbeat.nas.apricityx.top:23163",
-    "webConsoleApiBaseUrl": "https://heartbeat.nas.apricityx.top:23163",
-    "configServerUrl": "udp://frp-dry.com:12333",
-    "entryNodeUrl": "tcp://frp-dog.com:12332",
+    "roomApiBaseUrl": "http://192.168.31.137:3001",
+    "webConsoleApiBaseUrl": "http://192.168.31.137:3001",
+    "configServerUrl": "udp://192.168.31.137:22020",
+    "entryNodeUrl": "tcp://192.168.31.137:11010",
     "connectTimeoutSeconds": 12,
     "statusPollIntervalSeconds": 5,
     "allowSharedCommunityNetwork": false,

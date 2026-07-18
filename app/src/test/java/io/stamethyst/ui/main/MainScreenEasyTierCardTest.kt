@@ -11,6 +11,34 @@ import org.junit.Test
 
 class MainScreenEasyTierCardTest {
     @Test
+    fun onlineLobbyCompatibility_usesLauncherUpdateVersionOrdering() {
+        assertTrue(
+            shouldRequireLauncherUpdateForOnlineLobby(
+                currentVersion = "1.5.1-dev1",
+                minimumCompatibleVersion = "1.5.1",
+            )
+        )
+        assertFalse(
+            shouldRequireLauncherUpdateForOnlineLobby(
+                currentVersion = "1.5.1",
+                minimumCompatibleVersion = "1.5.1",
+            )
+        )
+        assertFalse(
+            shouldRequireLauncherUpdateForOnlineLobby(
+                currentVersion = "1.5.1-hotfix1",
+                minimumCompatibleVersion = "1.5.1",
+            )
+        )
+        assertFalse(
+            shouldRequireLauncherUpdateForOnlineLobby(
+                currentVersion = "1.0.0",
+                minimumCompatibleVersion = "",
+            )
+        )
+    }
+
+    @Test
     fun initialUiState_mountsEasyTierCardBeforeInitializationCompletes() {
         val state = MainScreenViewModel.UiState()
 
@@ -97,6 +125,14 @@ class MainScreenEasyTierCardTest {
             easyTierRoomContentMode(
                 page = EasyTierRoomSheetPage.Tutorial,
                 panelMode = EasyTierRoomPanelMode.Unjoined,
+                roomsLoading = true,
+            ),
+        )
+        assertEquals(
+            EasyTierRoomContentMode.MemberMods,
+            easyTierRoomContentMode(
+                page = EasyTierRoomSheetPage.MemberMods,
+                panelMode = EasyTierRoomPanelMode.JoinedMember,
                 roomsLoading = true,
             ),
         )

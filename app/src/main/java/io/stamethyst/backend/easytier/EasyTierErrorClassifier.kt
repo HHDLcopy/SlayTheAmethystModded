@@ -42,6 +42,10 @@ object EasyTierErrorClassifier {
                 normalized.contains("session was stopped") ||
                 normalized.contains("会话已停止") ||
                 normalized.contains("會話已停止") -> EasyTierFailureCategory.SessionClosed
+            normalized.contains("removed by the room owner") ||
+                normalized.contains("removed by owner") ||
+                normalized.contains("已被房主移出") ||
+                normalized.contains("已被房主移除") -> EasyTierFailureCategory.SessionKicked
             normalized.contains("native runtime library") ||
                 normalized.contains("native runtime failed to load") ||
                 normalized.contains("not bundled") ||

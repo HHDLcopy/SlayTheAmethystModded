@@ -119,6 +119,7 @@ import io.stamethyst.config.BootOverlayImageMode
 import io.stamethyst.config.BootOverlayImageSlot
 import io.stamethyst.config.BootOverlayStyle
 import io.stamethyst.config.CardPlayOptimizationMode
+import io.stamethyst.config.CloudControlConfig
 import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.config.LauncherIconController
 import io.stamethyst.config.LauncherIconMode
@@ -377,6 +378,7 @@ class SettingsScreenViewModel : ViewModel() {
             LauncherPreferences.DEFAULT_TOGETHER_IN_SPIRE_ROUTE_LOCK_ENABLED,
         val togetherInSpireEasyTierAutofillEnabled: Boolean =
             LauncherPreferences.DEFAULT_TOGETHER_IN_SPIRE_EASYTIER_AUTOFILL_ENABLED,
+        val localTestCloudControlEnabled: Boolean = false,
         val avoidDisplayCutout: Boolean = LauncherPreferences.DEFAULT_AVOID_DISPLAY_CUTOUT,
         val cropScreenBottom: Boolean = LauncherPreferences.DEFAULT_CROP_SCREEN_BOTTOM,
         val ramSaverEnabled: Boolean = LauncherPreferences.DEFAULT_RAM_SAVER_ENABLED,
@@ -3200,6 +3202,15 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(host)
     }
 
+    fun onLocalTestCloudControlEnabledChanged(host: Activity, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        uiState = uiState.copy(localTestCloudControlEnabled = enabled)
+        CloudControlConfig.setLocalTestChannelEnabled(host, enabled)
+        refreshStatus(host)
+    }
+
     fun onDisplayCutoutAvoidanceChanged(host: Activity, enabled: Boolean) {
         if (uiState.busy) {
             return
@@ -3868,6 +3879,7 @@ class SettingsScreenViewModel : ViewModel() {
             togetherInSpireRouteLockEnabled = input.togetherInSpireRouteLockEnabled,
             togetherInSpireEasyTierAutofillEnabled =
                 input.togetherInSpireEasyTierAutofillEnabled,
+            localTestCloudControlEnabled = LauncherPreferences.isLocalTestCloudControlEnabled(host),
             avoidDisplayCutout = input.avoidDisplayCutout,
             cropScreenBottom = input.cropScreenBottom,
             ramSaverEnabled = input.ramSaverEnabled,

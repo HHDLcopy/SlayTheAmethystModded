@@ -234,6 +234,8 @@ object LauncherConfig {
     private const val PREF_KEY_BASIC_TUTORIAL_NOTICE_DISMISSED = "basic_tutorial_notice_dismissed"
     private const val PREF_KEY_DEVELOPER_SETTINGS_WARNING_DISMISSED =
         "developer_settings_warning_dismissed"
+    private const val PREF_KEY_USE_LOCAL_TEST_CLOUD_CONTROL =
+        "use_local_test_cloud_control"
     private const val PREF_KEY_EXPECTED_BACK_EXIT_AT_MS = "expected_back_exit_at_ms"
     private const val PREF_KEY_EXPECTED_BACK_EXIT_RESTART_AT_MS = "expected_back_exit_restart_at_ms"
     private const val EXPECTED_BACK_EXIT_VALID_WINDOW_MS = 30_000L
@@ -584,6 +586,16 @@ object LauncherConfig {
     fun setDeveloperSettingsWarningDismissed(context: Context, dismissed: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_DEVELOPER_SETTINGS_WARNING_DISMISSED, dismissed)
+        }
+    }
+
+    fun isLocalTestCloudControlEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(PREF_KEY_USE_LOCAL_TEST_CLOUD_CONTROL, false)
+    }
+
+    fun setLocalTestCloudControlEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_USE_LOCAL_TEST_CLOUD_CONTROL, enabled)
         }
     }
 

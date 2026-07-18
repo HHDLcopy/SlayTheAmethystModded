@@ -309,6 +309,14 @@ internal fun LauncherSettingsGameScreenContent(
         onGoBack = onGoBack,
     ) {
         item {
+            SettingsSectionCard(title = stringResource(R.string.settings_player_name_title)) {
+                SettingsPlayerNameAction(
+                    uiState = uiState,
+                    onPlayerNameChanged = onPlayerNameChanged,
+                )
+            }
+        }
+        item {
             SettingsSectionCard(title = stringResource(R.string.settings_section_render)) {
                 SettingsPerformanceSection(
                     uiState = uiState,
@@ -331,7 +339,6 @@ internal fun LauncherSettingsGameScreenContent(
                 SettingsInputSection(
                     uiState = uiState,
                     actions = InputSettingsActions(
-                        onPlayerNameChanged = onPlayerNameChanged,
                         onBackBehaviorChanged = onBackBehaviorChanged,
                         onTouchscreenInputModeChanged = onTouchscreenInputModeChanged,
                         onCardPlayOptimizationModeChanged = onCardPlayOptimizationModeChanged,

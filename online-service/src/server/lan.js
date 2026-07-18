@@ -20,6 +20,8 @@ const MAX_ID_LENGTH = 128;
 const MAX_TEXT_LENGTH = 256;
 const MAX_LAN_ROOM_DESCRIPTION_LENGTH = 120;
 const MAX_LAN_KICK_MESSAGE_LENGTH = 160;
+const MAX_LAN_REPORTED_MODS = 128;
+const MAX_LAN_REPORTED_MOD_NAME_LENGTH = 160;
 const LAN_STATIC_IPV4_PREFIX_LENGTH = 24;
 const LAN_STATIC_IPV4_SECOND_OCTET = 126;
 const LAN_STATIC_IPV4_MIN_SUBNET_OCTET = 1;
@@ -153,6 +155,7 @@ class LanStore {
       relayServerDescription,
       gameState: 'online',
       gameStateUpdatedAtMs: 0,
+      mods: request.mods,
       kickMessage: '',
       kickedAtMs: 0,
       createdAtMs: nowMs,
@@ -397,6 +400,36 @@ class LanStore {
       gameState: session.gameState,
       roomState: deriveRoomState(room, peerCount, this.countGameMembers(session.roomId, nowMs)),
       peerCount
+    };
+  }
+
+  async reportSessionMods(rawBody, options = {}) {
+    const request = parseSessionModsRequest(rawBody || {});
+    const nowMs = normalizeNowMs(options.nowMs);
+    this.expireSessions(nowMs);
+
+    const session = this.findSession(request.sessionId);
+    if (!session) {
+      throw httpError(404, 'LAN session not found');
+    }
+    ensureSessionAccess(session, request.sessionToken);
+
+    const sessionState = deriveSessionState(session, nowMs);
+    if (session.endedAtMs > 0 || TERMINAL_SESSION_STATES.has(sessionState)) {
+      throw httpError(409, 'LAN session is no longer active');
+    }
+
+    session.mods = request.mods;
+    session.updatedAtMs = nowMs;
+    const room = this.findRoom(session.roomId);
+    if (room) {
+      room.updatedAtMs = nowMs;
+    }
+
+    return {
+      sessionId: session.sessionId,
+      roomId: session.roomId,
+      reportedModCount: session.mods.length
     };
   }
 
@@ -721,7 +754,7 @@ class LanStore {
     const members = Array.from(latestByPlayer.values())
       .filter((session) => isSessionOnline(session, nowMs))
       .map((memberSession) => {
-        return {
+        const member = {
           playerId: memberSession.playerId,
           displayName: memberSession.displayName || memberSession.playerId,
           role: memberSession.playerId === room.ownerPlayerId ? 'owner' : 'member',
@@ -729,6 +762,10 @@ class LanStore {
           gameState: resolveGameSessionState(memberSession, nowMs),
           assignedIpv4Cidr: memberSession.assignedIpv4Cidr
         };
+        if (Array.isArray(memberSession.mods) && memberSession.mods.length > 0) {
+          member.mods = memberSession.mods;
+        }
+        return member;
       });
 
     members.sort((left, right) => {
@@ -800,6 +837,7 @@ function parseStartSessionRequest(body) {
     macAddress: normalizeOptionalMacAddress(
       firstNonEmpty(body.macAddress, body.mac_address, body.virtualMacAddress, body.virtual_mac_address)
     ),
+    mods: parseLanReportedMods(firstArray(body.mods, body.modList, body.mod_list)),
     createOnly: normalizeBoolean(
       body.createOnly !== undefined ? body.createOnly : body.create_only,
       false
@@ -891,6 +929,13 @@ function parseSessionGameStateRequest(body) {
   };
 }
 
+function parseSessionModsRequest(body) {
+  return {
+    ...parseSessionCredentialRequest(body),
+    mods: parseLanReportedMods(firstArray(body.mods, body.modList, body.mod_list))
+  };
+}
+
 function parseSessionIdentifier(value) {
   const sessionId = normalizeRequiredIdentifier(
     typeof value === 'string'
@@ -953,6 +998,48 @@ function normalizeOptionalMacAddress(value) {
     return '';
   }
   return compact.match(/.{2}/g).join(':');
+}
+
+function parseLanReportedMods(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const result = [];
+  const seen = new Set();
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object') {
+      continue;
+    }
+    const name = normalizeOptionalText(
+      firstNonEmpty(entry.name, entry.title, entry.modName, entry.mod_name),
+      MAX_LAN_REPORTED_MOD_NAME_LENGTH
+    );
+    if (!name) {
+      continue;
+    }
+    const workshopId = normalizeOptionalWorkshopId(
+      firstNonEmpty(entry.workshopId, entry.workshop_id, entry.publishedFileId, entry.published_file_id)
+    );
+    const key = workshopId ? `workshop:${workshopId}` : `local:${name.toLowerCase()}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    result.push({ name, workshopId });
+    if (result.length >= MAX_LAN_REPORTED_MODS) {
+      break;
+    }
+  }
+  return result;
+}
+
+function normalizeOptionalWorkshopId(value) {
+  const normalized = String(value || '').trim();
+  return /^\d{1,20}$/.test(normalized) ? normalized : '';
+}
+
+function firstArray(...values) {
+  return values.find(Array.isArray) || [];
 }
 
 function normalizeSourceIp(value) {

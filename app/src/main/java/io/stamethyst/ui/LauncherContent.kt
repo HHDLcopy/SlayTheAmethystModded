@@ -306,6 +306,11 @@ fun LauncherContent(
         }
     }
 
+    fun checkForEasyTierCompatibilityUpdate() {
+        selectDockRoute(Route.Settings)
+        settingsViewModel.onManualCheckUpdates(activity)
+    }
+
     fun refreshWorkshopSteamAuth() {
         val appContext = activity.applicationContext
         workshopViewModel.refreshSteamAuth(appContext)
@@ -514,6 +519,7 @@ fun LauncherContent(
                             onOpenSubscriptions = { navigator.push(Route.WorkshopSubscriptions) },
                             onOpenWorkshopDetails = ::openWorkshopItemDetails,
                             onOpenInstalledWorkshopDetails = ::openInstalledWorkshopDetails,
+                            onCheckEasyTierCompatibilityUpdate = ::checkForEasyTierCompatibilityUpdate,
                             onBatchSelectionModeChange = { modsBatchSelectionMode = it },
                             userScrollEnabled = !modsBatchSelectionMode && !showOverlayNav,
                             handleMainEffects = !showOverlayNav,
@@ -644,6 +650,7 @@ fun LauncherContent(
                                     onOpenFeedbackUpdates = { openFeedbackUpdates() },
                                     onOpenFeedbackSubscriptions = { navigator.push(Route.FeedbackSubscriptions) },
                                     onUpdateNoticeClick = settingsViewModel::showUpdatePrompt,
+                                    onEasyTierCompatibilityUpdateClick = ::checkForEasyTierCompatibilityUpdate,
                                 )
                             }
                         }
@@ -1193,6 +1200,7 @@ private fun LauncherDockPager(
     onOpenSubscriptions: () -> Unit,
     onOpenWorkshopDetails: (WorkshopItemSummary) -> Unit,
     onOpenInstalledWorkshopDetails: (ModItemUi) -> Unit,
+    onCheckEasyTierCompatibilityUpdate: () -> Unit,
     onBatchSelectionModeChange: (Boolean) -> Unit,
     userScrollEnabled: Boolean,
     handleMainEffects: Boolean,
@@ -1252,6 +1260,7 @@ private fun LauncherDockPager(
                         onOpenFeedbackUpdates = onOpenFeedbackUpdates,
                         onOpenFeedbackSubscriptions = onOpenFeedbackSubscriptions,
                         onUpdateNoticeClick = settingsViewModel::showUpdatePrompt,
+                        onEasyTierCompatibilityUpdateClick = onCheckEasyTierCompatibilityUpdate,
                         showSteamCloudBottomSheetHost = currentDockRoute == Route.Main,
                         tutorialWorkshopDownloadState = { item ->
                             resolveWorkshopModDownloadState(

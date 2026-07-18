@@ -101,6 +101,7 @@ internal fun LauncherDeveloperSettingsScreenContent(
     onCompendiumUpgradeTouchFixEnabledChanged: (Boolean) -> Unit = {},
     onTogetherInSpireRouteLockEnabledChanged: (Boolean) -> Unit = {},
     onTogetherInSpireEasyTierAutofillEnabledChanged: (Boolean) -> Unit = {},
+    onLocalTestCloudControlEnabledChanged: (Boolean) -> Unit = {},
     onSaveSteamCloudPhase0Credentials: (String, String, String) -> Boolean = { _, _, _ -> false },
     onRunSteamCloudPhase0Probe: () -> Unit = {},
     onClearSteamCloudPhase0Credentials: () -> Unit = {},
@@ -180,6 +181,21 @@ internal fun LauncherDeveloperSettingsScreenContent(
         item {
             SettingsSectionCard(title = stringResource(R.string.settings_easytier_title)) {
                 SettingsEasyTierSection(uiState = uiState)
+            }
+        }
+
+        item {
+            SettingsSectionCard(title = stringResource(R.string.settings_cloud_control_test_title)) {
+                SettingsSwitchItem(
+                    SettingsSwitchSpec(
+                        checked = uiState.localTestCloudControlEnabled,
+                        enabled = !uiState.busy,
+                        enabledText = stringResource(R.string.settings_cloud_control_test_enabled),
+                        disabledText = stringResource(R.string.settings_cloud_control_test_disabled),
+                        description = stringResource(R.string.settings_cloud_control_test_desc),
+                        onCheckedChange = onLocalTestCloudControlEnabledChanged,
+                    )
+                )
             }
         }
 

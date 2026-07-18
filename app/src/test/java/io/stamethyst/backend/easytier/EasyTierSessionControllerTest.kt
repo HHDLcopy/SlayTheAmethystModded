@@ -97,6 +97,8 @@ class EasyTierSessionControllerTest {
                 roomOwnerIpv4Cidr = "10.144.0.1/24",
             ),
             summary = "disconnect",
+            failureCategory = EasyTierFailureCategory.SessionKicked,
+            terminalSessionState = "kicked",
             nowMs = 40L,
         )
 
@@ -105,6 +107,8 @@ class EasyTierSessionControllerTest {
         assertEquals("", snapshot.aclGroup)
         assertNull(snapshot.expiresAtEpochSeconds)
         assertEquals("disconnect", snapshot.lastErrorSummary)
+        assertEquals(EasyTierFailureCategory.SessionKicked, snapshot.failureCategory)
+        assertEquals("kicked", snapshot.lastSessionState)
         assertEquals("player-1", snapshot.currentPlayerId)
         assertEquals("", snapshot.roomOwnerPlayerId)
         assertEquals("", snapshot.roomOwnerIpv4Cidr)

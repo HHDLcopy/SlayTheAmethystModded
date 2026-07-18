@@ -383,6 +383,8 @@ class EasyTierProcessService : Service() {
                             currentPlayerId,
                         ),
                         ownerToken = EasyTierCredentialStore.ownerToken(applicationContext, roomId),
+                        macAddress = EasyTierVirtualMacAddress.fromDeviceId(currentPlayerId),
+                        mods = EasyTierModInventory.collect(applicationContext),
                     )
                     EasyTierCredentialStore.save(
                         context = applicationContext,
@@ -723,6 +725,7 @@ class EasyTierProcessService : Service() {
             if (terminalSession) {
                 handleTerminalSessionState(
                     current = current,
+                    sessionStatus = sessionStatus,
                     receiver = receiver,
                 )
                 return@onSuccess
@@ -777,6 +780,7 @@ class EasyTierProcessService : Service() {
             if (error is EasyTierRoomApiHttpException && error.statusCode == 404) {
                 handleTerminalSessionState(
                     current = current,
+                    sessionStatus = null,
                     receiver = receiver,
                 )
                 return@onFailure
@@ -798,8 +802,16 @@ class EasyTierProcessService : Service() {
 
     private fun handleTerminalSessionState(
         current: EasyTierConnectionSnapshot,
+        sessionStatus: EasyTierSessionStatusSnapshot?,
         receiver: ResultReceiver?,
     ) {
+        val terminalSessionState = sessionStatus?.sessionState?.trim()?.lowercase().orEmpty()
+        val kicked = terminalSessionState == "kicked"
+        val summary = if (kicked) {
+            easyTierKickedSummary(applicationContext, sessionStatus?.kickMessage.orEmpty())
+        } else {
+            ""
+        }
         running = false
         stopStatusPolling(clearRuntimeState = false)
         StsEasyTierVpnService.stopSession(applicationContext)
@@ -817,8 +829,19 @@ class EasyTierProcessService : Service() {
             context = applicationContext,
             snapshot = EasyTierSessionController.buildDisconnectedSnapshot(
                 previous = current,
+                summary = summary,
+                failureCategory = if (kicked) {
+                    EasyTierFailureCategory.SessionKicked
+                } else {
+                    EasyTierFailureCategory.None
+                },
+                terminalSessionState = terminalSessionState,
             ),
-            extraLines = listOf("terminal_session_state=true"),
+            extraLines = listOf(
+                "terminal_session_state=true",
+                "terminal_session_state_value=$terminalSessionState",
+                "removed_by_room_owner=$kicked",
+            ),
         )
         deliverSnapshot(applicationContext, receiver, RESULT_DISCONNECTED, snapshot)
         stopForegroundCompat()
@@ -1061,7 +1084,9 @@ internal fun hasEasyTierConnectionTimedOut(
     nowMs: Long = System.currentTimeMillis(),
 ): Boolean {
     val startedAtMs = snapshot.startedAtMs ?: return false
-    if (snapshot.assignedIpv4Cidr.isNotBlank()) {
+    if (snapshot.status == EasyTierConnectionStatus.CONNECTED &&
+        snapshot.assignedIpv4Cidr.isNotBlank()
+    ) {
         return false
     }
     return snapshot.status in setOf(
@@ -1173,4 +1198,14 @@ internal fun isTerminalSessionState(
 ): Boolean = roomState == "closed" ||
     sessionState == "expired" ||
     sessionState == "stopped" ||
-    sessionState == "superseded"
+    sessionState == "superseded" ||
+    sessionState == "kicked"
+
+internal fun easyTierKickedSummary(context: Context, message: String): String {
+    val normalizedMessage = message.trim().take(EASY_TIER_KICK_MESSAGE_MAX_LENGTH)
+    return if (normalizedMessage.isEmpty()) {
+        context.getString(R.string.main_easytier_summary_session_kicked)
+    } else {
+        context.getString(R.string.main_easytier_summary_session_kicked_with_message, normalizedMessage)
+    }
+}

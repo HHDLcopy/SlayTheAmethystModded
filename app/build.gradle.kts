@@ -41,6 +41,9 @@ fun Iterable<String>.toBuildConfigStringArrayLiteral(): String =
         value.toBuildConfigStringLiteral()
     }
 
+fun File.normalizedBuildPath(): String =
+    absolutePath.replace('\\', '/').lowercase()
+
 val releaseStoreFilePath = readReleaseSigningProperty("RELEASE_STORE_FILE", "release.storeFile")
 val releaseStorePassword = readReleaseSigningProperty("RELEASE_STORE_PASSWORD", "release.storePassword")
 val releaseKeyAlias = readReleaseSigningProperty("RELEASE_KEY_ALIAS", "release.keyAlias")
@@ -205,6 +208,51 @@ kotlin {
     compilerOptions {
         jvmTarget = JvmTarget.JVM_1_8
     }
+}
+
+val staleGradleCachesPathPattern = Regex(
+    """[a-z]:/(?:[^/\p{Cntrl}\s"']+/)*\.gradle/caches/""",
+    RegexOption.IGNORE_CASE
+)
+val currentGradleCachesPath = gradle.gradleUserHomeDir.resolve("caches")
+    .normalizedBuildPath()
+    .trimEnd('/')
+val sanitizeExternalNativeBuildCaches by tasks.registering {
+    group = "build"
+    description = "Deletes stale Ninja dependency caches that reference another Gradle user cache."
+
+    doLast {
+        val cxxDir = layout.projectDirectory.dir(".cxx").asFile
+        if (!cxxDir.isDirectory) {
+            return@doLast
+        }
+
+        cxxDir.walkTopDown()
+            .filter { it.isFile && it.name == ".ninja_deps" }
+            .forEach { ninjaDeps ->
+                val contents = ninjaDeps.readBytes()
+                    .toString(Charsets.ISO_8859_1)
+                    .replace('\\', '/')
+                    .lowercase()
+                val staleGradleCachesPath = staleGradleCachesPathPattern.findAll(contents)
+                    .map { it.value.trimEnd('/') }
+                    .firstOrNull { it != currentGradleCachesPath }
+
+                if (staleGradleCachesPath != null) {
+                    ninjaDeps.delete()
+                    logger.lifecycle(
+                        "Deleted stale Ninja dependency cache ${ninjaDeps.relativeTo(projectDir)} " +
+                            "(referenced $staleGradleCachesPath)"
+                    )
+                }
+            }
+    }
+}
+
+tasks.matching {
+    it.name.startsWith("buildCMake") || it.name.startsWith("externalNativeBuild")
+}.configureEach {
+    dependsOn(sanitizeExternalNativeBuildCaches)
 }
 
 tasks.matching {

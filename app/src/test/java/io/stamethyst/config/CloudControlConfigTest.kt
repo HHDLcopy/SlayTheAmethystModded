@@ -12,6 +12,22 @@ class CloudControlConfigTest {
     private val stsDepotKeyHex = "af36e1914da16f3e4556bedf7e46a76646b670c91bb6e1d3cca380e16ceb2df6"
 
     @Test
+    fun parseSettings_readsMinimumOnlineLobbyCompatibleVersion() {
+        val parsed = CloudControlConfig.parseSettings(
+            """
+            {
+              "easyTier": {
+                "minimumOnlineLobbyCompatibleVersion": "1.5.1-dev1"
+              }
+            }
+            """.trimIndent()
+        )
+
+        assertNotNull(parsed)
+        assertEquals("1.5.1-dev1", parsed?.easyTier?.minimumOnlineLobbyCompatibleVersion)
+    }
+
+    @Test
     fun parseSettings_readsCompactNestedHeartbeatConfig() {
         val defaults = CloudControlSettings(
             heartbeatIntervalSeconds = 600,
@@ -314,6 +330,7 @@ class CloudControlConfigTest {
         )
         assertEquals("1051836431", parsed?.qqGroupNumber)
         assertTrue(parsed?.easyTier?.enabled == true)
+        assertEquals("1.5.1-dev1", parsed?.easyTier?.minimumOnlineLobbyCompatibleVersion)
         assertEquals(
             "https://heartbeat.nas.apricityx.top:23163",
             parsed?.easyTier?.roomApiBaseUrl,
@@ -328,6 +345,20 @@ class CloudControlConfigTest {
         assertEquals(646570L, parsed?.steamDepotKeys?.single()?.appId)
         assertEquals(646571L, parsed?.steamDepotKeys?.single()?.depotId)
         assertEquals(stsDepotKeyHex, parsed?.steamDepotKeys?.single()?.keyHex)
+    }
+
+    @Test
+    fun packagedLocalTestCloudControlPayload_pointsEveryOnlineEndpointToLocalService() {
+        val parsed = CloudControlConfig.parseSettings(readPackagedCloudControlPayload("cloud-control-test.json"))
+
+        assertNotNull(parsed)
+        assertEquals("ws://192.168.31.137:3001/api/presence/ws", parsed?.heartbeatWsUrl)
+        assertTrue(parsed?.easyTier?.enabled == true)
+        assertEquals("1.5.1-dev1", parsed?.easyTier?.minimumOnlineLobbyCompatibleVersion)
+        assertEquals("http://192.168.31.137:3001", parsed?.easyTier?.roomApiBaseUrl)
+        assertEquals("http://192.168.31.137:3001", parsed?.easyTier?.webConsoleApiBaseUrl)
+        assertEquals("udp://192.168.31.137:22020", parsed?.easyTier?.configServerUrl)
+        assertEquals("tcp://192.168.31.137:11010", parsed?.easyTier?.entryNodeUrl)
     }
 
     @Test
@@ -347,12 +378,16 @@ class CloudControlConfigTest {
     }
 
     private fun readPackagedDefaultCloudControlPayload(): String {
+        return readPackagedCloudControlPayload("cloud-control.json")
+    }
+
+    private fun readPackagedCloudControlPayload(fileName: String): String {
         val candidates = listOf(
-            Path.of("app", "src", "main", "assets", "cloud-control.json"),
-            Path.of("src", "main", "assets", "cloud-control.json"),
+            Path.of("app", "src", "main", "assets", fileName),
+            Path.of("src", "main", "assets", fileName),
         )
         val path = candidates.firstOrNull { candidate -> Files.isRegularFile(candidate) }
-            ?: error("Packaged default cloud-control.json was not found.")
+            ?: error("Packaged cloud control payload '$fileName' was not found.")
         return String(Files.readAllBytes(path), Charsets.UTF_8)
     }
 }

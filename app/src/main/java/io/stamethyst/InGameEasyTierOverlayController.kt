@@ -14,12 +14,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -37,6 +39,7 @@ internal class InGameEasyTierOverlayController(
     private val viewModel: MainScreenViewModel,
 ) {
     private var overlayVisible by mutableStateOf(false)
+    private var kickDialogVisible = false
     private var composeView: ComposeView? = null
 
     fun attachToHost(host: FrameLayout) {
@@ -59,6 +62,14 @@ internal class InGameEasyTierOverlayController(
                         activity = activity,
                         viewModel = viewModel,
                         onDismiss = ::dismiss,
+                        onKickDialogVisibilityChanged = { visible ->
+                            kickDialogVisible = visible
+                            if (visible) {
+                                composeView?.visibility = View.VISIBLE
+                            } else if (!overlayVisible) {
+                                composeView?.visibility = View.GONE
+                            }
+                        },
                     )
                 }
             }
@@ -86,7 +97,7 @@ internal class InGameEasyTierOverlayController(
         overlayVisible = false
         composeView?.postDelayed(
             {
-                if (!overlayVisible) {
+                if (!overlayVisible && !kickDialogVisible) {
                     composeView?.visibility = View.GONE
                 }
             },
@@ -96,6 +107,7 @@ internal class InGameEasyTierOverlayController(
 
     fun onDestroy() {
         overlayVisible = false
+        kickDialogVisible = false
         detachView()
     }
 
@@ -117,6 +129,7 @@ private fun InGameEasyTierDialogHost(
     activity: StsGameActivity,
     viewModel: MainScreenViewModel,
     onDismiss: () -> Unit,
+    onKickDialogVisibilityChanged: (Boolean) -> Unit,
 ) {
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
@@ -127,11 +140,46 @@ private fun InGameEasyTierDialogHost(
         )
     }
 
-    if (!visible) {
-        return
+    LaunchedEffect(viewModel, activity) {
+        while (true) {
+            viewModel.syncEasyTierUi(activity)
+            delay(EASY_TIER_KICK_STATE_POLL_INTERVAL_MS)
+        }
     }
 
     val uiState = viewModel.uiState
+    val kickDialog = uiState.pendingEasyTierKickDialog
+    SideEffect {
+        onKickDialogVisibilityChanged(kickDialog != null)
+    }
+
+    kickDialog?.let { dialog ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = viewModel::dismissEasyTierKickDialog,
+            title = {
+                androidx.compose.material3.Text(
+                    stringResource(R.string.main_easytier_kicked_dialog_title)
+                )
+            },
+            text = {
+                androidx.compose.material3.Text(
+                    dialog.message.ifBlank {
+                        activity.getString(R.string.main_easytier_summary_session_kicked)
+                    }
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.Button(onClick = viewModel::dismissEasyTierKickDialog) {
+                    androidx.compose.material3.Text(stringResource(R.string.common_action_confirm))
+                }
+            },
+        )
+    }
+
+    if (!visible || kickDialog != null) {
+        return
+    }
+
     fun openTutorialWorkshopDetails(item: WorkshopItemSummary) {
         LauncherNavigationRequestBus.requestWorkshopDetail(item)
         onDismiss()
@@ -191,6 +239,9 @@ private fun InGameEasyTierDialogHost(
                 onLockRoom = { viewModel.lockEasyTierRoom(activity) },
                 onUnlockRoom = { viewModel.unlockEasyTierRoom(activity) },
                 onCloseRoom = { viewModel.closeEasyTierRoom(activity) },
+                onKickMember = { playerId, message ->
+                    viewModel.kickEasyTierRoomMember(activity, playerId, message)
+                },
                 onConnect = {
                     val permissionIntent =
                         EasyTierPermissionCoordinator.prepareVpnPermissionIntent(activity)
@@ -211,3 +262,4 @@ private fun InGameEasyTierDialogHost(
 }
 
 private const val EASY_TIER_ROOM_AUTO_REFRESH_INTERVAL_MS = 5_000L
+private const val EASY_TIER_KICK_STATE_POLL_INTERVAL_MS = 1_000L

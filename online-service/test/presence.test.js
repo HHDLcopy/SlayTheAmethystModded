@@ -503,6 +503,64 @@ test('lan game-state report marks active room members as in game', async (t) => 
   assert.equal(ended.json().roomState, 'active');
 });
 
+test('lan room members expose mod lists reported on join and game launch', async (t) => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-presence-'));
+  const server = await buildServer({
+    ...loadConfig({ LOG_LEVEL: 'silent', EASYTIER_ENABLED: 'true' }),
+    dbPath: path.join(tmpDir, 'presence.sqlite'),
+    publicBaseUrl: 'https://online.example.com',
+    presencePanelToken: 'panel-secret',
+    logLevel: 'silent'
+  });
+  t.after(async () => {
+    await server.close();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+  await server.ready();
+
+  const started = await server.inject({
+    method: 'POST',
+    url: '/api/lan/session/start',
+    payload: {
+      roomId: 'member-mods-room',
+      playerId: 'host',
+      mods: [
+        { name: 'Together in Spire', workshopId: '2384072973' },
+        { name: 'My local patch' },
+        { name: 'Together in Spire duplicate', workshopId: '2384072973' },
+        { name: 'Ignored invalid workshop id', workshopId: 'not-an-id' }
+      ]
+    }
+  });
+  assert.equal(started.statusCode, 200);
+  const startedPayload = started.json();
+
+  let room = await server.inject('/api/lan/rooms/member-mods-room');
+  assert.equal(room.statusCode, 200);
+  assert.deepEqual(room.json().members[0].mods, [
+    { name: 'Together in Spire', workshopId: '2384072973' },
+    { name: 'My local patch', workshopId: '' },
+    { name: 'Ignored invalid workshop id', workshopId: '' }
+  ]);
+
+  const updated = await server.inject({
+    method: 'POST',
+    url: '/api/lan/session/mods',
+    headers: { authorization: `Bearer ${startedPayload.sessionToken}` },
+    payload: {
+      sessionId: startedPayload.sessionId,
+      mods: [{ name: 'Downfall', workshopId: '1610056683' }]
+    }
+  });
+  assert.equal(updated.statusCode, 200);
+  assert.equal(updated.json().reportedModCount, 1);
+
+  room = await server.inject('/api/lan/rooms/member-mods-room');
+  assert.deepEqual(room.json().members[0].mods, [
+    { name: 'Downfall', workshopId: '1610056683' }
+  ]);
+});
+
 test('lan game-state automatically returns to online when its heartbeat expires', async () => {
   const store = new LanStore({ easyTierSessionTtlSeconds: 90 });
   const startedAtMs = 1_000_000;

@@ -58,7 +58,6 @@ internal data class PerformanceSettingsActions(
 
 
 internal data class InputSettingsActions(
-    val onPlayerNameChanged: (String) -> Boolean,
     val onBackBehaviorChanged: (BackBehavior) -> Unit,
     val onTouchscreenInputModeChanged: (TouchscreenInputMode) -> Unit,
     val onCardPlayOptimizationModeChanged: (CardPlayOptimizationMode) -> Unit,
@@ -76,7 +75,6 @@ internal data class InputSettingsActions(
 
 
 internal data class InputBasicsSettingsActions(
-    val onPlayerNameChanged: (String) -> Boolean,
     val onBackBehaviorChanged: (BackBehavior) -> Unit,
     val onTouchscreenInputModeChanged: (TouchscreenInputMode) -> Unit,
     val onCardPlayOptimizationModeChanged: (CardPlayOptimizationMode) -> Unit,
@@ -285,6 +283,64 @@ private fun gameplayFontScaleToStep(value: Float): Int {
 
 
 @Composable
+internal fun SettingsPlayerNameAction(
+    uiState: SettingsScreenViewModel.UiState,
+    onPlayerNameChanged: (String) -> Boolean,
+) {
+    var showPlayerNameDialog by rememberSaveable { mutableStateOf(false) }
+    var pendingPlayerName by rememberSaveable { mutableStateOf(uiState.playerName) }
+
+    SettingsActionListItem(
+        title = stringResource(R.string.settings_player_name_dialog_title),
+        supportingText = uiState.playerName,
+        enabled = !uiState.busy,
+        onClick = {
+            pendingPlayerName = uiState.playerName
+            showPlayerNameDialog = true
+        }
+    )
+
+    if (showPlayerNameDialog) {
+        AlertDialog(
+            onDismissRequest = { showPlayerNameDialog = false },
+            title = { Text(stringResource(R.string.settings_player_name_dialog_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = pendingPlayerName,
+                        onValueChange = { pendingPlayerName = it },
+                        singleLine = true,
+                        enabled = !uiState.busy,
+                        label = { Text(stringResource(R.string.settings_player_name_hint)) }
+                    )
+                    Text(
+                        text = stringResource(R.string.settings_player_name_dialog_message),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            },
+            confirmButton = {
+                HapticTextButton(
+                    onClick = {
+                        if (onPlayerNameChanged(pendingPlayerName)) {
+                            showPlayerNameDialog = false
+                        }
+                    }
+                ) {
+                    Text(stringResource(R.string.main_folder_dialog_confirm))
+                }
+            },
+            dismissButton = {
+                HapticTextButton(onClick = { showPlayerNameDialog = false }) {
+                    Text(stringResource(R.string.main_folder_dialog_cancel))
+                }
+            }
+        )
+    }
+}
+
+
+@Composable
 internal fun SettingsInputSection(
     uiState: SettingsScreenViewModel.UiState,
     actions: InputSettingsActions,
@@ -297,7 +353,6 @@ internal fun SettingsInputSection(
         SettingsInputBasicsSection(
             uiState = uiState,
             actions = InputBasicsSettingsActions(
-                onPlayerNameChanged = actions.onPlayerNameChanged,
                 onBackBehaviorChanged = actions.onBackBehaviorChanged,
                 onTouchscreenInputModeChanged = actions.onTouchscreenInputModeChanged,
                 onCardPlayOptimizationModeChanged = actions.onCardPlayOptimizationModeChanged,
@@ -334,23 +389,6 @@ internal fun SettingsInputBasicsSection(
     uiState: SettingsScreenViewModel.UiState,
     actions: InputBasicsSettingsActions,
 ) {
-    var showPlayerNameDialog by rememberSaveable { mutableStateOf(false) }
-    var pendingPlayerName by rememberSaveable { mutableStateOf(uiState.playerName) }
-
-    SettingsActionListItem(
-        title = stringResource(R.string.settings_player_name_title),
-        supportingText = uiState.playerName,
-        enabled = !uiState.busy,
-        onClick = {
-            pendingPlayerName = uiState.playerName
-            showPlayerNameDialog = true
-        }
-    )
-//    Text(
-//        text = stringResource(R.string.settings_player_name_desc),
-//        style = MaterialTheme.typography.bodySmall
-//    )
-
     SettingsChoiceDialogItem(
         SettingsChoiceSpec(
             title = stringResource(R.string.settings_back_behavior_title),
@@ -462,45 +500,6 @@ internal fun SettingsInputBasicsSection(
             onCheckedChange = actions.onGamePerformanceOverlayChanged
         )
     )
-    
-    if (showPlayerNameDialog) {
-        AlertDialog(
-            onDismissRequest = { showPlayerNameDialog = false },
-            title = { Text(stringResource(R.string.settings_player_name_dialog_title)) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = pendingPlayerName,
-                        onValueChange = { pendingPlayerName = it },
-                        singleLine = true,
-                        enabled = !uiState.busy,
-                        label = { Text(stringResource(R.string.settings_player_name_hint)) }
-                    )
-                    Text(
-                        text = stringResource(R.string.settings_player_name_dialog_message),
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-            },
-            confirmButton = {
-                HapticTextButton(
-                    onClick = {
-                        if (actions.onPlayerNameChanged(pendingPlayerName)) {
-                            showPlayerNameDialog = false
-                        }
-                    }
-                ) {
-                    Text(stringResource(R.string.main_folder_dialog_confirm))
-                }
-            },
-            dismissButton = {
-                HapticTextButton(onClick = { showPlayerNameDialog = false }) {
-                    Text(stringResource(R.string.main_folder_dialog_cancel))
-                }
-            }
-        )
-    }
-
 }
 
 

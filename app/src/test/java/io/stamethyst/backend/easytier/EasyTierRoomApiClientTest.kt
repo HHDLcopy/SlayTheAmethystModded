@@ -5,6 +5,10 @@ import android.content.Context
 import android.content.ContextWrapper
 import java.io.File
 import java.nio.file.Files
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.Headers
 import okhttp3.OkHttpClient
 import mockwebserver3.MockResponse
@@ -34,6 +38,8 @@ class EasyTierRoomApiClientTest {
                   "configServerUrl": "udp://online.example.com:22020",
                   "aclGroup": "player",
                   "networkSecret": "short-secret",
+                  "assignedIpv4Cidr": "10.126.42.17/24",
+                  "macAddress": "02:AA:BB:CC:DD:EE",
                   "expiresAt": 1720000000
                 }
                 """.trimIndent()
@@ -46,6 +52,8 @@ class EasyTierRoomApiClientTest {
             assertEquals("udp://online.example.com:22020", parsed.configServerUrl)
             assertEquals("player", parsed.aclGroup)
             assertEquals("short-secret", parsed.networkSecret)
+            assertEquals("10.126.42.17/24", parsed.assignedIpv4Cidr)
+            assertEquals("02:AA:BB:CC:DD:EE", parsed.macAddress)
             assertEquals(1720000000L, parsed.expiresAtEpochSeconds)
         } finally {
             roots.rootDir.deleteRecursively()
@@ -69,7 +77,17 @@ class EasyTierRoomApiClientTest {
                   "closedAtMs": 0,
                   "memberCount": 2,
                   "members": [
-                    { "playerId": "host-1", "displayName": "Host", "role": "owner", "online": true, "assignedIpv4Cidr": "10.144.0.1/24" },
+                    {
+                      "playerId": "host-1",
+                      "displayName": "Host",
+                      "role": "owner",
+                      "online": true,
+                      "assignedIpv4Cidr": "10.144.0.1/24",
+                      "mods": [
+                        { "name": "Together in Spire", "workshopId": "2384072973" },
+                        { "name": "Local test mod" }
+                      ]
+                    },
                     { "playerId": "player-2", "displayName": "Player 2", "role": "member", "online": false, "assignedIpv4Cidr": "10.144.0.2/24" }
                   ]
                 }
@@ -88,6 +106,13 @@ class EasyTierRoomApiClientTest {
             assertEquals("member", parsed.members[1].role)
             assertEquals("10.144.0.1/24", parsed.members[0].assignedIpv4Cidr)
             assertEquals("10.144.0.2/24", parsed.members[1].assignedIpv4Cidr)
+            assertEquals(
+                listOf(
+                    EasyTierRoomMod("Together in Spire", "2384072973"),
+                    EasyTierRoomMod("Local test mod"),
+                ),
+                parsed.members[0].mods,
+            )
         } finally {
             roots.rootDir.deleteRecursively()
         }
@@ -129,6 +154,10 @@ class EasyTierRoomApiClientTest {
                 playerId = "player-a",
                 displayName = "Player A",
                 roomDescriptionWhenCreating = "Two players wanted",
+                mods = listOf(
+                    EasyTierRoomMod("Together in Spire", "2384072973"),
+                    EasyTierRoomMod("Local test mod"),
+                ),
             )
 
             val request = server.takeRequest()
@@ -139,12 +168,40 @@ class EasyTierRoomApiClientTest {
             assertTrue(body.contains("\"playerId\":\"player-a\""))
             assertTrue(body.contains("\"displayName\":\"Player A\""))
             assertTrue(body.contains("\"description\":\"Two players wanted\""))
+            assertReportedMods(body)
             assertEquals("sess-http", session.sessionId)
             assertEquals("room-http", session.roomId)
             assertEquals("temporary-key", session.networkSecret)
         } finally {
             server.close()
             roots.restoreDefaults()
+            roots.rootDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun parseSessionStatusResponse_mapsKickDetails() {
+        val roots = TestRoots.create("easytier-room-api-parse-kicked")
+        try {
+            val client = EasyTierRoomApiClient(roots.context, OkHttpClient())
+            val parsed = client.parseSessionStatusResponse(
+                """
+                {
+                  "sessionId": "sess-kicked",
+                  "roomId": "room-alpha",
+                  "sessionState": "kicked",
+                  "roomState": "active",
+                  "peerCount": 1,
+                  "kickMessage": "Please update the mod.",
+                  "kickedAtMs": 1720000000123
+                }
+                """.trimIndent()
+            )
+
+            assertEquals("kicked", parsed.sessionState)
+            assertEquals("Please update the mod.", parsed.kickMessage)
+            assertEquals(1720000000123L, parsed.kickedAtMs)
+        } finally {
             roots.rootDir.deleteRecursively()
         }
     }
@@ -318,6 +375,47 @@ class EasyTierRoomApiClientTest {
             assertTrue(body.contains("\"relayServerDescription\":\"single-server relay\""))
             assertEquals("connected", status.sessionState)
             assertEquals("10.144.0.9/24", status.assignedIpv4Cidr)
+        } finally {
+            server.close()
+            roots.restoreDefaults()
+            roots.rootDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun reportSessionMods_postsModListWithSessionCredential() {
+        val roots = TestRoots.create("easytier-room-api-mod-report")
+        val server = MockWebServer()
+        try {
+            server.enqueue(
+                MockResponse(
+                    200,
+                    Headers.headersOf("Content-Type", "application/json"),
+                    """{ "ok": true, "sessionId": "sess-mods", "roomId": "room-mods", "reportedModCount": 2 }""",
+                )
+            )
+            server.start()
+
+            val client = EasyTierRoomApiClient(roots.context, OkHttpClient())
+            roots.overrideBaseUrl(server.url("/").toString().removeSuffix("/"))
+
+            client.reportSessionMods(
+                sessionId = "sess-mods",
+                sessionToken = "A".repeat(43),
+                mods = listOf(
+                    EasyTierRoomMod("Together in Spire", "2384072973"),
+                    EasyTierRoomMod("Local test mod"),
+                ),
+            )
+
+            val request = server.takeRequest()
+            assertEquals("/api/lan/session/mods", request.target)
+            assertEquals("POST", request.method)
+            assertEquals("Bearer ${"A".repeat(43)}", request.headers["Authorization"])
+            val body = request.body?.utf8().orEmpty()
+            assertTrue(body.contains("\"sessionId\":\"sess-mods\""))
+            assertReportedMods(body)
+            assertFalse(body.contains("sessionToken"))
         } finally {
             server.close()
             roots.restoreDefaults()
@@ -543,6 +641,68 @@ class EasyTierRoomApiClientTest {
             roots.restoreDefaults()
             roots.rootDir.deleteRecursively()
         }
+    }
+
+    @Test
+    fun kickMember_postsTargetAndOptionalMessage() {
+        val roots = TestRoots.create("easytier-room-api-kick-member")
+        val server = MockWebServer()
+        try {
+            server.enqueue(
+                MockResponse(
+                    200,
+                    Headers.headersOf("Content-Type", "application/json"),
+                    """
+                    {
+                      "roomId": "alpha-room",
+                      "ownerPlayerId": "alice",
+                      "ownerDisplayName": "Alice",
+                      "mode": "room",
+                      "allowNewJoins": true,
+                      "closedAtMs": 0,
+                      "memberCount": 1,
+                      "members": []
+                    }
+                    """.trimIndent()
+                )
+            )
+            server.start()
+
+            val client = EasyTierRoomApiClient(roots.context, OkHttpClient())
+            roots.overrideBaseUrl(server.url("/").toString().removeSuffix("/"))
+
+            client.kickMember(
+                roomId = "alpha-room",
+                ownerToken = "A".repeat(43),
+                sessionToken = "B".repeat(43),
+                targetPlayerId = "bob",
+                message = "Please update the mod.",
+            )
+
+            val request = server.takeRequest()
+            assertEquals("/api/lan/rooms/alpha-room/action", request.target)
+            assertEquals("POST", request.method)
+            val body = request.body?.utf8().orEmpty()
+            assertTrue(body.contains("\"action\":\"kick\""))
+            assertTrue(body.contains("\"targetPlayerId\":\"bob\""))
+            assertTrue(body.contains("\"message\":\"Please update the mod.\""))
+            assertFalse(body.contains("ownerToken"))
+            assertEquals("A".repeat(43), request.headers["X-Lan-Owner-Token"])
+            assertEquals("Bearer ${"B".repeat(43)}", request.headers["Authorization"])
+        } finally {
+            server.close()
+            roots.restoreDefaults()
+            roots.rootDir.deleteRecursively()
+        }
+    }
+
+    private fun assertReportedMods(body: String) {
+        val mods = requireNotNull(Json.parseToJsonElement(body).jsonObject["mods"]).jsonArray
+        assertEquals(2, mods.size)
+        assertEquals("Together in Spire", mods[0].jsonObject["name"]?.jsonPrimitive?.content)
+        assertEquals("2384072973", mods[0].jsonObject["workshopId"]?.jsonPrimitive?.content)
+        assertEquals("Local test mod", mods[1].jsonObject["name"]?.jsonPrimitive?.content)
+        assertEquals(null, mods[1].jsonObject["workshopId"])
     }
 
     private class TestRoots private constructor(

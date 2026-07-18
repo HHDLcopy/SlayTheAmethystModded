@@ -42,6 +42,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -62,6 +63,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -127,6 +129,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import io.stamethyst.BuildConfig
 import io.stamethyst.R
 import io.stamethyst.backend.easytier.EasyTierFailureCategory
@@ -134,14 +137,17 @@ import io.stamethyst.backend.easytier.EasyTierRoomInfo
 import io.stamethyst.backend.easytier.EasyTierRoomListItem
 import io.stamethyst.backend.easytier.EasyTierRoomMember
 import io.stamethyst.backend.easytier.EASY_TIER_ROOM_DESCRIPTION_MAX_LENGTH
+import io.stamethyst.backend.easytier.EASY_TIER_KICK_MESSAGE_MAX_LENGTH
 import io.stamethyst.backend.render.RendererBackendResolver
 import io.stamethyst.backend.steamcloud.SteamCloudFailureCategory
 import io.stamethyst.backend.steamcloud.SteamCloudSyncDirection
 import io.stamethyst.backend.steamcloud.SteamCloudUserWarning
 import io.stamethyst.backend.steamcloud.SteamCloudUploadPlan
+import io.stamethyst.backend.update.LauncherUpdateVersioning
 import io.stamethyst.backend.workshop.WorkshopUpdateCheckCoordinator
 import io.stamethyst.backend.workshop.WorkshopUpdateCheckUiState
 import io.stamethyst.backend.workshop.WorkshopItemSummary
+import io.stamethyst.backend.workshop.WorkshopService
 import io.stamethyst.backend.workshop.isActiveDownload
 import io.stamethyst.ui.CollapsibleFloatingGlassHeader
 import io.stamethyst.ui.FloatingGlassHeader
@@ -155,13 +161,18 @@ import io.stamethyst.ui.Icons
 import io.stamethyst.ui.resolve
 import io.stamethyst.ui.rememberLoadingSkeletonStyle
 import io.stamethyst.ui.icon.ArrowBack
+import io.stamethyst.ui.icon.Close
 import io.stamethyst.ui.icon.Settings
 import io.stamethyst.ui.modimport.ModImportRequestBus
 import io.stamethyst.ui.preferences.LauncherPreferences
 import io.stamethyst.ui.workshop.WorkshopDownloadCenterStore
 import io.stamethyst.ui.workshop.WorkshopDownloadActionButton
+import io.stamethyst.ui.workshop.WorkshopDetailScreen
+import io.stamethyst.ui.workshop.WorkshopItemCard
+import io.stamethyst.ui.workshop.WorkshopListSkeletonCard
 import io.stamethyst.ui.workshop.WorkshopModDownloadState
 import io.stamethyst.ui.workshop.WorkshopSummaryCard
+import io.stamethyst.ui.workshop.WorkshopViewModel
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
@@ -186,7 +197,8 @@ private const val MODS_CONTENT_MOUNT_DELAY_MS = 80L
 // Four standard 86.dp room cards plus three 10.dp gaps.
 private val EASY_TIER_ONLINE_ROOMS_VIEWPORT_HEIGHT = 374.dp
 private const val TOGETHER_IN_SPIRE_WORKSHOP_ID = 2384072973UL
-private const val TOGETHER_IN_SPIRE_CHINESE_PATCH_WORKSHOP_ID = 3437013024UL
+private const val EASY_TIER_WORKSHOP_APP_ID = 646570u
+private const val TOGETHER_IN_SPIRE_CHINESE_PATCH_WORKSHOP_ID = 3766232527UL
 private const val TOGETHER_IN_SPIRE_PREVIEW_URL =
     "https://images.steamusercontent.com/ugc/1847035764735395146/39A52A0B3EEE28127C403167CC7F2D87400691B8/"
 private const val TOGETHER_IN_SPIRE_CHINESE_PATCH_PREVIEW_URL =
@@ -1177,6 +1189,9 @@ private fun localizedEasyTierFailureSummary(
         EasyTierFailureCategory.SessionClosed -> {
             stringResource(R.string.main_easytier_summary_session_stopped)
         }
+        EasyTierFailureCategory.SessionKicked -> indicator.errorSummary.ifBlank {
+            stringResource(R.string.main_easytier_summary_session_kicked)
+        }
         EasyTierFailureCategory.SessionExpired -> {
             stringResource(R.string.main_easytier_summary_session_expired)
         }
@@ -1228,6 +1243,7 @@ internal fun easyTierTroubleshootingMessageResId(
         }
         EasyTierFailureCategory.ConfigMissing -> R.string.main_easytier_troubleshooting_config_missing
         EasyTierFailureCategory.SessionClosed -> R.string.main_easytier_troubleshooting_session_stopped
+        EasyTierFailureCategory.SessionKicked -> null
         EasyTierFailureCategory.SessionExpired -> R.string.main_easytier_troubleshooting_session_expired
         EasyTierFailureCategory.RoomClosed -> R.string.main_easytier_troubleshooting_room_closed
         EasyTierFailureCategory.RuntimeBridgePending -> R.string.main_easytier_troubleshooting_runtime_pending
@@ -1294,6 +1310,7 @@ internal enum class EasyTierRoomSheetPage {
     Rooms,
     Create,
     Tutorial,
+    MemberMods,
 }
 
 internal enum class EasyTierRoomPanelMode {
@@ -1309,6 +1326,7 @@ internal enum class EasyTierRoomContentMode {
     JoinedOwner,
     Create,
     Tutorial,
+    MemberMods,
 }
 
 internal fun easyTierRoomContentMode(
@@ -1318,6 +1336,7 @@ internal fun easyTierRoomContentMode(
 ): EasyTierRoomContentMode = when {
     page == EasyTierRoomSheetPage.Create -> EasyTierRoomContentMode.Create
     page == EasyTierRoomSheetPage.Tutorial -> EasyTierRoomContentMode.Tutorial
+    page == EasyTierRoomSheetPage.MemberMods -> EasyTierRoomContentMode.MemberMods
     roomsLoading -> EasyTierRoomContentMode.Loading
     else -> when (panelMode) {
         EasyTierRoomPanelMode.Unjoined -> EasyTierRoomContentMode.Unjoined
@@ -1480,14 +1499,40 @@ private fun EasyTierOnlineRoomsSection(
                             }
                             Text(
                                 text = stringResource(
-                                    R.string.main_easytier_room_item_summary,
+                                    R.string.main_easytier_room_item_owner,
                                     room.ownerDisplayName.ifBlank { room.ownerPlayerId },
-                                    room.onlineMemberCount,
-                                    room.memberCount,
                                 ),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                            if (room.onlineMemberCount > 0 || room.inGameMemberCount > 0) {
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                                ) {
+                                    if (room.onlineMemberCount > 0) {
+                                        Text(
+                                            text = stringResource(
+                                                R.string.main_easytier_room_item_online_count,
+                                                room.onlineMemberCount,
+                                            ),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    if (room.inGameMemberCount > 0) {
+                                        Text(
+                                            text = stringResource(
+                                                R.string.main_easytier_room_item_in_game_count,
+                                                room.inGameMemberCount,
+                                            ),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.Medium,
+                                            color = Color(0xFF2E7D32),
+                                        )
+                                    }
+                                }
+                            }
                             AnimatedContent(
                                 targetState = room.allowNewJoins,
                                 transitionSpec = {
@@ -1523,6 +1568,10 @@ private fun EasyTierRoomMembersSection(
     room: EasyTierRoomInfo,
     currentPlayerId: String,
     localIpv4Cidr: String,
+    canKickMembers: Boolean,
+    mutating: Boolean,
+    onKickMember: (EasyTierRoomMember) -> Unit,
+    onViewMemberMods: (EasyTierRoomMember) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
@@ -1543,61 +1592,222 @@ private fun EasyTierRoomMembersSection(
                 currentPlayerId = currentPlayerId,
                 localIpv4Cidr = localIpv4Cidr,
             )
+            val canKickMember = canKickMembers &&
+                !member.role.equals("owner", ignoreCase = true) &&
+                member.playerId.trim() != currentPlayerId.trim()
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .animateContentSize(animationSpec = tween(durationMillis = 220)),
+                    .animateContentSize(animationSpec = tween(durationMillis = 220))
+                    .clickable(
+                        role = Role.Button,
+                        onClick = { onViewMemberMods(member) },
+                    ),
                 shape = RoundedCornerShape(18.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        text = member.displayName.ifBlank { member.playerId },
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    AnimatedContent(
-                        targetState = Triple(member.online, assignedIpv4Cidr, member.gameState),
-                        transitionSpec = {
-                            (fadeIn(animationSpec = tween(durationMillis = 170)) +
-                                slideInVertically(
-                                    initialOffsetY = { height -> height / 4 },
-                                    animationSpec = tween(durationMillis = 210),
-                                )) togetherWith fadeOut(animationSpec = tween(durationMillis = 100))
-                        },
-                        label = "easyTierRoomMemberState",
-                    ) { (online, ipv4Cidr, gameState) ->
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(
-                                text = stringResource(
-                                    R.string.main_easytier_room_member_summary,
-                                    localizedEasyTierRoomMemberRole(member),
-                                    if (online && gameState.equals("game", ignoreCase = true)) {
-                                        stringResource(R.string.main_easytier_member_in_game)
-                                    } else if (online) {
-                                        stringResource(R.string.main_easytier_member_online)
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(
+                            text = member.displayName.ifBlank { member.playerId },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(end = if (canKickMember) 76.dp else 40.dp),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        AnimatedContent(
+                            targetState = Triple(member.online, assignedIpv4Cidr, member.gameState),
+                            transitionSpec = {
+                                (fadeIn(animationSpec = tween(durationMillis = 170)) +
+                                    slideInVertically(
+                                        initialOffsetY = { height -> height / 4 },
+                                        animationSpec = tween(durationMillis = 210),
+                                    )) togetherWith fadeOut(animationSpec = tween(durationMillis = 100))
+                            },
+                            label = "easyTierRoomMemberState",
+                        ) { (online, ipv4Cidr, gameState) ->
+                            val inGame = online && gameState.equals("game", ignoreCase = true)
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                                ) {
+                                    Text(
+                                        text = localizedEasyTierRoomMemberRole(member),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    Text(
+                                        text = "·",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    Text(
+                                        text = when {
+                                            inGame -> stringResource(R.string.main_easytier_member_in_game)
+                                            online -> stringResource(R.string.main_easytier_member_online)
+                                            else -> stringResource(R.string.main_easytier_member_offline)
+                                        },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = if (inGame) FontWeight.Medium else FontWeight.Normal,
+                                        color = if (inGame) {
+                                            Color(0xFF2E7D32)
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
+                                    )
+                                }
+                                Text(
+                                    text = if (ipv4Cidr.isNotBlank()) {
+                                        stringResource(R.string.main_easytier_detail_ip, ipv4Cidr)
                                     } else {
-                                        stringResource(R.string.main_easytier_member_offline)
+                                        stringResource(R.string.main_easytier_member_ip_unavailable)
                                     },
-                                ),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Text(
-                                text = if (ipv4Cidr.isNotBlank()) {
-                                    stringResource(R.string.main_easytier_detail_ip, ipv4Cidr)
-                                } else {
-                                    stringResource(R.string.main_easytier_member_ip_unavailable)
-                                },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                    if (canKickMember) {
+                        IconButton(
+                            onClick = { onKickMember(member) },
+                            modifier = Modifier
+                                .align(Alignment.CenterEnd)
+                                .padding(end = 28.dp)
+                                .size(36.dp),
+                            enabled = !mutating,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Close,
+                                contentDescription = stringResource(R.string.main_easytier_action_kick_member),
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.error,
                             )
                         }
+                    }
+                    Icon(
+                        imageVector = Icons.ArrowBack,
+                        contentDescription = stringResource(R.string.main_easytier_action_view_member_mods),
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .padding(end = 14.dp)
+                            .size(18.dp)
+                            .graphicsLayer(rotationZ = 180f),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EasyTierMemberModsPanel(
+    member: EasyTierRoomMember,
+    downloadStateFor: (WorkshopItemSummary) -> WorkshopModDownloadState,
+    onOpenDetails: (WorkshopItemSummary) -> Unit,
+    onDownload: (WorkshopItemSummary) -> Unit,
+) {
+    val context = LocalContext.current
+    val modSignature = member.mods.joinToString(separator = "|") { mod ->
+        "${mod.workshopId}:${mod.name}"
+    }
+    val workshopMods = member.mods.filter { mod -> mod.isWorkshopMod }
+    val localMods = member.mods.filterNot { mod -> mod.isWorkshopMod }
+    var workshopSummaries by remember(member.playerId, modSignature) {
+        mutableStateOf<Map<String, WorkshopItemSummary>>(emptyMap())
+    }
+    var workshopDetailsLoading by remember(member.playerId, modSignature) {
+        mutableStateOf(workshopMods.isNotEmpty())
+    }
+
+    LaunchedEffect(member.playerId, modSignature) {
+        workshopSummaries = emptyMap()
+        workshopDetailsLoading = workshopMods.isNotEmpty()
+        try {
+            workshopMods.forEach { mod ->
+                val workshopId = mod.workshopId.toULongOrNull() ?: return@forEach
+                val summary = runCatching {
+                    WorkshopService(context.applicationContext).getDetails(
+                        appId = EASY_TIER_WORKSHOP_APP_ID,
+                        publishedFileId = workshopId,
+                        includeCommunityData = true,
+                        includeDependencyData = false,
+                    ).summary
+                }.getOrNull() ?: return@forEach
+                workshopSummaries = workshopSummaries + (mod.workshopId to summary)
+            }
+        } finally {
+            workshopDetailsLoading = false
+        }
+    }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        if (workshopMods.isEmpty() && localMods.isEmpty()) {
+            Text(
+                text = stringResource(R.string.main_easytier_member_mods_empty),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            if (workshopMods.isNotEmpty()) {
+                Text(
+                    text = stringResource(R.string.main_easytier_member_mods_workshop_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                if (workshopDetailsLoading) {
+                    workshopMods.forEachIndexed { index, _ ->
+                        WorkshopListSkeletonCard(variant = index)
+                    }
+                } else {
+                    workshopMods.forEach { mod ->
+                        val summary = workshopSummaries[mod.workshopId]
+                        val item = summary ?: WorkshopItemSummary(
+                            publishedFileId = mod.workshopId.toULongOrNull() ?: 0u,
+                            appId = EASY_TIER_WORKSHOP_APP_ID,
+                            title = mod.name,
+                            previewUrl = "",
+                            description = "",
+                        )
+                        WorkshopItemCard(
+                            item = item,
+                            downloadState = downloadStateFor(item),
+                            onClick = { onOpenDetails(item) },
+                            onDownload = { onDownload(item) },
+                        )
+                    }
+                }
+            }
+            if (localMods.isNotEmpty()) {
+                Text(
+                    text = stringResource(R.string.main_easytier_member_mods_local_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                localMods.forEach { mod ->
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                    ) {
+                        Text(
+                            text = mod.name,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
                     }
                 }
             }
@@ -2173,6 +2383,7 @@ internal fun EasyTierBottomSheetContent(
     onLockRoom: () -> Unit,
     onUnlockRoom: () -> Unit,
     onCloseRoom: () -> Unit,
+    onKickMember: (String, String) -> Unit,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
     tutorialWorkshopDownloadState: (WorkshopItemSummary) -> WorkshopModDownloadState = {
@@ -2189,9 +2400,31 @@ internal fun EasyTierBottomSheetContent(
     var createAllowNewJoins by remember { mutableStateOf(true) }
     var submittedCreateRoomId by remember { mutableStateOf("") }
     var closeConfirmationRoom by remember { mutableStateOf<EasyTierRoomInfo?>(null) }
+    var kickConfirmationMember by remember { mutableStateOf<EasyTierRoomMember?>(null) }
+    var memberModsPageMember by remember { mutableStateOf<EasyTierRoomMember?>(null) }
+    var memberWorkshopDetailItem by remember { mutableStateOf<WorkshopItemSummary?>(null) }
+    var kickMessage by remember { mutableStateOf("") }
+    val memberWorkshopDetailViewModel: WorkshopViewModel = viewModel()
+    memberWorkshopDetailItem?.let { item ->
+        WorkshopDetailScreen(
+            appId = item.appId,
+            publishedFileId = item.publishedFileId,
+            viewModel = memberWorkshopDetailViewModel,
+            modifier = modifier,
+            onBack = { memberWorkshopDetailItem = null },
+            onOpenBaiduTranslationCredentials = {},
+            onOpenDetails = { relatedItem -> memberWorkshopDetailItem = relatedItem },
+        )
+        return
+    }
     val creatingRoom = page == EasyTierRoomSheetPage.Create && roomBrowser.creating
     val disconnectAction = shouldDisconnectEasyTierUiState(indicator.state)
     val selectedRoom = roomBrowser.selectedRoom
+    val displayedMemberMods = memberModsPageMember?.let { requestedMember ->
+        selectedRoom?.members?.firstOrNull { member ->
+            member.playerId.trim() == requestedMember.playerId.trim()
+        } ?: requestedMember
+    }
     val ownsSelectedRoom = roomBrowser.currentUserOwnsSelectedRoom
     val visibleRooms = roomBrowser.rooms.filter { room -> room.closedAtMs <= 0L }
     val selectedRoomCanBeJoined = canConnectEasyTierRoom(
@@ -2295,9 +2528,20 @@ internal fun EasyTierBottomSheetContent(
         ) { targetPage ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                if (targetPage != EasyTierRoomSheetPage.Rooms) {
+                    IconButton(
+                        onClick = { page = EasyTierRoomSheetPage.Rooms },
+                        enabled = !roomBrowser.creating,
+                    ) {
+                        Icon(
+                            imageVector = Icons.ArrowBack,
+                            contentDescription = stringResource(R.string.common_content_desc_back),
+                        )
+                    }
+                }
                 Column(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -2307,6 +2551,12 @@ internal fun EasyTierBottomSheetContent(
                             EasyTierRoomSheetPage.Rooms -> stringResource(R.string.main_easytier_sheet_title)
                             EasyTierRoomSheetPage.Create -> stringResource(R.string.main_easytier_create_room_title)
                             EasyTierRoomSheetPage.Tutorial -> stringResource(R.string.main_easytier_tutorial_title)
+                            EasyTierRoomSheetPage.MemberMods -> stringResource(
+                                R.string.main_easytier_member_mods_title,
+                                displayedMemberMods?.let { member ->
+                                    member.displayName.ifBlank { member.playerId }
+                                }.orEmpty(),
+                            )
                         },
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.SemiBold,
@@ -2315,6 +2565,9 @@ internal fun EasyTierBottomSheetContent(
                         EasyTierRoomSheetPage.Rooms -> easyTierOverviewSummary(indicator)
                         EasyTierRoomSheetPage.Create -> stringResource(R.string.main_easytier_create_room_summary)
                         EasyTierRoomSheetPage.Tutorial -> stringResource(R.string.main_easytier_tutorial_summary)
+                        EasyTierRoomSheetPage.MemberMods -> {
+                            stringResource(R.string.main_easytier_member_mods_summary)
+                        }
                     }
                     AnimatedContent(
                         targetState = summary,
@@ -2334,19 +2587,13 @@ internal fun EasyTierBottomSheetContent(
                         )
                     }
                 }
-                if (targetPage != EasyTierRoomSheetPage.Rooms) {
-                    TextButton(
-                        onClick = { page = EasyTierRoomSheetPage.Rooms },
-                        enabled = !roomBrowser.creating,
-                    ) {
-                        Text(stringResource(R.string.common_content_desc_back))
-                    }
-                }
             }
         }
 
         AnimatedContent(
-            targetState = troubleshootingMessageResId.takeIf { page != EasyTierRoomSheetPage.Tutorial },
+            targetState = troubleshootingMessageResId.takeIf {
+                page != EasyTierRoomSheetPage.Tutorial && page != EasyTierRoomSheetPage.MemberMods
+            },
             transitionSpec = {
                 (fadeIn(animationSpec = tween(durationMillis = 180)) +
                     slideInVertically(
@@ -2371,7 +2618,9 @@ internal fun EasyTierBottomSheetContent(
                 .zIndex(1f),
         ) {
             androidx.compose.animation.AnimatedVisibility(
-                visible = page != EasyTierRoomSheetPage.Tutorial && roomBrowser.refreshingRoomInfo,
+                visible = page != EasyTierRoomSheetPage.Tutorial &&
+                    page != EasyTierRoomSheetPage.MemberMods &&
+                    roomBrowser.refreshingRoomInfo,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .offset(y = 8.dp),
@@ -2397,7 +2646,10 @@ internal fun EasyTierBottomSheetContent(
                 }
             }
         }
-        if (page != EasyTierRoomSheetPage.Tutorial && roomBrowser.roomInfoStale) {
+        if (page != EasyTierRoomSheetPage.Tutorial &&
+            page != EasyTierRoomSheetPage.MemberMods &&
+            roomBrowser.roomInfoStale
+        ) {
             Text(
                 text = stringResource(R.string.main_easytier_room_info_stale),
                 modifier = Modifier.padding(top = 8.dp),
@@ -2407,7 +2659,9 @@ internal fun EasyTierBottomSheetContent(
         }
         AnimatedContent(
             targetState = roomBrowser.errorSummary.takeIf {
-                page != EasyTierRoomSheetPage.Tutorial && it.isNotBlank()
+                page != EasyTierRoomSheetPage.Tutorial &&
+                    page != EasyTierRoomSheetPage.MemberMods &&
+                    it.isNotBlank()
             },
             transitionSpec = {
                 (fadeIn(animationSpec = tween(durationMillis = 160)) +
@@ -2436,10 +2690,13 @@ internal fun EasyTierBottomSheetContent(
             transitionSpec = {
                 val pageChange = initialState == EasyTierRoomContentMode.Create ||
                     initialState == EasyTierRoomContentMode.Tutorial ||
+                    initialState == EasyTierRoomContentMode.MemberMods ||
                     targetState == EasyTierRoomContentMode.Create ||
-                    targetState == EasyTierRoomContentMode.Tutorial
+                    targetState == EasyTierRoomContentMode.Tutorial ||
+                    targetState == EasyTierRoomContentMode.MemberMods
                 val movingToSecondaryPage = targetState == EasyTierRoomContentMode.Create ||
-                    targetState == EasyTierRoomContentMode.Tutorial
+                    targetState == EasyTierRoomContentMode.Tutorial ||
+                    targetState == EasyTierRoomContentMode.MemberMods
                 val enter = if (pageChange) {
                     fadeIn(animationSpec = tween(durationMillis = 180)) +
                         slideInHorizontally(
@@ -2477,6 +2734,14 @@ internal fun EasyTierBottomSheetContent(
                     onOpenDetails = onOpenTutorialWorkshopDetails,
                     onDownload = onDownloadTutorialWorkshopItem,
                 )
+                EasyTierRoomContentMode.MemberMods -> displayedMemberMods?.let { member ->
+                    EasyTierMemberModsPanel(
+                        member = member,
+                        downloadStateFor = tutorialWorkshopDownloadState,
+                        onOpenDetails = { item -> memberWorkshopDetailItem = item },
+                        onDownload = onDownloadTutorialWorkshopItem,
+                    )
+                }
                 EasyTierRoomContentMode.Create -> EasyTierCreateRoomPanel(
                     roomId = createRoomId,
                     roomDescription = createRoomDescription,
@@ -2501,7 +2766,8 @@ internal fun EasyTierBottomSheetContent(
                         EasyTierRoomContentMode.Unjoined -> EasyTierRoomPanelMode.Unjoined
                         EasyTierRoomContentMode.Loading,
                         EasyTierRoomContentMode.Create,
-                        EasyTierRoomContentMode.Tutorial -> error("Non-panel mode has no room panel")
+                        EasyTierRoomContentMode.Tutorial,
+                        EasyTierRoomContentMode.MemberMods -> error("Non-panel mode has no room panel")
                     }
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     if (contentPanelMode != EasyTierRoomPanelMode.Unjoined && selectedRoom != null) {
@@ -2518,6 +2784,16 @@ internal fun EasyTierBottomSheetContent(
                             room = selectedRoom,
                             currentPlayerId = roomBrowser.currentPlayerId,
                             localIpv4Cidr = indicator.assignedIpv4Cidr,
+                            canKickMembers = contentPanelMode == EasyTierRoomPanelMode.JoinedOwner,
+                            mutating = roomBrowser.mutating,
+                            onKickMember = { member ->
+                                kickMessage = ""
+                                kickConfirmationMember = member
+                            },
+                            onViewMemberMods = { member ->
+                                memberModsPageMember = member
+                                page = EasyTierRoomSheetPage.MemberMods
+                            },
                         )
                     }
 
@@ -2633,6 +2909,63 @@ internal fun EasyTierBottomSheetContent(
             },
         )
     }
+    kickConfirmationMember?.let { member ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = {
+                kickConfirmationMember = null
+                kickMessage = ""
+            },
+            title = {
+                Text(
+                    stringResource(
+                        R.string.main_easytier_kick_member_confirm_title,
+                        member.displayName.ifBlank { member.playerId },
+                    )
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(stringResource(R.string.main_easytier_kick_member_confirm_message))
+                    OutlinedTextField(
+                        value = kickMessage,
+                        onValueChange = { value ->
+                            kickMessage = value.take(EASY_TIER_KICK_MESSAGE_MAX_LENGTH)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text(stringResource(R.string.main_easytier_kick_member_message_label)) },
+                        maxLines = 3,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        kickConfirmationMember = null
+                        kickMessage = ""
+                    }
+                ) {
+                    Text(stringResource(R.string.main_easytier_action_cancel))
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val message = kickMessage
+                        kickConfirmationMember = null
+                        kickMessage = ""
+                        onKickMember(member.playerId, message)
+                    },
+                    enabled = !roomBrowser.mutating,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
+                    ),
+                ) {
+                    Text(stringResource(R.string.main_easytier_action_kick_member))
+                }
+            },
+        )
+    }
 }
 
 internal fun isEasyTierRoomJoined(
@@ -2686,6 +3019,12 @@ internal fun shouldAutoRetrySteamCloudFailure(
 ): Boolean = category == SteamCloudFailureCategory.TRANSIENT_NETWORK &&
     attemptIndex in 0 until STEAM_CLOUD_AUTO_RETRY_MAX_ATTEMPTS
 
+internal fun shouldRequireLauncherUpdateForOnlineLobby(
+    currentVersion: String,
+    minimumCompatibleVersion: String,
+): Boolean = minimumCompatibleVersion.isNotBlank() &&
+    LauncherUpdateVersioning.isRemoteNewer(currentVersion, minimumCompatibleVersion)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LauncherMainScreen(
@@ -2699,6 +3038,7 @@ fun LauncherMainScreen(
     onOpenFeedbackUpdates: () -> Unit = {},
     onOpenFeedbackSubscriptions: () -> Unit = {},
     onUpdateNoticeClick: () -> Unit = {},
+    onEasyTierCompatibilityUpdateClick: () -> Unit = {},
 ) {
     LauncherMainRoute(
         modifier = modifier,
@@ -2716,6 +3056,7 @@ fun LauncherMainScreen(
             onOpenFeedbackUpdates = onOpenFeedbackUpdates,
             onOpenFeedbackSubscriptions = onOpenFeedbackSubscriptions,
             onUpdateNoticeClick = onUpdateNoticeClick,
+            onEasyTierCompatibilityUpdateClick = onEasyTierCompatibilityUpdateClick,
         )
     }
 }
@@ -2982,6 +3323,25 @@ internal fun LauncherMainRoute(
                     Text(text = stringResource(R.string.common_action_confirm))
                 }
             }
+        )
+    }
+
+    uiState.pendingEasyTierKickDialog?.let { dialog ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = viewModel::dismissEasyTierKickDialog,
+            title = { Text(stringResource(R.string.main_easytier_kicked_dialog_title)) },
+            text = {
+                Text(
+                    dialog.message.ifBlank {
+                        stringResource(R.string.main_easytier_summary_session_kicked)
+                    }
+                )
+            },
+            confirmButton = {
+                Button(onClick = viewModel::dismissEasyTierKickDialog) {
+                    Text(stringResource(R.string.common_action_confirm))
+                }
+            },
         )
     }
 
@@ -3269,6 +3629,7 @@ internal fun LauncherGameScreenContent(
     onOpenFeedbackUpdates: () -> Unit = {},
     onOpenFeedbackSubscriptions: () -> Unit = {},
     onUpdateNoticeClick: () -> Unit = {},
+    onEasyTierCompatibilityUpdateClick: () -> Unit = {},
     showSteamCloudBottomSheetHost: Boolean = true,
     tutorialWorkshopDownloadState: (WorkshopItemSummary) -> WorkshopModDownloadState = {
         WorkshopModDownloadState.NotDownloaded
@@ -3287,6 +3648,7 @@ internal fun LauncherGameScreenContent(
         onOpenFeedbackUpdates = onOpenFeedbackUpdates,
         onOpenFeedbackSubscriptions = onOpenFeedbackSubscriptions,
         onUpdateNoticeClick = onUpdateNoticeClick,
+        onEasyTierCompatibilityUpdateClick = onEasyTierCompatibilityUpdateClick,
         showSteamCloudBottomSheetHost = showSteamCloudBottomSheetHost,
         tutorialWorkshopDownloadState = tutorialWorkshopDownloadState,
         onOpenTutorialWorkshopDetails = onOpenTutorialWorkshopDetails,
@@ -3338,6 +3700,7 @@ private fun LauncherMainScreenContent(
     onOpenFeedbackUpdates: () -> Unit = {},
     onOpenFeedbackSubscriptions: () -> Unit = {},
     onUpdateNoticeClick: () -> Unit = {},
+    onEasyTierCompatibilityUpdateClick: () -> Unit = {},
     workshopUpdateCheckState: WorkshopUpdateCheckUiState = WorkshopUpdateCheckUiState(),
     onBatchSelectionModeChange: (Boolean) -> Unit = {},
     onCheckWorkshopUpdates: () -> Unit = {},
@@ -3380,7 +3743,15 @@ private fun LauncherMainScreenContent(
     }
     val steamCloudIndicator = uiState.steamCloudIndicator
     val easyTierRoomBrowser = uiState.easyTierRoomBrowser
+    val cloudControlSettings by rememberCloudControlSettings()
+    val minimumOnlineLobbyCompatibleVersion =
+        cloudControlSettings.easyTier.minimumOnlineLobbyCompatibleVersion
+    val easyTierLauncherUpdateRequired = shouldRequireLauncherUpdateForOnlineLobby(
+        currentVersion = BuildConfig.VERSION_NAME,
+        minimumCompatibleVersion = minimumOnlineLobbyCompatibleVersion,
+    )
     var showEasyTierBottomSheet by remember { mutableStateOf(false) }
+    var showEasyTierCompatibilityUpdateDialog by remember { mutableStateOf(false) }
     var easyTierRoomLoadBaselineAtOpen by remember { mutableStateOf<Long?>(null) }
     var steamCloudAutoRetryAttemptIndex by remember { mutableIntStateOf(0) }
     var steamCloudAutoRetryCurrentDelaySeconds by remember {
@@ -3562,6 +3933,39 @@ private fun LauncherMainScreenContent(
         }
     )
 
+    if (showEasyTierCompatibilityUpdateDialog) {
+        AlertDialog(
+            onDismissRequest = { showEasyTierCompatibilityUpdateDialog = false },
+            title = {
+                Text(stringResource(R.string.main_easytier_compatibility_update_title))
+            },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.main_easytier_compatibility_update_message,
+                        BuildConfig.VERSION_NAME,
+                        minimumOnlineLobbyCompatibleVersion,
+                    )
+                )
+            },
+            dismissButton = {
+                TextButton(onClick = { showEasyTierCompatibilityUpdateDialog = false }) {
+                    Text(stringResource(R.string.main_easytier_compatibility_update_later))
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showEasyTierCompatibilityUpdateDialog = false
+                        onEasyTierCompatibilityUpdateClick()
+                    }
+                ) {
+                    Text(stringResource(R.string.main_easytier_compatibility_update_action))
+                }
+            },
+        )
+    }
+
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { scaffoldPaddingValues ->
@@ -3587,8 +3991,12 @@ private fun LauncherMainScreenContent(
                                 showSteamCloudBottomSheet = true
                             },
                             onEasyTierClick = {
-                                easyTierRoomLoadBaselineAtOpen = easyTierRoomBrowser.lastLoadedAtMs
-                                showEasyTierBottomSheet = true
+                                if (easyTierLauncherUpdateRequired) {
+                                    showEasyTierCompatibilityUpdateDialog = true
+                                } else {
+                                    easyTierRoomLoadBaselineAtOpen = easyTierRoomBrowser.lastLoadedAtMs
+                                    showEasyTierBottomSheet = true
+                                }
                             },
                             onLaunch = {
                                 if (actions.onLaunch() == LaunchRequestAction.OPEN_STEAM_CLOUD_SHEET) {
@@ -3756,6 +4164,7 @@ private fun LauncherMainScreenContent(
                 onLockRoom = actions.onLockEasyTierRoom,
                 onUnlockRoom = actions.onUnlockEasyTierRoom,
                 onCloseRoom = actions.onCloseEasyTierRoom,
+                onKickMember = actions.onKickEasyTierRoomMember,
                 onConnect = actions.onConnectEasyTier,
                 onDisconnect = actions.onDisconnectEasyTier,
                 tutorialWorkshopDownloadState = tutorialWorkshopDownloadState,

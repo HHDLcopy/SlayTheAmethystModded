@@ -208,6 +208,14 @@ async function buildServer(config = loadConfig()) {
     };
   });
 
+  fastify.post('/api/lan/session/mods', async (request, reply) => {
+    reply.header('Cache-Control', 'no-store');
+    return {
+      ok: true,
+      ...(await lanStore.reportSessionMods(withSessionCredential(request, request.body || {})))
+    };
+  });
+
   fastify.get('/api/lan/session/status', async (request, reply) => {
     reply.header('Cache-Control', 'no-store');
     return {

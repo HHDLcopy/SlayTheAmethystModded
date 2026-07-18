@@ -22,6 +22,7 @@ enum class EasyTierNetworkMode(
 
 const val DEFAULT_EASYTIER_SHARED_ROOM_ID = "sts-public-lobby"
 const val EASY_TIER_ROOM_DESCRIPTION_MAX_LENGTH = 120
+const val EASY_TIER_KICK_MESSAGE_MAX_LENGTH = 160
 
 data class EasyTierResolvedConfig(
     val enabled: Boolean,
@@ -47,10 +48,21 @@ data class EasyTierRoomSessionConfig(
     val configServerUrl: String = "",
     val aclGroup: String = "",
     val networkSecret: String = "",
+    val assignedIpv4Cidr: String = "",
+    val macAddress: String = "",
     val sessionToken: String = "",
     val ownerToken: String = "",
     val expiresAtEpochSeconds: Long? = null,
 )
+
+@Serializable
+data class EasyTierRoomMod(
+    val name: String,
+    val workshopId: String = "",
+) {
+    val isWorkshopMod: Boolean
+        get() = workshopId.isNotBlank()
+}
 
 @Serializable
 data class EasyTierRoomMember(
@@ -60,6 +72,7 @@ data class EasyTierRoomMember(
     val online: Boolean,
     val gameState: String = "online",
     val assignedIpv4Cidr: String = "",
+    val mods: List<EasyTierRoomMod> = emptyList(),
 )
 
 @Serializable
@@ -108,6 +121,8 @@ data class EasyTierSessionStatusSnapshot(
     val peerCount: Int? = null,
     val assignedIpv4Cidr: String = "",
     val relayServerDescription: String = "",
+    val kickMessage: String = "",
+    val kickedAtMs: Long = 0L,
 )
 
 @Serializable
@@ -118,6 +133,7 @@ enum class EasyTierFailureCategory {
     VpnPermissionRevoked,
     ConfigMissing,
     SessionClosed,
+    SessionKicked,
     SessionExpired,
     RoomClosed,
     RuntimeBridgePending,

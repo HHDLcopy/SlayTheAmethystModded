@@ -31,6 +31,7 @@ server push for sessions and stats, so it no longer polls the HTTP endpoints.
 - EasyTier room session stop: `POST /api/lan/session/stop`
 - EasyTier room runtime report: `POST /api/lan/session/runtime`
 - EasyTier room game-state report: `POST /api/lan/session/game-state`
+- EasyTier room mod-list report: `POST /api/lan/session/mods`
 - EasyTier room session status: `GET /api/lan/session/status?sessionId=...`
 - EasyTier room info: `GET /api/lan/rooms/{roomId}`
 - EasyTier room owner action: `POST /api/lan/rooms/{roomId}/action`
@@ -319,6 +320,19 @@ Invoke-RestMethod `
   -Body '{"sessionId":"lan_xxx","gameState":"game"}'
 ```
 
+Report the enabled mod list before launching the game. Each entry contains only
+the display name and, for Workshop mods, the Steam Workshop ID. This endpoint
+updates the current session without renewing its EasyTier lease:
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri http://127.0.0.1:3001/api/lan/session/mods `
+  -ContentType 'application/json' `
+  -Headers @{ Authorization = 'Bearer <sessionToken>' } `
+  -Body '{"sessionId":"lan_xxx","mods":[{"name":"Together in Spire","workshopId":"2384072973"},{"name":"My local patch"}]}'
+```
+
 Query room info:
 
 ```powershell
@@ -375,8 +389,12 @@ Business rules in the current MVP:
 - `GET /api/lan/rooms/{roomId}` returns the latest known member identity for
   each player, whether that player currently has an active unexpired session,
   the latest reported `assignedIpv4Cidr`, and the member `gameState` (`online`
-  or `game`) for that player. Game-state reports do not renew the EasyTier
-  session lease and expire back to `online` after 75 seconds without a heartbeat.
+  or `game`) for that player. Member entries include a non-empty reported
+  `mods` list when available. The list is capped at 128 entries and exposes
+  only each mod's name plus its Workshop ID when applicable; local paths,
+  version data, and device metadata are never returned. Game-state reports do
+  not renew the EasyTier session lease and expire back to `online` after 75
+  seconds without a heartbeat.
 
 ## WebSocket Messages
 

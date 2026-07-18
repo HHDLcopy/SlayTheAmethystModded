@@ -19,12 +19,16 @@ import java.util.Base64
 import java.util.Locale
 import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
 private const val DEFAULT_QQ_GROUP_NUMBER_VALUE = "1029305387"
 private const val STEAM_DEPOT_KEY_BYTES = 32
 private const val DEFAULT_CLOUD_CONTROL_ASSET_NAME = "cloud-control.json"
+private const val LOCAL_TEST_CLOUD_CONTROL_ASSET_NAME = "cloud-control-test.json"
+private const val LOCAL_TEST_CLOUD_CONTROL_CONFIG_URL =
+    "http://192.168.31.137:3001/cloud-control.json"
 private const val DEFAULT_EASYTIER_CONNECT_TIMEOUT_SECONDS = 12
 private const val DEFAULT_EASYTIER_STATUS_POLL_INTERVAL_SECONDS = 5
 private const val DEFAULT_EASYTIER_DEFAULT_MODE = "room"
@@ -52,6 +56,7 @@ data class CloudControlSettings(
 
 data class CloudControlEasyTierSettings(
     val enabled: Boolean = false,
+    val minimumOnlineLobbyCompatibleVersion: String = "",
     val roomApiBaseUrl: String = "",
     val webConsoleApiBaseUrl: String = "",
     val configServerUrl: String = "",
@@ -103,11 +108,14 @@ object CloudControlConfig {
     )
 
     private val startupRefreshStarted = AtomicBoolean(false)
-    private val refreshing = AtomicBoolean(false)
+    private val refreshGeneration = AtomicLong(0L)
     private val listeners = CopyOnWriteArraySet<() -> Unit>()
 
     @Volatile
     private var bundledDefaultSettings: CloudControlSettings? = null
+
+    @Volatile
+    private var bundledLocalTestSettings: CloudControlSettings? = null
 
     @Volatile
     private var startupRefreshCompleted = false
@@ -166,6 +174,16 @@ object CloudControlConfig {
                         .also { bundledDefaultSettings = it }
             }
 
+    private fun localTestSettings(context: Context): CloudControlSettings =
+        bundledLocalTestSettings
+            ?: synchronized(this) {
+                bundledLocalTestSettings
+                    ?: readBundledSettings(
+                        context = context.applicationContext,
+                        assetName = LOCAL_TEST_CLOUD_CONTROL_ASSET_NAME,
+                    ).also { bundledLocalTestSettings = it }
+            }
+
     @JvmStatic
     fun defaultHeartbeatWsUrl(): String =
         DEFAULT_HEARTBEAT_WS_URL
@@ -177,16 +195,20 @@ object CloudControlConfig {
             "&card_type=group&source=qrcode"
 
     private fun readBundledDefaultSettings(context: Context): CloudControlSettings {
+        return readBundledSettings(context, DEFAULT_CLOUD_CONTROL_ASSET_NAME)
+    }
+
+    private fun readBundledSettings(context: Context, assetName: String): CloudControlSettings {
         val emergencyDefaults = defaultSettings()
         val responseText = try {
             context.assets
-                .open(DEFAULT_CLOUD_CONTROL_ASSET_NAME)
+                .open(assetName)
                 .bufferedReader(StandardCharsets.UTF_8)
                 .use { reader -> reader.readText() }
         } catch (error: Throwable) {
             Log.w(
                 TAG,
-                "Bundled cloud control config read failed; using emergency defaults: " +
+                "Bundled cloud control config '$assetName' read failed; using emergency defaults: " +
                     "${error.javaClass.simpleName}: ${error.message ?: "no message"}"
             )
             return emergencyDefaults
@@ -194,12 +216,12 @@ object CloudControlConfig {
 
         return parseSettings(responseText, defaults = emergencyDefaults)
             ?: emergencyDefaults.also {
-                Log.w(TAG, "Bundled cloud control config is invalid; using emergency defaults")
+                Log.w(TAG, "Bundled cloud control config '$assetName' is invalid; using emergency defaults")
             }
     }
 
     fun fetchRemoteConfigText(context: Context): CloudControlRemoteConfigText {
-        val configUrl = BuildConfig.CLOUD_CONTROL_CONFIG_URL.trim()
+        val configUrl = selectedConfigUrl(context.applicationContext)
         if (configUrl.isEmpty()) {
             throw IOException("Cloud control config URL is empty.")
         }
@@ -212,48 +234,17 @@ object CloudControlConfig {
             return
         }
         val appContext = context.applicationContext
-        currentSettings = defaultSettings(appContext)
+        currentSettings = selectedDefaultSettings(appContext)
         startupRefreshCompleted = false
         refreshAsync(appContext)
     }
 
     @JvmStatic
     fun refreshAsync(context: Context) {
-        if (!refreshing.compareAndSet(false, true)) {
-            return
-        }
         val appContext = context.applicationContext
+        val generation = refreshGeneration.incrementAndGet()
         Thread({
-            try {
-                val configUrl = BuildConfig.CLOUD_CONTROL_CONFIG_URL.trim()
-                if (configUrl.isEmpty()) {
-                    Log.i(TAG, "Cloud control config URL is empty; using defaults")
-                    updateCurrentSettings(defaultSettings(appContext))
-                    return@Thread
-                }
-
-                val fetched = fetchRemoteSettings(appContext, configUrl)
-                updateCurrentSettings(fetched)
-                Log.i(
-                    TAG,
-                    "Cloud control config loaded; heartbeatIntervalSeconds=" +
-                        "${fetched.heartbeatIntervalSeconds}, heartbeatWsUrl=" +
-                        "${fetched.heartbeatWsUrl}, qqGroupNumber=" +
-                        "${fetched.qqGroupNumber}, steamDepotKeys=" +
-                        "${fetched.steamDepotKeys.size}, easyTierEnabled=" +
-                        "${fetched.easyTier.enabled}, easyTierEntryNodeUrl=" +
-                        fetched.easyTier.entryNodeUrl
-                )
-            } catch (error: Throwable) {
-                updateCurrentSettings(currentSettingsForFetchFailure(defaultSettings(appContext)))
-                Log.w(
-                    TAG,
-                    "Cloud control config fetch failed; using bundled/current settings: " +
-                        "${error.javaClass.simpleName}: ${error.message ?: "no message"}"
-                )
-            } finally {
-                refreshing.set(false)
-            }
+            refreshSelectedChannel(appContext, generation)
         }, "STS-CloudControlFetch").apply {
             isDaemon = true
             start()
@@ -263,20 +254,35 @@ object CloudControlConfig {
     @JvmStatic
     fun refreshBlocking(context: Context): CloudControlSettings {
         val appContext = context.applicationContext
+        val generation = refreshGeneration.incrementAndGet()
+        return refreshSelectedChannel(appContext, generation)
+    }
+
+    @JvmStatic
+    fun setLocalTestChannelEnabled(context: Context, enabled: Boolean) {
+        val appContext = context.applicationContext
+        LauncherConfig.setLocalTestCloudControlEnabled(appContext, enabled)
+        currentSettings = selectedDefaultSettings(appContext)
+        startupRefreshCompleted = false
+        refreshAsync(appContext)
+    }
+
+    private fun refreshSelectedChannel(context: Context, generation: Long): CloudControlSettings {
+        val defaults = selectedDefaultSettings(context)
+        val configUrl = selectedConfigUrl(context)
         return try {
-            val configUrl = BuildConfig.CLOUD_CONTROL_CONFIG_URL.trim()
             if (configUrl.isEmpty()) {
                 Log.i(TAG, "Cloud control config URL is empty; using defaults")
-                val defaults = defaultSettings(appContext)
-                updateCurrentSettings(defaults)
+                updateCurrentSettingsIfCurrent(generation, defaults)
                 return defaults
             }
-            val fetched = fetchRemoteSettings(appContext, configUrl)
-            updateCurrentSettings(fetched)
+            val fetched = fetchRemoteSettings(context, configUrl)
+            updateCurrentSettingsIfCurrent(generation, fetched)
+            Log.i(TAG, "Cloud control config loaded from $configUrl")
             fetched
         } catch (error: Throwable) {
-            val fallback = currentSettingsForFetchFailure(defaultSettings(appContext))
-            updateCurrentSettings(fallback)
+            val fallback = currentSettingsForFetchFailure(defaults)
+            updateCurrentSettingsIfCurrent(generation, fallback)
             Log.w(
                 TAG,
                 "Cloud control config fetch failed; using bundled/current settings: " +
@@ -285,6 +291,20 @@ object CloudControlConfig {
             fallback
         }
     }
+
+    private fun selectedDefaultSettings(context: Context): CloudControlSettings =
+        if (LauncherConfig.isLocalTestCloudControlEnabled(context)) {
+            localTestSettings(context)
+        } else {
+            defaultSettings(context)
+        }
+
+    private fun selectedConfigUrl(context: Context): String =
+        if (LauncherConfig.isLocalTestCloudControlEnabled(context)) {
+            LOCAL_TEST_CLOUD_CONTROL_CONFIG_URL
+        } else {
+            BuildConfig.CLOUD_CONTROL_CONFIG_URL.trim()
+        }
 
     private fun updateCurrentSettings(settings: CloudControlSettings) {
         currentSettings = settings
@@ -297,9 +317,15 @@ object CloudControlConfig {
         }
     }
 
+    private fun updateCurrentSettingsIfCurrent(generation: Long, settings: CloudControlSettings) {
+        if (generation == refreshGeneration.get()) {
+            updateCurrentSettings(settings)
+        }
+    }
+
     private fun currentSettingsForFetchFailure(bundledDefaults: CloudControlSettings): CloudControlSettings {
         val current = currentSettings
-        if (current == defaultSettings()) {
+        if (current == bundledDefaults) {
             return bundledDefaults
         }
         return if (current.steamDepotKeys.isEmpty() && bundledDefaults.steamDepotKeys.isNotEmpty()) {
@@ -397,6 +423,16 @@ object CloudControlConfig {
             rootNames = arrayOf("easyTierEnabled", "easytierEnabled"),
             nestedNames = arrayOf("enabled", "isEnabled"),
         ) ?: defaults.enabled
+        val minimumOnlineLobbyCompatibleVersion = firstNonBlankString(
+            root,
+            "easyTierMinimumOnlineLobbyCompatibleVersion",
+            "easytierMinimumOnlineLobbyCompatibleVersion",
+            "minimumOnlineLobbyCompatibleVersion",
+        ) ?: firstNonBlankString(
+            easyTierObject,
+            "minimumOnlineLobbyCompatibleVersion",
+            "minimum_online_lobby_compatible_version",
+        ) ?: defaults.minimumOnlineLobbyCompatibleVersion
         val roomApiBaseUrl = normalizeHttpUrl(
             firstNonBlankString(root, "easyTierRoomApiBaseUrl", "easytierRoomApiBaseUrl")
                 ?: firstNonBlankString(
@@ -484,6 +520,7 @@ object CloudControlConfig {
 
         return CloudControlEasyTierSettings(
             enabled = enabled,
+            minimumOnlineLobbyCompatibleVersion = minimumOnlineLobbyCompatibleVersion,
             roomApiBaseUrl = roomApiBaseUrl,
             webConsoleApiBaseUrl = webConsoleApiBaseUrl,
             configServerUrl = configServerUrl,

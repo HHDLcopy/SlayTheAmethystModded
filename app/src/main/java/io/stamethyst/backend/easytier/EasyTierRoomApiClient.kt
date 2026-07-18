@@ -36,6 +36,8 @@ internal class EasyTierRoomApiClient(
         createOnly: Boolean = false,
         sessionToken: String = "",
         ownerToken: String = "",
+        macAddress: String = "",
+        mods: List<EasyTierRoomMod> = emptyList(),
     ): EasyTierRoomSessionConfig {
         val config = EasyTierConfigRepository.current()
         val baseUrl = config.roomApiBaseUrl.trim()
@@ -55,6 +57,8 @@ internal class EasyTierRoomApiClient(
                     .take(EASY_TIER_ROOM_DESCRIPTION_MAX_LENGTH),
                 allowNewJoins = allowNewJoinsWhenCreating,
                 createOnly = createOnly,
+                macAddress = macAddress.trim(),
+                mods = mods,
             )
         )
         val request = Request.Builder()
@@ -242,6 +246,47 @@ internal class EasyTierRoomApiClient(
         }
     }
 
+    fun reportSessionMods(
+        sessionId: String,
+        sessionToken: String,
+        mods: List<EasyTierRoomMod>,
+    ) {
+        val config = EasyTierConfigRepository.current()
+        val baseUrl = config.roomApiBaseUrl.trim()
+        require(baseUrl.isNotEmpty()) { "EasyTier room API base URL is unavailable." }
+        require(sessionId.isNotBlank()) { "Session ID is required." }
+        require(sessionToken.isNotBlank()) { "Session token is required." }
+
+        val requestBody = json.encodeToString(
+            ReportSessionModsRequest.serializer(),
+            ReportSessionModsRequest(
+                sessionId = sessionId.trim(),
+                mods = mods,
+            )
+        )
+        val request = Request.Builder()
+            .url(apiUrl(baseUrl, "api", "lan", "session", "mods"))
+            .header("User-Agent", "SlayTheAmethyst/${BuildConfig.VERSION_NAME}")
+            .header("Accept", "application/json")
+            .post(requestBody.toRequestBody(JSON_MEDIA_TYPE))
+            .applyLanSessionToken(sessionToken)
+            .build()
+        client.newCall(request).execute().use { response ->
+            val responseText = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                throw EasyTierRoomApiHttpException(
+                    statusCode = response.code,
+                    message = buildHttpErrorMessage(
+                        operation = "reported mods",
+                        responseCode = response.code,
+                        responseMessage = response.message,
+                        responseText = responseText,
+                    ),
+                )
+            }
+        }
+    }
+
     fun fetchRoomInfo(roomId: String): EasyTierRoomInfo {
         val config = EasyTierConfigRepository.current()
         val baseUrl = config.roomApiBaseUrl.trim()
@@ -381,11 +426,31 @@ internal class EasyTierRoomApiClient(
         sessionToken: String = "",
     ): EasyTierRoomInfo = mutateRoom(roomId, ownerToken, sessionToken, "close")
 
+    fun kickMember(
+        roomId: String,
+        ownerToken: String,
+        sessionToken: String = "",
+        targetPlayerId: String,
+        message: String = "",
+    ): EasyTierRoomInfo {
+        require(targetPlayerId.isNotBlank()) { "Target player ID is required." }
+        return mutateRoom(
+            roomId = roomId,
+            ownerToken = ownerToken,
+            sessionToken = sessionToken,
+            action = "kick",
+            targetPlayerId = targetPlayerId.trim(),
+            kickMessage = message.trim().take(EASY_TIER_KICK_MESSAGE_MAX_LENGTH),
+        )
+    }
+
     private fun mutateRoom(
         roomId: String,
         ownerToken: String,
         sessionToken: String,
         action: String,
+        targetPlayerId: String = "",
+        kickMessage: String = "",
     ): EasyTierRoomInfo {
         val config = EasyTierConfigRepository.current()
         val baseUrl = config.roomApiBaseUrl.trim()
@@ -399,6 +464,8 @@ internal class EasyTierRoomApiClient(
             UpdateRoomRequest.serializer(),
             UpdateRoomRequest(
                 action = action,
+                targetPlayerId = targetPlayerId,
+                message = kickMessage,
             )
         )
         val request = Request.Builder()
@@ -436,6 +503,8 @@ internal class EasyTierRoomApiClient(
             configServerUrl = payload.configServerUrl.trim(),
             aclGroup = payload.aclGroup.trim(),
             networkSecret = payload.networkSecret.trim(),
+            assignedIpv4Cidr = payload.assignedIpv4Cidr.trim(),
+            macAddress = payload.macAddress.trim(),
             sessionToken = payload.sessionToken.trim(),
             ownerToken = payload.ownerToken.trim(),
             expiresAtEpochSeconds = payload.expiresAtEpochSeconds,
@@ -452,6 +521,8 @@ internal class EasyTierRoomApiClient(
             peerCount = payload.peerCount,
             assignedIpv4Cidr = payload.assignedIpv4Cidr.trim(),
             relayServerDescription = payload.relayServerDescription.trim(),
+            kickMessage = payload.kickMessage.trim(),
+            kickedAtMs = payload.kickedAtMs,
         )
     }
 
@@ -476,6 +547,12 @@ internal class EasyTierRoomApiClient(
                     online = member.online,
                     gameState = member.gameState.trim().ifBlank { "online" },
                     assignedIpv4Cidr = member.assignedIpv4Cidr.trim(),
+                    mods = member.mods.map { mod ->
+                        EasyTierRoomMod(
+                            name = mod.name.trim(),
+                            workshopId = mod.workshopId.trim(),
+                        )
+                    }.filter { mod -> mod.name.isNotBlank() },
                 )
             },
         )
@@ -562,6 +639,8 @@ internal class EasyTierRoomApiClient(
         val description: String = "",
         val allowNewJoins: Boolean? = null,
         val createOnly: Boolean = false,
+        val macAddress: String = "",
+        val mods: List<EasyTierRoomMod> = emptyList(),
     )
 
     @Serializable
@@ -589,8 +668,16 @@ internal class EasyTierRoomApiClient(
     )
 
     @Serializable
+    private data class ReportSessionModsRequest(
+        val sessionId: String,
+        val mods: List<EasyTierRoomMod>,
+    )
+
+    @Serializable
     private data class UpdateRoomRequest(
         val action: String,
+        val targetPlayerId: String = "",
+        val message: String = "",
     )
 
     @Serializable
@@ -602,6 +689,8 @@ internal class EasyTierRoomApiClient(
         val configServerUrl: String = "",
         val aclGroup: String = "",
         val networkSecret: String = "",
+        val assignedIpv4Cidr: String = "",
+        val macAddress: String = "",
         val sessionToken: String = "",
         val ownerToken: String = "",
         @SerialName("expiresAt")
@@ -617,6 +706,8 @@ internal class EasyTierRoomApiClient(
         val peerCount: Int? = null,
         val assignedIpv4Cidr: String = "",
         val relayServerDescription: String = "",
+        val kickMessage: String = "",
+        val kickedAtMs: Long = 0L,
     )
 
     @Serializable
@@ -665,6 +756,13 @@ internal class EasyTierRoomApiClient(
         val online: Boolean = false,
         val gameState: String = "online",
         val assignedIpv4Cidr: String = "",
+        val mods: List<RoomModResponse> = emptyList(),
+    )
+
+    @Serializable
+    private data class RoomModResponse(
+        val name: String = "",
+        val workshopId: String = "",
     )
 
     companion object {

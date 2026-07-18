@@ -52,6 +52,7 @@ import io.stamethyst.backend.easytier.EasyTierPermissionCoordinator
 import io.stamethyst.backend.easytier.EasyTierProcessService
 import io.stamethyst.backend.easytier.EasyTierRoomSelectionStore
 import io.stamethyst.backend.easytier.EasyTierSessionController
+import io.stamethyst.backend.easytier.EasyTierModInventoryReporter
 import io.stamethyst.backend.launch.BackExitNotice
 import io.stamethyst.backend.launch.CrashReturnPayload
 import io.stamethyst.backend.launch.ExpectedGameExitNotice
@@ -275,6 +276,10 @@ class MainScreenViewModel : ViewModel() {
                 selectedRoom.ownerPlayerId == currentPlayerId
     }
 
+    data class EasyTierKickDialogUi(
+        val message: String,
+    )
+
     private data class ImportedStsJarFingerprint(
         val absolutePath: String,
         val exists: Boolean,
@@ -316,6 +321,7 @@ class MainScreenViewModel : ViewModel() {
         val steamCloudIndicator: SteamCloudIndicatorUi = SteamCloudIndicatorUi(),
         val easyTierIndicator: EasyTierIndicatorUi = EasyTierIndicatorUi(),
         val easyTierRoomBrowser: EasyTierRoomBrowserUi = EasyTierRoomBrowserUi(),
+        val pendingEasyTierKickDialog: EasyTierKickDialogUi? = null,
         val pendingWorkshopJarSelection: PendingWorkshopJarSelection? = null,
         val pendingEnabledModSizeLaunchWarning: PendingEnabledModSizeLaunchWarning? = null,
         val pendingMtsComponentUpdate: PendingMtsComponentUpdate? = null,
@@ -410,6 +416,7 @@ class MainScreenViewModel : ViewModel() {
     private var easyTierRoomBrowserReloadPending = false
     @Volatile
     private var easyTierRoomBrowserReloadPendingShowLoading = false
+    private var lastQueuedEasyTierKickKey = ""
 
     var uiState by mutableStateOf(UiState())
         private set
@@ -488,9 +495,16 @@ class MainScreenViewModel : ViewModel() {
     fun syncEasyTierUi(host: Activity) {
         syncEasyTierProcessEventReceiver(host)
         syncEasyTierRoomSelection(host)
+        val indicator = resolveEasyTierIndicatorAvailability(host)
         uiState = uiState.copy(
-            easyTierIndicator = resolveEasyTierIndicatorAvailability(host),
+            easyTierIndicator = indicator,
         )
+    }
+
+    fun dismissEasyTierKickDialog() {
+        if (uiState.pendingEasyTierKickDialog != null) {
+            uiState = uiState.copy(pendingEasyTierKickDialog = null)
+        }
     }
 
     suspend fun refreshWorkshopDownloadCards(host: Activity): Boolean {
@@ -1063,11 +1077,37 @@ class MainScreenViewModel : ViewModel() {
         mutateEasyTierRoom(host, "close")
     }
 
-    private fun mutateEasyTierRoom(host: Activity, action: String) {
+    fun kickEasyTierRoomMember(
+        host: Activity,
+        targetPlayerId: String,
+        message: String = "",
+    ) {
+        mutateEasyTierRoom(
+            host = host,
+            action = "kick",
+            targetPlayerId = targetPlayerId,
+            kickMessage = message,
+        )
+    }
+
+    private fun mutateEasyTierRoom(
+        host: Activity,
+        action: String,
+        targetPlayerId: String = "",
+        kickMessage: String = "",
+    ) {
         val selectedRoom = uiState.easyTierRoomBrowser.selectedRoom ?: return
         val currentPlayerId = resolveEasyTierCurrentPlayerId(host)
         if (selectedRoom.ownerPlayerId.trim() != currentPlayerId) {
             return
+        }
+        val targetMember = if (action == "kick") {
+            selectedRoom.members.firstOrNull { member ->
+                member.playerId.trim() == targetPlayerId.trim() &&
+                    member.playerId.trim() != currentPlayerId
+            } ?: return
+        } else {
+            null
         }
         uiState = uiState.copy(
             easyTierRoomBrowser = uiState.easyTierRoomBrowser.copy(
@@ -1100,6 +1140,13 @@ class MainScreenViewModel : ViewModel() {
                         selectedRoom.roomId,
                         ownerToken,
                         sessionToken,
+                    )
+                    "kick" -> client.kickMember(
+                        roomId = selectedRoom.roomId,
+                        ownerToken = ownerToken,
+                        sessionToken = sessionToken,
+                        targetPlayerId = targetMember?.playerId.orEmpty(),
+                        message = kickMessage,
                     )
                     else -> error("Unsupported room action: $action")
                 }
@@ -1142,14 +1189,22 @@ class MainScreenViewModel : ViewModel() {
                     ) {
                         onDisconnectEasyTier(host)
                     }
-                    val messageResId = when (action) {
-                        "lock" -> R.string.main_easytier_room_locked_success
-                        "unlock" -> R.string.main_easytier_room_unlocked_success
-                        else -> R.string.main_easytier_room_closed_success
+                    val successMessage = if (action == "kick") {
+                        host.getString(
+                            R.string.main_easytier_member_kicked_success,
+                            targetMember?.displayName?.ifBlank { targetMember.playerId }.orEmpty(),
+                        )
+                    } else {
+                        val messageResId = when (action) {
+                            "lock" -> R.string.main_easytier_room_locked_success
+                            "unlock" -> R.string.main_easytier_room_unlocked_success
+                            else -> R.string.main_easytier_room_closed_success
+                        }
+                        host.getString(messageResId, room.roomId)
                     }
                     _effects.tryEmit(
                         Effect.ShowSnackbar(
-                            message = UiText.DynamicString(host.getString(messageResId, room.roomId))
+                            message = UiText.DynamicString(successMessage)
                         )
                     )
                 }.onFailure { error ->
@@ -3235,6 +3290,7 @@ class MainScreenViewModel : ViewModel() {
         forceJvmCrash: Boolean,
         forceRuntimeCrash: Boolean,
     ) {
+        EasyTierModInventoryReporter.reportCurrentSessionAsync(host.applicationContext)
         prepareLaunchAndLaunch(
             host = host,
             launchMode = launchMode,
@@ -4995,6 +5051,7 @@ class MainScreenViewModel : ViewModel() {
 
     private fun resolveEasyTierIndicatorAvailability(host: Activity): EasyTierIndicatorUi {
         val snapshot = EasyTierSessionController.currentSnapshot(host)
+        maybeQueueEasyTierKickDialog(snapshot)
         return EasyTierIndicatorUi(
             visible = true,
             state = when (snapshot.status) {
@@ -5096,6 +5153,7 @@ class MainScreenViewModel : ViewModel() {
     }
 
     private fun publishEasyTierIndicator(snapshot: EasyTierConnectionSnapshot) {
+        maybeQueueEasyTierKickDialog(snapshot)
         uiState = uiState.copy(
             easyTierIndicator = EasyTierIndicatorUi(
                 visible = true,
@@ -5127,6 +5185,19 @@ class MainScreenViewModel : ViewModel() {
                 lastUpdatedAtMs = snapshot.lastUpdatedAtMs.takeIf { it > 0L },
                 connectedAtMs = snapshot.connectedAtMs,
             )
+        )
+    }
+
+    private fun maybeQueueEasyTierKickDialog(snapshot: EasyTierConnectionSnapshot) {
+        val key = easyTierKickDialogEventKey(snapshot) ?: return
+        if (key == lastQueuedEasyTierKickKey) {
+            return
+        }
+        lastQueuedEasyTierKickKey = key
+        uiState = uiState.copy(
+            pendingEasyTierKickDialog = EasyTierKickDialogUi(
+                message = snapshot.lastErrorSummary.trim(),
+            ),
         )
     }
 
@@ -5296,6 +5367,17 @@ class MainScreenViewModel : ViewModel() {
         modManagementController.shutdown()
         super.onCleared()
     }
+}
+
+internal fun easyTierKickDialogEventKey(snapshot: EasyTierConnectionSnapshot): String? {
+    if (EasyTierErrorClassifier.classify(snapshot) != EasyTierFailureCategory.SessionKicked) {
+        return null
+    }
+    return listOf(
+        snapshot.roomId.trim(),
+        snapshot.lastUpdatedAtMs,
+        snapshot.lastErrorSummary.trim(),
+    ).joinToString("|")
 }
 
 internal fun shouldCloseEasyTierRoomWhenOwnerLeaves(

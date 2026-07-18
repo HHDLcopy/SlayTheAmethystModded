@@ -1173,7 +1173,7 @@ private fun WorkshopOpenDetailsByIdDialog(
 }
 
 @Composable
-private fun WorkshopItemCard(
+internal fun WorkshopItemCard(
     modifier: Modifier = Modifier,
     item: WorkshopItemSummary,
     downloadState: WorkshopModDownloadState,
@@ -1258,7 +1258,7 @@ internal fun WorkshopSummaryCard(
 }
 
 @Composable
-private fun WorkshopListSkeletonCard(
+internal fun WorkshopListSkeletonCard(
     modifier: Modifier = Modifier,
     variant: Int,
 ) {

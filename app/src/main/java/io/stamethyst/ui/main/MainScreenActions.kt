@@ -87,6 +87,7 @@ internal data class MainScreenActions(
     val onLockEasyTierRoom: () -> Unit = {},
     val onUnlockEasyTierRoom: () -> Unit = {},
     val onCloseEasyTierRoom: () -> Unit = {},
+    val onKickEasyTierRoomMember: (String, String) -> Unit = { _, _ -> },
 )
 
 @Composable
@@ -254,6 +255,9 @@ internal fun rememberMainScreenActions(
                 },
                 onCloseEasyTierRoom = {
                     viewModel.closeEasyTierRoom(activity)
+                },
+                onKickEasyTierRoomMember = { playerId, message ->
+                    viewModel.kickEasyTierRoomMember(activity, playerId, message)
                 },
             )
         }

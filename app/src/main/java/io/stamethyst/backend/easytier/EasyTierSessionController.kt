@@ -220,11 +220,13 @@ object EasyTierSessionController {
     internal fun buildDisconnectedSnapshot(
         previous: EasyTierConnectionSnapshot,
         summary: String = "",
+        failureCategory: EasyTierFailureCategory = EasyTierFailureCategory.None,
+        terminalSessionState: String = "",
         nowMs: Long = System.currentTimeMillis(),
     ): EasyTierConnectionSnapshot {
         return previous.copy(
             status = EasyTierConnectionStatus.DISCONNECTED,
-            failureCategory = EasyTierFailureCategory.None,
+            failureCategory = failureCategory,
             startedAtMs = null,
             connectedAtMs = null,
             sessionId = "",
@@ -237,7 +239,7 @@ object EasyTierSessionController {
             relayServerDescription = "",
             aclGroup = "",
             expiresAtEpochSeconds = null,
-            lastSessionState = "",
+            lastSessionState = terminalSessionState,
             lastRoomState = "",
         )
     }

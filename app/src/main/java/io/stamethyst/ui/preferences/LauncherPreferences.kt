@@ -274,6 +274,14 @@ object LauncherPreferences {
         LauncherConfig.setDeveloperSettingsWarningDismissed(context, dismissed)
     }
 
+    fun isLocalTestCloudControlEnabled(context: Context): Boolean {
+        return LauncherConfig.isLocalTestCloudControlEnabled(context)
+    }
+
+    fun setLocalTestCloudControlEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setLocalTestCloudControlEnabled(context, enabled)
+    }
+
     fun readSpecialKeyInputMode(context: Context): SpecialKeyInputMode {
         return LauncherConfig.readSpecialKeyInputMode(context)
     }

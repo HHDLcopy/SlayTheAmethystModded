@@ -22,11 +22,17 @@ internal object EasyTierRuntimeConfigBuilder {
             .filter(String::isNotEmpty)
             .distinct()
         val hostname = buildHostname(playerId)
+        val assignedIpv4Cidr = parseEasyTierIpv4Cidr(sessionConfig.assignedIpv4Cidr)?.cidr.orEmpty()
 
         val toml = buildString {
             append("instance_name = ").appendTomlString(instanceName).append('\n')
             append("hostname = ").appendTomlString(hostname).append('\n')
-            append("dhcp = true\n")
+            if (assignedIpv4Cidr.isBlank()) {
+                append("dhcp = true\n")
+            } else {
+                append("ipv4 = ").appendTomlString(assignedIpv4Cidr).append('\n')
+                append("dhcp = false\n")
+            }
             append("listeners = []\n")
             append('\n')
             append("[network_identity]\n")

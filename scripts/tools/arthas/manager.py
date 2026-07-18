@@ -9,6 +9,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from scripts.tools.arthas.shell import ArthasShell
+
 _ARTHAS_DIR = "/data/data/io.stamethyst/files/arthas"
 _RUNTIME_LIB_DIR = (
     "/data/data/io.stamethyst/files/runtimes/Internal/lib/aarch64/server"
@@ -48,7 +50,7 @@ class ArthasManager:
         self._ensure_companion()
 
         # 1. Clean up stale .so from old location (migrated to arthas/ dir)
-        self._conn.shell(command=f"rm -f /data/data/io.stamethyst/files/libprocfs_cpu.so")
+        self._conn.shell(command="rm -f /data/data/io.stamethyst/files/libprocfs_cpu.so")
 
         # 2. Push JARs and native libs to device (idempotent)
         for jar_name, _has_agent_class in _JARS:
@@ -83,7 +85,33 @@ class ArthasManager:
         self._conn.forward(port=port)
 
     def stop(self, port: int = 8099) -> None:
-        self._conn.unforward(port=port)
+        stream = None
+        try:
+            try:
+                self._conn.forward(port=port)
+                stream = self._conn.connect_stream(port=port)
+                shell = ArthasShell(stream=stream)
+                try:
+                    shell.command("reset")
+                except Exception:
+                    pass
+                try:
+                    shell.command("stop")
+                except Exception:
+                    pass
+            except Exception:
+                # Bridge may already be gone; still clean local forwards.
+                pass
+        finally:
+            if stream is not None:
+                try:
+                    stream.close()
+                except Exception:
+                    pass
+            try:
+                self._conn.unforward(port=port)
+            except Exception:
+                pass
 
     # ── Companion file (AllocTracer symbols for stripped libjvm.so) ───
 

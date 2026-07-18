@@ -50,21 +50,45 @@ Python 客户端通过 `connector` daemon 的 `connect_stream` 透传通道收�
        libasyncProfiler-linux-arm64.so  # async-profiler 3.0 aarch64 .so
     ```
 
+### 设备选择
+
+多设备在线时**必须**显式指定 serial，禁止依赖 `auto` 静默选第一台：
+
+```bash
+export STS_CONNECTOR_PORT=39999
+export STS_TEST_DEVICE=localhost:15555   # 可选默认设备
+
+# 推荐：CLI 显式设备
+python3 -m scripts.tools.arthas --device localhost:15555 start
+python3 -m scripts.tools.arthas --device localhost:25555 query "version"
+python3 -m scripts.tools.arthas --device localhost:15555 stop
+```
+
+解析顺序：
+
+1. `--device <serial>`
+2. `STS_TEST_DEVICE`（非空且非 `auto`）
+3. 仅 1 台在线设备时自动选择
+4. 0 台或多台且未指定 → 报错并列出 serial
+
 ### 启动 Arthas
 
 ```bash
 # CLI 一步：推送 JARs + .so + 加载 bridge + forward 端口
-python -m scripts.tools.arthas start
+python3 -m scripts.tools.arthas --device localhost:15555 start
 
 # 交互式 shell
-python -m scripts.tools.arthas shell
+python3 -m scripts.tools.arthas --device localhost:15555 shell
 
 # 单条命令
-python -m scripts.tools.arthas query "thread -n 5"
+python3 -m scripts.tools.arthas --device localhost:15555 query "thread -n 5"
 
-# 停止
-python -m scripts.tools.arthas stop
+# 停止：向 bridge 发送 reset/stop（若可连），再 unforward 8099
+python3 -m scripts.tools.arthas --device localhost:15555 stop
 ```
+
+`start` 完成后会关闭 game-probe `AgentClient` 会话；`shell` / `query` 在成功、失败或中断时都会关闭 stream 并 `unforward`。  
+`TypeNotPresentException` 自动重连会保持同一 resolved serial，不会重新 `auto` 选设备。
 
 ### 程序化使用
 
@@ -75,7 +99,7 @@ from scripts.tools.arthas.shell import ArthasShell
 
 conn = ConnectorClient()
 conn.connect()
-conn.select("auto")
+conn.select("localhost:15555")  # 多设备时不要用 auto
 
 # 加载 bridge
 agent = AgentClient(connector=conn, port=9099)
@@ -89,9 +113,11 @@ stream = conn.connect_stream(port=8099)
 shell = ArthasShell(stream=stream)
 print(shell.command("thread -n 3"))
 stream.close()
+conn.unforward(port=8099)
+conn.close()
 ```
 
-详见 `__main__.py` 中的 `_cmd_shell()` 和 `_cmd_query()` 实现。
+详见 `__main__.py` 中的 `resolve_device()`、`_cmd_shell()` 和 `_cmd_query()` 实现。
 
 ## 架构
 
@@ -373,21 +399,23 @@ game-probe 保留游戏特有的 `OBSERVE` / `EXEC` 功能，Arthas 补充通用
 
 | 症状 | 可能原因 | 解决 |
 |------|---------|------|
+| `Multiple Android devices online` | 未传 `--device` / `STS_TEST_DEVICE`，且多于 1 台在线 | 显式指定 serial |
 | `connect_stream` BrokenPipe | bridge 的 `ShellServer` 已关闭（之前执行过 `stop`） | 重启游戏 → 重新 `LOAD_AGENT bridge.jar` |
 | `LOAD_AGENT` 返回 `already bind` | bridge 重复加载 | 重启游戏清理 JVM 状态 |
 | `LOAD_AGENT` 返回 `class file version` 错误 | 编译的 JAR 类版本高于设备 JVM（Android 用 JDK 8） | 本地 `javac -source 8 -target 8` 重新编译 |
-| `Type xxx not present`（trace/watch） | `CommonSuperBridge` 在首次连接时未成功 retransform | 断开客户端重新连接，第二次通常成功 |
+| `Type xxx not present`（trace/watch） | `CommonSuperBridge` 在首次连接时未成功 retransform | 同一 serial 重连；CLI 会自动重试一次 |
 | `ognl` 返回 `null` | 调用的方法返回类型是 `void` | `null` 是正确行为；改用有返回值的方法验证 |
 | game-probe 无响应 (`available: false`) | 游戏未以 `debugMode` 或 `autoplay` 启动 | 用 `-PdebugMode=true` 或 `--ez io.stamethyst.debug_mode true` 重启 |
+| `stop` 后 8099 仍可连 | 旧版只 unforward | 使用当前 `stop`（reset + stop + unforward）；必要时重启游戏 |
 
 ## 实现文件
 
 | 文件 | 职责 |
 |------|------|
-| `manager.py` | 生命周期管理：推送 JARs + .so + companion → LOAD_AGENT → forward 端口，自动清理旧版残留 |
+| `manager.py` | 生命周期：推送 JARs/.so/companion → LOAD_AGENT → forward；`stop` 发送 reset/stop 后 unforward |
 | `shell.py` | `ArthasShell`：prompt drain、命令发送、输出解析 |
 | `cli.py` | `run_shell()` / `run_query()`：Shell/单命令入口 |
-| `__main__.py` | CLI 接口：`start`、`shell`、`query`、`stop` |
+| `__main__.py` | CLI：`--device` 解析、`start`/`shell`/`query`/`stop`、会话清理 |
 | `resource/arthas-core.jar` | Arthas 3.6.9 命令引擎 |
 | `resource/arthas-bridge.jar` | 自定义 bridge（源码在 `arthas-bridge/`） |
 | `resource/arthas-agent.jar` | Arthas agent |

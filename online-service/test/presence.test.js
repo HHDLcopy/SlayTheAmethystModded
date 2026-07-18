@@ -354,6 +354,106 @@ test('lan room runtime report updates session status and room member ip', async 
   ]);
 });
 
+test('lan room assigns stable per-room IPv4 addresses from virtual MAC addresses', async (t) => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-presence-'));
+  const server = await buildServer({
+    ...loadConfig({ LOG_LEVEL: 'silent', EASYTIER_ENABLED: 'true' }),
+    dbPath: path.join(tmpDir, 'presence.sqlite'),
+    publicBaseUrl: 'https://online.example.com',
+    presencePanelToken: 'panel-secret',
+    logLevel: 'silent'
+  });
+  t.after(async () => {
+    await server.close();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+  await server.ready();
+
+  const owner = await server.inject({
+    method: 'POST',
+    url: '/api/lan/session/start',
+    payload: {
+      roomId: 'static-ip-room',
+      playerId: 'alice',
+      macAddress: '02-aa-bb-cc-dd-01'
+    }
+  });
+  const member = await server.inject({
+    method: 'POST',
+    url: '/api/lan/session/start',
+    payload: {
+      roomId: 'static-ip-room',
+      playerId: 'bob',
+      macAddress: '02:aa:bb:cc:dd:02'
+    }
+  });
+  assert.equal(owner.statusCode, 200);
+  assert.equal(member.statusCode, 200);
+  assert.equal(owner.json().macAddress, '02:AA:BB:CC:DD:01');
+  assert.match(owner.json().assignedIpv4Cidr, /^10\.126\.\d+\.\d+\/24$/);
+  assert.notEqual(owner.json().assignedIpv4Cidr, member.json().assignedIpv4Cidr);
+  assert.equal(
+    owner.json().assignedIpv4Cidr.split('.').slice(0, 3).join('.'),
+    member.json().assignedIpv4Cidr.split('.').slice(0, 3).join('.')
+  );
+
+  const mismatchedRuntime = await server.inject({
+    method: 'POST',
+    url: '/api/lan/session/runtime',
+    headers: { authorization: `Bearer ${member.json().sessionToken}` },
+    payload: {
+      sessionId: member.json().sessionId,
+      assignedIpv4Cidr: owner.json().assignedIpv4Cidr
+    }
+  });
+  assert.equal(mismatchedRuntime.statusCode, 409);
+  assert.match(mismatchedRuntime.json().message, /does not match/);
+
+  const stopped = await server.inject({
+    method: 'POST',
+    url: '/api/lan/session/stop',
+    headers: { authorization: `Bearer ${member.json().sessionToken}` },
+    payload: { sessionId: member.json().sessionId }
+  });
+  assert.equal(stopped.statusCode, 200);
+
+  const rejoined = await server.inject({
+    method: 'POST',
+    url: '/api/lan/session/start',
+    headers: { authorization: `Bearer ${member.json().sessionToken}` },
+    payload: {
+      roomId: 'static-ip-room',
+      playerId: 'bob',
+      macAddress: '02:aa:bb:cc:dd:02'
+    }
+  });
+  assert.equal(rejoined.statusCode, 200);
+  assert.equal(rejoined.json().assignedIpv4Cidr, member.json().assignedIpv4Cidr);
+
+  const duplicateMac = await server.inject({
+    method: 'POST',
+    url: '/api/lan/session/start',
+    payload: {
+      roomId: 'static-ip-room',
+      playerId: 'charlie',
+      macAddress: '02:aa:bb:cc:dd:02'
+    }
+  });
+  assert.equal(duplicateMac.statusCode, 409);
+
+  const separateRoom = await server.inject({
+    method: 'POST',
+    url: '/api/lan/session/start',
+    payload: {
+      roomId: 'separate-static-ip-room',
+      playerId: 'diana',
+      macAddress: '02:aa:bb:cc:dd:02'
+    }
+  });
+  assert.equal(separateRoom.statusCode, 200);
+  assert.match(separateRoom.json().assignedIpv4Cidr, /^10\.126\.\d+\.\d+\/24$/);
+});
+
 test('lan game-state report marks active room members as in game', async (t) => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-presence-'));
   const server = await buildServer({
@@ -990,6 +1090,79 @@ test('lan room api supports owner lock unlock and close lifecycle', async (t) =>
   assert.match(restarted.json().aclGroup, /^room-/);
   assert.ok(restarted.json().networkSecret.length >= 16);
   assert.notEqual(restarted.json().networkSecret, joined.json().networkSecret);
+});
+
+test('lan room owner can kick a member with an optional message', async (t) => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-presence-'));
+  const server = await buildServer({
+    ...loadConfig({ LOG_LEVEL: 'silent', EASYTIER_ENABLED: 'true' }),
+    dbPath: path.join(tmpDir, 'presence.sqlite'),
+    publicBaseUrl: 'https://online.example.com',
+    presencePanelToken: 'panel-secret',
+    logLevel: 'silent'
+  });
+  t.after(async () => {
+    await server.close();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+  await server.ready();
+
+  const owner = await server.inject({
+    method: 'POST',
+    url: '/api/lan/session/start',
+    payload: { roomId: 'kick-room', playerId: 'alice', displayName: 'Alice' }
+  });
+  const member = await server.inject({
+    method: 'POST',
+    url: '/api/lan/session/start',
+    payload: { roomId: 'kick-room', playerId: 'bob', displayName: 'Bob' }
+  });
+  assert.equal(owner.statusCode, 200);
+  assert.equal(member.statusCode, 200);
+
+  const kicked = await server.inject({
+    method: 'POST',
+    url: '/api/lan/rooms/kick-room/action',
+    headers: { authorization: `Bearer ${owner.json().sessionToken}` },
+    payload: {
+      action: 'kick',
+      targetPlayerId: 'bob',
+      message: 'Please update Together in Spire before rejoining.'
+    }
+  });
+  assert.equal(kicked.statusCode, 200);
+  assert.equal(kicked.json().kickedPlayerId, 'bob');
+  assert.equal(kicked.json().kickedDisplayName, 'Bob');
+  assert.equal(kicked.json().kickMessage, 'Please update Together in Spire before rejoining.');
+  assert.equal(kicked.json().memberCount, 1);
+  assert.deepEqual(kicked.json().members.map((entry) => entry.playerId), ['alice']);
+
+  const memberStatus = await server.inject({
+    method: 'GET',
+    url: `/api/lan/session/status?sessionId=${member.json().sessionId}`,
+    headers: { authorization: `Bearer ${member.json().sessionToken}` }
+  });
+  assert.equal(memberStatus.statusCode, 200);
+  assert.equal(memberStatus.json().sessionState, 'kicked');
+  assert.equal(memberStatus.json().kickMessage, 'Please update Together in Spire before rejoining.');
+  assert.ok(memberStatus.json().kickedAtMs > 0);
+
+  const cannotKickOwner = await server.inject({
+    method: 'POST',
+    url: '/api/lan/rooms/kick-room/action',
+    headers: { authorization: `Bearer ${owner.json().sessionToken}` },
+    payload: { action: 'kick', targetPlayerId: 'alice' }
+  });
+  assert.equal(cannotKickOwner.statusCode, 400);
+  assert.match(cannotKickOwner.json().message, /owner cannot be removed/);
+
+  const alreadyGone = await server.inject({
+    method: 'POST',
+    url: '/api/lan/rooms/kick-room/action',
+    headers: { authorization: `Bearer ${owner.json().sessionToken}` },
+    payload: { action: 'kick', targetPlayerId: 'bob' }
+  });
+  assert.equal(alreadyGone.statusCode, 404);
 });
 
 test('lan room api blocks non-owner room mutations', async (t) => {

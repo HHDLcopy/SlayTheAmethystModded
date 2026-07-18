@@ -33,6 +33,7 @@ server push for sessions and stats, so it no longer polls the HTTP endpoints.
 - EasyTier room game-state report: `POST /api/lan/session/game-state`
 - EasyTier room session status: `GET /api/lan/session/status?sessionId=...`
 - EasyTier room info: `GET /api/lan/rooms/{roomId}`
+- EasyTier room owner action: `POST /api/lan/rooms/{roomId}/action`
 - Protected EasyTier runtime status: `GET /api/easytier/runtime/status?token=...`
 - Protected EasyTier runtime start: `POST /api/easytier/runtime/start?token=...`
 - Protected EasyTier runtime stop: `POST /api/easytier/runtime/stop?token=...`
@@ -325,6 +326,20 @@ Invoke-RestMethod `
   -Uri http://127.0.0.1:3001/api/lan/rooms/alpha-room
 ```
 
+Remove a room member as the owner. `message` is optional and limited to 160
+characters. The removed member's existing session-status request returns
+`sessionState: "kicked"` plus `kickMessage`, so the launcher can stop its local
+EasyTier runtime and show the owner-provided message.
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri http://127.0.0.1:3001/api/lan/rooms/alpha-room/action `
+  -ContentType 'application/json' `
+  -Headers @{ 'X-Lan-Owner-Token' = '<ownerToken>' } `
+  -Body '{"action":"kick","targetPlayerId":"bob","message":"Please update Together in Spire before rejoining."}'
+```
+
 Stop a room session:
 
 ```powershell
@@ -341,9 +356,19 @@ Business rules in the current MVP:
 - The first player to join a room becomes the room owner.
 - Starting a new session for the same `roomId + playerId` supersedes the older
   active session.
+- The owner may remove an active non-owner member through the room action API.
+  This terminates only that member's session as `kicked`, keeps the room and
+  other members active, and returns the optional owner message only to the
+  removed member through their authenticated session-status response.
 - Room session responses include short-lived `sessionId`, `sessionToken`,
   `aclGroup`, `networkSecret`, and `expiresAt` fields expected by the Android
   client. The first owner session also receives an `ownerToken`.
+- New launchers send a locally administered virtual `macAddress` with each room
+  session request. While a room remains active, `online-service` allocates one
+  static `/24` IPv4 per MAC, reuses it on reconnect, and never issues that IPv4
+  to a different MAC in the same room. Each room has an independent allocation
+  pool and is released together with the room when its owner leaves. Clients
+  without a MAC continue to use the legacy EasyTier DHCP path during rollout.
 - Once the EasyTier runtime is connected, the launcher reports
   `assignedIpv4Cidr` back through `POST /api/lan/session/runtime`, and
   `GET /api/lan/session/status` starts returning `sessionState: "connected"`.

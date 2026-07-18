@@ -19,9 +19,16 @@ const MAX_LAN_ROOMS_PER_SOURCE_IP = 10;
 const MAX_ID_LENGTH = 128;
 const MAX_TEXT_LENGTH = 256;
 const MAX_LAN_ROOM_DESCRIPTION_LENGTH = 120;
+const MAX_LAN_KICK_MESSAGE_LENGTH = 160;
+const LAN_STATIC_IPV4_PREFIX_LENGTH = 24;
+const LAN_STATIC_IPV4_SECOND_OCTET = 126;
+const LAN_STATIC_IPV4_MIN_SUBNET_OCTET = 1;
+const LAN_STATIC_IPV4_MAX_SUBNET_OCTET = 254;
+const LAN_STATIC_IPV4_MIN_HOST_OCTET = 2;
+const LAN_STATIC_IPV4_MAX_HOST_OCTET = 254;
 const GAME_STATE_HEARTBEAT_TIMEOUT_MS = 75 * 1000;
-const TERMINAL_SESSION_STATES = new Set(['expired', 'stopped', 'superseded']);
-const ROOM_MUTATION_ACTIONS = new Set(['lock', 'unlock', 'close']);
+const TERMINAL_SESSION_STATES = new Set(['expired', 'stopped', 'superseded', 'kicked']);
+const ROOM_MUTATION_ACTIONS = new Set(['lock', 'unlock', 'close', 'kick']);
 const GAME_SESSION_STATES = new Set(['online', 'game']);
 
 class LanStore {
@@ -89,6 +96,16 @@ class LanStore {
         throw httpError(429, 'Too many active members from this network');
       }
     }
+    if (request.macAddress) {
+      const matchingActiveSession = this.sessionsForRoom(room.roomId).find((session) =>
+        session.playerId !== request.playerId &&
+        session.macAddress === request.macAddress &&
+        isSessionOnline(session, nowMs)
+      );
+      if (matchingActiveSession) {
+        throw httpError(409, 'A device with this LAN MAC address is already connected');
+      }
+    }
 
     if (request.playerId === room.ownerPlayerId && request.displayName &&
       request.displayName !== room.ownerDisplayName) {
@@ -111,6 +128,9 @@ class LanStore {
       easyTier.entryNodeUrl,
       easyTier.configServerUrl
     );
+    const assignedIpv4Cidr = request.macAddress
+      ? this.allocateStaticIpv4Cidr(room, request.macAddress)
+      : '';
 
     const session = {
       sessionId,
@@ -127,10 +147,14 @@ class LanStore {
       sessionState: 'issued',
       sessionTokenHash: hashToken(sessionToken),
       sourceIp: request.sourceIp,
-      assignedIpv4Cidr: '',
+      macAddress: request.macAddress,
+      usesStaticIpv4: Boolean(request.macAddress),
+      assignedIpv4Cidr,
       relayServerDescription,
       gameState: 'online',
       gameStateUpdatedAtMs: 0,
+      kickMessage: '',
+      kickedAtMs: 0,
       createdAtMs: nowMs,
       updatedAtMs: nowMs,
       expiresAtMs,
@@ -149,6 +173,8 @@ class LanStore {
       configServerUrl: easyTier.configServerUrl,
       aclGroup: room.aclGroup,
       networkSecret: room.networkSecret,
+      assignedIpv4Cidr,
+      macAddress: request.macAddress,
       sessionToken,
       ownerToken: request.playerId === room.ownerPlayerId ? ownerToken : '',
       expiresAt: Math.floor(expiresAtMs / 1000)
@@ -181,6 +207,33 @@ class LanStore {
     }
     if (isRoomClosed(room) && request.action !== 'close') {
       throw httpError(410, 'LAN room has been closed');
+    }
+
+    if (request.action === 'kick') {
+      if (request.targetPlayerId === room.ownerPlayerId) {
+        throw httpError(400, 'The room owner cannot be removed');
+      }
+      const targetSession = this.findLatestSessionForPlayer(roomId, request.targetPlayerId);
+      if (!targetSession || !isSessionOnline(targetSession, nowMs)) {
+        throw httpError(404, 'LAN room member not found');
+      }
+      for (const session of this.sessionsForRoom(roomId)) {
+        if (session.playerId === request.targetPlayerId && isSessionOnline(session, nowMs)) {
+          session.sessionState = 'kicked';
+          session.kickMessage = request.kickMessage;
+          session.kickedAtMs = nowMs;
+          session.updatedAtMs = nowMs;
+          session.endedAtMs = nowMs;
+        }
+      }
+      room.updatedAtMs = nowMs;
+      const roomInfo = await this.getRoomInfo(roomId, { nowMs });
+      return {
+        ...roomInfo,
+        kickedPlayerId: targetSession.playerId,
+        kickedDisplayName: targetSession.displayName || targetSession.playerId,
+        kickMessage: request.kickMessage
+      };
     }
 
     let allowNewJoins = room.allowNewJoins;
@@ -288,6 +341,10 @@ class LanStore {
 
     const relayServerDescription =
       request.relayServerDescription || session.relayServerDescription;
+    if (session.usesStaticIpv4 &&
+      session.assignedIpv4Cidr !== request.assignedIpv4Cidr) {
+      throw httpError(409, 'Runtime IPv4 does not match the assigned LAN address');
+    }
     // Runtime reports are lease heartbeats. Status reads cannot keep an abandoned
     // client alive, so only a working EasyTier runtime can renew this session.
     const expiresAtMs = nowMs + (resolveEasyTierSessionTtlSeconds(this.config) * 1000);
@@ -359,7 +416,7 @@ class LanStore {
     const peerCount = this.countActiveSessions(session.roomId, nowMs);
     const gameMemberCount = this.countGameMembers(session.roomId, nowMs);
 
-    return {
+    const response = {
       sessionId: session.sessionId,
       roomId: session.roomId,
       sessionState: deriveSessionState(session, nowMs),
@@ -368,6 +425,11 @@ class LanStore {
       assignedIpv4Cidr: session.assignedIpv4Cidr,
       relayServerDescription: session.relayServerDescription
     };
+    if (session.sessionState === 'kicked') {
+      response.kickMessage = session.kickMessage;
+      response.kickedAtMs = session.kickedAtMs;
+    }
+    return response;
   }
 
   async listRooms(rawQuery, options = {}) {
@@ -530,6 +592,7 @@ class LanStore {
       closedAtMs: 0,
       aclGroup,
       networkSecret,
+      ipv4SubnetOctet: deriveRoomIpv4SubnetOctet(request.roomId),
       ownerTokenHash: hashToken(request.ownerToken),
       ownerSourceIp: request.sourceIp,
       createdAtMs: nowMs,
@@ -586,6 +649,35 @@ class LanStore {
     return this.sessionsForRoom(roomId)
       .filter((session) => session.sourceIp === sourceIp && isSessionOnline(session, nowMs))
       .length;
+  }
+
+  allocateStaticIpv4Cidr(room, macAddress) {
+    const sessions = this.sessionsForRoom(room.roomId);
+    const priorAllocation = sessions
+      .filter((session) => session.macAddress === macAddress && session.assignedIpv4Cidr)
+      .sort((left, right) => right.createdAtMs - left.createdAtMs)[0];
+    if (priorAllocation) {
+      return priorAllocation.assignedIpv4Cidr;
+    }
+
+    const usedHostOctets = new Set(
+      sessions
+        .filter((session) => session.macAddress !== macAddress && session.assignedIpv4Cidr)
+        .map((session) => extractIpv4HostOctet(session.assignedIpv4Cidr))
+        .filter((hostOctet) => hostOctet !== null)
+    );
+    const hostRange = LAN_STATIC_IPV4_MAX_HOST_OCTET - LAN_STATIC_IPV4_MIN_HOST_OCTET + 1;
+    const firstHostOctet = LAN_STATIC_IPV4_MIN_HOST_OCTET +
+      (stableIntegerFromText(macAddress) % hostRange);
+    for (let offset = 0; offset < hostRange; offset += 1) {
+      const hostOctet = LAN_STATIC_IPV4_MIN_HOST_OCTET +
+        ((firstHostOctet - LAN_STATIC_IPV4_MIN_HOST_OCTET + offset) % hostRange);
+      if (!usedHostOctets.has(hostOctet)) {
+        const subnetOctet = Number(room.ipv4SubnetOctet) || deriveRoomIpv4SubnetOctet(room.roomId);
+        return `10.${LAN_STATIC_IPV4_SECOND_OCTET}.${subnetOctet}.${hostOctet}/${LAN_STATIC_IPV4_PREFIX_LENGTH}`;
+      }
+    }
+    throw httpError(429, 'No static IPv4 addresses are available in this LAN room');
   }
 
   countGameMembers(roomId, nowMs) {
@@ -705,6 +797,9 @@ function parseStartSessionRequest(body) {
       firstNonEmpty(body.deviceSummary, body.device_summary),
       MAX_TEXT_LENGTH
     ),
+    macAddress: normalizeOptionalMacAddress(
+      firstNonEmpty(body.macAddress, body.mac_address, body.virtualMacAddress, body.virtual_mac_address)
+    ),
     createOnly: normalizeBoolean(
       body.createOnly !== undefined ? body.createOnly : body.create_only,
       false
@@ -748,10 +843,23 @@ function parseUpdateRoomRequest(body) {
   if (!ownerToken && !sessionToken) {
     throw httpError(400, 'Missing room owner credential');
   }
+  const targetPlayerId = action === 'kick'
+    ? normalizeRequiredIdentifier(
+      firstNonEmpty(body.targetPlayerId, body.target_player_id, body.playerId, body.player_id),
+      'targetPlayerId'
+    )
+    : '';
   return {
     action,
     ownerToken,
-    sessionToken
+    sessionToken,
+    targetPlayerId,
+    kickMessage: action === 'kick'
+      ? normalizeOptionalText(
+        firstNonEmpty(body.message, body.kickMessage, body.kick_message),
+        MAX_LAN_KICK_MESSAGE_LENGTH
+      )
+      : ''
   };
 }
 
@@ -839,6 +947,14 @@ function normalizeOptionalAccessToken(value) {
   return /^[A-Za-z0-9_-]{32,128}$/.test(token) ? token : '';
 }
 
+function normalizeOptionalMacAddress(value) {
+  const compact = String(value || '').trim().replace(/[:-]/g, '').toUpperCase();
+  if (!/^[0-9A-F]{12}$/.test(compact)) {
+    return '';
+  }
+  return compact.match(/.{2}/g).join(':');
+}
+
 function normalizeSourceIp(value) {
   return normalizeOptionalText(value, MAX_TEXT_LENGTH).toLowerCase() || 'unknown';
 }
@@ -891,6 +1007,28 @@ function normalizeOptionalIpv4Cidr(value) {
     throw httpError(400, 'Invalid IPv4 CIDR');
   }
   return `${normalizedOctets.join('.')}/${prefix}`;
+}
+
+function extractIpv4HostOctet(value) {
+  const address = String(value || '').trim().split('/')[0];
+  const octets = address.split('.');
+  if (octets.length !== 4) {
+    return null;
+  }
+  const hostOctet = Number(octets[3]);
+  return Number.isInteger(hostOctet) && hostOctet >= 0 && hostOctet <= 255
+    ? hostOctet
+    : null;
+}
+
+function deriveRoomIpv4SubnetOctet(roomId) {
+  const range = LAN_STATIC_IPV4_MAX_SUBNET_OCTET - LAN_STATIC_IPV4_MIN_SUBNET_OCTET + 1;
+  return LAN_STATIC_IPV4_MIN_SUBNET_OCTET + (stableIntegerFromText(roomId) % range);
+}
+
+function stableIntegerFromText(value) {
+  const digest = crypto.createHash('sha256').update(String(value || ''), 'utf8').digest();
+  return digest.readUInt32BE(0);
 }
 
 function normalizeOptionalText(value, maxLength = MAX_TEXT_LENGTH) {

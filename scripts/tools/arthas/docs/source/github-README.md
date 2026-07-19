@@ -1,8 +1,13 @@
-# Arthas - GitHub README (from master)
+# Arthas
 
-(Content fetched from https://raw.githubusercontent.com/alibaba/arthas/master/README.md)
+Java Diagnostic Tool
+
+Open sourced by Alibaba.
+
+Homepage: https://arthas.aliyun.com/
 
 ## Key features
+
 - Check whether a class is loaded, or where the class is being loaded
 - Decompile a class (jad)
 - View classloader statistics
@@ -19,6 +24,7 @@
 - Linux/Mac/Windows
 
 ## Showcase commands
+
 - dashboard - system real-time data panel
 - thread -n 3 - top CPU consuming threads
 - jad - decompile class
@@ -35,5 +41,10 @@
 - profiler - flame graph / CPU profiling
 
 ## Documentation
+
 - https://arthas.aliyun.com/doc/en
 - Commands: https://arthas.aliyun.com/doc/en/commands.html
+
+---
+
+Source: https://raw.githubusercontent.com/alibaba/arthas/master/README.md

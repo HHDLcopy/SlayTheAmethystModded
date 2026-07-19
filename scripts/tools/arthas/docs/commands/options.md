@@ -1,287 +1,27 @@
-       options | arthas  
-
-[arthasv4.3.1](/)
-
-[首页](/)
-
-[在线教程在新窗口打开](/doc/arthas-tutorials.html?language=cn&id=arthas-basics)
-
-[文档](/doc/)
-
-[命令列表](/doc/commands.md)
-
-[下载](/doc/download.md)
-
-版本版本
-
--   [v3.x在新窗口打开](https://arthas.aliyun.com/3.x/)
-
--   [简体中文](/doc/options.html)
--   [English](/en/doc/options.html)
-
-[](https://github.com/alibaba/arthas)
-
-[首页](/)
-
-[在线教程在新窗口打开](/doc/arthas-tutorials.html?language=cn&id=arthas-basics)
-
-[文档](/doc/)
-
-[命令列表](/doc/commands.md)
-
-[下载](/doc/download.md)
-
-版本版本
-
--   [v3.x在新窗口打开](https://arthas.aliyun.com/3.x/)
-
--   [简体中文](/doc/options.html)
--   [English](/en/doc/options.html)
-
-[](https://github.com/alibaba/arthas)
-
--   文档
-    
-    -   [简介](/doc/)
-        
-    -   [快速入门](/doc/quick-start.html)
-        
-    -   [Arthas Install](/doc/install-detail.html)
-        
-    -   [下载](/doc/download.html)
-        
-    -   [表达式核心变量](/doc/advice-class.html)
-        
-    -   [命令列表](/doc/commands.md)
-        
-        -   [auth](/doc/auth.html)
-            
-        -   [base64](/doc/base64.html)
-            
-        -   [cat](/doc/cat.html)
-            
-        -   [classloader](/doc/classloader.html)
-            
-        -   [classloader-metaspace](/doc/classloader-metaspace.html)
-            
-        -   [cls](/doc/cls.html)
-            
-        -   [dashboard](/doc/dashboard.html)
-            
-        -   [dump](/doc/dump.html)
-            
-        -   [echo](/doc/echo.html)
-            
-        -   [getstatic](/doc/getstatic.html)
-            
-        -   [grep](/doc/grep.html)
-            
-        -   [heapdump](/doc/heapdump.html)
-            
-        -   [help](/doc/help.html)
-            
-        -   [history](/doc/history.html)
-            
-        -   [jad](/doc/jad.html)
-            
-        -   [jfr](/doc/jfr.html)
-            
-        -   [jvm](/doc/jvm.html)
-            
-        -   [keymap](/doc/keymap.html)
-            
-        -   [line](/doc/line.html)
-            
-        -   [logger](/doc/logger.html)
-            
-        -   [mbean](/doc/mbean.html)
-            
-        -   [mc](/doc/mc.html)
-            
-        -   [memory](/doc/memory.html)
-            
-        -   [monitor](/doc/monitor.html)
-            
-        -   [ognl](/doc/ognl.html)
-            
-        -   [options](/doc/options.html)
-            
-        -   [perfcounter](/doc/perfcounter.html)
-            
-        -   [profiler](/doc/profiler.html)
-            
-        -   [pwd](/doc/pwd.html)
-            
-        -   [quit](/doc/quit.html)
-            
-        -   [redefine](/doc/redefine.html)
-            
-        -   [reset](/doc/reset.html)
-            
-        -   [retransform](/doc/retransform.html)
-            
-        -   [sc](/doc/sc.html)
-            
-        -   [session](/doc/session.html)
-            
-        -   [sm](/doc/sm.html)
-            
-        -   [stack](/doc/stack.html)
-            
-        -   [stop](/doc/stop.html)
-            
-        -   [sysenv](/doc/sysenv.html)
-            
-        -   [sysprop](/doc/sysprop.html)
-            
-        -   [tee](/doc/tee.html)
-            
-        -   [thread](/doc/thread.html)
-            
-        -   [trace](/doc/trace.html)
-            
-        -   [tt](/doc/tt.html)
-            
-        -   [version](/doc/version.html)
-            
-        -   [vmoption](/doc/vmoption.html)
-            
-        -   [vmtool](/doc/vmtool.html)
-            
-        -   [watch](/doc/watch.html)
-            
-    -   [AI 相关](/doc/ai.md)
-        
-        -   [Arthas MCP Server](/doc/mcp-server.html)
-            
-    -   [其他特性](/doc/advanced-use.md)
-        
-        -   [Arthas 后台异步任务](/doc/async.html)
-            
-        -   [执行结果存日志](/doc/save-log.html)
-            
-        -   [Docker](/doc/docker.html)
-            
-        -   [Web Console](/doc/web-console.html)
-            
-        -   [Arthas Tunnel](/doc/tunnel.html)
-            
-        -   [IDEA Plugin](/doc/idea-plugin.html)
-            
-        -   [Arthas Properties](/doc/arthas-properties.html)
-            
-        -   [以 Java Agent 的方式启动](/doc/agent.html)
-            
-        -   [Arthas Spring Boot Starter](/doc/spring-boot-starter.html)
-            
-        -   [加载外部命令](/doc/external-command.html)
-            
-        -   [Http API](/doc/http-api.html)
-            
-        -   [批处理功能](/doc/batch-support.html)
-            
-    -   [FAQ](/doc/faq.html)
-        
-    -   [用户案例在新窗口打开](https://github.com/alibaba/arthas/issues?q=label%3Auser-case)
-        
-    -   [Star me at github在新窗口打开](https://github.com/alibaba/arthas)
-        
-    -   [编译调试/参与贡献在新窗口打开](https://github.com/alibaba/arthas/blob/master/CONTRIBUTING.md)
-        
-    -   [Release Notes在新窗口打开](https://github.com/alibaba/arthas/releases)
-        
-    -   [QQ 群/钉钉群](/doc/contact-us.md)
-        
-
-目录
-
-# [#](#options) options
-
-[`options`在线教程在新窗口打开](https://arthas.aliyun.com/doc/arthas-tutorials.html?language=cn&id=command-options)
-
-提示
-
-全局开关
-
-名称
-
-默认值
-
-描述
-
-unsafe
-
-false
-
-是否支持对系统级别的类进行增强，打开该开关可能导致把 JVM 搞挂，请慎重选择！
-
-dump
-
-false
-
-是否支持被增强了的类 dump 到外部文件中，如果打开开关，class 文件会被 dump 到`/${application working dir}/arthas-class-dump/`目录下，具体位置详见控制台输出
-
-batch-re-transform
-
-true
-
-是否支持批量对匹配到的类执行 retransform 操作
-
-json-format
-
-false
-
-是否支持 json 化的输出
-
-object-size-limit
-
-10485760
-
-ObjectView 输出大小上限（字节），必须大于 0，默认 `10 * 1024 * 1024`
-
-disable-sub-class
-
-false
-
-是否禁用子类匹配，默认在匹配目标类的时候会默认匹配到其子类，如果想精确匹配，可以关闭此开关
-
-support-default-method
-
-true
-
-是否支持匹配到 default method， 默认会查找 interface，匹配里面的 default method。参考 [#1105在新窗口打开](https://github.com/alibaba/arthas/issues/1105)
-
-save-result
-
-false
-
-是否打开执行结果存日志功能，打开之后所有命令的运行结果都将保存到`~/logs/arthas-cache/result.log`中
-
-job-timeout
-
-1d
-
-异步后台任务的默认超时时间，超过这个时间，任务自动停止；比如设置 1d, 2h, 3m, 25s，分别代表天、小时、分、秒
-
-print-parent-fields
-
-true
-
-是否打印在 parent class 里的 filed
-
-verbose
-
-false
-
-是否打印更多详细信息
-
-strict
-
-true
-
-是否启用 strict 模式
-
-## [#](#查看所有的-options) 查看所有的 options
+# options
+
+[`options`在线教程](https://arthas.aliyun.com/doc/arthas-tutorials.html?language=cn&id=command-options)
+
+> **提示**
+>
+> 全局开关
+
+| 名称 | 默认值 | 描述 |
+|------|--------|------|
+| unsafe | false | 是否支持对系统级别的类进行增强，打开该开关可能导致把 JVM 搞挂，请慎重选择！ |
+| dump | false | 是否支持被增强了的类 dump 到外部文件中，如果打开开关，class 文件会被 dump 到`/${application working dir}/arthas-class-dump/`目录下，具体位置详见控制台输出 |
+| batch-re-transform | true | 是否支持批量对匹配到的类执行 retransform 操作 |
+| json-format | false | 是否支持 json 化的输出 |
+| object-size-limit | 10485760 | ObjectView 输出大小上限（字节），必须大于 0，默认 `10 * 1024 * 1024` |
+| disable-sub-class | false | 是否禁用子类匹配，默认在匹配目标类的时候会默认匹配到其子类，如果想精确匹配，可以关闭此开关 |
+| support-default-method | true | 是否支持匹配到 default method， 默认会查找 interface，匹配里面的 default method。参考 [#1105](https://github.com/alibaba/arthas/issues/1105) |
+| save-result | false | 是否打开执行结果存日志功能，打开之后所有命令的运行结果都将保存到`~/logs/arthas-cache/result.log`中 |
+| job-timeout | 1d | 异步后台任务的默认超时时间，超过这个时间，任务自动停止；比如设置 1d, 2h, 3m, 25s，分别代表天、小时、分、秒 |
+| print-parent-fields | true | 是否打印在 parent class 里的 filed |
+| verbose | false | 是否打印更多详细信息 |
+| strict | true | 是否启用 strict 模式 |
+
+## 查看所有的 options
 
 ```
 $ options
@@ -328,7 +68,7 @@ $ options
                                                             false`
 ```
 
-## [#](#获取-option-的值) 获取 option 的值
+## 获取 option 的值
 
 ```
 $ options json-format
@@ -339,11 +79,11 @@ $ options json-format
                                   ect output          ted.
 ```
 
-提示
+> **提示**
+>
+> 默认情况下`json-format`为 false，如果希望`watch`/`tt`等命令结果以 json 格式输出，则可以设置`json-format`为 true。
 
-默认情况下`json-format`为 false，如果希望`watch`/`tt`等命令结果以 json 格式输出，则可以设置`json-format`为 true。
-
-## [#](#设置指定的-option) 设置指定的 option
+## 设置指定的 option
 
 例如，想打开执行结果存日志功能，输入如下命令即可：
 
@@ -354,7 +94,7 @@ $ options save-result true
  save-result  false         true
 ```
 
-## [#](#打开-unsafe-开关-支持-jdk-package-下的类) 打开 unsafe 开关，支持 jdk package 下的类
+## 打开 unsafe 开关，支持 jdk package 下的类
 
 默认情况下，`watch`/`trace`/`tt`/`trace`/`monitor`等命令不支持`java.*` package 下的类。可以设置`unsafe`为 true，则可以增强。
 
@@ -371,11 +111,11 @@ Press Q or Ctrl+C to abort.
 Affect(class count: 1 , method count: 1) cost in 61 ms, listenerId: 1
 ```
 
-## [#](#关闭-strict-模式-允许在-ognl-表达式里设置对象属性) 关闭 strict 模式，允许在 ognl 表达式里设置对象属性
+## 关闭 strict 模式，允许在 ognl 表达式里设置对象属性
 
-提示
-
-since 3.6.0
+> **提示**
+>
+> since 3.6.0
 
 对于新用户，在编写 ognl 表达式时，可能会出现误用。
 
@@ -394,12 +134,4 @@ watch failed, condition is: target.illegalArgumentCount=1, express is: target, B
 
 用户如果确定要在`ognl`表达式里更新对象，可以执行`options strict false`，关闭`strict`模式。
 
--   更多信息参考： https://github.com/alibaba/arthas/issues/2128
-
-[在 GitHub 上编辑此页在新窗口打开](https://github.com/alibaba/arthas/edit/master/site/docs/doc/options.md)
-
-Last Updated:
-
-贡献者: hengyunabc, Hollow Man, qianmoke
-
-[ognl](/doc/ognl.html) [perfcounter](/doc/perfcounter.html)
+- 更多信息参考： https://github.com/alibaba/arthas/issues/2128

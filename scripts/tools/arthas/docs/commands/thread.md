@@ -1,261 +1,47 @@
-       thread | arthas  
+# thread
 
-[arthasv4.3.1](/)
+[`thread`在线教程](https://arthas.aliyun.com/doc/arthas-tutorials.html?language=cn&id=command-thread)
 
-[首页](/)
+> **提示**
+>
+> 查看当前线程信息，查看线程的堆栈
 
-[在线教程在新窗口打开](/doc/arthas-tutorials.html?language=cn&id=arthas-basics)
+## 参数说明
 
-[文档](/doc/)
+| 参数名称 | 参数说明 |
+|---------|---------|
+| *id* | 线程 id |
+| `-n` | 指定最忙的前 N 个线程并打印堆栈 |
+| `-b` | 找出当前阻塞其他线程的线程 |
+| `-i <value>` | 指定 cpu 使用率统计的采样间隔，单位为毫秒，默认值为 200 |
+| `--all` | 显示所有匹配的线程 |
 
-[命令列表](/doc/commands.md)
-
-[下载](/doc/download.md)
-
-版本版本
-
--   [v3.x在新窗口打开](https://arthas.aliyun.com/3.x/)
-
--   [简体中文](/doc/thread.html)
--   [English](/en/doc/thread.html)
-
-[](https://github.com/alibaba/arthas)
-
-[首页](/)
-
-[在线教程在新窗口打开](/doc/arthas-tutorials.html?language=cn&id=arthas-basics)
-
-[文档](/doc/)
-
-[命令列表](/doc/commands.md)
-
-[下载](/doc/download.md)
-
-版本版本
-
--   [v3.x在新窗口打开](https://arthas.aliyun.com/3.x/)
-
--   [简体中文](/doc/thread.html)
--   [English](/en/doc/thread.html)
-
-[](https://github.com/alibaba/arthas)
-
--   文档
-    
-    -   [简介](/doc/)
-        
-    -   [快速入门](/doc/quick-start.html)
-        
-    -   [Arthas Install](/doc/install-detail.html)
-        
-    -   [下载](/doc/download.html)
-        
-    -   [表达式核心变量](/doc/advice-class.html)
-        
-    -   [命令列表](/doc/commands.md)
-        
-        -   [auth](/doc/auth.html)
-            
-        -   [base64](/doc/base64.html)
-            
-        -   [cat](/doc/cat.html)
-            
-        -   [classloader](/doc/classloader.html)
-            
-        -   [classloader-metaspace](/doc/classloader-metaspace.html)
-            
-        -   [cls](/doc/cls.html)
-            
-        -   [dashboard](/doc/dashboard.html)
-            
-        -   [dump](/doc/dump.html)
-            
-        -   [echo](/doc/echo.html)
-            
-        -   [getstatic](/doc/getstatic.html)
-            
-        -   [grep](/doc/grep.html)
-            
-        -   [heapdump](/doc/heapdump.html)
-            
-        -   [help](/doc/help.html)
-            
-        -   [history](/doc/history.html)
-            
-        -   [jad](/doc/jad.html)
-            
-        -   [jfr](/doc/jfr.html)
-            
-        -   [jvm](/doc/jvm.html)
-            
-        -   [keymap](/doc/keymap.html)
-            
-        -   [line](/doc/line.html)
-            
-        -   [logger](/doc/logger.html)
-            
-        -   [mbean](/doc/mbean.html)
-            
-        -   [mc](/doc/mc.html)
-            
-        -   [memory](/doc/memory.html)
-            
-        -   [monitor](/doc/monitor.html)
-            
-        -   [ognl](/doc/ognl.html)
-            
-        -   [options](/doc/options.html)
-            
-        -   [perfcounter](/doc/perfcounter.html)
-            
-        -   [profiler](/doc/profiler.html)
-            
-        -   [pwd](/doc/pwd.html)
-            
-        -   [quit](/doc/quit.html)
-            
-        -   [redefine](/doc/redefine.html)
-            
-        -   [reset](/doc/reset.html)
-            
-        -   [retransform](/doc/retransform.html)
-            
-        -   [sc](/doc/sc.html)
-            
-        -   [session](/doc/session.html)
-            
-        -   [sm](/doc/sm.html)
-            
-        -   [stack](/doc/stack.html)
-            
-        -   [stop](/doc/stop.html)
-            
-        -   [sysenv](/doc/sysenv.html)
-            
-        -   [sysprop](/doc/sysprop.html)
-            
-        -   [tee](/doc/tee.html)
-            
-        -   [thread](/doc/thread.html)
-            
-        -   [trace](/doc/trace.html)
-            
-        -   [tt](/doc/tt.html)
-            
-        -   [version](/doc/version.html)
-            
-        -   [vmoption](/doc/vmoption.html)
-            
-        -   [vmtool](/doc/vmtool.html)
-            
-        -   [watch](/doc/watch.html)
-            
-    -   [AI 相关](/doc/ai.md)
-        
-        -   [Arthas MCP Server](/doc/mcp-server.html)
-            
-    -   [其他特性](/doc/advanced-use.md)
-        
-        -   [Arthas 后台异步任务](/doc/async.html)
-            
-        -   [执行结果存日志](/doc/save-log.html)
-            
-        -   [Docker](/doc/docker.html)
-            
-        -   [Web Console](/doc/web-console.html)
-            
-        -   [Arthas Tunnel](/doc/tunnel.html)
-            
-        -   [IDEA Plugin](/doc/idea-plugin.html)
-            
-        -   [Arthas Properties](/doc/arthas-properties.html)
-            
-        -   [以 Java Agent 的方式启动](/doc/agent.html)
-            
-        -   [Arthas Spring Boot Starter](/doc/spring-boot-starter.html)
-            
-        -   [加载外部命令](/doc/external-command.html)
-            
-        -   [Http API](/doc/http-api.html)
-            
-        -   [批处理功能](/doc/batch-support.html)
-            
-    -   [FAQ](/doc/faq.html)
-        
-    -   [用户案例在新窗口打开](https://github.com/alibaba/arthas/issues?q=label%3Auser-case)
-        
-    -   [Star me at github在新窗口打开](https://github.com/alibaba/arthas)
-        
-    -   [编译调试/参与贡献在新窗口打开](https://github.com/alibaba/arthas/blob/master/CONTRIBUTING.md)
-        
-    -   [Release Notes在新窗口打开](https://github.com/alibaba/arthas/releases)
-        
-    -   [QQ 群/钉钉群](/doc/contact-us.md)
-        
-
-目录
-
-# [#](#thread) thread
-
-[`thread`在线教程在新窗口打开](https://arthas.aliyun.com/doc/arthas-tutorials.html?language=cn&id=command-thread)
-
-提示
-
-查看当前线程信息，查看线程的堆栈
-
-## [#](#参数说明) 参数说明
-
-参数名称
-
-参数说明
-
-*id*
-
-线程 id
-
-\[n:\]
-
-指定最忙的前 N 个线程并打印堆栈
-
-\[b\]
-
-找出当前阻塞其他线程的线程
-
-\[i `<value>`\]
-
-指定 cpu 使用率统计的采样间隔，单位为毫秒，默认值为 200
-
-\[--all\]
-
-显示所有匹配的线程
-
-## [#](#cpu-使用率是如何统计出来的) cpu 使用率是如何统计出来的？
+## cpu 使用率是如何统计出来的？
 
 这里的 cpu 使用率与 linux 命令`top -H -p <pid>` 的线程`%CPU`类似，一段采样间隔时间内，当前 JVM 里各个线程的增量 cpu 时间与采样间隔时间的比例。
 
-### [#](#工作原理说明) 工作原理说明：
+### 工作原理说明：
 
--   首先第一次采样，获取所有线程的 CPU 时间(调用的是`java.lang.management.ThreadMXBean#getThreadCpuTime()`及`sun.management.HotspotThreadMBean.getInternalThreadCpuTimes()`接口)
--   然后睡眠等待一个间隔时间（默认为 200ms，可以通过`-i`指定间隔时间）
--   再次第二次采样，获取所有线程的 CPU 时间，对比两次采样数据，计算出每个线程的增量 CPU 时间
--   线程 CPU 使用率 = 线程增量 CPU 时间 / 采样间隔时间 \* 100%
+- 首先第一次采样，获取所有线程的 CPU 时间(调用的是`java.lang.management.ThreadMXBean#getThreadCpuTime()`及`sun.management.HotspotThreadMBean.getInternalThreadCpuTimes()`接口)
+- 然后睡眠等待一个间隔时间（默认为 200ms，可以通过`-i`指定间隔时间）
+- 再次第二次采样，获取所有线程的 CPU 时间，对比两次采样数据，计算出每个线程的增量 CPU 时间
+- 线程 CPU 使用率 = 线程增量 CPU 时间 / 采样间隔时间 * 100%
 
-注意
+> **注意**
+>
+> 注意： 这个统计也会产生一定的开销（JDK 这个接口本身开销比较大），因此会看到 as 的线程占用一定的百分比，为了降低统计自身的开销带来的影响，可以把采样间隔拉长一些，比如 5000 毫秒。
 
-注意： 这个统计也会产生一定的开销（JDK 这个接口本身开销比较大），因此会看到 as 的线程占用一定的百分比，为了降低统计自身的开销带来的影响，可以把采样间隔拉长一些，比如 5000 毫秒。
+> **提示**
+>
+> 另外一种查看 Java 进程的线程 cpu 使用率方法：可以使用[`show-busy-java-threads`](https://github.com/oldratlee/useful-scripts/blob/dev-2.x/docs/java.md#-show-busy-java-threads)这个脚本。
 
-提示
+## 使用参考
 
-另外一种查看 Java 进程的线程 cpu 使用率方法：可以使用[`show-busy-java-threads`在新窗口打开](https://github.com/oldratlee/useful-scripts/blob/dev-2.x/docs/java.md#-show-busy-java-threads)这个脚本。
-
-## [#](#使用参考) 使用参考
-
-### [#](#支持一键展示当前最忙的前-n-个线程并打印堆栈) 支持一键展示当前最忙的前 N 个线程并打印堆栈：
+### 支持一键展示当前最忙的前 N 个线程并打印堆栈：
 
 ```
 $ thread -n 3
 "C1 CompilerThread0" [Internal] cpuUsage=1.63% deltaTime=3ms time=1170ms
-
 
 "arthas-command-execute" Id=23 cpuUsage=0.11% deltaTime=0ms time=401ms RUNNABLE
     at java.management@11.0.7/sun.management.ThreadImpl.dumpThreads0(Native Method)
@@ -274,18 +60,17 @@ $ thread -n 3
     at java.base@11.0.7/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:628)
     at java.base@11.0.7/java.lang.Thread.run(Thread.java:834)
 
-
 "VM Periodic Task Thread" [Internal] cpuUsage=0.07% deltaTime=0ms time=584ms
 ```
 
--   没有线程 ID，包含`[Internal]`表示为 JVM 内部线程，参考[dashboard](/doc/dashboard.html)命令的介绍。
--   `cpuUsage`为采样间隔时间内线程的 CPU 使用率，与[dashboard](/doc/dashboard.html)命令的数据一致。
--   `deltaTime`为采样间隔时间内线程的增量 CPU 时间，小于 1ms 时被取整显示为 0ms。
--   `time` 线程运行总 CPU 时间。
+- 没有线程 ID，包含`[Internal]`表示为 JVM 内部线程，参考[dashboard](https://arthas.aliyun.com/doc/dashboard.html)命令的介绍。
+- `cpuUsage`为采样间隔时间内线程的 CPU 使用率，与[dashboard](https://arthas.aliyun.com/doc/dashboard.html)命令的数据一致。
+- `deltaTime`为采样间隔时间内线程的增量 CPU 时间，小于 1ms 时被取整显示为 0ms。
+- `time` 线程运行总 CPU 时间。
 
 注意：线程栈为第二采样结束时获取，不能表明采样间隔时间内该线程都是在处理相同的任务。建议间隔时间不要太长，可能间隔时间越大越不准确。 可以根据具体情况尝试指定不同的间隔时间，观察输出结果。
 
-### [#](#当没有参数时-显示第一页线程的信息) 当没有参数时，显示第一页线程的信息
+### 当没有参数时，显示第一页线程的信息
 
 默认按照 CPU 增量时间降序排列，只显示第一页数据。
 
@@ -311,11 +96,11 @@ ID   NAME                           GROUP          PRIORITY  STATE     %CPU     
 17   arthas-NettyWebsocketTtyBootst system         5         RUNNABLE  0.0       0.000      0:0.001   false     true
 ```
 
-### [#](#thread-all-显示所有匹配的线程) thread --all, 显示所有匹配的线程
+### thread --all, 显示所有匹配的线程
 
 显示所有匹配线程信息，有时需要获取全部 JVM 的线程数据进行分析。
 
-### [#](#thread-id-显示指定线程的运行堆栈) thread id, 显示指定线程的运行堆栈
+### thread id, 显示指定线程的运行堆栈
 
 ```
 $ thread 1
@@ -329,7 +114,7 @@ $ thread 1
     at java.util.concurrent.CountDownLatch.await(CountDownLatch.java:231)
 ```
 
-### [#](#thread-b-找出当前阻塞其他线程的线程) thread -b, 找出当前阻塞其他线程的线程
+### thread -b, 找出当前阻塞其他线程的线程
 
 有时候我们发现应用卡住了， 通常是由于某个线程拿住了某个锁， 并且其他线程都在等待这把锁造成的。 为了排查这类问题， arthas 提供了`thread -b`， 一键找出那个罪魁祸首。
 
@@ -372,15 +157,15 @@ $ thread -b
     - java.util.concurrent.ThreadPoolExecutor$Worker@31a6493e
 ```
 
-注意
+> **注意**
+>
+> 注意， 目前只支持找出 synchronized 关键字阻塞住的线程， 如果是`java.util.concurrent.Lock`， 目前还不支持。
 
-注意， 目前只支持找出 synchronized 关键字阻塞住的线程， 如果是`java.util.concurrent.Lock`， 目前还不支持。
+### thread -i, 指定采样时间间隔
 
-### [#](#thread-i-指定采样时间间隔) thread -i, 指定采样时间间隔
-
--   `thread -i 1000` : 统计最近 1000ms 内的线程 CPU 时间。
+- `thread -i 1000` : 统计最近 1000ms 内的线程 CPU 时间。
     
--   `thread -n 3 -i 1000` : 列出 1000ms 内最忙的 3 个线程栈
+- `thread -n 3 -i 1000` : 列出 1000ms 内最忙的 3 个线程栈
     
 
 ```
@@ -404,7 +189,7 @@ $ thread -n 3 -i 1000
 ...
 ```
 
-### [#](#thread-state-查看指定状态的线程) thread --state ，查看指定状态的线程
+### thread --state ，查看指定状态的线程
 
 ```
 [arthas@28114]$ thread --state WAITING
@@ -414,11 +199,3 @@ ID   NAME                           GROUP           PRIORITY   STATE     %CPU   
 20   arthas-UserStat                system          9          WAITING   0.0       0.000      0:0.001   false      true
 14   arthas-timer                   system          9          WAITING   0.0       0.000      0:0.000   false      true
 ```
-
-[在 GitHub 上编辑此页在新窗口打开](https://github.com/alibaba/arthas/edit/master/site/docs/doc/thread.md)
-
-Last Updated:
-
-贡献者: hengyunabc, Hearen, Hollow Man, gongdewei, 李鼎
-
-[tee](/doc/tee.html) [trace](/doc/trace.html)

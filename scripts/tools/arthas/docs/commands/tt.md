@@ -1,207 +1,10 @@
-       tt | arthas  
+# tt
 
-[arthasv4.3.1](/)
+[`tt`在线教程](https://arthas.aliyun.com/doc/arthas-tutorials?language=cn&id=command-tt)
 
-[首页](/)
-
-[在线教程在新窗口打开](/doc/arthas-tutorials.html?language=cn&id=arthas-basics)
-
-[文档](/doc/)
-
-[命令列表](/doc/commands.md)
-
-[下载](/doc/download.md)
-
-版本版本
-
--   [v3.x在新窗口打开](https://arthas.aliyun.com/3.x/)
-
--   [简体中文](/doc/tt.html)
--   [English](/en/doc/tt.html)
-
-[](https://github.com/alibaba/arthas)
-
-[首页](/)
-
-[在线教程在新窗口打开](/doc/arthas-tutorials.html?language=cn&id=arthas-basics)
-
-[文档](/doc/)
-
-[命令列表](/doc/commands.md)
-
-[下载](/doc/download.md)
-
-版本版本
-
--   [v3.x在新窗口打开](https://arthas.aliyun.com/3.x/)
-
--   [简体中文](/doc/tt.html)
--   [English](/en/doc/tt.html)
-
-[](https://github.com/alibaba/arthas)
-
--   文档
-    
-    -   [简介](/doc/)
-        
-    -   [快速入门](/doc/quick-start.html)
-        
-    -   [Arthas Install](/doc/install-detail.html)
-        
-    -   [下载](/doc/download.html)
-        
-    -   [表达式核心变量](/doc/advice-class.html)
-        
-    -   [命令列表](/doc/commands.md)
-        
-        -   [auth](/doc/auth.html)
-            
-        -   [base64](/doc/base64.html)
-            
-        -   [cat](/doc/cat.html)
-            
-        -   [classloader](/doc/classloader.html)
-            
-        -   [classloader-metaspace](/doc/classloader-metaspace.html)
-            
-        -   [cls](/doc/cls.html)
-            
-        -   [dashboard](/doc/dashboard.html)
-            
-        -   [dump](/doc/dump.html)
-            
-        -   [echo](/doc/echo.html)
-            
-        -   [getstatic](/doc/getstatic.html)
-            
-        -   [grep](/doc/grep.html)
-            
-        -   [heapdump](/doc/heapdump.html)
-            
-        -   [help](/doc/help.html)
-            
-        -   [history](/doc/history.html)
-            
-        -   [jad](/doc/jad.html)
-            
-        -   [jfr](/doc/jfr.html)
-            
-        -   [jvm](/doc/jvm.html)
-            
-        -   [keymap](/doc/keymap.html)
-            
-        -   [line](/doc/line.html)
-            
-        -   [logger](/doc/logger.html)
-            
-        -   [mbean](/doc/mbean.html)
-            
-        -   [mc](/doc/mc.html)
-            
-        -   [memory](/doc/memory.html)
-            
-        -   [monitor](/doc/monitor.html)
-            
-        -   [ognl](/doc/ognl.html)
-            
-        -   [options](/doc/options.html)
-            
-        -   [perfcounter](/doc/perfcounter.html)
-            
-        -   [profiler](/doc/profiler.html)
-            
-        -   [pwd](/doc/pwd.html)
-            
-        -   [quit](/doc/quit.html)
-            
-        -   [redefine](/doc/redefine.html)
-            
-        -   [reset](/doc/reset.html)
-            
-        -   [retransform](/doc/retransform.html)
-            
-        -   [sc](/doc/sc.html)
-            
-        -   [session](/doc/session.html)
-            
-        -   [sm](/doc/sm.html)
-            
-        -   [stack](/doc/stack.html)
-            
-        -   [stop](/doc/stop.html)
-            
-        -   [sysenv](/doc/sysenv.html)
-            
-        -   [sysprop](/doc/sysprop.html)
-            
-        -   [tee](/doc/tee.html)
-            
-        -   [thread](/doc/thread.html)
-            
-        -   [trace](/doc/trace.html)
-            
-        -   [tt](/doc/tt.html)
-            
-        -   [version](/doc/version.html)
-            
-        -   [vmoption](/doc/vmoption.html)
-            
-        -   [vmtool](/doc/vmtool.html)
-            
-        -   [watch](/doc/watch.html)
-            
-    -   [AI 相关](/doc/ai.md)
-        
-        -   [Arthas MCP Server](/doc/mcp-server.html)
-            
-    -   [其他特性](/doc/advanced-use.md)
-        
-        -   [Arthas 后台异步任务](/doc/async.html)
-            
-        -   [执行结果存日志](/doc/save-log.html)
-            
-        -   [Docker](/doc/docker.html)
-            
-        -   [Web Console](/doc/web-console.html)
-            
-        -   [Arthas Tunnel](/doc/tunnel.html)
-            
-        -   [IDEA Plugin](/doc/idea-plugin.html)
-            
-        -   [Arthas Properties](/doc/arthas-properties.html)
-            
-        -   [以 Java Agent 的方式启动](/doc/agent.html)
-            
-        -   [Arthas Spring Boot Starter](/doc/spring-boot-starter.html)
-            
-        -   [加载外部命令](/doc/external-command.html)
-            
-        -   [Http API](/doc/http-api.html)
-            
-        -   [批处理功能](/doc/batch-support.html)
-            
-    -   [FAQ](/doc/faq.html)
-        
-    -   [用户案例在新窗口打开](https://github.com/alibaba/arthas/issues?q=label%3Auser-case)
-        
-    -   [Star me at github在新窗口打开](https://github.com/alibaba/arthas)
-        
-    -   [编译调试/参与贡献在新窗口打开](https://github.com/alibaba/arthas/blob/master/CONTRIBUTING.md)
-        
-    -   [Release Notes在新窗口打开](https://github.com/alibaba/arthas/releases)
-        
-    -   [QQ 群/钉钉群](/doc/contact-us.md)
-        
-
-目录
-
-# [#](#tt) tt
-
-[`tt`在线教程在新窗口打开](https://arthas.aliyun.com/doc/arthas-tutorials?language=cn&id=command-tt)
-
-提示
-
-方法执行数据的时空隧道，记录下指定方法每次调用的入参和返回信息，并能对这些不同的时间下调用进行观测
+> **提示**
+>
+> 方法执行数据的时空隧道，记录下指定方法每次调用的入参和返回信息，并能对这些不同的时间下调用进行观测
 
 `watch` 虽然很方便和灵活，但需要提前想清楚观察表达式的拼写，这对排查问题而言要求太高，因为很多时候我们并不清楚问题出自于何方，只能靠蛛丝马迹进行猜测。
 
@@ -209,18 +12,18 @@
 
 于是乎，TimeTunnel 命令就诞生了。
 
-## [#](#注意事项) 注意事项
+## 注意事项
 
--   tt 命令的实现是：把函数的入参/返回值等，保存到一个`Map<Integer, TimeFragment>`里，默认的大小是 100。
--   tt 相关功能在使用完之后，需要手动释放内存，否则长时间可能导致OOM。退出 arthas 不会自动清除 tt 的缓存 map。
+- tt 命令的实现是：把函数的入参/返回值等，保存到一个`Map<Integer, TimeFragment>`里，默认的大小是 100。
+- tt 相关功能在使用完之后，需要手动释放内存，否则长时间可能导致OOM。退出 arthas 不会自动清除 tt 的缓存 map。
 
-## [#](#使用参考) 使用参考
+## 使用参考
 
-### [#](#启动-demo) 启动 Demo
+### 启动 Demo
 
-启动[快速入门](/doc/quick-start.html)里的`math-game`。
+启动[快速入门](https://arthas.aliyun.com/doc/quick-start.html)里的`math-game`。
 
-### [#](#记录调用) 记录调用
+### 记录调用
 
 对于一个最基本的使用来说，就是记录下当前方法的每次调用环境现场。
 
@@ -237,7 +40,7 @@ Affect(class-cnt:1 , method-cnt:1) cost in 66 ms.
  1004    2018-12-04 11:15:42  17.76437  true    false    0x4b67cf4d     MathGame                       primeFactors
 ```
 
-### [#](#指定-class-最大匹配数量) 指定 Class 最大匹配数量
+### 指定 Class 最大匹配数量
 
 ```
 $ tt -t -m 1 demo.MathGame primeFactors
@@ -249,27 +52,27 @@ Affect(class count:1 , method count:1) cost in 130 ms, listenerId: 1.
  1001    2022-12-25 19:41:55  0.146161  false   true     0x3bf400       MathGame                       primeFactors
 ```
 
--   命令参数解析
+- 命令参数解析
     
-    -   `-t`
+    - `-t`
         
         tt 命令有很多个主参数，`-t` 就是其中之一。这个参数的表明希望记录下类 `demo.MathGame` 的 `primeFactors` 方法的每次执行情况。
         
-    -   `-n 3`
+    - `-n 3`
         
         当你执行一个调用量不高的方法时可能你还能有足够的时间用 `CTRL+C` 中断 tt 命令记录的过程，但如果遇到调用量非常大的方法，瞬间就能将你的 JVM 内存撑爆。
         
         此时你可以通过 `-n` 参数指定你需要记录的次数，当达到记录次数时 Arthas 会主动中断 tt 命令的记录过程，避免人工操作无法停止的情况。
         
-    -   `-m 1`
+    - `-m 1`
         
         通过 `-m` 参数指定 Class 匹配的最大数量，防止匹配到的 Class 数量太多导致 JVM 挂起，默认值是 50。
         
-    -   `-c <classloader hash>`
+    - `-c <classloader hash>`
         
         当同名类被多个 classloader 加载时，可以用 `-c` 指定只增强某个 classloader 加载的类。可以先用 `sc -d className` 查看具体的 classloader hash。
         
--   表格字段说明
+- 表格字段说明
     
 
 表格字段
@@ -308,16 +111,16 @@ METHOD
 
 执行的方法名
 
--   条件表达式
+- 条件表达式
     
     不知道大家是否有在使用过程中遇到以下困惑
     
-    -   Arthas 似乎很难区分出重载的方法
-    -   我只需要观察特定参数，但是 tt 却全部都给我记录了下来
+    - Arthas 似乎很难区分出重载的方法
+    - 我只需要观察特定参数，但是 tt 却全部都给我记录了下来
     
     条件表达式也是用 `OGNL` 来编写，核心的判断对象依然是 `Advice` 对象。除了 `tt` 命令之外，`watch`、`trace`、`stack` 命令也都支持条件表达式。
     
--   解决方法重载
+- 解决方法重载
     
     `tt -t *Test print params.length==1`
     
@@ -325,16 +128,16 @@ METHOD
     
     `tt -t *Test print 'params[1] instanceof Integer'`
     
--   解决指定参数
+- 解决指定参数
     
     `tt -t *Test print params[0].mobile=="13989838402"`
     
--   构成条件表达式的 `Advice` 对象
+- 构成条件表达式的 `Advice` 对象
     
-    前边看到了很多条件表达式中，都使用了 `params[0]`，有关这个变量的介绍，请参考[表达式核心变量](/doc/advice-class.html)
+    前边看到了很多条件表达式中，都使用了 `params[0]`，有关这个变量的介绍，请参考[表达式核心变量](https://arthas.aliyun.com/doc/advice-class.html)
     
 
-### [#](#检索调用记录) 检索调用记录
+### 检索调用记录
 
 当你用 `tt` 记录了一大片的时间片段之后，你希望能从中筛选出自己需要的时间片段，这个时候你就需要对现有记录进行检索。
 
@@ -372,7 +175,7 @@ Affect(row-cnt:6) cost in 607 ms.
 
 你需要一个 `-s` 参数。同样的，搜索表达式的核心对象依旧是 `Advice` 对象。
 
-### [#](#查看调用信息) 查看调用信息
+### 查看调用信息
 
 对于具体一个时间片的信息而言，你可以通过 `-i` 参数后边跟着对应的 `INDEX` 编号查看到他的详细信息。
 
@@ -395,7 +198,7 @@ $ tt -i 1003
 Affect(row-cnt:1) cost in 11 ms.
 ```
 
-### [#](#重做一次调用) 重做一次调用
+### 重做一次调用
 
 当你稍稍做了一些调整之后，你可能需要前端系统重新触发一次你的调用，此时得求爷爷告奶奶的需要前端配合联调的同学再次发起一次调用。而有些场景下，这个调用不是这么好触发的。
 
@@ -424,11 +227,11 @@ Affect(row-cnt:1) cost in 14 ms.
 
 你会发现结果虽然一样，但调用的路径发生了变化，由原来的程序发起变成了 Arthas 自己的内部线程发起的调用了。
 
-### [#](#观察表达式) 观察表达式
+### 观察表达式
 
 `-w, --watch-express` 观察时空隧道使用`ognl` 表达式
 
--   使用[表达式核心变量](/doc/advice-class.html)中所有变量作为已知条件编写表达式。
+- 使用[表达式核心变量](https://arthas.aliyun.com/doc/advice-class.html)中所有变量作为已知条件编写表达式。
 
 ```
 [arthas@10718]$ tt -t demo.MathGame run -n 5
@@ -442,7 +245,7 @@ Affect(class count: 1 , method count: 1) cost in 56 ms, listenerId: 1
 Affect(row-cnt:1) cost in 7 ms.
 ```
 
--   获取类的静态字段、调用类的静态方法
+- 获取类的静态字段、调用类的静态方法
 
 ```
 [arthas@10718]$ tt -t demo.MathGame run -n 5
@@ -455,11 +258,11 @@ Affect(class count: 1 , method count: 1) cost in 56 ms, listenerId: 1
 @Integer[46]
 ```
 
-注意这里使用 `com.taobao.arthas.core.advisor.Advice#getLoader`加载,使用精确`classloader` [ognl](/doc/ognl.html)更好。
+注意这里使用 `com.taobao.arthas.core.advisor.Advice#getLoader`加载,使用精确`classloader` [ognl](https://arthas.aliyun.com/doc/ognl.html)更好。
 
-高级用法 [获取 spring context 调用 bean 方法在新窗口打开](https://github.com/alibaba/arthas/issues/482)
+高级用法 [获取 spring context 调用 bean 方法](https://github.com/alibaba/arthas/issues/482)
 
--   需要强调的点
+- 需要强调的点
     1.  **ThreadLocal 信息丢失**
         
         很多框架偷偷的将一些环境变量信息塞到了发起调用线程的 ThreadLocal 中，由于调用线程发生了变化，这些 ThreadLocal 线程信息无法通过 Arthas 保存，所以这些信息将会丢失。
@@ -471,22 +274,14 @@ Affect(class count: 1 , method count: 1) cost in 56 ms, listenerId: 1
         需要强调的是，`tt` 命令是将当前环境的对象引用保存起来，但仅仅也只能保存一个引用而已。如果方法内部对入参进行了变更，或者返回的对象经过了后续的处理，那么在 `tt` 查看的时候将无法看到当时最准确的值。这也是为什么 `watch` 命令存在的意义。
         
 
-### [#](#通过索引删除指定的-tt-记录) 通过索引删除指定的 tt 记录
+### 通过索引删除指定的 tt 记录
 
 ```
 tt -d -i 1001
 ```
 
-### [#](#清除所有的-tt-记录) 清除所有的 tt 记录
+### 清除所有的 tt 记录
 
 ```
 tt --delete-all
 ```
-
-[在 GitHub 上编辑此页在新窗口打开](https://github.com/alibaba/arthas/edit/master/site/docs/doc/tt.md)
-
-Last Updated:
-
-贡献者: hengyunabc, superheizai, Hollow Man, Xiangmingzhe, vic, 汪吉
-
-[trace](/doc/trace.html) [version](/doc/version.html)

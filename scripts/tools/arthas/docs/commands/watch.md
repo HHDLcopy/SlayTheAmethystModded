@@ -1,292 +1,58 @@
-       watch | arthas  
+# watch
 
-[arthasv4.3.1](/)
+[`watch`在线教程](https://arthas.aliyun.com/doc/arthas-tutorials?language=cn&id=command-watch)
 
-[首页](/)
-
-[在线教程在新窗口打开](/doc/arthas-tutorials.html?language=cn&id=arthas-basics)
-
-[文档](/doc/)
-
-[命令列表](/doc/commands.md)
-
-[下载](/doc/download.md)
-
-版本版本
-
--   [v3.x在新窗口打开](https://arthas.aliyun.com/3.x/)
-
--   [简体中文](/doc/watch.html)
--   [English](/en/doc/watch.html)
-
-[](https://github.com/alibaba/arthas)
-
-[首页](/)
-
-[在线教程在新窗口打开](/doc/arthas-tutorials.html?language=cn&id=arthas-basics)
-
-[文档](/doc/)
-
-[命令列表](/doc/commands.md)
-
-[下载](/doc/download.md)
-
-版本版本
-
--   [v3.x在新窗口打开](https://arthas.aliyun.com/3.x/)
-
--   [简体中文](/doc/watch.html)
--   [English](/en/doc/watch.html)
-
-[](https://github.com/alibaba/arthas)
-
--   文档
-    
-    -   [简介](/doc/)
-        
-    -   [快速入门](/doc/quick-start.html)
-        
-    -   [Arthas Install](/doc/install-detail.html)
-        
-    -   [下载](/doc/download.html)
-        
-    -   [表达式核心变量](/doc/advice-class.html)
-        
-    -   [命令列表](/doc/commands.md)
-        
-        -   [auth](/doc/auth.html)
-            
-        -   [base64](/doc/base64.html)
-            
-        -   [cat](/doc/cat.html)
-            
-        -   [classloader](/doc/classloader.html)
-            
-        -   [classloader-metaspace](/doc/classloader-metaspace.html)
-            
-        -   [cls](/doc/cls.html)
-            
-        -   [dashboard](/doc/dashboard.html)
-            
-        -   [dump](/doc/dump.html)
-            
-        -   [echo](/doc/echo.html)
-            
-        -   [getstatic](/doc/getstatic.html)
-            
-        -   [grep](/doc/grep.html)
-            
-        -   [heapdump](/doc/heapdump.html)
-            
-        -   [help](/doc/help.html)
-            
-        -   [history](/doc/history.html)
-            
-        -   [jad](/doc/jad.html)
-            
-        -   [jfr](/doc/jfr.html)
-            
-        -   [jvm](/doc/jvm.html)
-            
-        -   [keymap](/doc/keymap.html)
-            
-        -   [line](/doc/line.html)
-            
-        -   [logger](/doc/logger.html)
-            
-        -   [mbean](/doc/mbean.html)
-            
-        -   [mc](/doc/mc.html)
-            
-        -   [memory](/doc/memory.html)
-            
-        -   [monitor](/doc/monitor.html)
-            
-        -   [ognl](/doc/ognl.html)
-            
-        -   [options](/doc/options.html)
-            
-        -   [perfcounter](/doc/perfcounter.html)
-            
-        -   [profiler](/doc/profiler.html)
-            
-        -   [pwd](/doc/pwd.html)
-            
-        -   [quit](/doc/quit.html)
-            
-        -   [redefine](/doc/redefine.html)
-            
-        -   [reset](/doc/reset.html)
-            
-        -   [retransform](/doc/retransform.html)
-            
-        -   [sc](/doc/sc.html)
-            
-        -   [session](/doc/session.html)
-            
-        -   [sm](/doc/sm.html)
-            
-        -   [stack](/doc/stack.html)
-            
-        -   [stop](/doc/stop.html)
-            
-        -   [sysenv](/doc/sysenv.html)
-            
-        -   [sysprop](/doc/sysprop.html)
-            
-        -   [tee](/doc/tee.html)
-            
-        -   [thread](/doc/thread.html)
-            
-        -   [trace](/doc/trace.html)
-            
-        -   [tt](/doc/tt.html)
-            
-        -   [version](/doc/version.html)
-            
-        -   [vmoption](/doc/vmoption.html)
-            
-        -   [vmtool](/doc/vmtool.html)
-            
-        -   [watch](/doc/watch.html)
-            
-    -   [AI 相关](/doc/ai.md)
-        
-        -   [Arthas MCP Server](/doc/mcp-server.html)
-            
-    -   [其他特性](/doc/advanced-use.md)
-        
-        -   [Arthas 后台异步任务](/doc/async.html)
-            
-        -   [执行结果存日志](/doc/save-log.html)
-            
-        -   [Docker](/doc/docker.html)
-            
-        -   [Web Console](/doc/web-console.html)
-            
-        -   [Arthas Tunnel](/doc/tunnel.html)
-            
-        -   [IDEA Plugin](/doc/idea-plugin.html)
-            
-        -   [Arthas Properties](/doc/arthas-properties.html)
-            
-        -   [以 Java Agent 的方式启动](/doc/agent.html)
-            
-        -   [Arthas Spring Boot Starter](/doc/spring-boot-starter.html)
-            
-        -   [加载外部命令](/doc/external-command.html)
-            
-        -   [Http API](/doc/http-api.html)
-            
-        -   [批处理功能](/doc/batch-support.html)
-            
-    -   [FAQ](/doc/faq.html)
-        
-    -   [用户案例在新窗口打开](https://github.com/alibaba/arthas/issues?q=label%3Auser-case)
-        
-    -   [Star me at github在新窗口打开](https://github.com/alibaba/arthas)
-        
-    -   [编译调试/参与贡献在新窗口打开](https://github.com/alibaba/arthas/blob/master/CONTRIBUTING.md)
-        
-    -   [Release Notes在新窗口打开](https://github.com/alibaba/arthas/releases)
-        
-    -   [QQ 群/钉钉群](/doc/contact-us.md)
-        
-
-目录
-
-# [#](#watch) watch
-
-[`watch`在线教程在新窗口打开](https://arthas.aliyun.com/doc/arthas-tutorials?language=cn&id=command-watch)
-
-提示
-
-函数执行数据观测
+> **提示**
+>
+> 函数执行数据观测
 
 让你能方便的观察到指定函数的调用情况。能观察到的范围为：`返回值`、`抛出异常`、`入参`，通过编写 OGNL 表达式进行对应变量的查看。
 
-## [#](#参数说明) 参数说明
+## 参数说明
 
 watch 的参数比较多，主要是因为它能在 4 个不同的场景观察对象
 
-参数名称
-
-参数说明
-
-*class-pattern*
-
-类名表达式匹配
-
-*method-pattern*
-
-函数名表达式匹配
-
-*express*
-
-观察表达式，默认值：`{params, target, returnObj}`
-
-*condition-express*
-
-条件表达式
-
-[b]
-
-在**函数调用之前**观察
-
-[e]
-
-在**函数异常之后**观察
-
-[s]
-
-在**函数返回之后**观察
-
-[f]
-
-在**函数结束之后**(正常返回和异常返回)观察
-
-[E]
-
-开启正则表达式匹配，默认为通配符匹配
-
-[x:]
-
-指定输出结果的属性遍历深度，默认为 1，最大值是 4
-
-[c:]
-
-指定 classloader hash，只增强该 classloader 加载的类
-
-`[m <arg>]`
-
-指定 Class 最大匹配数量，默认值为 50。长格式为`[maxMatch <arg>]`。
+| 参数名称 | 参数说明 |
+|---------|---------|
+| *class-pattern* | 类名表达式匹配 |
+| *method-pattern* | 函数名表达式匹配 |
+| *express* | 观察表达式，默认值：`{params, target, returnObj}` |
+| *condition-express* | 条件表达式 |
+| `-b` | 在**函数调用之前**观察 |
+| `-e` | 在**函数异常之后**观察 |
+| `-s` | 在**函数返回之后**观察 |
+| `-f` | 在**函数结束之后**(正常返回和异常返回)观察 |
+| `-E` | 开启正则表达式匹配，默认为通配符匹配 |
+| `-x` | 指定输出结果的属性遍历深度，默认为 1，最大值是 4 |
+| `-c` | 指定 classloader hash，只增强该 classloader 加载的类 |
+| `-m <arg>` | 指定 Class 最大匹配数量，默认值为 50。长格式为`[maxMatch <arg>]`。 |
 
 这里重点要说明的是观察表达式，观察表达式的构成主要由 ognl 表达式组成，所以你可以这样写`"{params,returnObj}"`，只要是一个合法的 ognl 表达式，都能被正常支持。
 
-观察的维度也比较多，主要体现在参数 `advice` 的数据结构上。`Advice` 参数最主要是封装了通知节点的所有信息。请参考[表达式核心变量](/doc/advice-class.html)中关于该节点的描述。
+观察的维度也比较多，主要体现在参数 `advice` 的数据结构上。`Advice` 参数最主要是封装了通知节点的所有信息。请参考[表达式核心变量](https://arthas.aliyun.com/doc/advice-class.html)中关于该节点的描述。
 
--   特殊用法请参考：[https://github.com/alibaba/arthas/issues/71在新窗口打开](https://github.com/alibaba/arthas/issues/71)
--   OGNL 表达式官网：[https://commons.apache.org/dormant/commons-ognl/language-guide.html在新窗口打开](https://commons.apache.org/dormant/commons-ognl/language-guide.html)
+- 特殊用法请参考：[https://github.com/alibaba/arthas/issues/71](https://github.com/alibaba/arthas/issues/71)
+- OGNL 表达式官网：[https://commons.apache.org/dormant/commons-ognl/language-guide.html](https://commons.apache.org/dormant/commons-ognl/language-guide.html)
 
 **特别说明**：
 
--   watch 命令定义了 4 个观察事件点，即 `-b` 函数调用前，`-e` 函数异常后，`-s` 函数返回后，`-f` 函数结束后
--   4 个观察事件点 `-b`、`-e`、`-s` 默认关闭，`-f` 默认打开，当指定观察点被打开后，在相应事件点会对观察表达式进行求值并输出
--   这里要注意`函数入参`和`函数出参`的区别，有可能在中间被修改导致前后不一致，除了 `-b` 事件点 `params` 代表函数入参外，其余事件都代表函数出参
--   当使用 `-b` 时，由于观察事件点是在函数调用前，此时返回值或异常均不存在
--   在 watch 命令的结果里，会打印出`location`信息。`location`有三种可能值：`AtEnter`，`AtExit`，`AtExceptionExit`。对应函数入口，函数正常 return，函数抛出异常。
+- watch 命令定义了 4 个观察事件点，即 `-b` 函数调用前，`-e` 函数异常后，`-s` 函数返回后，`-f` 函数结束后
+- 4 个观察事件点 `-b`、`-e`、`-s` 默认关闭，`-f` 默认打开，当指定观察点被打开后，在相应事件点会对观察表达式进行求值并输出
+- 这里要注意`函数入参`和`函数出参`的区别，有可能在中间被修改导致前后不一致，除了 `-b` 事件点 `params` 代表函数入参外，其余事件都代表函数出参
+- 当使用 `-b` 时，由于观察事件点是在函数调用前，此时返回值或异常均不存在
+- 在 watch 命令的结果里，会打印出`location`信息。`location`有三种可能值：`AtEnter`，`AtExit`，`AtExceptionExit`。对应函数入口，函数正常 return，函数抛出异常。
 
-## [#](#使用参考) 使用参考
+## 使用参考
 
-### [#](#启动-demo) 启动 Demo
+### 启动 Demo
 
-启动[快速入门](/doc/quick-start.html)里的`math-game`。
+启动[快速入门](https://arthas.aliyun.com/doc/quick-start.html)里的`math-game`。
 
-### [#](#观察函数调用返回时的参数、this-对象和返回值) 观察函数调用返回时的参数、this 对象和返回值
+### 观察函数调用返回时的参数、this 对象和返回值
 
-提示
-
-观察表达式，默认值是`{params, target, returnObj}`
+> **提示**
+>
+> 观察表达式，默认值是`{params, target, returnObj}`
 
 ```
 $ watch demo.MathGame primeFactors -x 2
@@ -320,10 +86,10 @@ ts=2021-08-31 15:22:58; [cost=1.020982ms] result=@ArrayList[
 ]
 ```
 
--   上面的结果里，说明函数被执行了两次，第一次结果是`location=AtExceptionExit`，说明函数抛出异常了，因此`returnObj`是 null
--   在第二次结果里是`location=AtExit`，说明函数正常返回，因此可以看到`returnObj`结果是一个 ArrayList
+- 上面的结果里，说明函数被执行了两次，第一次结果是`location=AtExceptionExit`，说明函数抛出异常了，因此`returnObj`是 null
+- 在第二次结果里是`location=AtExit`，说明函数正常返回，因此可以看到`returnObj`结果是一个 ArrayList
 
-### [#](#指定-class-最大匹配数量) 指定 Class 最大匹配数量
+### 指定 Class 最大匹配数量
 
 ```
 $ watch demo.MathGame primeFactors -m 1
@@ -343,7 +109,7 @@ ts=2022-12-25 19:58:51; [cost=0.046928ms] result=@ArrayList[
 ]
 ```
 
-### [#](#指定-classloader-增强) 指定 ClassLoader 增强
+### 指定 ClassLoader 增强
 
 当同名类被多个 classloader 加载时，可以先用 `sc -d` 查看 classloader hash，然后用 `-c` 指定增强的 classloader：
 
@@ -352,7 +118,7 @@ sc -d com.example.Foo
 watch -c 3d4eac69 com.example.Foo bar '{params,returnObj}'
 ```
 
-### [#](#观察函数调用入口的参数和返回值) 观察函数调用入口的参数和返回值
+### 观察函数调用入口的参数和返回值
 
 ```
 $ watch demo.MathGame primeFactors "{params,returnObj}" -x 2 -b
@@ -366,9 +132,9 @@ ts=2018-12-03 19:23:23; [cost=0.0353ms] result=@ArrayList[
 ]
 ```
 
--   对比前一个例子，返回值为空（事件点为函数执行前，因此获取不到返回值）
+- 对比前一个例子，返回值为空（事件点为函数执行前，因此获取不到返回值）
 
-### [#](#同时观察函数调用前和函数返回后) 同时观察函数调用前和函数返回后
+### 同时观察函数调用前和函数返回后
 
 ```
 $ watch demo.MathGame primeFactors "{params,target,returnObj}" -x 2 -b -s -n 2
@@ -405,14 +171,14 @@ ts=2018-12-03 19:29:54; [cost=4.277392ms] result=@ArrayList[
 ]
 ```
 
--   参数里`-n 2`，表示只执行两次
+- 参数里`-n 2`，表示只执行两次
     
--   这里输出结果中，第一次输出的是函数调用前的观察表达式的结果，第二次输出的是函数返回后的表达式的结果
+- 这里输出结果中，第一次输出的是函数调用前的观察表达式的结果，第二次输出的是函数返回后的表达式的结果
     
--   结果的输出顺序和事件发生的先后顺序一致，和命令中 `-s -b` 的顺序无关
+- 结果的输出顺序和事件发生的先后顺序一致，和命令中 `-s -b` 的顺序无关
     
 
-### [#](#调整-x的值-观察具体的函数参数值) 调整`-x`的值，观察具体的函数参数值
+### 调整`-x`的值，观察具体的函数参数值
 
 ```
 $ watch demo.MathGame primeFactors "{params,target}" -x 3
@@ -445,10 +211,10 @@ ts=2018-12-03 19:34:19; [cost=0.587833ms] result=@ArrayList[
 ]
 ```
 
--   `-x`表示遍历深度，可以调整来打印具体的参数和结果内容，默认值是 1。
--   `-x`最大值是 4，防止展开结果占用太多内存。用户可以在`ognl`表达式里指定更具体的 field。
+- `-x`表示遍历深度，可以调整来打印具体的参数和结果内容，默认值是 1。
+- `-x`最大值是 4，防止展开结果占用太多内存。用户可以在`ognl`表达式里指定更具体的 field。
 
-### [#](#条件表达式的例子) 条件表达式的例子
+### 条件表达式的例子
 
 ```
 $ watch demo.MathGame primeFactors "{params[0],target}" "params[0]<0"
@@ -460,9 +226,9 @@ ts=2018-12-03 19:36:04; [cost=0.530255ms] result=@ArrayList[
 ]
 ```
 
--   只有满足条件的调用，才会有响应。
+- 只有满足条件的调用，才会有响应。
 
-### [#](#观察异常信息的例子) 观察异常信息的例子
+### 观察异常信息的例子
 
 ```
 $ watch demo.MathGame primeFactors "{params[0],throwExp}" -e -x 2
@@ -478,10 +244,10 @@ ts=2018-12-03 19:38:00; [cost=1.414993ms] result=@ArrayList[
 ]
 ```
 
--   `-e`表示抛出异常时才触发
--   express 中，表示异常信息的变量是`throwExp`
+- `-e`表示抛出异常时才触发
+- express 中，表示异常信息的变量是`throwExp`
 
-### [#](#按照耗时进行过滤) 按照耗时进行过滤
+### 按照耗时进行过滤
 
 ```
 $ watch demo.MathGame primeFactors '{params, returnObj}' '#cost>200' -x 2
@@ -498,9 +264,9 @@ ts=2018-12-03 19:40:28; [cost=2112.168897ms] result=@ArrayList[
 ]
 ```
 
--   `#cost>200`(单位是`ms`)表示只有当耗时大于 200ms 时才会输出，过滤掉执行时间小于 200ms 的调用
+- `#cost>200`(单位是`ms`)表示只有当耗时大于 200ms 时才会输出，过滤掉执行时间小于 200ms 的调用
 
-### [#](#观察当前对象中的属性) 观察当前对象中的属性
+### 观察当前对象中的属性
 
 如果想查看函数运行前后，当前对象中的属性，可以使用`target`关键字，代表当前对象
 
@@ -524,7 +290,7 @@ ts=2018-12-03 20:04:34; [cost=131.303498ms] result=@Integer[8]
 ts=2018-12-03 20:04:35; [cost=0.961441ms] result=@Integer[8]
 ```
 
-### [#](#获取类的静态字段、调用类的静态函数的例子) 获取类的静态字段、调用类的静态函数的例子
+### 获取类的静态字段、调用类的静态函数的例子
 
 ```
 watch demo.MathGame * '{params,@demo.MathGame@random.nextInt(100)}' -v -n 1 -x 2
@@ -539,13 +305,13 @@ ts=2021-01-05 21:35:20; [cost=0.173966ms] result=@ArrayList[
 ]
 ```
 
--   注意这里使用 `Thread.currentThread().getContextClassLoader()` 加载,使用精确`classloader` [ognl](/doc/ognl.html)更好。
+- 注意这里使用 `Thread.currentThread().getContextClassLoader()` 加载,使用精确`classloader` [ognl](https://arthas.aliyun.com/doc/ognl.html)更好。
 
-### [#](#排除掉指定的类) 排除掉指定的类
+### 排除掉指定的类
 
-提示
-
-watch/trace/monitor/stack/tt 命令都支持 `--exclude-class-pattern` 参数
+> **提示**
+>
+> watch/trace/monitor/stack/tt 命令都支持 `--exclude-class-pattern` 参数
 
 使用 `--exclude-class-pattern` 参数可以排除掉指定的类，比如：
 
@@ -553,7 +319,7 @@ watch/trace/monitor/stack/tt 命令都支持 `--exclude-class-pattern` 参数
 watch javax.servlet.Filter * --exclude-class-pattern com.demo.TestFilter
 ```
 
-### [#](#不匹配子类) 不匹配子类
+### 不匹配子类
 
 默认情况下 watch/trace/monitor/stack/tt 命令都会匹配子类。如果想不匹配，可以通过全局参数关掉。
 
@@ -561,11 +327,11 @@ watch javax.servlet.Filter * --exclude-class-pattern com.demo.TestFilter
 options disable-sub-class true
 ```
 
-### [#](#使用-v-参数打印更多信息) 使用 -v 参数打印更多信息
+### 使用 -v 参数打印更多信息
 
-提示
-
-watch/trace/monitor/stack/tt 命令都支持 `-v` 参数
+> **提示**
+>
+> watch/trace/monitor/stack/tt 命令都支持 `-v` 参数
 
 当命令执行之后，没有输出结果。有两种可能：
 
@@ -600,11 +366,3 @@ ts=2020-12-02 22:38:57; [cost=0.052877ms] result=@Object[][
     ],
 ]
 ```
-
-[在 GitHub 上编辑此页在新窗口打开](https://github.com/alibaba/arthas/edit/master/site/docs/doc/watch.md)
-
-Last Updated:
-
-贡献者: hengyunabc, Hollow Man, vic, 汪吉
-
-[vmtool](/doc/vmtool.html)

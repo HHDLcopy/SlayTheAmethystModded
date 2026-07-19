@@ -6,17 +6,20 @@ protocol command.  All device I/O goes through connector daemon.
 
 from __future__ import annotations
 
+import importlib.util
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
 from scripts.tools.arthas.shell import ArthasShell
 
 _ARTHAS_DIR = "/data/data/io.stamethyst/files/arthas"
-_RUNTIME_LIB_DIR = (
-    "/data/data/io.stamethyst/files/runtimes/Internal/lib/aarch64/server"
-)
+_RUNTIME_ROOT = "/data/data/io.stamethyst/files/runtimes/Internal"
+_RUNTIME_LIB_DIR = f"{_RUNTIME_ROOT}/lib/aarch64/server"
+_RUNTIME_JFR_DIR = f"{_RUNTIME_ROOT}/lib/jfr"
 
 _RESOURCE_DIR = Path(__file__).resolve().parent / "resource"
+_MODULE_DIR = Path(__file__).resolve().parent
 
 _JARS = [
     ("arthas-core.jar", False),
@@ -29,6 +32,19 @@ _NATIVE_LIBS = [
 ]
 
 _ASYNC_PROFILER_SO = "libasyncProfiler-linux-arm64.so"
+
+_JFC_NAMES = ("default.jfc", "profile.jfc")
+
+
+def _load_hyphen_module(module_filename: str, module_name: str) -> ModuleType:
+    """Load a scripts/tools/arthas/*.py file whose name contains hyphens."""
+    path = _MODULE_DIR / module_filename
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load {path}")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
 class ArthasManager:
@@ -46,8 +62,9 @@ class ArthasManager:
         self._agent = agent_client
 
     def start(self, port: int = 8099) -> None:
-        # 0. Ensure companion file exists
+        # 0. Ensure downloadable companion assets exist locally
         self._ensure_companion()
+        self._ensure_jfr_jfc()
 
         # 1. Clean up stale .so from old location (migrated to arthas/ dir)
         self._conn.shell(command="rm -f /data/data/io.stamethyst/files/libprocfs_cpu.so")
@@ -70,6 +87,9 @@ class ArthasManager:
 
         # 2b. Push companion debug symbols (AllocTracer symbols for libjvm.so)
         self.push_companion()
+
+        # 2c. Push JFR config templates beside jfr.jar (java.home/lib/jfr)
+        self.push_jfr_jfc()
 
         # 3. Load core.jar into system classpath (no Agent-Class),
         #    then load bridge agent via isolated classloader → agentmain
@@ -123,8 +143,11 @@ class ArthasManager:
         )
         if companion_local.is_file():
             return
-        from scripts.tools.arthas.download_jvm_companion import download_companion
-        download_companion()
+        mod = _load_hyphen_module(
+            "download-jvm-companion.py",
+            "scripts.tools.arthas.download_jvm_companion",
+        )
+        mod.download_companion()
 
     def push_companion(self) -> None:
         """Push libjvm.debuginfo beside libjvm.so for debuglink loading."""
@@ -136,3 +159,31 @@ class ArthasManager:
             return
         remote = f"{_RUNTIME_LIB_DIR}/libjvm.debuginfo"
         self._conn.push(local=str(companion_local), remote=remote)
+
+    # ── JFR config templates (missing from runtime-pack) ─────────────
+
+    @staticmethod
+    def _ensure_jfr_jfc() -> None:
+        """Download default.jfc / profile.jfc if not present locally."""
+        local_dir = _RESOURCE_DIR / "jdk-companion" / "jfr"
+        if all((local_dir / name).is_file() for name in _JFC_NAMES):
+            return
+        mod = _load_hyphen_module(
+            "download-jfr-jfc.py",
+            "scripts.tools.arthas.download_jfr_jfc",
+        )
+        mod.download_jfr_jfc()
+
+    def push_jfr_jfc(self) -> None:
+        """Push JFR .jfc templates to java.home/lib/jfr on the device."""
+        local_dir = _RESOURCE_DIR / "jdk-companion" / "jfr"
+        missing = [n for n in _JFC_NAMES if not (local_dir / n).is_file()]
+        if missing:
+            print(f"[warn] JFR .jfc missing locally ({missing}); jfr command may fail")
+            return
+        # ServerSocket path is java.home/lib/jfr; create dir then push files.
+        self._conn.shell(command=f"mkdir -p {_RUNTIME_JFR_DIR}")
+        for name in _JFC_NAMES:
+            local = str(local_dir / name)
+            remote = f"{_RUNTIME_JFR_DIR}/{name}"
+            self._conn.push(local=local, remote=remote)

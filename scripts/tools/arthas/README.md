@@ -40,15 +40,19 @@ Python 客户端通过 `connector` daemon 的 `connect_stream` 透传通道收�
 
 3. **设备上已有 Arthas 文件**（由 `manager.py` 自动推送，或手动）：
 
-    ```
-     /data/data/io.stamethyst/files/arthas/
-       arthas-core.jar          # Arthas 命令引擎（13.5 MB）
-       arthas-bridge.jar        # 自定义 SocketTerm + 启动器
-       arthas-spy.jar           # Arthas spy 组件
-       arthas-agent.jar         # Arthas agent
-       libprocfs_cpu.so         # 线程 CPU 使用率 /proc fallback（JNI）
-       libasyncProfiler-linux-arm64.so  # async-profiler 3.0 aarch64 .so
-    ```
+     ```
+      /data/data/io.stamethyst/files/arthas/
+        arthas-core.jar          # Arthas 命令引擎（13.5 MB）
+        arthas-bridge.jar        # 自定义 SocketTerm + 启动器
+        arthas-spy.jar           # Arthas spy 组件
+        arthas-agent.jar         # Arthas agent
+        libprocfs_cpu.so         # 线程 CPU 使用率 /proc fallback（JNI）
+        libasyncProfiler-linux-arm64.so  # async-profiler 3.0 aarch64 .so
+
+      /data/data/io.stamethyst/files/runtimes/Internal/lib/jfr/   # manager start 推送
+        default.jfc
+        profile.jfc
+     ```
 
 ### 设备选择
 
@@ -346,8 +350,27 @@ Pojav JDK 8 的 `libjvm.so` 在编译时 strip 了符号表，导致 `AllocTrace
 
 | 命令 | 原因 |
 |------|------|
-| `jfr` | JDK 8 无 `jdk.jfr.Recording` |
 | `mc` | JRE 缺少 `tools.jar`，替代：本地 `javac` → `adb push` → `retransform` |
+
+### JFR（`jfr` 命令）
+
+运行时为 **OpenJDK 8u482**，已包含 `jfr.jar` 与 HotSpot JFR native（`libjvm.so`），**不是**“JDK 8 无 Recording”。
+
+真正的缺口是 runtime-pack **未打包** `$JAVA_HOME/lib/jfr/{default,profile}.jfc`。  
+`manager.py` 的 `start()` 会：
+
+1. 按需下载 Temurin 8 的 `.jfc` 到 `resource/jdk-companion/jfr/`（gitignore，脚本：`download-jfr-jfc.py`）
+2. 推送到设备 `/data/data/io.stamethyst/files/runtimes/Internal/lib/jfr/`
+
+之后可用：
+
+```bash
+jfr start -n test --duration 30s -f /data/data/io.stamethyst/files/test.jfr
+jfr status
+jfr stop -r 1
+```
+
+dump 路径须在应用私有目录。采样型火焰图仍可用 `profiler start -o jfr`（不依赖 `jdk.jfr.Recording`）。
 
 ### 线程 CPU 使用率（`/proc/self/task` fallback）
 
@@ -412,7 +435,7 @@ game-probe 保留游戏特有的 `OBSERVE` / `EXEC` 功能，Arthas 补充通用
 
 | 文件 | 职责 |
 |------|------|
-| `manager.py` | 生命周期：推送 JARs/.so/companion → LOAD_AGENT → forward；`stop` 发送 reset/stop 后 unforward |
+| `manager.py` | 生命周期：推送 JARs/.so/companion/jfc → LOAD_AGENT → forward；`stop` 发送 reset/stop 后 unforward |
 | `shell.py` | `ArthasShell`：prompt drain、命令发送、输出解析 |
 | `cli.py` | `run_shell()` / `run_query()`：Shell/单命令入口 |
 | `__main__.py` | CLI：`--device` 解析、`start`/`shell`/`query`/`stop`、会话清理 |
@@ -424,6 +447,7 @@ game-probe 保留游戏特有的 `OBSERVE` / `EXEC` 功能，Arthas 补充通用
 | `build-procfs-so.py` | 构建 `libprocfs_cpu.so`（线程 CPU 使用率 `/proc` fallback） |
 | `build-async-profiler-so.py` | 交叉编译 async-profiler 3.0 为 aarch64 `.so`（自动应用 Pojav/Android 兼容 patch） |
 | `download-jvm-companion.py` | 从 GitHub Release 下载 `libjvm.debuginfo` 伴生符号文件 |
+| `download-jfr-jfc.py` | 从 Adoptium Temurin 8 JRE 流式提取 `default.jfc` / `profile.jfc`（runtime-pack 缺失） |
 
 ### 设备端模块 (`arthas-bridge/`)
 

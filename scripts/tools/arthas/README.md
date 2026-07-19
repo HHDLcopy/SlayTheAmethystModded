@@ -1,158 +1,159 @@
 # Arthas Module
 
 [Arthas](https://arthas.aliyun.com)（阿尔萨斯）是阿里巴巴开源的 JVM 诊断工具。
-本模块将其集成到 SlayTheAmethyst 的 Android 运行时中——通过自定义
-`arthas-bridge` 绕过 Netty 依赖，在设备 JVM 的 `localhost:8099` 暴露纯 socket 接口，
-Python 客户端通过 `connector` daemon 的 `connect_stream` 透传通道收发命令。
+本模块将其集成到 SlayTheAmethyst 的 Android 运行时：自定义 `arthas-bridge` 绕过 Netty，
+在设备 JVM 的 `localhost:8099` 暴露纯 socket 接口；Python 客户端经 `connector` daemon
+的 `connect_stream` 透传收发命令。
+
+## 职责
+
+- 生命周期：推送 JAR / 原生库 / 伴生文件 → `LOAD_AGENT` → 端口转发
+- 交互：`shell` / `query`（`ArthasShell` 解析 prompt）
+- Android 适配：无 Netty bridge、MTS ClassLoader、线程 CPU `/proc` fallback、async-profiler、JFR `.jfc`
+
+## 依赖与架构
+
+```
+Python CLI
+    │
+    ▼
+ConnectorClient ──TCP──→ connector daemon
+    │                     │
+    │ connect_stream(8099) │ adb forward tcp:8099 → device:8099
+    ▼                     ▼
+ArthasShell            Device JVM
+                           ├── game-probe :9099  ← LOAD_AGENT
+                           └── arthas-bridge :8099 ← ServerSocket
+                                ├── ArthasBootstrapCompat（无 Netty）
+                                ├── SocketTerm
+                                └── BridgeSession（每连接一线程）
+```
+
+两阶段加载（与 `manager.py` 一致）：
+
+```
+① LOAD_AGENT arthas-core.jar
+   → 追加 system classpath（无 Agent-Class）
+② load_agent(arthas-bridge.jar, "{core};port=8099")
+   → 隔离 ClassLoader 反射 agentmain，启动 ServerSocket
+```
+
+`ArthasCommandBridge.start()` 概要：
+
+1. `ArthasBootstrapCompat.createWithoutNetty()` 构造 Bootstrap
+2. 注册 `BuiltinCommandPack`（禁用列表为空）+ 自定义 `MetaspaceCommand`
+3. 注册 `ClassMetaClassWriterTransformer`（MTS ClassLoader 下 ASM 类型解析）
+4. `ServerSocket(:8099)`，每次 `accept` 创建 `BridgeSession`；加载扁平 `.so` 并注入 profiler
 
 ## 快速开始
 
 ### 前置条件
 
-1. **游戏以 `debugMode=true` 启动** — game-probe（`:9099`）必须作为 `-javaagent` 加载到 JVM：
+1. **游戏以 debug 相关模式启动**（game-probe `:9099` 作为 `-javaagent`）：
 
    ```bash
    # Gradle（推荐）
    ./gradlew :app:stsStart -PlaunchMode=mts -PdebugMode=true
 
-   # 通过 harness
+   # harness
    python scripts/tools/main.py sts-harness -Command start -LaunchMode mts -DebugMode
 
-   # 直接 am start
+   # am start
    adb shell am start -n io.stamethyst/.LauncherActivity \
      --es io.stamethyst.debug_launch_mode mts \
      --ez io.stamethyst.debug_mode true
    ```
 
-   game-probe 的启动条件为 `launchMode=mts` 且至少满足其一：`-DebugMode`、`-Autoplay`、`-ForceJvmCrash`、`-ForceRuntimeCrash` 或 `performanceDeepDiagnostics`（Launcher 设置）。
+   game-probe 启动条件：`launchMode=mts`，且满足其一：`debugMode`、`autoplay`、
+   `forceJvmCrash`、`forceRuntimeCrash`、`performanceDeepDiagnostics`。
 
-2. **设置 connector 端口** — `ConnectorClient` 会自动拉起 daemon，只需通过环境变量指定端口：
+2. **connector 端口**：
 
    ```bash
    export STS_CONNECTOR_PORT=39999
-   ```
-
-   也可手动管理 daemon 生命周期：
-
-   ```bash
+   # 可选：手动启 daemon
    python -m scripts.tools.connector start --port 39999
    ```
 
-3. **设备上已有 Arthas 文件**（由 `manager.py` 自动推送，或手动）：
+3. **设备文件**由 `manager.start()` 自动推送（也可手动准备）：
 
-     ```
-      /data/data/io.stamethyst/files/arthas/
-        arthas-core.jar          # Arthas 命令引擎（13.5 MB）
-        arthas-bridge.jar        # 自定义 SocketTerm + 启动器
-        arthas-spy.jar           # Arthas spy 组件
-        arthas-agent.jar         # Arthas agent
-        libprocfs_cpu.so         # 线程 CPU 使用率 /proc fallback（JNI）
-        libasyncProfiler-linux-arm64.so  # async-profiler 3.0 aarch64 .so
+   ```
+   /data/data/io.stamethyst/files/arthas/
+     arthas-core.jar
+     arthas-spy.jar
+     arthas-bridge.jar
+     libprocfs_cpu.so
+     libasyncProfiler-linux-arm64.so
 
-      /data/data/io.stamethyst/files/runtimes/Internal/lib/jfr/   # manager start 推送
-        default.jfc
-        profile.jfc
-     ```
+   /data/data/io.stamethyst/files/runtimes/Internal/lib/jfr/
+     default.jfc
+     profile.jfc
+
+   /data/data/io.stamethyst/files/runtimes/Internal/lib/aarch64/server/
+     libjvm.debuginfo          # alloc 符号（按需）
+   ```
 
 ### 设备选择
 
-多设备在线时**必须**显式指定 serial，禁止依赖 `auto` 静默选第一台：
+多设备时**必须**显式指定 serial：
 
 ```bash
 export STS_CONNECTOR_PORT=39999
-export STS_TEST_DEVICE=localhost:15555   # 可选默认设备
+export STS_TEST_DEVICE=localhost:15555   # 可选默认
 
-# 推荐：CLI 显式设备
 python3 -m scripts.tools.arthas --device localhost:15555 start
-python3 -m scripts.tools.arthas --device localhost:25555 query "version"
+python3 -m scripts.tools.arthas --device localhost:15555 query "version"
 python3 -m scripts.tools.arthas --device localhost:15555 stop
 ```
 
-解析顺序：
+解析顺序：`--device` → `STS_TEST_DEVICE`（非空且非 `auto`）→ 仅 1 台在线时自动选择 → 否则报错并列 serial。
 
-1. `--device <serial>`
-2. `STS_TEST_DEVICE`（非空且非 `auto`）
-3. 仅 1 台在线设备时自动选择
-4. 0 台或多台且未指定 → 报错并列出 serial
-
-### 启动 Arthas
+### CLI
 
 ```bash
-# CLI 一步：推送 JARs + .so + 加载 bridge + forward 端口
-python3 -m scripts.tools.arthas --device localhost:15555 start
-
-# 交互式 shell
-python3 -m scripts.tools.arthas --device localhost:15555 shell
-
-# 单条命令
-python3 -m scripts.tools.arthas --device localhost:15555 query "thread -n 5"
-
-# 停止：向 bridge 发送 reset/stop（若可连），再 unforward 8099
-python3 -m scripts.tools.arthas --device localhost:15555 stop
+python3 -m scripts.tools.arthas --device <serial> start   # 推送 + LOAD_AGENT + forward
+python3 -m scripts.tools.arthas --device <serial> shell   # 交互 shell
+python3 -m scripts.tools.arthas --device <serial> query "thread -n 5"
+python3 -m scripts.tools.arthas --device <serial> stop    # reset/stop + unforward
 ```
 
-`start` 完成后会关闭 game-probe `AgentClient` 会话；`shell` / `query` 在成功、失败或中断时都会关闭 stream 并 `unforward`。  
-`TypeNotPresentException` 自动重连会保持同一 resolved serial，不会重新 `auto` 选设备。
+可选：`--agent-port`（默认 9099）、`--arthas-port`（默认 8099）。
+
+`start` 结束后关闭 game-probe 会话；`shell` / `query` 在成功、失败或中断时关闭 stream 并 `unforward`。
+`TypeNotPresentException` 自动重连保持同一 serial。
 
 ### 程序化使用
+
+推荐走 `ArthasManager`：
 
 ```python
 from scripts.tools.connector.client import ConnectorClient
 from scripts.tools.lib.agent_client import AgentClient
+from scripts.tools.arthas.manager import ArthasManager
 from scripts.tools.arthas.shell import ArthasShell
 
 conn = ConnectorClient()
 conn.connect()
-conn.select("localhost:15555")  # 多设备时不要用 auto
+conn.select("localhost:15555")
 
-# 加载 bridge
+conn.forward(port=9099)
 agent = AgentClient(connector=conn, port=9099)
 agent.connect()
-agent.send("LOAD_AGENT /data/data/io.stamethyst/files/arthas/arthas-core.jar")
-agent.send("LOAD_AGENT /data/data/io.stamethyst/files/arthas/arthas-bridge.jar port=8099")
-agent.close()
 
-# 与 Arthas 交互
+mgr = ArthasManager(connector=conn, agent_client=agent)
+mgr.start(port=8099)
+agent.close()
+conn.unforward(port=9099)
+
 stream = conn.connect_stream(port=8099)
 shell = ArthasShell(stream=stream)
 print(shell.command("thread -n 3"))
 stream.close()
-conn.unforward(port=8099)
+mgr.stop(port=8099)
 conn.close()
 ```
 
-详见 `__main__.py` 中的 `resolve_device()`、`_cmd_shell()` 和 `_cmd_query()` 实现。
-
-## 架构
-
-```
-Python CLI / 测试脚本
-    │
-    ▼
-ConnectorClient ──TCP──→ connector daemon (:39999)
-    │                     │
-    │ connect_stream(8099) │ adb forward tcp:8099 → device:8099
-    ▼                     ▼
-ArthasShell (透传)     Device JVM
-                           ├── game-probe :9099 ← LOAD_AGENT
-                           └── arthas-bridge :8099 ← ServerSocket
-                                ├── ArthasBootstrapCompat (无 Netty)
-                                ├── SocketTerm (Term→Socket 实现)
-                                └── BridgeSession (per-connection shell)
-```
-
-两阶段加载：
-
-```
-① LOAD_AGENT arthas-core.jar     → 追加到 system classpath（无 Agent-Class）
-② LOAD_AGENT arthas-bridge.jar port=8099  → 反射 agentmain，启动 ServerSocket
-```
-
-`ArthasCommandBridge.start()` 内：
-1. 通过 `ArthasBootstrapCompat.createWithoutNetty()` 构造 Bootstrap（跳过 Netty bind）
-2. 获取 `ShellServer`，注册 `BuiltinCommandPack`（禁用列表为空，**全部 48+ 条命令可用**）
-3. 注册 `ClassMetaClassWriterTransformer`（修补 ASM 的类型解析以支持 MTS ClassLoader）
-4. 启动 `java.net.ServerSocket(:8099)`，每次 `accept` 创建 `BridgeSession` 线程
+等价加载细节见 `manager.py` 的 `start()` / `stop()`。
 
 ## 协议
 
@@ -161,309 +162,162 @@ ArthasShell (透传)     Device JVM
 ```
 → version\n
 ← 3.6.9\n[arthas@12345]$
-
-→ thread -n 3\n
-← "Foo" Id=2 RUNNABLE ...\n[arthas@12345]$
 ```
 
-`ArthasShell.command()` 自动处理 drain prompt、发送命令、消费输出和逐行 prompt 解析。
+`ArthasShell.command()` 负责 drain prompt、发送命令、读到下一 prompt。
 
-## 命令参考
-
-### JVM 与系统信息
-
-| 命令 | 用途 |
-|------|------|
-| `dashboard [-i <ms>] [-n <count>]` | 实时数据面板：线程 CPU 使用率 + 堆内存统计 |
-| `thread` | 线程列表和堆栈。`-n <N>` 显示 CPU 最高的 N 个线程；`-b` 查找阻塞其他线程的线程 |
-| `jvm` | JVM 运行时信息：OS、JDK 版本、类加载统计、GC、编译 |
-| `memory` | 堆和非堆内存使用详情：eden、old、survivor、metaspace、codecache |
-| `sysenv` | JVM 环境变量 |
-| `sysprop` | JVM 系统属性 |
-| `vmoption` | 查看诊断相关 VM 选项（如 `PrintGC`、`HeapDumpOnOutOfMemoryError`） |
-| `perfcounter` | Perf Counter：编译时间、类加载、GC 次数 |
-| `mbean` | MBean 信息 |
-| `logger` | 查看 logger 配置和级别。Android 平台 logger 有限，但 root logger 可见 |
-
-### 类与类加载器
-
-| 命令 | 用途 |
-|------|------|
-| `sc <pattern>` | **Search Class**：搜索已加载的类。`-d` 显示详细（源 JAR、ClassLoader）。`-f` 显示字段 |
-| `sm <class>` | **Search Method**：列出类的方法签名 |
-| `jad <class>` | 反编译 Java 字节码为源码。游戏类通常需要 `-c <classLoaderHash>` |
-| `classloader` | 列出所有 ClassLoader 实例、层级和加载的类数 |
-| `classloader-metaspace` | ~~显示 Metaspace 使用情况~~ **由 bridge 补全**，基于 JMX `MemoryPoolMXBean`，显示 Metaspace/CompressedClassSpace 内存用量 |
-| `getstatic <class>` | 查看类的静态字段 |
-| `dump <class> -d <dir>` | 导出字节码到文件 |
-| `ognl <expression>` | 执行 OGNL 表达式。可调用任意静态方法、读取字段、执行计算 |
-
-#### ognl 示例
-
-```bash
-ognl '@java.lang.System@getProperty("java.version")'      # 读取系统属性
-ognl '@com.megacrit.cardcrawl.dungeons.AbstractDungeon@player'  # 获取 game-probe 之外的任意对象
-```
-
-### 类转换与热替换
-
-| 命令 | 用途 |
-|------|------|
-| `retransform <class-file>` | 通过 `ClassFileTransformer` 链重新转换已加载的类。替换被管道处理，可叠加和还原 |
-| `retransform -l` | 列出活动的 retransform entry |
-| `retransform --deleteAll` | 删除所有 retransform entry |
-| `redefine <class-file>` | 通过 `Instrumentation.redefineClasses` 直接替换类。不能添加/删除字段或方法签名 |
-| `mc <file.java>` | 内存中编译 `.java` 为 `.class`。**Android JRE 无 `tools.jar`，此命令不可用**。替代方案：本地编译后 push |
-
-`redefine` 与 `retransform` 冲突——不要同时使用。执行前先 `reset`。
-
-> **`mc` 在 Android 上不可用**。Android 的 OpenJDK 8 运行时缺少 JDK 编译器
-> （`javax.tools.JavaCompiler` 在 `tools.jar` 中，Android 未打包）。
-> 标准替代方案：本地 `javac` 编译 → `adb push` → `retransform` / `redefine`。
-
-### 方法监控与追踪（字节码增强）
-
-这些命令通过注入字节码切面来观测方法调用。完成后应执行 `reset` 移除增强。
-使用 `-n <N>` 限制执行次数，避免生产环境性能影响。
-
-| 命令 | 用途 |
-|------|------|
-| `watch <class> <method> <expr> [-b] [-e] [-s] [-f] [-x <depth>] [-n <N>]` | 观测方法调用的参数、返回值、抛出异常。`-b` 调用前、`-e` 异常、`-s` 返回、`-f` 结束（默认）。表达式默认为 `{params, target, returnObj}` |
-| `trace <class> <method> [-n <N>]` | 跟踪方法执行耗时，显示方法树中每个节点的耗时 |
-| `monitor <class> <method> [-c <sec>] [-n <N>]` | 监控调用次数、成功/失败、平均 rt、失败率 |
-| `stack <class> <method> [-n <N>]` | 显示触发指定方法的调用者堆栈 |
-| `tt -t <class> <method> [-n <N>]` | Time Tunnel：记录每次调用的参数和返回值，可回溯重放 |
-| `line <class> <method> <line>` | 观测指定源码行的传入参数和局部变量 |
-
-#### 示例
-
-```bash
-# 观测 AbstractCard.update() 的入参和返回值，深度 2，仅触发 1 次
-watch com.megacrit.cardcrawl.cards.AbstractCard update "{params,returnObj}" -n 1 -x 2
-
-# 跟踪 CardCrawlGame.render() 的调用链耗时
-trace com.megacrit.cardcrawl.core.CardCrawlGame render -n 1
-
-# 每秒统计 AbstractCard.update() 的性能
-monitor -c 1 com.megacrit.cardcrawl.cards.AbstractCard update -n 5
-```
-
-### Profiler / 堆分析
-
-async-profiler 3.0 已集成。`.so` 以扁平结构部署在 `arthas/` 目录，bridge 启动时自动加载并通过反射注入 `ProfilerCommand`。`libjvm.debuginfo` 伴生文件（包含 AllocTracer C++ 符号表）由 `manager.py` 自动下载并推送至设备。
-
-| 命令 | 用途 |
-|------|------|
-| `profiler list` | 列出可采样的事件类型（cpu、alloc、lock、wall、itimer、ctimer 等） |
-| `profiler start [--event <type>]` | 开始采样。默认事件：`cpu` |
-| `profiler stop [--format <fmt>]` | 停止采样并输出。输出写入 `arthas-output/` |
-| `profiler status` | 显示 profiler 当前状态（idle / running / stopped） |
-| `profiler version` | 显示 async-profiler 版本（当前为 3.0） |
-| `heapdump <path>` | 堆转储。Android 上路径必须为应用私有目录（如 `/data/data/io.stamethyst/files/heap.hprof`） |
-
-### 其他命令
-
-| 命令 | 用途 |
-|------|------|
-| `vmtool --action getInstances --className <class> --limit <N>` | 通过 JVMTI 获取堆中指定类的实例 |
-| `vmtool --action forceGc` | 强制 GC |
-| `options [<name>] [<value>]` | 查看或设置 Arthas 全局选项（如 `unsafe`、`json-format`） |
-| `reset` | 重置 Arthas 增强过的所有类。不影响 game-probe transformer |
-| `stop` | 关闭 Arthas 服务端。所有客户端断开，增强的类被 `reset` |
-| `session` | 显示当前会话信息 |
-| `quit` | 退出当前客户端。其他客户端不受影响 |
-| `version` | 显示 Arthas 版本 |
-| `help [<command>]` | 显示命令帮助 |
-| `keymap` | 快捷键列表 |
-| `history` | 命令历史 |
-| `cls` | 清屏 |
-
-### 管道与后台任务
-
-Arthas 内置管道支持。示例：
-
-```bash
-sm java.lang.String * | grep 'index'       # 搜索方法
-thread -n 5 | grep 'RUNNABLE'              # 过滤线程状态
-```
-
-后台任务：`command &` 异步运行，`jobs` 查看，`fg`/`bg` 前后台切换，`kill` 终止。
+命令用法见离线文档 [`docs/`](docs/)（索引 [`docs/README.md`](docs/README.md)）与[官方命令列表](https://arthas.aliyun.com/doc/commands.html)。
 
 ## Android 特定说明
 
-### ClassLoader 规则
+### ClassLoader
 
-MTS（ModTheSpire）会为每个 mod 创建独立的 `URLClassLoader`。
-对于加载到这些 classloader 中的类，在 `sc`、`jad`、`watch`、`trace` 等命令中需要显式指定 `-c <classLoaderHash>`：
+MTS 为每个 mod 使用独立 `URLClassLoader`。对这类类需显式 `-c <classLoaderHash>`：
 
 ```bash
-sc -d com.megacrit.cardcrawl.cards.AbstractCard    # 获取 hash
-jad -c 3d4eac69 com.megacrit.cardcrawl.cards.AbstractCard  # 用指定 classloader 反编译
+sc -d com.megacrit.cardcrawl.cards.AbstractCard
+jad -c 3d4eac69 com.megacrit.cardcrawl.cards.AbstractCard
 ```
 
 ### 字节码增强与 CommonSuperBridge
 
-MTS ClassLoader 隔离会导致 ASM 的 `ClassWriter.getCommonSuperClass()` 解析失败
-（一个 classloader 中的类找不到另一个 classloader 中加载的父类）。
-`CommonSuperBridge` 通过 `Instrumentation.getAllLoadedClasses()` 在全局范围内解析父类，
-每个客户端连接时对已加载的 `ClassMetaClassWriter` 执行 `retransformClasses` 注入该逻辑。
+ClassLoader 隔离会导致 ASM `getCommonSuperClass()` 失败。`CommonSuperBridge` 经
+`Instrumentation.getAllLoadedClasses()` 全局解析；每连接时对已加载的
+`ClassMetaClassWriter` 做 `retransformClasses`。
 
-如果 `watch`/`trace`/`monitor` 报告 `Type xxx not present` 错误，
-断开客户端连接并重新连接——第二次连接通常能成功完成 retransform。
+若 `watch` / `trace` / `monitor` 报 `Type xxx not present`：断开重连（CLI 自动重试一次）。
 
-### Bridge 补全命令
-
-Arthas 3.6.9 较旧，以下命令由 `arthas-bridge` 补充实现：
+### Bridge 补全
 
 | 命令 | 说明 |
 |------|------|
-| `classloader-metaspace` | 通过 JMX `MemoryPoolMXBean` 查询 Metaspace/CompressedClassSpace 使用量。`ClassLoaderMetaspaceCommand` 为较高 Arthas 版本新增，3.6.9 JAR 中无该类，由 bridge 的 `MetaspaceCommand` 提供替代实现 |
+| `classloader-metaspace` | JMX `MemoryPoolMXBean` 查询 Metaspace / CompressedClassSpace（3.6.9 无官方类，由 `MetaspaceCommand` 提供） |
 
-### 平台适配
-
-async-profiler 3.0 为 Pojav / Android 环境做了以下适配（由 `build-async-profiler-so.py` 自动应用）：
-
-| # | 适配项 | 说明 |
-|---|--------|------|
-| 1 | Bionic ELF 重定位 | Bionic 重定位方式与 glibc 一致，强制 `musl=false` |
-| 2 | VMThread bridge | Pojav JDK 8 无 pthread TLS 存储 VMThread，实现 `tryInitVMThreadFromJvm()` 读取 `eetop` 字段创建独立 key |
-| 3 | 信号栈 | 为 signal handler 添加 `SA_ONSTACK` |
-| 4 | `_native_libs` 并发安全 | `Profiler::stop()` 中添加 `_parse_lock` barrier |
-| 5 | `libprocfs_cpu.so` ELF 解析 | 跳过该文件在 `parseProgramHeaders` 中的解析（Bionic `dyn_ptr` 启发式不适用） |
-| 6 | 非 HotSpot 线程安全 | `getThreadState()` 直接返回 `THREAD_RUNNING`，避免桥接线程 ucontext 访问崩溃 |
-| 7 | SIGSEGV handler | 禁用 `orig_segvHandler` 替换（`SIG_DFL` 在 Pojav 上不可调用） |
-
-构建命令：
-```bash
-python3 scripts/tools/arthas/build-async-profiler-so.py
-```
-
-输出文件：`scripts/tools/arthas/resource/libasyncProfiler-linux-arm64.so`
-
-### alloc 符号补全
-
-Pojav JDK 8 的 `libjvm.so` 在编译时 strip 了符号表，导致 `AllocTracer` 二进制断点机制无法定位目标函数。async-profiler 通过 GNU debuglink 机制加载伴生符号文件——`libjvm.debuginfo`（仅含 `.symtab`，无 DWARF）——来补全所需的 C++ mangled 符号。
-
-伴生文件由 `download-jvm-companion.py` 从公开 Release 自动下载，`manager.py` 的 `start()` 在推送 JARs 的同时将其部署至设备 `libjvm.so` 同目录。
-
-### 不支持的命令
+### 不可用命令
 
 | 命令 | 原因 |
 |------|------|
-| `mc` | JRE 缺少 `tools.jar`，替代：本地 `javac` → `adb push` → `retransform` |
+| `mc` | JRE 无 `tools.jar`；本地 `javac` → `adb push` → `retransform` / `redefine` |
 
-### JFR（`jfr` 命令）
+### JFR
 
-运行时为 **OpenJDK 8u482**，已包含 `jfr.jar` 与 HotSpot JFR native（`libjvm.so`），**不是**“JDK 8 无 Recording”。
-
-真正的缺口是 runtime-pack **未打包** `$JAVA_HOME/lib/jfr/{default,profile}.jfc`。  
-`manager.py` 的 `start()` 会：
-
-1. 按需下载 Temurin 8 的 `.jfc` 到 `resource/jdk-companion/jfr/`（gitignore，脚本：`download-jfr-jfc.py`）
-2. 推送到设备 `/data/data/io.stamethyst/files/runtimes/Internal/lib/jfr/`
-
-之后可用：
+运行时为 OpenJDK 8u482，含 `jfr.jar` 与 HotSpot JFR native。缺口是 runtime-pack 未打包
+`$JAVA_HOME/lib/jfr/{default,profile}.jfc`。`manager.start()` 会按需下载并推送到设备
+`.../runtimes/Internal/lib/jfr/`。
 
 ```bash
-jfr start -n test --duration 30s -f /data/data/io.stamethyst/files/test.jfr
+jfr start -n rec1 --duration 30s -f /data/data/io.stamethyst/files/rec1.jfr
 jfr status
 jfr stop -r 1
 ```
 
-dump 路径须在应用私有目录。采样型火焰图仍可用 `profiler start -o jfr`（不依赖 `jdk.jfr.Recording`）。
+dump 路径须在应用私有目录。火焰图也可用 `profiler start -o jfr`。
 
-### 线程 CPU 使用率（`/proc/self/task` fallback）
+### 线程 CPU（`/proc` fallback）
 
-Android ART 的 `ThreadMXBean.getThreadCpuTime()` 默认返回 0 或 -1，导致 `dashboard`
-和 `thread -n N` 的 %CPU 始终为 0。Bridge 启动时会自动加载 JNI 库
-`libprocfs_cpu.so` 并通过动态代理注入 `ThreadSampler`：当 JVM 返回无效值时
-fallback 读取 `/proc/self/task/<tid>/stat` 的 utime+stime 字段来获取真实线程
-CPU 时间。
+ART 上 `ThreadMXBean.getThreadCpuTime()` 常为 0/-1。bridge 加载 `libprocfs_cpu.so`，
+无效时读 `/proc/self/task/<tid>/stat`。
 
-**构建 .so**：`python3 scripts/tools/arthas/build-procfs-so.py`（需要 NDK 27+，target aarch64）
-
-**部署**：`.so` 由 `manager.py` `start()` 自动推送至 `/data/data/io.stamethyst/files/arthas/libprocfs_cpu.so`，bridge 启动时自动加载。
-
-> 旧版本 `.so` 存放在 `/data/data/io.stamethyst/files/libprocfs_cpu.so`，`start()` 会自动清理该残留文件。无需手动 `chown`/`chmod`——`connector` 的 push 命令已处理权限。
+```bash
+python3 scripts/tools/arthas/build-procfs-so.py   # 需 NDK 27+，aarch64
+```
 
 ### heapdump
 
-堆转储路径必须是应用私有目录（`/data/data/io.stamethyst/files/`），
-因为 SELinux 通常禁止写入其他位置。
+路径必须在应用私有目录（SELinux）：
 
 ```bash
 heapdump /data/data/io.stamethyst/files/heap.hprof
 ```
 
-### Arthas 与 game-probe 共存
+### 与 game-probe 共存
 
-Arthas 和 game-probe 的 tracing 使用**独立**的 `ClassFileTransformer`，互不干扰。
-`reset` 仅撤销 Arthas 的增强，不影响 game-probe 的 transformer。
+双方使用独立 `ClassFileTransformer`。`reset` 只撤销 Arthas 增强。
+
+## Profiler / 伴生资源
+
+async-profiler 3.0 以扁平 `.so` 部署在 `arthas/`；`libjvm.debuginfo` 用于 strip 后的
+`libjvm.so` 上的 AllocTracer 符号（`download-jvm-companion.py` + `push_companion()`）。
+
+```bash
+python3 scripts/tools/arthas/build-async-profiler-so.py
+# 输出: scripts/tools/arthas/resource/libasyncProfiler-linux-arm64.so
+
+python3 scripts/tools/arthas/download-jvm-companion.py
+python3 scripts/tools/arthas/download-jfr-jfc.py
+```
+
+async-profiler 对 Pojav / Android 的适配（`build-async-profiler-so.py` 自动打补丁）：
+
+| # | 适配项 | 说明 |
+|---|--------|------|
+| 1 | Bionic ELF 重定位 | 强制 `musl=false` |
+| 2 | VMThread bridge | 无 pthread TLS 时从 `eetop` 建独立 key |
+| 3 | 信号栈 | `SA_ONSTACK` |
+| 4 | `_native_libs` 并发 | `Profiler::stop()` 加 `_parse_lock` barrier |
+| 5 | `libprocfs_cpu.so` | 跳过不兼容的 `parseProgramHeaders` |
+| 6 | 非 HotSpot 线程 | `getThreadState()` 返回 `THREAD_RUNNING` |
+| 7 | SIGSEGV handler | 禁用不可调用的 `orig_segvHandler` 替换 |
 
 ## 与 game-probe 对比
 
 | 能力 | game-probe | Arthas |
 |------|-----------|--------|
-| 游戏状态快照 (OBSERVE) | ✅ | ❌ |
-| 游戏命令执行 (EXEC) | ✅ | ❌ |
-| 方法参数/返回值观测 | TracingMonitor（无法过滤/格式化） | `watch`（OGNL 表达式，灵活过滤） |
-| 方法调用链耗时 | PERF | `trace`（树形展示每个子调用耗时） |
-| 线程分析 | ❌ | `thread` |
-| 耗时监控 | ❌ | `dashboard` |
-| 类搜索/反编译 | ❌ | `sc` / `sm` / `jad` |
-| OGNL 表达式执行 | ❌ | `ognl` |
-| 火焰图 | ❌ | `profiler` |
-| 堆转储 | ❌ | `heapdump` |
-| 热替换 | ❌ | `retransform` / `redefine` |
+| 游戏状态 (OBSERVE) / 命令 (EXEC) | ✅ | ❌ |
+| 方法参数/返回值 | TracingMonitor | `watch`（OGNL） |
+| 调用链耗时 | PERF | `trace` |
+| 线程 / 面板 / 类搜索 / 反编译 | ❌ | `thread` / `dashboard` / `sc` / `jad` |
+| OGNL / 火焰图 / 堆转储 / 热替换 | ❌ | `ognl` / `profiler` / `heapdump` / `retransform` |
 
-game-probe 保留游戏特有的 `OBSERVE` / `EXEC` 功能，Arthas 补充通用 JVM 诊断能力。
+game-probe 负责游戏语义；Arthas 负责通用 JVM 诊断。
 
 ## 故障排除
 
-| 症状 | 可能原因 | 解决 |
+| 症状 | 可能原因 | 处理 |
 |------|---------|------|
-| `Multiple Android devices online` | 未传 `--device` / `STS_TEST_DEVICE`，且多于 1 台在线 | 显式指定 serial |
-| `connect_stream` BrokenPipe | bridge 的 `ShellServer` 已关闭（之前执行过 `stop`） | 重启游戏 → 重新 `LOAD_AGENT bridge.jar` |
-| `LOAD_AGENT` 返回 `already bind` | bridge 重复加载 | 重启游戏清理 JVM 状态 |
-| `LOAD_AGENT` 返回 `class file version` 错误 | 编译的 JAR 类版本高于设备 JVM（Android 用 JDK 8） | 本地 `javac -source 8 -target 8` 重新编译 |
-| `Type xxx not present`（trace/watch） | `CommonSuperBridge` 在首次连接时未成功 retransform | 同一 serial 重连；CLI 会自动重试一次 |
-| `ognl` 返回 `null` | 调用的方法返回类型是 `void` | `null` 是正确行为；改用有返回值的方法验证 |
-| game-probe 无响应 (`available: false`) | 游戏未以 `debugMode` 或 `autoplay` 启动 | 用 `-PdebugMode=true` 或 `--ez io.stamethyst.debug_mode true` 重启 |
-| `stop` 后 8099 仍可连 | 旧版只 unforward | 使用当前 `stop`（reset + stop + unforward）；必要时重启游戏 |
+| `Multiple Android devices online` | 未指定 `--device` / `STS_TEST_DEVICE` | 显式 serial |
+| `connect_stream` BrokenPipe | bridge 已 `stop` | 重启游戏后重新 `start` |
+| `LOAD_AGENT` → `already bind` | bridge 重复加载 | 重启游戏 |
+| `LOAD_AGENT` → class file version | JAR 高于 JDK 8 | `-source 8 -target 8` 重编 bridge |
+| `Type xxx not present` | CommonSuperBridge 首次 retransform 未就绪 | 同 serial 重连（CLI 自动重试） |
+| `ognl` 返回 `null` | 方法为 `void` | 正常；改用有返回值方法 |
+| game-probe `available: false` | 未开 debug/autoplay 等 | `-PdebugMode=true` 等重启 |
 
 ## 实现文件
 
 | 文件 | 职责 |
 |------|------|
-| `manager.py` | 生命周期：推送 JARs/.so/companion/jfc → LOAD_AGENT → forward；`stop` 发送 reset/stop 后 unforward |
-| `shell.py` | `ArthasShell`：prompt drain、命令发送、输出解析 |
-| `cli.py` | `run_shell()` / `run_query()`：Shell/单命令入口 |
-| `__main__.py` | CLI：`--device` 解析、`start`/`shell`/`query`/`stop`、会话清理 |
+| `manager.py` | 推送资源 → LOAD_AGENT → forward；`stop` 发 reset/stop 后 unforward |
+| `shell.py` | `ArthasShell`：prompt / 命令 / 输出；`TypeNotPresentException` 重连 |
+| `cli.py` | `run_shell` / `run_query` |
+| `__main__.py` | CLI：设备解析、`start`/`shell`/`query`/`stop` |
 | `resource/arthas-core.jar` | Arthas 3.6.9 命令引擎 |
-| `resource/arthas-bridge.jar` | 自定义 bridge（源码在 `arthas-bridge/`） |
-| `resource/arthas-agent.jar` | Arthas agent |
-| `resource/arthas-spy.jar` | Arthas spy 组件 |
-| `resource/libprocfs_cpu.so` | JNI 库：线程 CPU 时间 `/proc` fallback |
-| `build-procfs-so.py` | 构建 `libprocfs_cpu.so`（线程 CPU 使用率 `/proc` fallback） |
-| `build-async-profiler-so.py` | 交叉编译 async-profiler 3.0 为 aarch64 `.so`（自动应用 Pojav/Android 兼容 patch） |
-| `download-jvm-companion.py` | 从 GitHub Release 下载 `libjvm.debuginfo` 伴生符号文件 |
-| `download-jfr-jfc.py` | 从 Adoptium Temurin 8 JRE 流式提取 `default.jfc` / `profile.jfc`（runtime-pack 缺失） |
+| `resource/arthas-bridge.jar` | 自定义 bridge（源码在仓库根 `arthas-bridge/`） |
+| `resource/arthas-spy.jar` | Arthas spy |
+| `resource/arthas-agent.jar` | 上游 agent（本集成未推送/加载，保留资源） |
+| `resource/libprocfs_cpu.so` | 线程 CPU `/proc` fallback |
+| `resource/libasyncProfiler-linux-arm64.so` | async-profiler aarch64 |
+| `build-procfs-so.py` | 构建 `libprocfs_cpu.so` |
+| `build-async-profiler-so.py` | 交叉编译 async-profiler + 平台 patch |
+| `download-jvm-companion.py` | 下载 `libjvm.debuginfo` |
+| `download-jfr-jfc.py` | 提取 `default.jfc` / `profile.jfc` |
 
-### 设备端模块 (`arthas-bridge/`)
+### 设备端（`arthas-bridge/`）
 
 | 文件 | 说明 |
 |------|------|
-| `ArthasCommandBridge.java` | `agentmain` 入口。初始化 Bootstrap，注册命令（含自定义 `MetaspaceCommand`），启动 ServerSocket，加载扁平 `.so` 并反射注入 `ProfilerCommand` |
-| `MetaspaceCommand.java` | 自定义 `classloader-metaspace` 命令：通过 JMX `MemoryPoolMXBean` 查询 Metaspace/CompressedClassSpace 使用量。Arthas 3.6.9 不含 `ClassLoaderMetaspaceCommand`（为较高版本新增），由 bridge 提供替代实现 |
-| `ArthasBootstrapCompat.java` | Arthas 源码修改版（Apache 2.0）。`createWithoutNetty()` 跳过 Netty，仅执行 `shellServer.listen()` + `SpyAPI.init()` |
-| `SocketTerm.java` | `Term` 接口的纯 socket 实现。`readline → write(prompt)`、`feed(line) → 触发 handler` |
-| `BridgeSession.java` | 每连接线程。`createShell → init → readline → 读命令 → term.feed → 输出写回 socket` |
-| `CommonSuperBridge.java` | 解决 MTS ClassLoader 隔离下的 ASM 类型解析 |
-| `ClassMetaClassWriterTransformer.java` | 字节码重写：注入 `CommonSuperBridge` 到 `getCommonSuperClass()` |
+| `ArthasCommandBridge.java` | `agentmain`：Bootstrap、命令注册、ServerSocket、`.so` / profiler |
+| `MetaspaceCommand.java` | `classloader-metaspace` |
+| `ArthasBootstrapCompat.java` | 无 Netty Bootstrap（Apache 2.0 修改） |
+| `SocketTerm.java` | 纯 socket `Term` |
+| `BridgeSession.java` | 每连接 shell 会话 |
+| `CommonSuperBridge.java` | MTS 下 ASM 公共父类解析 |
+| `ClassMetaClassWriterTransformer.java` | 注入 `CommonSuperBridge` |
+| `ProcFSBridge.java` / `ProcFSThreadCpuPatch.java` | 线程 CPU fallback |
 
 ## 参考
 
 - [Arthas 官方文档](https://arthas.aliyun.com/doc/commands.html)
 - [OGNL 语言指南](https://commons.apache.org/dormant/commons-ognl/language-guide.html)
-- [Arthas 表达式核心变量](https://arthas.aliyun.com/doc/advice-class.html)
-- 本地离线文档：[`docs/`](docs/)（索引见 [`docs/README.md`](docs/README.md)）
+- [表达式核心变量](https://arthas.aliyun.com/doc/advice-class.html)
+- 本地离线文档：[`docs/`](docs/)（[`docs/README.md`](docs/README.md)）

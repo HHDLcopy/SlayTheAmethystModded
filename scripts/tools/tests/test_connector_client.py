@@ -85,6 +85,23 @@ class TestConnectorClient(unittest.TestCase):
         result = client.shell("echo hello")
         self.assertEqual(result["stdout"], "hello")
 
+    def test_adb_install_logcat_helpers(self):
+        from scripts.tools.connector.client import ConnectorClient
+        client = ConnectorClient(port=1)
+        client._sock = MagicMock()
+        client._sock.recv.side_effect = [
+            b'{"exit":0,"stdout":"Success"}\n',
+            b'{"exit":0,"stdout":"ok"}\n',
+            b'{"ok":true,"capture_id":"lc1","local_path":"/tmp/a.txt"}\n',
+            b'{"ok":true,"capture_id":"lc1","exit":0}\n',
+        ]
+        self.assertEqual(client.install("/tmp/app.apk")["exit"], 0)
+        self.assertEqual(client.adb(["shell", "echo"])["stdout"], "ok")
+        start = client.logcat_start(local_path="/tmp/a.txt")
+        self.assertEqual(start["capture_id"], "lc1")
+        stop = client.logcat_stop("lc1")
+        self.assertTrue(stop["ok"])
+
     @patch("socket.socket")
     def test_connect_stream_sends_request_and_returns_stream_id(self, mock_socket_cls):
         from scripts.tools.connector.client import ConnectorClient

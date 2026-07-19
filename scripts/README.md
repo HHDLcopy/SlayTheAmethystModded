@@ -50,9 +50,19 @@ Implementation files:
 
 Use `scripts/tools/main.py` for debugging and device automation tools. The `harness` alias is equivalent to `sts-harness`.
 
+**Prerequisite:** start the connector daemon and set its port before any harness command:
+
+```bash
+export STS_CONNECTOR_PORT=39999
+export STS_TEST_DEVICE=localhost:15555   # optional; or pass -DeviceSerial
+python -m scripts.tools.connector start --port 39999
+```
+
+Alternatively pass `-ConnectorPort 39999` / `--connector-port 39999` on each harness invocation. Harness does **not** auto-start the daemon.
+
 Harness commands:
 
-- `doctor`: validate adb, Gradle wrapper, package id, device selection, storage access, and runtime status signals.
+- `doctor`: validate connector, Gradle wrapper, package id, device selection, storage access, and runtime status signals.
 - `install`: build and install the debug APK.
 - `start`: start the app through `:app:stsStart`.
 - `stop`: force-stop the app through `:app:stsStop`.
@@ -62,11 +72,19 @@ Harness commands:
 - `mods`: list device required mods, optional mods in `sts/mods_library`, legacy runtime mods in `sts/mods`, the current `enabled_mods.txt`, and the current `.mts_mod_file_list`.
 - `set-mods`: replace the enabled optional mod selection by writing `enabled_mods.txt`.
 - `smoke`: install when needed, clear runtime signals, start, wait for an expected state, capture screenshot/logs, and stop unless requested otherwise.
+- `decompil`: pull device jars and decompile classes with CFR.
+- `agent-attach` / `agent-detach` / `agent-list` / `agent-status`: game-probe monitor agents.
+- `play`: interactive game-probe OBSERVE/EXEC session.
+- `console`: BaseMod DevConsole via game-probe.
+- `hotreload`: dump or redefine classes via game-probe.
+- `perf`: attach a monitor and collect PERF stats.
+- `single-room`: one-room combat autoplay test.
 - `startup-cache-profile`: run one cache-build launch and then one or more cache-hit launches, exporting per-run logs and a startup timing summary.
 - `steam-cloud-sync`: modify a device-side `sts/` file, open the launcher to trigger Steam Cloud sync, poll Steam Cloud diagnostics/runtime logs into per-interval snapshots, export the full log bundle, and stop the app.
 
 Common harness options:
 
+- `-ConnectorPort <port>` / `--connector-port`: connector daemon TCP port (or set `STS_CONNECTOR_PORT`).
 - `-DeviceSerial <adb-serial>`: required when more than one device is online.
 - `-OutDir <path>`: output directory for `result.json` and artifacts. Defaults to `debug-artifacts/harness/<command>-<timestamp>`.
 - `-LaunchMode mts_basemod|mts|vanilla`: defaults to `mts_basemod`.
@@ -100,9 +118,12 @@ Mod selection options for `set-mods`:
 Examples:
 
 ```bash
-python scripts/tools/main.py sts-harness -Command doctor
-python scripts/tools/main.py sts-harness -Command status
-python scripts/tools/main.py sts-harness -Command mods
+export STS_CONNECTOR_PORT=39999
+python -m scripts.tools.connector start --port 39999
+
+python scripts/tools/main.py sts-harness -Command doctor -DeviceSerial localhost:15555
+python scripts/tools/main.py sts-harness -Command status -DeviceSerial localhost:15555
+python scripts/tools/main.py sts-harness -Command mods -DeviceSerial localhost:15555
 python scripts/tools/main.py sts-harness -Command set-mods -Mods "Downfall.jar,ReplayTheSpire"
 python scripts/tools/main.py sts-harness -Command set-mods -ModListFile agent-tmp/enabled-mods.txt
 python scripts/tools/main.py sts-harness -Command set-mods -EnableAllMods
@@ -114,6 +135,7 @@ python scripts/tools/main.py sts-harness -Command single-room -SingleRoomCharact
 python scripts/tools/main.py sts-harness -Command startup-cache-profile -LaunchMode mts_basemod -CacheHitRuns 2 -SkipInstall
 python scripts/tools/main.py sts-harness -Command steam-cloud-sync -CloudSyncPullIntervalSeconds 15 -SkipInstall
 python scripts/tools/main.py sts-harness -Command smoke -Autoplay -DisableCardObtainEffectOwnershipCompat
+python scripts/tools/main.py sts-harness -Command console -ConsoleCommand "gold 999" -DebugMode
 ```
 
 Harness output is always written to `result.json`. The `mods` and `set-mods` commands add `deviceMods`; `set-mods` also adds `modSelection`. Autoplay now also logs and auto-resolves `CardRewardScreen` discovery/card reward pages. `single-room` writes the pushed spec to `artifacts.singleRoomSpec`, waits for a `[amethyst-autoplay] single_room result ...` line in `latest.log`, stores it at `statusSnapshot.latestLog.singleRoomResult`, exports logs, and then stops the app.
@@ -135,19 +157,21 @@ responsibility:
 | `autoplay/` | 游戏自动化控制 |
 | `monitor/` | 日志采集、截图、文件拉取 |
 
-各模块通过 `connector` daemon 访问设备，**不直接调用 adb**，**不直接开 TCP 连接**。
-Connector 使用纯 Python TCP (127.0.0.1)，通过 `STS_CONNECTOR_PORT` 环境变量发现服务。
+各模块通过 `connector` daemon 访问设备，**不直接调用 adb**，**不直接开 TCP 连接到设备服务**。
+Gradle 与本地 CFR 等主机侧工具仍本地执行。Connector 使用纯 Python TCP (127.0.0.1)，通过 `STS_CONNECTOR_PORT` 或 `-ConnectorPort` 发现服务。
 详见各模块目录下的 `README.md`。
 
 ## 环境变量
 
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
-| `STS_CONNECTOR_PORT` | Connector daemon 的 TCP 端口 | 必填 |
+| `STS_CONNECTOR_PORT` | Connector daemon 的 TCP 端口 | 必填（harness 也可传 `-ConnectorPort`） |
 | `STS_TEST_DEVICE` | 集成测试的默认设备序列号 | `auto` |
 
 ```bash
+export STS_CONNECTOR_PORT=39999
 export STS_TEST_DEVICE=localhost:15555
+python -m scripts.tools.connector start --port 39999
 ```
 
 ```
@@ -156,19 +180,20 @@ harness / arthas / autoplay / monitor
          ▼
     ┌─────────────┐
     │  connector  │  ← TCP 127.0.0.1:<port>
-    └──────┬──────┘     STS_CONNECTOR_PORT
-           │ adb
+    └──────┬──────┘     STS_CONNECTOR_PORT / -ConnectorPort
+           │ adb only here
            ▼
      Android Device
-     ├── game-probe (:9099)   ← OBSERVE / EXEC / LOAD_AGENT
+     ├── game-probe (:9099)   ← OBSERVE / EXEC / LOAD_AGENT (via connect_stream)
      └── arthas-bridge    (:8099)  ← ArthasBootstrapCompat (无 Netty)
 ```
 
 Implementation files:
 
 - `scripts/tools/main.py`: thin tools entrypoint.
-- `scripts/tools/connector/`: 设备通信守护进程及其客户端库。
-- `scripts/tools/lib/agent_client.py`: 统一 game-probe TCP 协议客户端。
-- `scripts/tools/lib/sts_harness_cli.py`: 遗留 harness CLI 解析器（将被 harness/ 模块替代）。
-- `scripts/tools/lib/sts_harness.py`: 遗留 harness 实现（将被 harness/ 模块替代）。
+- `scripts/tools/connector/`: 设备通信守护进程及其客户端库（shell/push/pull/install/adb/logcat/connect_stream）。
+- `scripts/tools/lib/agent_client.py`: 统一 game-probe TCP 协议客户端（经 connector `connect_stream`）。
+- `scripts/tools/lib/sts_harness_cli.py`: harness CLI 解析器。
+- `scripts/tools/lib/sts_harness.py`: harness 编排与部分命令实现；设备 I/O 委托 `harness/_runner` → connector。
+- `scripts/tools/harness/`: 按命令拆分的 harness 实现（doctor/install/smoke/agent/console/…）。
 - `scripts/tools/lib/device_mods.py`: 列出设备 mod、解析可选 mod token、写入 `enabled_mods.txt`。

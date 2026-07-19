@@ -12,6 +12,8 @@ class HarnessContext:
     adb_path: str | None = None
     application_id: str | None = None
     resolved_device_serial: str = ""
+    connector: Any = None
+    connector_port: int | None = None
     operations: list[dict[str, Any]] = field(default_factory=list)
     started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     result: dict[str, Any] = field(default_factory=dict)

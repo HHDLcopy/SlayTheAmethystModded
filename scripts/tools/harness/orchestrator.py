@@ -1,10 +1,10 @@
-import subprocess
 from typing import Any
 
 from scripts.tools.lib.env_device import get_test_device_serial
 
 
 class HarnessOrchestrator:
+    """Lightweight orchestration helper used by connector-based tests."""
 
     def __init__(
         self,
@@ -16,14 +16,12 @@ class HarnessOrchestrator:
         self._app_id = application_id
         self._device_serial = device_serial or get_test_device_serial()
 
-    def build_and_install(self) -> None:
-        subprocess.check_call(
-            ["./gradlew", ":app:assembleDebug"],
-            timeout=600)
-        subprocess.check_call(
-            ["adb", "-s", self._device_serial, "install", "-r",
-             "app/build/outputs/apk/debug/app-debug.apk"],
-            timeout=60)
+    def build_and_install(self, apk_path: str) -> None:
+        resp = self._conn.install(apk_path, replace=True, timeout_ms=180000)
+        if isinstance(resp, dict) and "error" in resp:
+            raise RuntimeError(f"install failed: {resp['error']}")
+        if isinstance(resp, dict) and int(resp.get("exit", 1)) != 0:
+            raise RuntimeError(f"install failed: {resp.get('stdout', '')}")
 
     def start(self, mode: str = "mts", debug_mode: bool = False, autoplay: bool = False) -> None:
         cmd = (

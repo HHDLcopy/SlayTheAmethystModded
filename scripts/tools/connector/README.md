@@ -121,7 +121,7 @@ TCP (127.0.0.1)，纯文本 JSON 行协议，请求/响应配对，支持多个�
 
 ### forward / unforward
 
-已废弃。改用 `connect_stream`。
+Legacy helpers for adb port forward. Prefer `connect_stream` for game-probe / Arthas.
 
 ### connect_stream
 
@@ -142,20 +142,46 @@ print(stream.readline())
 stream.close()
 ```
 
-### shell / push / pull
+### shell / push / pull / install / adb
 
-标准 adb 操作。
+标准 adb 操作。`adb` 是通用 argv 接口（含 `exec-out`、任意子命令）。
 
 ```json
 {"method":"shell","params":{"command":"ps | grep java","timeout_ms":10000}}
 → {"exit":0,"stdout":"...","stderr":""}
 
-{"method":"push","params":{"local":"/tmp/x.jar","remote":"/sdcard/x.jar"}}
+{"method":"push","params":{"local":"/tmp/x.jar","remote":"/sdcard/x.jar","timeout_ms":30000}}
 → {"ok":true}
 
-{"method":"pull","params":{"remote":"/sdcard/log.txt","local":"/tmp/log.txt"}}
+{"method":"pull","params":{"remote":"/sdcard/log.txt","local":"/tmp/log.txt","timeout_ms":30000}}
 → {"ok":true}
+
+{"method":"install","params":{"local":"/path/app.apk","replace":true,"timeout_ms":180000}}
+→ {"exit":0,"stdout":"Success\n","stderr":""}
+
+{"method":"adb","params":{"args":["exec-out","run-as","io.stamethyst","sh","-c","ls files/sts"],"timeout_ms":10000,"capture":"text"}}
+→ {"exit":0,"stdout":"...","stderr":""}
 ```
+
+`capture` for `adb`: `text` (default), `binary` (returns `stdout_b64` or writes `local_path`), `none`.
+
+### logcat_dump / logcat_start / logcat_stop / logcat_status
+
+```json
+{"method":"logcat_dump","params":{"since":"07-19 01:00:00.000","local_path":"/tmp/lc.txt","timeout_ms":15000}}
+→ {"ok":true,"exit":0,"local_path":"/tmp/lc.txt","bytes":1234}
+
+{"method":"logcat_start","params":{"since":"","local_path":"/tmp/stream.txt"}}
+→ {"ok":true,"capture_id":"lc1-…","local_path":"/tmp/stream.txt","stderr_path":"…"}
+
+{"method":"logcat_stop","params":{"capture_id":"lc1-…"}}
+→ {"ok":true,"capture_id":"lc1-…","local_path":"…","exit":-9,"stopped_by_daemon":true,"duration_ms":1000}
+
+{"method":"logcat_status","params":{}}
+→ {"ok":true,"captures":[{"capture_id":"…","running":true,"local_path":"…"}]}
+```
+
+Logcat files are written on the machine running the daemon (same host as harness).
 
 ### ping / quit
 

@@ -1,8 +1,6 @@
-import json
 from pathlib import Path
 
-from scripts.tools.lib.agent_bridge import AgentBridge, AgentBridgeError
-from scripts.tools.lib.agent_protocol import AgentProtocol
+from scripts.tools.lib.agent_client import AgentClient, AgentError
 from scripts.tools.harness._context import HarnessContext, set_result_success
 from scripts.tools.harness.agent import _connect_agent
 
@@ -10,27 +8,25 @@ from scripts.tools.harness.agent import _connect_agent
 def run_console(ctx: HarnessContext, resolved_out_dir: Path) -> None:
     command_text = getattr(ctx.options, "console_command", "").strip()
 
-    conn = _connect_agent(ctx)
-    proto = AgentProtocol(conn)
+    client = _connect_agent(ctx)
     try:
         if command_text:
-            _execute_and_print(proto, command_text)
+            _execute_and_print(client, command_text)
             set_result_success(ctx, True, "CONSOLE_EXECUTED", f"Console command executed: {command_text}")
         else:
-            _interactive_repl(proto)
+            _interactive_repl(client)
             set_result_success(ctx, True, "CONSOLE_SESSION_COMPLETE", "Interactive console session finished.")
-    except AgentBridgeError as exc:
+    except AgentError as exc:
         set_result_success(ctx, False, "ERROR", str(exc))
     except Exception as exc:
         set_result_success(ctx, False, "ERROR", f"Console error: {exc}")
     finally:
-        conn.close()
-        conn.remove_forward()
+        client.close()
 
 
-def _execute_and_print(proto: AgentProtocol, command_text: str) -> None:
+def _execute_and_print(client: AgentClient, command_text: str) -> None:
     print(f"console> {command_text}")
-    result = proto.console_exec(command_text)
+    result = client.console_exec(command_text)
     if result.get("executed"):
         output = result.get("output", "")
         if output and output != "ok":
@@ -42,7 +38,7 @@ def _execute_and_print(proto: AgentProtocol, command_text: str) -> None:
         print(f"  error: {error}")
 
 
-def _interactive_repl(proto: AgentProtocol) -> None:
+def _interactive_repl(client: AgentClient) -> None:
     print(
         "\n=== BaseMod Console Mode ===\n"
         "Type BaseMod console commands (e.g. gold 999, unlock Ironclad).\n"
@@ -57,4 +53,4 @@ def _interactive_repl(proto: AgentProtocol) -> None:
             continue
         if line in ("exit", "quit", "q"):
             break
-        _execute_and_print(proto, line)
+        _execute_and_print(client, line)

@@ -13,7 +13,7 @@ from scripts.tools.harness._device import (
     remote_sts_root_script,
     resolve_device_sts_root,
 )
-from scripts.tools.harness._runner import adb, build_adb_args, run_native
+from scripts.tools.harness._runner import adb, run_native
 
 
 def _jar_library_dir(ctx: HarnessContext) -> Path:
@@ -78,7 +78,6 @@ fi
 
 
 def _pull_jar_if_needed(ctx: HarnessContext, sts_root: dict[str, Any], remote_relative: str, local_path: Path) -> None:
-    import subprocess
     remote_key = remote_relative.lstrip("/")
     remote_hash = _remote_file_sha256(ctx, sts_root, remote_key)
     if remote_hash is not None and local_path.exists():
@@ -87,20 +86,21 @@ def _pull_jar_if_needed(ctx: HarnessContext, sts_root: dict[str, Any], remote_re
             print(f"Jar {remote_key} unchanged (SHA-256 match), skipping pull.")
             return
     remote_full = f"{sts_root['root']}/{remote_key}"
+    local_path.parent.mkdir(parents=True, exist_ok=True)
     if sts_root["accessMode"] == "run-as":
-        adb_args = build_adb_args(ctx, [
-            "exec-out", "run-as", ctx.application_id or "", "sh", "-c",
-            f"cat {quote_android_shell(remote_full)}",
-        ])
-        with local_path.open("wb") as out:
-            process = subprocess.run(
-                [ctx.adb_path, *adb_args],
-                cwd=str(ctx.repo_root),
-                stdout=out,
-                timeout=600,
-            )
-        if process.returncode != 0 or not local_path.exists() or local_path.stat().st_size <= 0:
-            raise RuntimeError(f"Failed to pull {remote_full} from device via run-as (exit {process.returncode}).")
+        result = adb(
+            ctx,
+            [
+                "exec-out", "run-as", ctx.application_id or "", "sh", "-c",
+                f"cat {quote_android_shell(remote_full)}",
+            ],
+            timeout_seconds=600,
+            allow_failure=True,
+            capture="binary",
+            local_path=str(local_path),
+        )
+        if result.exit_code != 0 or not local_path.exists() or local_path.stat().st_size <= 0:
+            raise RuntimeError(f"Failed to pull {remote_full} from device via run-as (exit {result.exit_code}).")
     else:
         adb(ctx, ["pull", remote_full, str(local_path)], timeout_seconds=600)
     if not local_path.exists():

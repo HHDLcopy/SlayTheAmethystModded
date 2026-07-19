@@ -1,15 +1,13 @@
 import subprocess
 from pathlib import Path
 
-from scripts.tools.lib.agent_bridge import AgentBridgeError
-from scripts.tools.lib.agent_protocol import AgentProtocol
+from scripts.tools.lib.agent_client import AgentError
 from scripts.tools.harness._context import HarnessContext, set_result_success
 from scripts.tools.harness.agent import _connect_agent
 
 
 def run_hotreload(ctx: HarnessContext, resolved_out_dir: Path) -> None:
-    conn = _connect_agent(ctx)
-    proto = AgentProtocol(conn)
+    client = _connect_agent(ctx)
     try:
         redefine_file = ctx.options.redefine_class_file.strip()
         if redefine_file:
@@ -18,7 +16,7 @@ def run_hotreload(ctx: HarnessContext, resolved_out_dir: Path) -> None:
                 set_result_success(ctx, False, "ERROR", f"Class file not found: {redefine_file}")
                 return
             data = class_path.read_bytes()
-            proto.redefine_class(data)
+            client.redefine_class(data)
             set_result_success(ctx, True, "CLASS_REDEFINED", f"Redefined class from {redefine_file} ({len(data)} bytes)")
         else:
             target = (ctx.options.decompil_targets or [""])[0]
@@ -26,7 +24,7 @@ def run_hotreload(ctx: HarnessContext, resolved_out_dir: Path) -> None:
                 set_result_success(ctx, False, "ERROR", "Specify -Target <class name> to dump.")
                 return
             class_name = target.strip()
-            data = proto.dump_class(class_name)
+            data = client.dump_class(class_name)
             output = resolved_out_dir / f"{class_name.replace('.', '/')}.class"
             output.parent.mkdir(parents=True, exist_ok=True)
             output.write_bytes(data)
@@ -38,13 +36,12 @@ def run_hotreload(ctx: HarnessContext, resolved_out_dir: Path) -> None:
             if decompiled:
                 msg += f", decompiled to {decompiled}"
             set_result_success(ctx, True, "CLASS_DUMPED", msg)
-    except AgentBridgeError as exc:
+    except AgentError as exc:
         set_result_success(ctx, False, "ERROR", str(exc))
     except Exception as exc:
         set_result_success(ctx, False, "ERROR", f"Hotreload error: {exc}")
     finally:
-        conn.close()
-        conn.remove_forward()
+        client.close()
 
 
 def _decompil_class_bytes(ctx: HarnessContext, data: bytes, class_name: str, out_dir: Path) -> str | None:

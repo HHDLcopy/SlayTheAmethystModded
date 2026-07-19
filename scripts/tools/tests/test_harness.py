@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from scripts.tools.connector.client import ConnectorClient
 from scripts.tools.lib.agent_client import AgentClient
@@ -61,15 +61,16 @@ class TestHarnessOrchestrator(unittest.TestCase):
         status = orch.game_status()
         self.assertTrue(status["running"])
 
-    def test_install_triggers_gradle_and_install(self):
+    def test_install_uses_connector(self):
         from scripts.tools.harness.orchestrator import HarnessOrchestrator
+        self.mock_conn.install.return_value = {"exit": 0, "stdout": "Success"}
         orch = HarnessOrchestrator(
             connector=self.mock_conn,
             application_id="io.stamethyst.debug",
         )
-        with patch("subprocess.check_call") as mock_check:
-            orch.build_and_install()
-            self.assertGreaterEqual(mock_check.call_count, 1)
+        orch.build_and_install("/tmp/app-debug.apk")
+        self.mock_conn.install.assert_called_once_with(
+            "/tmp/app-debug.apk", replace=True, timeout_ms=180000)
 
 
 if __name__ == "__main__":

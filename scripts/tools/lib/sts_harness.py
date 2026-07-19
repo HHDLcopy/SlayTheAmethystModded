@@ -228,6 +228,7 @@ class HarnessOptions:
     cloud_sync_payload: str = ""
     cloud_sync_source_file: str = ""
     cloud_sync_pull_interval_seconds: int = 10
+    connector_port: int | None = None
 
 
 class Harness:
@@ -238,6 +239,8 @@ class Harness:
         self.adb_path: str | None = None
         self.application_id: str | None = None
         self.resolved_device_serial = options.device_serial.strip()
+        self.connector = None
+        self.connector_port: int | None = options.connector_port
         self.operations: list[dict[str, Any]] = []
         self.started_at = datetime.now(timezone.utc)
         self.result: dict[str, Any] = {}
@@ -251,6 +254,8 @@ class Harness:
             adb_path=self.adb_path,
             application_id=self.application_id,
             resolved_device_serial=self.resolved_device_serial,
+            connector=self.connector,
+            connector_port=self.connector_port,
             operations=self.operations,
             started_at=self.started_at,
             result=self.result,
@@ -301,31 +306,54 @@ class Harness:
         raise RuntimeError("Could not resolve adb. Set sdk.dir, ANDROID_SDK_ROOT, ANDROID_HOME, or add adb to PATH.")
 
 
+    def connect_connector(self) -> None:
+        from scripts.tools.connector.client import ConnectorClient, resolve_connector_port
+
+        port = resolve_connector_port(self.options.connector_port)
+        self.connector_port = port
+        client = ConnectorClient(port=port, auto_start=False)
+        client.connect()
+        self.connector = client
+        status = None
+        try:
+            status = client.status()
+        except Exception:
+            status = None
+        if isinstance(status, dict) and status.get("adb"):
+            self.adb_path = str(status["adb"])
+        else:
+            try:
+                self.adb_path = self.resolve_adb_path()
+            except Exception:
+                self.adb_path = "adb"
+
     def select_device(self) -> None:
-        from scripts.tools.harness._runner import run_native
-        if not self.adb_path:
-            raise RuntimeError("adb is not initialized.")
-        result = run_native(self._build_context(), self.adb_path, ["devices"], timeout_seconds=15, allow_failure=True)
-        if result.exit_code != 0:
-            raise RuntimeError("adb devices failed.")
-        online_devices = []
-        for line in re.split(r"\r?\n", result.output):
-            match = re.match(r"^([^\s]+)\s+device$", line.strip())
-            if match:
-                online_devices.append(match.group(1))
+        if self.connector is None:
+            raise RuntimeError("connector is not initialized.")
+        devices = self.connector.devices()
+        online_devices = [
+            str(d.get("serial", ""))
+            for d in devices
+            if d.get("state") == "device" and d.get("serial")
+        ]
         if self.resolved_device_serial:
             if self.resolved_device_serial not in online_devices:
                 raise RuntimeError(f"Requested device is not connected and online: {self.resolved_device_serial}")
+            ok = self.connector.select(self.resolved_device_serial)
+            if not ok:
+                raise RuntimeError(f"Failed to select device: {self.resolved_device_serial}")
             return
         if not online_devices:
             raise RuntimeError("No connected Android device or emulator is online.")
         if len(online_devices) > 1:
             raise RuntimeError(f"Multiple Android devices are online. Pass -DeviceSerial. Devices: {', '.join(online_devices)}")
         self.resolved_device_serial = online_devices[0]
+        ok = self.connector.select(self.resolved_device_serial)
+        if not ok:
+            raise RuntimeError(f"Failed to select device: {self.resolved_device_serial}")
 
     def initialize(self) -> None:
         self.gradle_wrapper = self.resolve_gradle_wrapper()
-        self.adb_path = self.resolve_adb_path()
         self.application_id = read_key_value_file(self.repo_root / "gradle.properties", "application.id", "io.stamethyst")
         if not self.application_id.strip():
             raise RuntimeError("application.id cannot be empty.")
@@ -336,7 +364,24 @@ class Harness:
                 raise RuntimeError("single-room requires -LaunchMode mts or mts_basemod because it is implemented by the bundled MTS autoplay mod.")
             self.options.autoplay = True
             self.options.autoplay_mode = "single_room"
+        self.connect_connector()
         self.select_device()
+
+    def adb(self, arguments: list[str] | tuple[str, ...], *, timeout_seconds: int = 10, allow_failure: bool = False):
+        from scripts.tools.harness._runner import adb as runner_adb
+        return runner_adb(self._build_context(), arguments, timeout_seconds=timeout_seconds, allow_failure=allow_failure)
+
+    def adb_shell_script(self, script: str, *, timeout_seconds: int = 5, allow_failure: bool = False):
+        from scripts.tools.harness._runner import adb_shell_script as runner_shell
+        return runner_shell(self._build_context(), script, timeout_seconds=timeout_seconds, allow_failure=allow_failure)
+
+    def gradle(self, arguments: list[str] | tuple[str, ...]):
+        from scripts.tools.harness._runner import gradle as runner_gradle
+        return runner_gradle(self._build_context(), arguments)
+
+    def build_adb_args(self, arguments: list[str] | tuple[str, ...]) -> list[str]:
+        from scripts.tools.harness._runner import build_adb_args
+        return build_adb_args(self._build_context(), arguments)
 
     def gradle_device_properties(self) -> list[str]:
         if self.resolved_device_serial:
@@ -517,91 +562,17 @@ class Harness:
                 return trimmed
         return ""
 
-    def start_logcat_capture(self, output_directory: Path, since_timestamp: str = "") -> LogcatCapture:
-        if not self.adb_path:
-            raise RuntimeError("adb is not initialized.")
-        output_directory.mkdir(parents=True, exist_ok=True)
-        timestamp = file_timestamp()
-        log_path = output_directory / f"harness-logcat-{timestamp}.txt"
-        stderr_path = output_directory / f"harness-logcat-{timestamp}.stderr.txt"
-        logcat_args = ["logcat", "-v", "threadtime", "-b", "main", "-b", "system", "-b", "crash"]
-        logcat_args.extend(["-T", since_timestamp if since_timestamp.strip() else "1"])
-        adb_args = self.build_adb_args(logcat_args)
-        stdout_stream = log_path.open("wb")
-        stderr_stream = stderr_path.open("wb")
-        try:
-            process = subprocess.Popen(
-                [self.adb_path, *adb_args],
-                cwd=str(self.repo_root),
-                stdout=stdout_stream,
-                stderr=stderr_stream,
-            )
-        except Exception:
-            stdout_stream.close()
-            stderr_stream.close()
-            raise
-        self.result["artifacts"]["harnessLogcat"] = str(log_path)
-        self.result["artifacts"]["harnessLogcatStderr"] = str(stderr_path)
-        return LogcatCapture(
-            process=process,
-            stdout_stream=stdout_stream,
-            stderr_stream=stderr_stream,
-            log_path=log_path,
-            stderr_path=stderr_path,
-            started_at=datetime.now(timezone.utc),
-            command=format_command_for_log(self.adb_path, adb_args),
-        )
+    def start_logcat_capture(self, output_directory: Path, since_timestamp: str = "") -> Any:
+        from scripts.tools.harness._device import start_logcat_capture as device_start_logcat
+        return device_start_logcat(self._build_context(), output_directory, since_timestamp)
 
-    def stop_logcat_capture(self, capture: LogcatCapture | None) -> None:
-        if capture is None:
-            return
-        ended = datetime.now(timezone.utc)
-        stopped_by_harness = False
-        exit_code: int | None = None
-        try:
-            if capture.process.poll() is None:
-                stopped_by_harness = True
-                capture.process.kill()
-            try:
-                capture.process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                pass
-            if capture.process.poll() is not None:
-                exit_code = capture.process.returncode
-        finally:
-            capture.stdout_stream.close()
-            capture.stderr_stream.close()
-
-        stderr_tail = read_local_text_tail(capture.stderr_path, max_bytes=4000)
-        self.operations.append(
-            {
-                "command": capture.command,
-                "exitCode": exit_code,
-                "startedAt": utc_timestamp(capture.started_at),
-                "endedAt": utc_timestamp(ended),
-                "durationMs": int((ended - capture.started_at).total_seconds() * 1000),
-                "timedOut": False,
-                "background": True,
-                "stoppedByHarness": stopped_by_harness,
-                "outputTail": limit_text(f"stdout: {capture.log_path}\nstderr: {capture.stderr_path}\n{stderr_tail}"),
-            }
-        )
+    def stop_logcat_capture(self, capture: Any | None) -> None:
+        from scripts.tools.harness._device import stop_logcat_capture as device_stop_logcat
+        device_stop_logcat(self._build_context(), capture)
 
     def harness_logcat_dump(self, output_directory: Path, since_timestamp: str = "") -> Path:
-        output_directory.mkdir(parents=True, exist_ok=True)
-        log_path = output_directory / f"harness-logcat-dump-{file_timestamp()}.txt"
-        args = ["logcat", "-d", "-v", "threadtime", "-b", "main", "-b", "system", "-b", "crash"]
-        if since_timestamp.strip():
-            args.extend(["-T", since_timestamp])
-        else:
-            args.extend(["-t", "1500"])
-        result = self.adb(args, timeout_seconds=30, allow_failure=True)
-        if result.exit_code != 0 and since_timestamp.strip():
-            fallback = ["logcat", "-d", "-v", "threadtime", "-b", "main", "-b", "system", "-b", "crash", "-t", "1500"]
-            result = self.adb(fallback, timeout_seconds=30, allow_failure=True)
-        log_path.write_text(result.output, encoding="utf-8")
-        self.result["artifacts"]["harnessLogcat"] = str(log_path)
-        return log_path
+        from scripts.tools.harness._device import harness_logcat_dump as device_logcat_dump
+        return device_logcat_dump(self._build_context(), output_directory, since_timestamp)
 
     def resolve_device_sts_root(self) -> dict[str, Any]:
         package_name = self.application_id or ""
@@ -1503,7 +1474,7 @@ rm -rf files/sts/package files/sts/mts_patch_cache
         elif crash is not None and status.get("runtimeSignalState") is None:
             status["runtimeSignalState"] = "LOGCAT_CRASH"
 
-    def wait_harness_status(self, logcat_capture: LogcatCapture | None = None) -> dict[str, Any]:
+    def wait_harness_status(self, logcat_capture: Any | None = None) -> dict[str, Any]:
         safe_timeout = max(1, self.options.timeout_seconds)
         safe_poll = max(0.25, self.options.poll_interval_seconds)
         deadline = time.monotonic() + safe_timeout

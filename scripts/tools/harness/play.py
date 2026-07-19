@@ -1,18 +1,15 @@
 import json
 from pathlib import Path
 
-from scripts.tools.lib.agent_bridge import AgentBridge, AgentBridgeError
-from scripts.tools.lib.agent_protocol import AgentProtocol
+from scripts.tools.lib.agent_client import AgentClient, AgentError
 from scripts.tools.harness._context import HarnessContext, set_result_success
 from scripts.tools.harness.agent import _connect_agent
 
 
 def run_play(ctx: HarnessContext, resolved_out_dir: Path) -> None:
-    conn = _connect_agent(ctx)
-    bridge = AgentBridge(port=ctx.options.agent_port, connection=conn)
-    proto = AgentProtocol(conn)
+    client = _connect_agent(ctx)
     try:
-        agent_id = bridge.attach("play")
+        agent_id = client.attach("play")
         ctx.result["agentInfo"] = {"agentId": agent_id, "state": "active"}
         print(
             "\n=== Agent Play Mode ===\n"
@@ -30,39 +27,38 @@ def run_play(ctx: HarnessContext, resolved_out_dir: Path) -> None:
             if line in ("exit", "quit", "q"):
                 break
             if line == "observe":
-                state = proto.observe()
+                state = client.observe()
                 print(json.dumps(state, indent=2))
             elif line.startswith("console "):
                 cmd = line[len("console "):].strip()
-                result = proto.console_exec(cmd)
+                result = client.console_exec(cmd)
                 print(json.dumps(result, indent=2))
             elif line.startswith("play_card"):
-                proto.execute("PLAY_CARD", {})
-                state = proto.observe()
+                client.execute("PLAY_CARD", {})
+                state = client.observe()
                 print(json.dumps(state, indent=2))
             elif line == "end_turn":
-                proto.execute("END_TURN", {})
-                state = proto.observe()
+                client.execute("END_TURN", {})
+                state = client.observe()
                 print(json.dumps(state, indent=2))
             elif line == "skip_room":
-                proto.execute("SKIP_ROOM", {})
-                state = proto.observe()
+                client.execute("SKIP_ROOM", {})
+                state = client.observe()
                 print(json.dumps(state, indent=2))
             elif line == "press_proceed":
-                proto.execute("PRESS_PROCEED", {})
+                client.execute("PRESS_PROCEED", {})
             elif line.startswith("wait"):
                 parts = line.split()
                 ms = int(parts[1]) if len(parts) > 1 else 500
-                proto.execute("WAIT", {"ms": ms})
+                client.execute("WAIT", {"ms": ms})
             else:
                 print(f"Unknown: {line}")
                 print("Available: observe, play_card, end_turn, skip_room, press_proceed, wait <ms>, exit")
-        bridge.detach(agent_id)
+        client.detach(agent_id)
         set_result_success(ctx, True, "AGENT_PLAY_COMPLETE", "Interactive play session finished.")
-    except AgentBridgeError as exc:
+    except AgentError as exc:
         set_result_success(ctx, False, "ERROR", str(exc))
     except Exception as exc:
         set_result_success(ctx, False, "ERROR", f"Play mode error: {exc}")
     finally:
-        conn.close()
-        conn.remove_forward()
+        client.close()

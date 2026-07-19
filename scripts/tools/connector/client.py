@@ -7,19 +7,50 @@ import time
 from typing import Any
 
 
+class ConnectorError(RuntimeError):
+    def __init__(self, message: str, code: int | None = None, response: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.code = code
+        self.response = response or {}
+
+
+def resolve_connector_port(explicit: int | None = None) -> int:
+    if explicit is not None:
+        return int(explicit)
+    env = os.environ.get("STS_CONNECTOR_PORT", "").strip()
+    if env:
+        return int(env)
+    raise RuntimeError(
+        "Connector port is required. Set STS_CONNECTOR_PORT or pass -ConnectorPort / --connector-port. "
+        "Start the daemon with: python -m scripts.tools.connector start --port <port>"
+    )
+
+
 class ConnectorClient:
 
     _DAEMON_START_TIMEOUT = 5
 
-    def __init__(self, port: int | None = None) -> None:
-        port = port if port is not None else int(os.environ["STS_CONNECTOR_PORT"])
-        self._port = port
+    def __init__(self, port: int | None = None, *, auto_start: bool = True) -> None:
+        """auto_start: if True (default, arthas-compatible), spawn daemon on connect failure.
+        Harness should pass auto_start=False and require an already-running daemon.
+        """
+        self._port = resolve_connector_port(port)
+        self._auto_start = auto_start
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+    @property
+    def port(self) -> int:
+        return self._port
 
     def connect(self) -> None:
         try:
             self._sock.connect(("127.0.0.1", self._port))
         except (ConnectionRefusedError, OSError):
+            if not self._auto_start:
+                raise RuntimeError(
+                    f"Connector daemon is not running on 127.0.0.1:{self._port}. "
+                    f"Start it with: python -m scripts.tools.connector start --port {self._port}"
+                ) from None
             self._start_daemon()
             self._sock.connect(("127.0.0.1", self._port))
 
@@ -50,6 +81,17 @@ class ConnectorClient:
         self._send(body)
         return self._recv_json()
 
+    def send_request_ok(self, request: dict[str, Any]) -> dict[str, Any]:
+        resp = self.send_request(request)
+        if isinstance(resp, dict) and "error" in resp and isinstance(resp["error"], dict):
+            err = resp["error"]
+            raise ConnectorError(
+                str(err.get("message", "connector error")),
+                code=err.get("code"),
+                response=resp,
+            )
+        return resp
+
     def devices(self) -> list[dict[str, Any]]:
         resp = self.send_request({"method": "devices"})
         return resp.get("devices", [])
@@ -79,19 +121,76 @@ class ConnectorClient:
             "params": {"command": command, "timeout_ms": timeout_ms},
         })
 
-    def push(self, local: str, remote: str) -> bool:
+    def adb(
+        self,
+        args: list[str],
+        *,
+        timeout_ms: int = 30000,
+        capture: str = "text",
+        local_path: str = "",
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {
+            "args": list(args),
+            "timeout_ms": timeout_ms,
+            "capture": capture,
+        }
+        if local_path:
+            params["local_path"] = local_path
+        return self.send_request({"method": "adb", "params": params})
+
+    def install(self, local: str, *, replace: bool = True, timeout_ms: int = 180000) -> dict[str, Any]:
+        return self.send_request({
+            "method": "install",
+            "params": {"local": local, "replace": replace, "timeout_ms": timeout_ms},
+        })
+
+    def push(self, local: str, remote: str, *, timeout_ms: int = 30000) -> bool:
         resp = self.send_request({
             "method": "push",
-            "params": {"local": local, "remote": remote},
+            "params": {"local": local, "remote": remote, "timeout_ms": timeout_ms},
         })
         return resp.get("ok", False)
 
-    def pull(self, remote: str, local: str) -> bool:
+    def pull(self, remote: str, local: str, *, timeout_ms: int = 30000) -> bool:
         resp = self.send_request({
             "method": "pull",
-            "params": {"remote": remote, "local": local},
+            "params": {"remote": remote, "local": local, "timeout_ms": timeout_ms},
         })
         return resp.get("ok", False)
+
+    def logcat_dump(
+        self,
+        *,
+        since: str = "",
+        local_path: str = "",
+        timeout_ms: int = 15000,
+    ) -> dict[str, Any]:
+        params: dict[str, Any] = {"timeout_ms": timeout_ms}
+        if since:
+            params["since"] = since
+        if local_path:
+            params["local_path"] = local_path
+        return self.send_request({"method": "logcat_dump", "params": params})
+
+    def logcat_start(self, *, since: str = "", local_path: str = "") -> dict[str, Any]:
+        params: dict[str, Any] = {}
+        if since:
+            params["since"] = since
+        if local_path:
+            params["local_path"] = local_path
+        return self.send_request({"method": "logcat_start", "params": params})
+
+    def logcat_stop(self, capture_id: str) -> dict[str, Any]:
+        return self.send_request({
+            "method": "logcat_stop",
+            "params": {"capture_id": capture_id},
+        })
+
+    def logcat_status(self, capture_id: str = "") -> dict[str, Any]:
+        params: dict[str, Any] = {}
+        if capture_id:
+            params["capture_id"] = capture_id
+        return self.send_request({"method": "logcat_status", "params": params})
 
     def _send(self, line: str) -> None:
         self._sock.sendall((line + "\n").encode("utf-8"))

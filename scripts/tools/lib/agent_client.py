@@ -103,7 +103,7 @@ class AgentClient:
             self._forwarded = False
 
     def is_connected(self) -> bool:
-        return self._sock is not None
+        return self._stream is not None or self._sock is not None
 
     # ── Basic protocol I/O ────────────────────────────────────────
 
@@ -187,6 +187,15 @@ class AgentClient:
             raise AgentError(resp)
         return {"executed": False, "response": resp}
 
+    def console_exec(self, command: str) -> dict[str, Any]:
+        """Execute a BaseMod DevConsole command."""
+        resp = self.send(f"CONSOLE {command}")
+        if resp.startswith("RESULT "):
+            return json.loads(resp[7:])
+        if resp.startswith("ERROR "):
+            raise AgentError(resp)
+        return {"executed": False, "error": f"unexpected response: {resp}"}
+
     # ── Performance ───────────────────────────────────────────────
 
     def perf_start(self, agent_id: str) -> None:
@@ -268,9 +277,16 @@ class AgentClient:
                 remain = deadline - time.monotonic()
                 if remain <= 0:
                     break
-                self._sock.settimeout(min(remain, poll_interval))
+                timeout = min(remain, poll_interval)
             else:
-                self._sock.settimeout(poll_interval)
+                timeout = poll_interval
+            if self._sock is not None:
+                self._sock.settimeout(timeout)
+            elif self._stream is not None and hasattr(self._stream, "_sock"):
+                try:
+                    self._stream._sock.settimeout(timeout)
+                except Exception:
+                    pass
             try:
                 line = self._read_line()
             except socket.timeout:

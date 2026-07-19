@@ -142,7 +142,7 @@ class BuildAdbArgsTest(unittest.TestCase):
 
 
 class AdbTest(unittest.TestCase):
-    def _make_ctx(self, adb_path="/usr/bin/adb", device_serial=""):
+    def _make_ctx(self, connector=None, device_serial=""):
         return HarnessContext(
             options=HarnessOptions(
                 command="smoke",
@@ -163,25 +163,25 @@ class AdbTest(unittest.TestCase):
                 disable_all_mods=False,
             ),
             repo_root=Path("/fake/repo"),
-            adb_path=adb_path,
+            connector=connector,
             resolved_device_serial=device_serial,
         )
 
-    def test_raises_when_no_adb_path(self):
+    def test_raises_when_no_connector(self):
         from scripts.tools.harness._runner import adb
-        ctx = self._make_ctx(adb_path=None)
+        ctx = self._make_ctx(connector=None)
         with self.assertRaises(RuntimeError):
             adb(ctx, ["devices"])
 
-    @patch("subprocess.run")
-    def test_adb_calls_run_native_with_adb_path(self, mock_run):
+    def test_adb_uses_connector_shell(self):
         from scripts.tools.harness._runner import adb
-        mock_run.return_value = MagicMock(
-            returncode=0, stdout="device", stderr=""
-        )
-        ctx = self._make_ctx(adb_path="/usr/bin/adb")
-        result = adb(ctx, ["devices"])
+        connector = MagicMock()
+        connector.shell.return_value = {"exit": 0, "stdout": "hello", "stderr": ""}
+        ctx = self._make_ctx(connector=connector)
+        result = adb(ctx, ["shell", "echo hello"])
         self.assertEqual(result.exit_code, 0)
+        self.assertIn("hello", result.output)
+        connector.shell.assert_called_once()
 
 
 class GradleTest(unittest.TestCase):

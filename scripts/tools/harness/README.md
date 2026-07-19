@@ -1,12 +1,23 @@
 # Harness Module
 
-端到端测试编排器，通过 adb、Gradle 和 JVM agent 完成游戏构建、安装、启动、观测。
+端到端测试编排器。设备 I/O 全部经 **connector**；主机侧用 Gradle / CFR。
+
+## 前置条件
+
+```bash
+export STS_CONNECTOR_PORT=39999
+python -m scripts.tools.connector start --port 39999
+# 或 harness 参数: -ConnectorPort 39999
+```
+
+Harness **不会**自动拉起 daemon（与 arthas 客户端默认 auto_start 不同）。
 
 ## 架构
 
 ```
 Harness.run()
-  └── run_command(ctx, out_dir)  ──→  22 个命令分发
+  ├── connect_connector() + select_device()  → ConnectorClient
+  └── run_command(ctx, out_dir)  ──→  命令分发
         ├── doctor               → harness/doctor.run_doctor(ctx)
         ├── install              → harness/install.run_install(ctx)
         ├── start / stop         → harness/run.run_start/stop(ctx)
@@ -21,22 +32,23 @@ Harness.run()
         ├── console              → harness/console.run_console(ctx, out_dir)
         ├── hotreload            → harness/hotreload.run_hotreload(ctx, out_dir)
         ├── perf                 → harness/perf.run_perf(ctx, out_dir)
-        └── startup-cache-profile → harness/startup_cache.run_startup_cache_profile(ctx, out_dir)
+        ├── startup-cache-profile → harness/startup_cache.run_startup_cache_profile(ctx, out_dir)
+        └── steam-cloud-sync     → sts_harness.harness_steam_cloud_sync (仍用 connector adb/logcat)
 ```
 
 共享模块：
-- `_context.py` — `HarnessContext` dataclass 封装可变状态（result, operations, adb_path 等）
-- `_runner.py` — `run_native`, `CommandResult`, `adb`, `gradle`, `build_adb_args`
-- `_device.py` — device 交互：`resolve_device_sts_root`, `read_remote_sts_text`, `remote_sts_path_state`, `clear_runtime_signals`, logcat 生命周期
-- `_status.py` — 状态观测：`harness_status`, `wait_harness_status`, crash markers, boot bridge event 解析
+- `_context.py` — `HarnessContext`（含 `connector`）
+- `_runner.py` — `run_native`（主机命令）, `adb`/`adb_shell_script`（经 connector）, `gradle`
+- `_device.py` — storage root / logcat_dump / logcat_start|stop（经 connector）
+- `_status.py` — 状态观测
 
 每个命令函数签名为 `(ctx: HarnessContext, ...) -> None` 或返回 `int`。
 
 ## game-probe 连接
 
-`agent-*`、`play`、`console`、`hotreload` 和 `perf` 命令通过 adb forward 连接游戏 JVM 中的 game-probe，默认端口为 `9099`。可使用 `-AgentPort <port>` 或 `--agent-port <port>` 覆盖连接端口；该参数只控制 Harness 的连接和端口转发，不会重新配置已运行的 game-probe。
+`agent-*`、`play`、`console`、`hotreload` 和 `perf` 通过 `AgentClient(connector=…)` + `connect_stream` 连接 game-probe（默认端口 `9099`）。可用 `-AgentPort` 覆盖。
 
-`console` 需要以启用 game-probe 的方式启动游戏，并要求 BaseMod DevConsole 可用。不传命令时进入交互模式；可使用 `-ConsoleCommand "gold 999"` 或 `--console-command "gold 999"` 执行单条命令。
+`console` 需要以启用 game-probe 的方式启动游戏，并要求 BaseMod DevConsole 可用。不传命令时进入交互模式；可使用 `-ConsoleCommand "gold 999"` 执行单条命令。
 
 ## 文件结构
 

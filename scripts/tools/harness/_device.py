@@ -1,6 +1,5 @@
 from typing import Any
 import re
-import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,7 +13,7 @@ from scripts.tools.lib.sts_harness import (
     utc_timestamp,
 )
 from scripts.tools.harness._context import HarnessContext
-from scripts.tools.harness._runner import CommandResult, build_adb_args, adb, adb_shell_script
+from scripts.tools.harness._runner import CommandResult, adb, adb_shell_script
 
 
 def resolve_device_sts_root(ctx: HarnessContext) -> dict[str, Any]:
@@ -193,63 +192,69 @@ fi
 
 
 def harness_logcat_dump(ctx: HarnessContext, output_directory: Path, since_timestamp: str = "") -> Path:
-    if not ctx.adb_path:
-        raise RuntimeError("adb is not initialized.")
+    if ctx.connector is None:
+        raise RuntimeError("Harness connector is not initialized.")
     output_directory.mkdir(parents=True, exist_ok=True)
     log_path = output_directory / f"harness-logcat-dump-{file_timestamp()}.txt"
-    logcat_args = ["logcat", "-d", "-v", "threadtime", "-b", "main", "-b", "system", "-b", "crash"]
-    if since_timestamp.strip():
-        logcat_args.extend(["-T", since_timestamp.strip()])
-    result = adb(ctx, logcat_args, timeout_seconds=15, allow_failure=True)
-    log_path.write_text(result.output, encoding="utf-8", errors="replace")
-    ctx.result["artifacts"]["harnessLogcatDump"] = str(log_path)
+    resp = ctx.connector.logcat_dump(
+        since=since_timestamp.strip(),
+        local_path=str(log_path),
+        timeout_ms=15000,
+    )
+    if isinstance(resp, dict) and "error" in resp:
+        # fallback without -T
+        if since_timestamp.strip():
+            resp = ctx.connector.logcat_dump(local_path=str(log_path), timeout_ms=30000)
+        if isinstance(resp, dict) and "error" in resp:
+            log_path.write_text("", encoding="utf-8")
+    if not log_path.exists():
+        text = ""
+        if isinstance(resp, dict):
+            text = str(resp.get("stdout", "") or "")
+        log_path.write_text(text, encoding="utf-8", errors="replace")
+    ctx.result.setdefault("artifacts", {})["harnessLogcatDump"] = str(log_path)
+    ctx.result.setdefault("artifacts", {})["harnessLogcat"] = str(log_path)
     return log_path
 
 
 @dataclass
 class LogcatCapture:
-    process: subprocess.Popen
-    stdout_stream: Any
-    stderr_stream: Any
+    capture_id: str
     log_path: Path
     stderr_path: Path
     started_at: datetime
     command: str
+    process: Any = None  # legacy compat; unused when via connector
+    stdout_stream: Any = None
+    stderr_stream: Any = None
 
 
 def start_logcat_capture(ctx: HarnessContext, output_directory: Path, since_timestamp: str = "") -> LogcatCapture:
-    if not ctx.adb_path:
-        raise RuntimeError("adb is not initialized.")
+    if ctx.connector is None:
+        raise RuntimeError("Harness connector is not initialized.")
     output_directory.mkdir(parents=True, exist_ok=True)
     timestamp = file_timestamp()
     log_path = output_directory / f"harness-logcat-{timestamp}.txt"
     stderr_path = output_directory / f"harness-logcat-{timestamp}.stderr.txt"
-    logcat_args = ["logcat", "-v", "threadtime", "-b", "main", "-b", "system", "-b", "crash"]
-    logcat_args.extend(["-T", since_timestamp if since_timestamp.strip() else "1"])
-    adb_args = build_adb_args(ctx, logcat_args)
-    stdout_stream = log_path.open("wb")
-    stderr_stream = stderr_path.open("wb")
-    try:
-        process = subprocess.Popen(
-            [ctx.adb_path, *adb_args],
-            cwd=str(ctx.repo_root),
-            stdout=stdout_stream,
-            stderr=stderr_stream,
-        )
-    except Exception:
-        stdout_stream.close()
-        stderr_stream.close()
-        raise
-    ctx.result.setdefault("artifacts", {})["harnessLogcat"] = str(log_path)
-    ctx.result.setdefault("artifacts", {})["harnessLogcatStderr"] = str(stderr_path)
+    resp = ctx.connector.logcat_start(
+        since=since_timestamp.strip() if since_timestamp.strip() else "",
+        local_path=str(log_path),
+    )
+    if isinstance(resp, dict) and "error" in resp:
+        err = resp["error"]
+        message = err.get("message", str(err)) if isinstance(err, dict) else str(err)
+        raise RuntimeError(f"logcat_start failed: {message}")
+    capture_id = str(resp.get("capture_id", ""))
+    actual_path = Path(str(resp.get("local_path", log_path)))
+    actual_stderr = Path(str(resp.get("stderr_path", stderr_path)))
+    ctx.result.setdefault("artifacts", {})["harnessLogcat"] = str(actual_path)
+    ctx.result.setdefault("artifacts", {})["harnessLogcatStderr"] = str(actual_stderr)
     return LogcatCapture(
-        process=process,
-        stdout_stream=stdout_stream,
-        stderr_stream=stderr_stream,
-        log_path=log_path,
-        stderr_path=stderr_path,
+        capture_id=capture_id,
+        log_path=actual_path,
+        stderr_path=actual_stderr,
         started_at=datetime.now(timezone.utc),
-        command=format_command_for_log(ctx.adb_path, adb_args),
+        command=format_command_for_log("connector-logcat", [capture_id]),
     )
 
 
@@ -259,20 +264,18 @@ def stop_logcat_capture(ctx: HarnessContext, capture: Any | None) -> None:
     ended = datetime.now(timezone.utc)
     stopped_by_harness = False
     exit_code: int | None = None
-    try:
-        if capture.process.poll() is None:
-            stopped_by_harness = True
-            capture.process.kill()
-        try:
-            capture.process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            pass
-        if capture.process.poll() is not None:
-            exit_code = capture.process.returncode
-    finally:
-        capture.stdout_stream.close()
-        capture.stderr_stream.close()
-    stderr_tail = read_local_text_tail(capture.stderr_path, max_bytes=4000)
+    if getattr(capture, "capture_id", None) and ctx.connector is not None:
+        resp = ctx.connector.logcat_stop(capture.capture_id)
+        if isinstance(resp, dict) and "error" not in resp:
+            stopped_by_harness = bool(resp.get("stopped_by_daemon", False))
+            exit_code = resp.get("exit")
+            if resp.get("local_path"):
+                capture.log_path = Path(str(resp["local_path"]))
+            if resp.get("stderr_path"):
+                capture.stderr_path = Path(str(resp["stderr_path"]))
+        elif isinstance(resp, dict) and "error" in resp:
+            exit_code = 1
+    stderr_tail = read_local_text_tail(capture.stderr_path, max_bytes=4000) if capture.stderr_path.exists() else ""
     ctx.operations.append({
         "command": capture.command,
         "exitCode": exit_code,
@@ -282,4 +285,5 @@ def stop_logcat_capture(ctx: HarnessContext, capture: Any | None) -> None:
         "timedOut": False,
         "outputTail": limit_text(stderr_tail),
         "stopped_by_harness": stopped_by_harness,
+        "via": "connector",
     })

@@ -19,6 +19,14 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("-Command", "--command", dest="command", choices=COMMANDS, default="doctor")
     parser.add_argument("-LaunchMode", "--launch-mode", dest="launch_mode", choices=LAUNCH_MODES, default="mts_basemod")
     parser.add_argument("-DeviceSerial", "--device-serial", dest="device_serial", default="")
+    parser.add_argument(
+        "-ConnectorPort",
+        "--connector-port",
+        dest="connector_port",
+        type=int,
+        default=None,
+        help="Connector daemon TCP port. Required unless STS_CONNECTOR_PORT is set. Start with: python -m scripts.tools.connector start --port <port>",
+    )
     parser.add_argument("-OutDir", "--out-dir", dest="out_dir", default="")
     parser.add_argument("-TimeoutSeconds", "--timeout-seconds", dest="timeout_seconds", type=int, default=None)
     parser.add_argument("-PollIntervalSeconds", "--poll-interval-seconds", dest="poll_interval_seconds", type=int, default=2)
@@ -263,5 +271,6 @@ def main(argv: list[str] | None = None) -> int:
         cloud_sync_payload=args.cloud_sync_payload,
         cloud_sync_source_file=args.cloud_sync_source_file,
         cloud_sync_pull_interval_seconds=args.cloud_sync_pull_interval_seconds,
+        connector_port=args.connector_port,
     )
     return Harness(options).run()

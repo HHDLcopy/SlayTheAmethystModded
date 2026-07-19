@@ -288,7 +288,7 @@ class RemoteStsPathStateTest(unittest.TestCase):
 
 
 class HarnessLogcatDumpTest(unittest.TestCase):
-    def _make_ctx(self, adb_path="/usr/bin/adb"):
+    def _make_ctx(self, connector=None):
         return HarnessContext(
             options=HarnessOptions(
                 command="smoke", launch_mode="mts_basemod", device_serial="",
@@ -298,14 +298,20 @@ class HarnessLogcatDumpTest(unittest.TestCase):
                 mods=[], mod_list_file="", enable_all_mods=False, disable_all_mods=False,
             ),
             repo_root=Path("/fake/repo"),
-            adb_path=adb_path,
+            connector=connector,
         )
 
-    @patch("scripts.tools.harness._device.adb")
-    def test_dump_returns_path(self, mock_adb):
+    def test_dump_returns_path(self):
         import tempfile
-        mock_adb.return_value = MagicMock(exit_code=0, output="log output")
-        ctx = self._make_ctx()
+        connector = MagicMock()
+
+        def _dump(**kwargs):
+            path = Path(kwargs["local_path"])
+            path.write_text("log output", encoding="utf-8")
+            return {"ok": True, "exit": 0, "local_path": str(path)}
+
+        connector.logcat_dump.side_effect = _dump
+        ctx = self._make_ctx(connector=connector)
         ctx.result["artifacts"] = {}
         with tempfile.TemporaryDirectory() as tmpdir:
             out_dir = Path(tmpdir)
@@ -314,8 +320,7 @@ class HarnessLogcatDumpTest(unittest.TestCase):
             self.assertIn("log output", result.read_text())
             self.assertIn("harness-logcat-dump", result.name)
 
-    @patch("scripts.tools.harness._device.adb")
-    def test_dump_raises_when_no_adb(self, mock_adb):
-        ctx = self._make_ctx(adb_path=None)
+    def test_dump_raises_when_no_connector(self):
+        ctx = self._make_ctx(connector=None)
         with self.assertRaises(RuntimeError):
             harness_logcat_dump(ctx, Path("/tmp"))

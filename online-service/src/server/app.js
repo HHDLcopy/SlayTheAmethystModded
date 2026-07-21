@@ -380,6 +380,13 @@ async function buildServer(config = loadConfig()) {
   fastify.get('/online', async (_request, reply) => sendClientFile(reply, 'index.html', 'text/html; charset=utf-8'));
   fastify.get('/api/presence/panel', async (_request, reply) => sendClientFile(reply, 'index.html', 'text/html; charset=utf-8'));
   fastify.get('/api/online/panel', async (_request, reply) => sendClientFile(reply, 'index.html', 'text/html; charset=utf-8'));
+  fastify.get('/presence/runtime-config.js', async (request, reply) => {
+    const heartbeatWsUrl = buildCloudControlResponse(config, request).heartbeat.wsUrl;
+    const serviceBaseUrl = toHttpUrl(heartbeatWsUrl).origin;
+    reply.type('application/javascript; charset=utf-8');
+    reply.header('Cache-Control', 'no-store');
+    return `window.PRESENCE_SERVICE_BASE_URL = ${JSON.stringify(serviceBaseUrl)};\n`;
+  });
   fastify.get('/presence/app.js', async (_request, reply) => sendClientFile(reply, 'app.js', 'application/javascript; charset=utf-8'));
   fastify.get('/presence/styles.css', async (_request, reply) => sendClientFile(reply, 'styles.css', 'text/css; charset=utf-8'));
   fastify.get('/favicon.ico', async (_request, reply) => sendLauncherIcon(reply));
@@ -573,6 +580,16 @@ function buildCloudControlResponse(config, request) {
     },
     easyTier: buildEasyTierCloudControlResponse(config, baseUrl)
   };
+}
+
+function toHttpUrl(value) {
+  const url = new URL(value);
+  if (url.protocol === 'wss:') {
+    url.protocol = 'https:';
+  } else if (url.protocol === 'ws:') {
+    url.protocol = 'http:';
+  }
+  return url;
 }
 
 function buildEasyTierCloudControlResponse(config, baseUrl) {

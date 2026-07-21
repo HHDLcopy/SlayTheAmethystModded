@@ -1896,6 +1896,7 @@ test('presence panel serves local frontend vendor assets', async (t) => {
     ['/online', 'text/html'],
     ['/api/online/panel', 'text/html'],
     ['/presence/app.js', 'application/javascript'],
+    ['/presence/runtime-config.js', 'application/javascript'],
     ['/presence/styles.css', 'text/css'],
     ['/presence/favicon.ico', 'image/png'],
     ['/presence/apple-touch-icon.png', 'image/png'],

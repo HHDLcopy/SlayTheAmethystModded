@@ -12,8 +12,10 @@
 </head>
 <body>
   <div id="app"></div>
+  <script src="/presence/runtime-config.js"></script>
   <script>
-    window.PRESENCE_SERVICE_BASE_URL = 'https://heartbeat.nas.apricityx.top:23163';
+    window.PRESENCE_SERVICE_BASE_URL = window.PRESENCE_SERVICE_BASE_URL ||
+      'https://heartbeat.nas.apricityx.top:23163';
   </script>
   <script src="/presence/vue.global.prod.js"></script>
   <script src="/presence/vendor/vuetify.min.js"></script>

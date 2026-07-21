@@ -2,6 +2,12 @@ name: Deploy Online Pages
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - online-service/src/client/**
+      - .github/workflows/deploy-online-pages.yml
 
 permissions:
   contents: read
@@ -14,7 +20,7 @@ concurrency:
 
 jobs:
   deploy:
-    name: Build and deploy static online panel
+    name: Build and deploy online-service panel
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -34,6 +40,45 @@ jobs:
         uses: actions/configure-pages@v5
         with:
           enablement: true
+
+      - name: Read presence service from cloud control
+        shell: bash
+        env:
+          CLOUD_CONTROL_URL: https://github.com/ModinMobileSTS/SlayTheAmethystResource/releases/download/Resource/cloud-control.json
+        run: |
+          set -euo pipefail
+
+          cloud_control_file="$RUNNER_TEMP/cloud-control.json"
+          curl --fail --location --retry 5 --retry-all-errors \
+            --connect-timeout 20 --max-time 120 \
+            --output "$cloud_control_file" \
+            "$CLOUD_CONTROL_URL"
+
+          service_base_url="$(node - "$cloud_control_file" <<'NODE'
+          const fs = require('fs');
+
+          const config = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          const wsUrl = config && config.heartbeat && config.heartbeat.wsUrl;
+          if (typeof wsUrl !== 'string' || !wsUrl.trim()) {
+            throw new Error('cloud-control heartbeat.wsUrl is missing');
+          }
+
+          const url = new URL(wsUrl);
+          if (url.protocol !== 'ws:' && url.protocol !== 'wss:') {
+            throw new Error(`cloud-control heartbeat.wsUrl must use ws or wss, got ${url.protocol}`);
+          }
+
+          url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
+          url.pathname = '/';
+          url.search = '';
+          url.hash = '';
+          process.stdout.write(url.origin);
+          NODE
+          )"
+
+          service_base_url_file="$RUNNER_TEMP/online-pages-service-base-url"
+          printf '%s' "$service_base_url" > "$service_base_url_file"
+          printf 'ONLINE_PAGES_SERVICE_BASE_URL_FILE=%s\n' "$service_base_url_file" >> "$GITHUB_ENV"
 
       - name: Install frontend dependencies
         shell: bash
@@ -73,8 +118,17 @@ jobs:
           cp online-service/src/client/app.js "$pages_root/app.js"
           cp online-service/src/client/styles.css "$pages_root/styles.css"
           cp online-service/src/client/index.html "$pages_root/index.html"
+          cp online-service/src/client/launcher-icon.png "$pages_root/launcher-icon.png"
 
           perl -0pi -e 's#/presence/vendor/#./vendor/#g; s#/presence/fonts/#./fonts/#g; s#/presence/#./#g' "$pages_root/index.html"
+
+          node - "$ONLINE_PAGES_SERVICE_BASE_URL_FILE" > "$pages_root/runtime-config.js" <<'NODE'
+          const fs = require('fs');
+          const serviceBaseUrl = fs.readFileSync(process.argv[2], 'utf8').trim();
+          process.stdout.write(
+            'window.PRESENCE_SERVICE_BASE_URL = ' + JSON.stringify(serviceBaseUrl) + ';\n'
+          );
+          NODE
 
           cp "$ONLINE_PAGES_DEPS/node_modules/vue/dist/vue.global.prod.js" "$pages_root/vue.global.prod.js"
           cp "$ONLINE_PAGES_DEPS/node_modules/vuetify/dist/vuetify.min.js" "$pages_root/vendor/vuetify.min.js"
@@ -91,6 +145,11 @@ jobs:
 
           if grep -q '"/presence/' "$pages_root/index.html"; then
             echo "Pages entrypoint still contains absolute /presence/ asset URLs." >&2
+            exit 1
+          fi
+
+          if ! grep -q 'PRESENCE_SERVICE_BASE_URL' "$pages_root/runtime-config.js"; then
+            echo "Pages runtime config does not define the presence service URL." >&2
             exit 1
           fi
 

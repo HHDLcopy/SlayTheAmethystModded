@@ -383,6 +383,7 @@ test('lan room session start rejects older app versions before creating a room',
     }
   });
   assert.equal(rejected.statusCode, 426);
+  assert.match(rejected.json().message, /虚拟局域网需要客户端版本 1\.5\.1 或更高版本/);
   assert.match(rejected.json().message, /requires app version 1\.5\.1 or newer/);
 
   const listingAfterReject = await server.inject('/api/lan/rooms?limit=10');

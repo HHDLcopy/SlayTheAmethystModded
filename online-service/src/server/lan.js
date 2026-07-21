@@ -1174,6 +1174,7 @@ function ensureEasyTierClientVersionSupported(clientVersion, minimumVersion) {
   if (!parsedClientVersion || compareAppVersions(parsedClientVersion, parsedMinimumVersion) < 0) {
     throw httpError(
       426,
+      `EasyTier 虚拟局域网需要客户端版本 ${minimumVersion} 或更高版本，请升级客户端后重试。 / ` +
       `EasyTier virtual LAN requires app version ${minimumVersion} or newer. Please upgrade the app and try again.`
     );
   }

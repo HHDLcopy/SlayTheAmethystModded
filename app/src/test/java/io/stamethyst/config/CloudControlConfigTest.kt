@@ -377,6 +377,56 @@ class CloudControlConfigTest {
         assertEquals("room", defaults.easyTier.defaultMode)
     }
 
+    @Test
+    fun cachedRemoteSettings_surviveProcessRestart() {
+        val directory = Files.createTempDirectory("cloud-control-cache-test")
+        try {
+            val cacheFile = directory.resolve("remote.json").toFile()
+            val defaults = CloudControlSettings(
+                heartbeatIntervalSeconds = 600,
+                heartbeatWsUrl = "wss://bundled.example.com/ws",
+            )
+
+            CloudControlConfig.writeCachedSettings(
+                cacheFile,
+                """
+                {
+                  "heartbeat": {
+                    "intervalSeconds": 120,
+                    "wsUrl": "wss://remote.example.com/ws"
+                  }
+                }
+                """.trimIndent(),
+            )
+
+            val restored = CloudControlConfig.readCachedSettings(cacheFile, defaults)
+
+            assertNotNull(restored)
+            assertEquals(120, restored?.heartbeatIntervalSeconds)
+            assertEquals("wss://remote.example.com/ws", restored?.heartbeatWsUrl)
+        } finally {
+            directory.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun cachedRemoteSettings_ignoresInvalidCache() {
+        val directory = Files.createTempDirectory("cloud-control-cache-test")
+        try {
+            val cacheFile = directory.resolve("remote.json").toFile()
+            cacheFile.writeText("not json", Charsets.UTF_8)
+
+            val restored = CloudControlConfig.readCachedSettings(
+                cacheFile = cacheFile,
+                defaults = CloudControlConfig.defaultSettings(),
+            )
+
+            assertEquals(null, restored)
+        } finally {
+            directory.toFile().deleteRecursively()
+        }
+    }
+
     private fun readPackagedDefaultCloudControlPayload(): String {
         return readPackagedCloudControlPayload("cloud-control.json")
     }

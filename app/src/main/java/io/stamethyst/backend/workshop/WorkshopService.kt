@@ -538,6 +538,33 @@ internal class WorkshopService(
         }
     }
 
+    /** Loads the lightweight data needed by list cards without community-page requests. */
+    suspend fun getSummaries(
+        appId: UInt,
+        publishedFileIds: List<ULong>,
+    ): List<WorkshopItemSummary> = withContext(Dispatchers.IO) {
+        val requestedIds = normalizePublishedFileIds(publishedFileIds)
+        if (requestedIds.isEmpty()) {
+            return@withContext emptyList()
+        }
+
+        requestedIds
+            .chunked(PUBLISHED_FILE_DETAILS_BATCH_SIZE)
+            .flatMap { ids -> loadSummaries(appId, ids) }
+    }
+
+    /** Emits each list-card summary batch as soon as its API request finishes. */
+    fun getSummaryBatches(
+        appId: UInt,
+        publishedFileIds: List<ULong>,
+    ): Flow<List<WorkshopItemSummary>> = flow {
+        normalizePublishedFileIds(publishedFileIds)
+            .chunked(PUBLISHED_FILE_SUMMARY_PROGRESS_BATCH_SIZE)
+            .forEach { ids ->
+                emit(withContext(Dispatchers.IO) { loadSummaries(appId, ids) })
+            }
+    }
+
     suspend fun getChangeNotes(publishedFileId: ULong): WorkshopChangeNotes = withContext(Dispatchers.IO) {
         val languagePreference = steamLanguagePreference
         val blocks = loadChangeNotesMarkdownBlocks(
@@ -565,6 +592,15 @@ internal class WorkshopService(
 
     private fun loadDependencyDetails(appId: UInt, publishedFileIds: List<ULong>): List<PublishedFileDetailsDto> {
         if (publishedFileIds.isEmpty()) return emptyList()
+        return runCatching {
+            loadPublishedFileDetails(appId, publishedFileIds)
+        }.getOrDefault(emptyList())
+    }
+
+    private fun loadPublishedFileDetails(
+        appId: UInt,
+        publishedFileIds: List<ULong>,
+    ): List<PublishedFileDetailsDto> {
         val requestBody = FormBody.Builder().apply {
             add("itemcount", publishedFileIds.size.toString())
             publishedFileIds.forEachIndexed { index, publishedFileId ->
@@ -577,13 +613,26 @@ internal class WorkshopService(
             .post(requestBody)
             .build()
         return client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) return emptyList()
+            if (!response.isSuccessful) error("Steam workshop details failed: ${response.code}")
             val payload = response.body?.string().orEmpty()
-            runCatching {
-                json.decodeFromString<PublishedFileDetailsEnvelope>(payload).response.publishedFileDetails
-            }.getOrDefault(emptyList())
+            json.decodeFromString<PublishedFileDetailsEnvelope>(payload).response.publishedFileDetails
         }
     }
+
+    private fun loadSummaries(appId: UInt, publishedFileIds: List<ULong>): List<WorkshopItemSummary> {
+        val detailsById = loadPublishedFileDetails(appId, publishedFileIds)
+            .mapNotNull { detail ->
+                detail.publishedFileId.toULongOrNull()?.let { publishedFileId -> publishedFileId to detail }
+            }
+            .toMap()
+        return publishedFileIds.mapNotNull { publishedFileId ->
+            detailsById[publishedFileId]?.toSummary(appId, publishedFileId)
+        }
+    }
+
+    private fun normalizePublishedFileIds(publishedFileIds: List<ULong>): List<ULong> = publishedFileIds
+        .filter { it > 0uL }
+        .distinct()
 
     private fun loadLocalizedDetailPage(
         publishedFileId: ULong,
@@ -1739,6 +1788,8 @@ internal class WorkshopService(
         private const val COMMUNITY_DETAIL_ATTEMPTS = 2
         private const val COMMUNITY_DETAIL_RETRY_DELAY_MS = 350L
         private const val COMMUNITY_DETAIL_CACHE_TTL_MS = 5 * 60_000L
+        private const val PUBLISHED_FILE_DETAILS_BATCH_SIZE = 100
+        private const val PUBLISHED_FILE_SUMMARY_PROGRESS_BATCH_SIZE = 20
         private const val COMMUNITY_DETAIL_CACHE_MAX_ENTRIES = 64
         private const val MAX_SUBSCRIPTION_STATUS_CHECK_PAGES = 50
         private const val SUBSCRIPTION_VERIFY_ATTEMPTS = 4

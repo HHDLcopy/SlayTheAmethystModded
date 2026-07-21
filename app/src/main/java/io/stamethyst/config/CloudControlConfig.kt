@@ -12,6 +12,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
 import java.io.IOException
+import java.io.File
+import java.io.FileOutputStream
 import java.net.URI
 import java.net.URL
 import java.nio.charset.StandardCharsets
@@ -32,6 +34,9 @@ private const val LOCAL_TEST_CLOUD_CONTROL_CONFIG_URL =
 private const val DEFAULT_EASYTIER_CONNECT_TIMEOUT_SECONDS = 12
 private const val DEFAULT_EASYTIER_STATUS_POLL_INTERVAL_SECONDS = 5
 private const val DEFAULT_EASYTIER_DEFAULT_MODE = "room"
+private const val CLOUD_CONTROL_CACHE_DIRECTORY_NAME = "cloud-control"
+private const val CLOUD_CONTROL_CACHE_FILE_NAME = "remote.json"
+private const val LOCAL_TEST_CLOUD_CONTROL_CACHE_FILE_NAME = "local-test.json"
 
 data class CloudControlSettings(
     val heartbeatIntervalSeconds: Int,
@@ -83,6 +88,11 @@ data class CloudControlRemoteConfigText(
     val sourceDisplayName: String,
     val requestUrl: String,
     val rawText: String
+)
+
+private data class CachedCloudControlSettings(
+    val settings: CloudControlSettings,
+    val rawText: String,
 )
 
 object CloudControlConfig {
@@ -234,7 +244,11 @@ object CloudControlConfig {
             return
         }
         val appContext = context.applicationContext
-        currentSettings = selectedDefaultSettings(appContext)
+        val defaults = selectedDefaultSettings(appContext)
+        currentSettings = readCachedSettings(
+            cacheFile = selectedCacheFile(appContext),
+            defaults = defaults,
+        ) ?: defaults
         startupRefreshCompleted = false
         refreshAsync(appContext)
     }
@@ -262,7 +276,11 @@ object CloudControlConfig {
     fun setLocalTestChannelEnabled(context: Context, enabled: Boolean) {
         val appContext = context.applicationContext
         LauncherConfig.setLocalTestCloudControlEnabled(appContext, enabled)
-        currentSettings = selectedDefaultSettings(appContext)
+        val defaults = selectedDefaultSettings(appContext)
+        currentSettings = readCachedSettings(
+            cacheFile = selectedCacheFile(appContext),
+            defaults = defaults,
+        ) ?: defaults
         startupRefreshCompleted = false
         refreshAsync(appContext)
     }
@@ -277,9 +295,14 @@ object CloudControlConfig {
                 return defaults
             }
             val fetched = fetchRemoteSettings(context, configUrl)
-            updateCurrentSettingsIfCurrent(generation, fetched)
+            updateCurrentSettingsAndCacheIfCurrent(
+                context = context,
+                generation = generation,
+                settings = fetched.settings,
+                rawText = fetched.rawText,
+            )
             Log.i(TAG, "Cloud control config loaded from $configUrl")
-            fetched
+            fetched.settings
         } catch (error: Throwable) {
             val fallback = currentSettingsForFetchFailure(defaults)
             updateCurrentSettingsIfCurrent(generation, fallback)
@@ -306,6 +329,15 @@ object CloudControlConfig {
             BuildConfig.CLOUD_CONTROL_CONFIG_URL.trim()
         }
 
+    private fun selectedCacheFile(context: Context): File {
+        val fileName = if (LauncherConfig.isLocalTestCloudControlEnabled(context)) {
+            LOCAL_TEST_CLOUD_CONTROL_CACHE_FILE_NAME
+        } else {
+            CLOUD_CONTROL_CACHE_FILE_NAME
+        }
+        return File(File(context.filesDir, CLOUD_CONTROL_CACHE_DIRECTORY_NAME), fileName)
+    }
+
     private fun updateCurrentSettings(settings: CloudControlSettings) {
         currentSettings = settings
         startupRefreshCompleted = true
@@ -319,6 +351,29 @@ object CloudControlConfig {
 
     private fun updateCurrentSettingsIfCurrent(generation: Long, settings: CloudControlSettings) {
         if (generation == refreshGeneration.get()) {
+            updateCurrentSettings(settings)
+        }
+    }
+
+    private fun updateCurrentSettingsAndCacheIfCurrent(
+        context: Context,
+        generation: Long,
+        settings: CloudControlSettings,
+        rawText: String,
+    ) {
+        synchronized(this) {
+            if (generation != refreshGeneration.get()) {
+                return
+            }
+            try {
+                writeCachedSettings(selectedCacheFile(context), rawText)
+            } catch (error: Throwable) {
+                Log.w(
+                    TAG,
+                    "Cloud control config loaded but could not be cached: " +
+                        "${error.javaClass.simpleName}: ${error.message ?: "no message"}"
+                )
+            }
             updateCurrentSettings(settings)
         }
     }
@@ -535,11 +590,64 @@ object CloudControlConfig {
     private fun fetchRemoteSettings(
         context: Context,
         configUrl: String
-    ): CloudControlSettings {
+    ): CachedCloudControlSettings {
         val responseText = fetchRemoteConfigText(context, configUrl).rawText
 
-        return parseSettings(responseText, defaults = defaultSettings(context))
+        val settings = parseSettings(responseText, defaults = selectedDefaultSettings(context))
             ?: throw IOException("Cloud control response is not a JSON object.")
+        return CachedCloudControlSettings(settings = settings, rawText = responseText)
+    }
+
+    internal fun readCachedSettings(
+        cacheFile: File,
+        defaults: CloudControlSettings,
+    ): CloudControlSettings? {
+        if (!cacheFile.isFile) {
+            return null
+        }
+        return try {
+            val rawText = cacheFile.readText(StandardCharsets.UTF_8)
+            parseSettings(rawText, defaults)
+                ?: throw IOException("Cached cloud control config is not a JSON object.")
+        } catch (error: Throwable) {
+            logCacheReadFailure(error)
+            null
+        }
+    }
+
+    private fun logCacheReadFailure(error: Throwable) {
+        try {
+            Log.w(
+                TAG,
+                "Cached cloud control config read failed; ignoring cache: " +
+                    "${error.javaClass.simpleName}: ${error.message ?: "no message"}"
+            )
+        } catch (_: Throwable) {
+            // Local JVM tests use an Android Log stub which throws instead of writing a log.
+        }
+    }
+
+    internal fun writeCachedSettings(cacheFile: File, rawText: String) {
+        val parent = cacheFile.parentFile
+            ?: throw IOException("Cloud control cache has no parent directory.")
+        if (!parent.isDirectory && !parent.mkdirs()) {
+            throw IOException("Could not create cloud control cache directory.")
+        }
+
+        val temporaryFile = File(parent, ".${cacheFile.name}.${System.nanoTime()}.tmp")
+        try {
+            FileOutputStream(temporaryFile).use { output ->
+                output.write(rawText.toByteArray(StandardCharsets.UTF_8))
+                output.fd.sync()
+            }
+            if (!temporaryFile.renameTo(cacheFile)) {
+                throw IOException("Could not atomically replace cloud control cache.")
+            }
+        } finally {
+            if (temporaryFile.exists()) {
+                temporaryFile.delete()
+            }
+        }
     }
 
     private fun fetchRemoteConfigText(

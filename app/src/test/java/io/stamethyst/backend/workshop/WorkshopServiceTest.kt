@@ -13,6 +13,7 @@ import okhttp3.Request
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.toList
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -216,6 +217,75 @@ class WorkshopServiceTest {
         assertEquals(2, detailsServer.requestCount)
         assertEquals("/ISteamRemoteStorage/GetPublishedFileDetails/v1/", detailsServer.takeRequest().url.encodedPath)
         assertEquals("/ISteamRemoteStorage/GetPublishedFileDetails/v1/", detailsServer.takeRequest().url.encodedPath)
+    }
+
+    @Test
+    fun getSummariesBatchesIdsAndPreservesRequestedOrder() {
+        detailsServer.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    {
+                      "response": {
+                        "publishedfiledetails": [
+                          { "publishedfileid": "2", "title": "Second", "consumer_app_id": 646570 },
+                          { "publishedfileid": "1", "title": "First", "consumer_app_id": 646570 }
+                        ]
+                      }
+                    }
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+
+        val summaries = runBlocking {
+            newService().getSummaries(646570u, listOf(1uL, 2uL, 1uL, 0uL))
+        }
+
+        assertEquals(listOf(1uL, 2uL), summaries.map { it.publishedFileId })
+        assertEquals(listOf("First", "Second"), summaries.map { it.title })
+        assertEquals(1, detailsServer.requestCount)
+        val request = detailsServer.takeRequest()
+        assertEquals("/ISteamRemoteStorage/GetPublishedFileDetails/v1/", request.url.encodedPath)
+        assertTrue(requireNotNull(request.body).utf8().contains("itemcount=2"))
+        assertTrue(requireNotNull(request.body).utf8().contains("publishedfileids%5B0%5D=1"))
+        assertTrue(requireNotNull(request.body).utf8().contains("publishedfileids%5B1%5D=2"))
+        assertEquals(0, browseServer.requestCount)
+    }
+
+    @Test
+    fun getSummaryBatchesEmitsCompletedBatchesBeforeRemainingIds() {
+        val firstBatchDetails = (1..20).joinToString(",") { id ->
+            """{ "publishedfileid": "$id", "title": "Mod $id" }"""
+        }
+        detailsServer.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body("""{ "response": { "publishedfiledetails": [$firstBatchDetails] } }""")
+                .build(),
+        )
+        detailsServer.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    { "response": { "publishedfiledetails": [
+                      { "publishedfileid": "21", "title": "Mod 21" }
+                    ] } }
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+
+        val batches = runBlocking {
+            newService().getSummaryBatches(646570u, (1uL..21uL).toList()).toList()
+        }
+
+        assertEquals(listOf(20, 1), batches.map { it.size })
+        assertEquals(1uL, batches.first().first().publishedFileId)
+        assertEquals(21uL, batches.last().single().publishedFileId)
+        assertEquals(2, detailsServer.requestCount)
     }
 
     @Test

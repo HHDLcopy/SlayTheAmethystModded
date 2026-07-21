@@ -1505,16 +1505,18 @@ private fun EasyTierOnlineRoomsSection(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                            if (room.onlineMemberCount > 0 || room.inGameMemberCount > 0) {
+                            val onlineOutsideGameMemberCount =
+                                (room.onlineMemberCount - room.inGameMemberCount).coerceAtLeast(0)
+                            if (onlineOutsideGameMemberCount > 0 || room.inGameMemberCount > 0) {
                                 FlowRow(
                                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                                     verticalArrangement = Arrangement.spacedBy(2.dp),
                                 ) {
-                                    if (room.onlineMemberCount > 0) {
+                                    if (onlineOutsideGameMemberCount > 0) {
                                         Text(
                                             text = stringResource(
                                                 R.string.main_easytier_room_item_online_count,
-                                                room.onlineMemberCount,
+                                                onlineOutsideGameMemberCount,
                                             ),
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1734,17 +1736,13 @@ private fun EasyTierMemberModsPanel(
         workshopSummaries = emptyMap()
         workshopDetailsLoading = workshopMods.isNotEmpty()
         try {
-            workshopMods.forEach { mod ->
-                val workshopId = mod.workshopId.toULongOrNull() ?: return@forEach
-                val summary = runCatching {
-                    WorkshopService(context.applicationContext).getDetails(
-                        appId = EASY_TIER_WORKSHOP_APP_ID,
-                        publishedFileId = workshopId,
-                        includeCommunityData = true,
-                        includeDependencyData = false,
-                    ).summary
-                }.getOrNull() ?: return@forEach
-                workshopSummaries = workshopSummaries + (mod.workshopId to summary)
+            runCatching {
+                WorkshopService(context.applicationContext).getSummaryBatches(
+                    appId = EASY_TIER_WORKSHOP_APP_ID,
+                    publishedFileIds = workshopMods.mapNotNull { mod -> mod.workshopId.toULongOrNull() },
+                ).collect { summaries ->
+                    workshopSummaries += summaries.associateBy { summary -> summary.publishedFileId.toString() }
+                }
             }
         } finally {
             workshopDetailsLoading = false
@@ -1768,13 +1766,11 @@ private fun EasyTierMemberModsPanel(
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                 )
-                if (workshopDetailsLoading) {
-                    workshopMods.forEachIndexed { index, _ ->
+                workshopMods.forEachIndexed { index, mod ->
+                    val summary = workshopSummaries[mod.workshopId]
+                    if (summary == null && workshopDetailsLoading) {
                         WorkshopListSkeletonCard(variant = index)
-                    }
-                } else {
-                    workshopMods.forEach { mod ->
-                        val summary = workshopSummaries[mod.workshopId]
+                    } else {
                         val item = summary ?: WorkshopItemSummary(
                             publishedFileId = mod.workshopId.toULongOrNull() ?: 0u,
                             appId = EASY_TIER_WORKSHOP_APP_ID,

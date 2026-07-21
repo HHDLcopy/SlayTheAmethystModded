@@ -86,7 +86,7 @@ Common harness options:
 
 - `-ConnectorPort <port>` / `--connector-port`: connector daemon TCP port (or set `STS_CONNECTOR_PORT`).
 - `-DeviceSerial <adb-serial>`: required when more than one device is online.
-- `-OutDir <path>`: output directory for `result.json` and artifacts. Defaults to `debug-artifacts/harness/<command>-<timestamp>`.
+- `-OutDir <path>`: output base for `result.json` and artifacts. When set, each run writes under `<path>/<timestamp>/` (base is not cleared). When empty, defaults to `debug-artifacts/harness/<command>-<timestamp>`.
 - `-LaunchMode mts_basemod|mts|vanilla`: defaults to `mts_basemod`.
 - `-TimeoutSeconds <seconds>` and `-PollIntervalSeconds <seconds>`: runtime observation controls.
 - `-Autoplay`: enable the bundled autoplay driver for MTS smoke runs.

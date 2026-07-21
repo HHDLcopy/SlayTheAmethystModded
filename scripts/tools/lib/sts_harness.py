@@ -276,7 +276,9 @@ class Harness:
             if not self.options.out_dir.strip():
                 self._cached_out_dir = self.default_out_dir()
             else:
-                self._cached_out_dir = self.resolve_repo_path(self.options.out_dir)
+                # User-specified base stays stable; each run writes under a fresh timestamp subdir
+                # so prior artifacts are never mixed or cleared.
+                self._cached_out_dir = self.resolve_repo_path(self.options.out_dir) / file_timestamp()
         return self._cached_out_dir
 
     def resolve_gradle_wrapper(self) -> Path:

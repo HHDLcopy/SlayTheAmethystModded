@@ -84,7 +84,7 @@ python3 ./scripts/tools/main.py sts-harness -Command smoke -LaunchMode mts_basem
 Common options:
 
 - `-DeviceSerial <adb-serial>`: required when more than one device is online.
-- `-OutDir <path>`: output directory for `result.json` and artifacts. Defaults to `debug-artifacts/harness/<command>-<timestamp>`.
+- `-OutDir <path>`: output base for `result.json` and artifacts. When set, each run writes under `<path>/<timestamp>/` (base is not cleared). When empty, defaults to `debug-artifacts/harness/<command>-<timestamp>`.
 - `-LaunchMode mts_basemod|mts|vanilla`: defaults to `mts_basemod`.
 - `-TimeoutSeconds <seconds>`: smoke/status wait timeout, default `120`; direct `-Autoplay` smoke defaults to `300` unless this option is explicitly set.
 - `-Autoplay`: enable the bundled autoplay driver. Requires `mts` or `mts_basemod` launch mode.

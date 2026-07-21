@@ -78,4 +78,5 @@ Harness.run()
 
 ## 输出
 
-每个命令在 `debug-artifacts/harness/<command>-<timestamp>/` 下输出 `result.json`。
+- 未指定 `-OutDir`：`debug-artifacts/harness/<command>-<timestamp>/result.json`
+- 指定 `-OutDir <path>`：`<path>/<timestamp>/result.json`（不在 base 下直接写，也不清空 base）

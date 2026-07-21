@@ -611,5 +611,53 @@ class ConsoleRoutingTest(unittest.TestCase):
 
 
 
+class ResolvedOutDirTest(unittest.TestCase):
+    def _options(self, **kwargs) -> HarnessOptions:
+        defaults = dict(
+            command="doctor",
+            launch_mode="mts_basemod",
+            device_serial="",
+            out_dir="",
+            timeout_seconds=120,
+            poll_interval_seconds=2,
+            force_jvm_crash=False,
+            force_runtime_crash=False,
+            debug_mode=False,
+            autoplay=False,
+            skip_install=False,
+            no_stop_after_smoke=False,
+            mods=[],
+            mod_list_file="",
+            enable_all_mods=False,
+            disable_all_mods=False,
+            decompil_targets=[],
+        )
+        defaults.update(kwargs)
+        return HarnessOptions(**defaults)
+
+    def test_default_out_dir_uses_command_and_timestamp(self):
+        harness = Harness(self._options(out_dir=""))
+        path = harness.resolved_out_dir()
+        self.assertEqual(path.parent, harness.repo_root / "debug-artifacts" / "harness")
+        self.assertTrue(path.name.startswith("doctor-"))
+        self.assertEqual(harness.resolved_out_dir(), path)
+
+    def test_user_out_dir_nests_timestamp_subdir(self):
+        harness = Harness(self._options(out_dir="agent-tmp/harness-outdir-check"))
+        path = harness.resolved_out_dir()
+        base = harness.repo_root / "agent-tmp" / "harness-outdir-check"
+        self.assertEqual(path.parent, base.resolve())
+        self.assertRegex(path.name, r"^\d{8}-\d{6}-\d{6}$")
+        self.assertEqual(harness.resolved_out_dir(), path)
+
+    def test_absolute_out_dir_nests_timestamp_subdir(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp) / "fixed-out"
+            harness = Harness(self._options(out_dir=str(base)))
+            path = harness.resolved_out_dir()
+            self.assertEqual(path.parent, base.resolve())
+            self.assertRegex(path.name, r"^\d{8}-\d{6}-\d{6}$")
+
+
 if __name__ == "__main__":
     unittest.main()

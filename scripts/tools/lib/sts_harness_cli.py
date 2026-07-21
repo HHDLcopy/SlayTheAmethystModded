@@ -27,7 +27,17 @@ def create_parser() -> argparse.ArgumentParser:
         default=None,
         help="Connector daemon TCP port. Required unless STS_CONNECTOR_PORT is set. Start with: python -m scripts.tools.connector start --port <port>",
     )
-    parser.add_argument("-OutDir", "--out-dir", dest="out_dir", default="")
+    parser.add_argument(
+        "-OutDir",
+        "--out-dir",
+        dest="out_dir",
+        default="",
+        help=(
+            "Output base directory for result.json and artifacts. "
+            "When set, harness writes to <OutDir>/<timestamp>/ (does not clear the base). "
+            "When empty, defaults to debug-artifacts/harness/<command>-<timestamp>."
+        ),
+    )
     parser.add_argument("-TimeoutSeconds", "--timeout-seconds", dest="timeout_seconds", type=int, default=None)
     parser.add_argument("-PollIntervalSeconds", "--poll-interval-seconds", dest="poll_interval_seconds", type=int, default=2)
     parser.add_argument("-ForceJvmCrash", "--force-jvm-crash", dest="force_jvm_crash", action="store_true")

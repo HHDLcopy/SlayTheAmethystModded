@@ -88,6 +88,7 @@ EASYTIER_ENTRY_NODE_URL=
 EASYTIER_CONNECT_TIMEOUT_SECONDS=12
 EASYTIER_STATUS_POLL_INTERVAL_SECONDS=5
 EASYTIER_SESSION_TTL_SECONDS=90
+EASYTIER_MINIMUM_ONLINE_LOBBY_COMPATIBLE_VERSION=1.5.1
 EASYTIER_ALLOW_SHARED_COMMUNITY_NETWORK=false
 EASYTIER_DEFAULT_MODE=room
 EASYTIER_MANAGED=false
@@ -126,6 +127,11 @@ override either address with `EASYTIER_CONFIG_SERVER_URL` or
 timeout: every active client renews it through `POST /api/lan/session/runtime`.
 The default is 90 seconds. If a client stops reporting before the timeout, the server expires the session
 and deletes the room when the missing session belongs to its owner. Rooms are
+created only for clients at or above `EASYTIER_MINIMUM_ONLINE_LOBBY_COMPATIBLE_VERSION`
+(default `1.5.1`). Older clients receive HTTP 426 with an upgrade instruction before
+the service creates a room or issues a session credential. The same minimum version
+is exposed through `/cloud-control.json` so newer clients can block the workflow earlier.
+Rooms are
 created atomically by the owner's `POST /api/lan/session/start` request; a room
 with no active owner, or no active members, is removed with all of its sessions.
 The creation request may include an optional `description` (up to 120

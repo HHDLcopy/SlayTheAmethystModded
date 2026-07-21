@@ -608,6 +608,7 @@ function buildEasyTierCloudControlResponse(config, baseUrl) {
     ),
     connectTimeoutSeconds: config.easyTierConnectTimeoutSeconds,
     statusPollIntervalSeconds: config.easyTierStatusPollIntervalSeconds,
+    minimumOnlineLobbyCompatibleVersion: config.easyTierMinimumOnlineLobbyCompatibleVersion,
     allowSharedCommunityNetwork: Boolean(config.easyTierAllowSharedCommunityNetwork),
     defaultMode: firstNonEmpty(config.easyTierDefaultMode, 'room')
   };

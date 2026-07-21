@@ -14,6 +14,7 @@ const DEFAULT_EASYTIER_CONNECT_TIMEOUT_SECONDS = 12;
 const DEFAULT_EASYTIER_STATUS_POLL_INTERVAL_SECONDS = 5;
 const DEFAULT_EASYTIER_DEFAULT_MODE = 'room';
 const DEFAULT_EASYTIER_SESSION_TTL_SECONDS = 90;
+const DEFAULT_EASYTIER_MINIMUM_ONLINE_LOBBY_COMPATIBLE_VERSION = '1.5.1';
 const DEFAULT_EASYTIER_WEB_EMBED_API_SERVER_PORT = 11211;
 const DEFAULT_EASYTIER_WEB_EMBED_API_SERVER_ADDR = '127.0.0.1';
 const DEFAULT_EASYTIER_RUNTIME_DATA_DIR = './data/easytier-runtime';
@@ -83,6 +84,10 @@ function loadConfig(env = process.env) {
     easyTierSessionTtlSeconds: parsePositiveInteger(
       env.EASYTIER_SESSION_TTL_SECONDS,
       DEFAULT_EASYTIER_SESSION_TTL_SECONDS
+    ),
+    easyTierMinimumOnlineLobbyCompatibleVersion: normalizeAppVersion(
+      env.EASYTIER_MINIMUM_ONLINE_LOBBY_COMPATIBLE_VERSION,
+      DEFAULT_EASYTIER_MINIMUM_ONLINE_LOBBY_COMPATIBLE_VERSION
     ),
     easyTierAllowSharedCommunityNetwork: parseBoolean(
       env.EASYTIER_ALLOW_SHARED_COMMUNITY_NETWORK,
@@ -217,6 +222,13 @@ function normalizeEasyTierDefaultMode(value) {
     return 'community';
   }
   return DEFAULT_EASYTIER_DEFAULT_MODE;
+}
+
+function normalizeAppVersion(value, fallbackValue) {
+  const normalized = firstNonEmpty(value);
+  return /^v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(normalized)
+    ? normalized
+    : fallbackValue;
 }
 
 function normalizeOptionalPath(value) {

@@ -47,6 +47,10 @@ class LanStore {
     const nowMs = normalizeNowMs(options.nowMs);
     const easyTier = normalizeEasyTierSettings(options.easyTier);
     ensureEasyTierSessionAvailability(easyTier);
+    ensureEasyTierClientVersionSupported(
+      request.clientVersion,
+      this.config.easyTierMinimumOnlineLobbyCompatibleVersion
+    );
 
     this.expireSessions(nowMs);
     if (request.createOnly && this.findRoom(request.roomId)) {
@@ -1154,6 +1158,42 @@ function ensureEasyTierSessionAvailability(easyTier) {
   if (!easyTier.entryNodeUrl) {
     throw httpError(503, 'EasyTier entry node URL is unavailable');
   }
+}
+
+function ensureEasyTierClientVersionSupported(clientVersion, minimumVersion) {
+  const normalizedClientVersion = normalizeOptionalText(clientVersion, MAX_TEXT_LENGTH);
+  if (!normalizedClientVersion) {
+    return;
+  }
+
+  const parsedClientVersion = parseComparableAppVersion(normalizedClientVersion);
+  const parsedMinimumVersion = parseComparableAppVersion(minimumVersion);
+  if (!parsedMinimumVersion) {
+    return;
+  }
+  if (!parsedClientVersion || compareAppVersions(parsedClientVersion, parsedMinimumVersion) < 0) {
+    throw httpError(
+      426,
+      `EasyTier virtual LAN requires app version ${minimumVersion} or newer. Please upgrade the app and try again.`
+    );
+  }
+}
+
+function parseComparableAppVersion(value) {
+  const matched = String(value || '').trim().match(/^v?(\d+)\.(\d+)\.(\d+)(?:[-+][0-9A-Za-z.-]+)?$/);
+  if (!matched) {
+    return null;
+  }
+  return matched.slice(1, 4).map((segment) => Number(segment));
+}
+
+function compareAppVersions(left, right) {
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) {
+      return left[index] - right[index];
+    }
+  }
+  return 0;
 }
 
 function deriveSessionState(session, nowMs) {

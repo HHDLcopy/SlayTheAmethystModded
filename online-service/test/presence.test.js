@@ -229,7 +229,7 @@ test('lan room session api issues status and room members for easytier room mode
       roomId: 'alpha-room',
       playerId: 'alice',
       displayName: 'Alice',
-      clientVersion: '1.4.8',
+      clientVersion: '1.5.1',
       deviceSummary: 'Pixel 8 sdk35'
     }
   });
@@ -352,6 +352,58 @@ test('lan room runtime report updates session status and room member ip', async 
       assignedIpv4Cidr: '10.144.0.1/24'
     }
   ]);
+});
+
+test('lan room session start rejects older app versions before creating a room', async (t) => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-presence-'));
+  const server = await buildServer({
+    ...loadConfig({
+      LOG_LEVEL: 'silent',
+      EASYTIER_ENABLED: 'true',
+      EASYTIER_MINIMUM_ONLINE_LOBBY_COMPATIBLE_VERSION: '1.5.1'
+    }),
+    dbPath: path.join(tmpDir, 'presence.sqlite'),
+    publicBaseUrl: 'https://online.example.com',
+    presencePanelToken: 'panel-secret',
+    logLevel: 'silent'
+  });
+  t.after(async () => {
+    await server.close();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+  await server.ready();
+
+  const rejected = await server.inject({
+    method: 'POST',
+    url: '/api/lan/session/start',
+    payload: {
+      roomId: 'upgrade-required-room',
+      playerId: 'alice',
+      clientVersion: '1.5.0'
+    }
+  });
+  assert.equal(rejected.statusCode, 426);
+  assert.match(rejected.json().message, /requires app version 1\.5\.1 or newer/);
+
+  const listingAfterReject = await server.inject('/api/lan/rooms?limit=10');
+  assert.deepEqual(listingAfterReject.json().rooms, []);
+
+  const supported = await server.inject({
+    method: 'POST',
+    url: '/api/lan/session/start',
+    payload: {
+      roomId: 'upgrade-required-room',
+      playerId: 'alice',
+      clientVersion: '1.5.1-dev1'
+    }
+  });
+  assert.equal(supported.statusCode, 200);
+
+  const cloudControl = await server.inject('/cloud-control.json');
+  assert.equal(
+    cloudControl.json().easyTier.minimumOnlineLobbyCompatibleVersion,
+    '1.5.1'
+  );
 });
 
 test('lan room assigns stable per-room IPv4 addresses from virtual MAC addresses', async (t) => {
@@ -1592,6 +1644,7 @@ test('cloud-control exposes websocket heartbeat settings', async (t) => {
       entryNodeUrl: '',
       connectTimeoutSeconds: 12,
       statusPollIntervalSeconds: 5,
+      minimumOnlineLobbyCompatibleVersion: '1.5.1',
       allowSharedCommunityNetwork: false,
       defaultMode: 'room'
     }
@@ -1625,6 +1678,7 @@ test('cloud-control derives easytier single-server addresses from public base ur
     entryNodeUrl: 'tcp://online.example.com:11010',
     connectTimeoutSeconds: 12,
     statusPollIntervalSeconds: 5,
+    minimumOnlineLobbyCompatibleVersion: '1.5.1',
     allowSharedCommunityNetwork: false,
     defaultMode: 'room'
   });

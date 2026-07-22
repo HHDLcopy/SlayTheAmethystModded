@@ -815,6 +815,31 @@ test('lan room limits active sessions from one source network', async () => {
   );
 });
 
+test('lan rooms are not limited by the owner source network', async () => {
+  const lanStore = new LanStore(loadConfig({ LOG_LEVEL: 'silent', EASYTIER_ENABLED: 'true' }));
+  const easyTier = {
+    enabled: true,
+    entryNodeUrl: 'tcp://online.example.com:11010',
+    configServerUrl: 'udp://online.example.com:22020'
+  };
+  const sourceIp = '198.51.100.7';
+
+  for (let index = 0; index < 11; index += 1) {
+    const session = await lanStore.startSession({
+      roomId: `shared-network-room-${index}`,
+      playerId: `owner-${index}`
+    }, {
+      nowMs: 1_000 + index,
+      sourceIp,
+      easyTier
+    });
+    assert.equal(session.roomId, `shared-network-room-${index}`);
+  }
+
+  const rooms = await lanStore.listRooms({}, { nowMs: 2_000 });
+  assert.equal(rooms.rooms.length, 11);
+});
+
 test('lan room session api supersedes previous session and supports stop', async (t) => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-presence-'));
   const server = await buildServer({

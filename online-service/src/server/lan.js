@@ -15,7 +15,6 @@ const DEFAULT_LAN_ROOM_LIST_LIMIT = 20;
 const MAX_LAN_ROOM_LIST_LIMIT = 50;
 const MAX_LAN_ROOM_MEMBERS = 16;
 const MAX_LAN_ROOM_MEMBERS_PER_SOURCE_IP = 8;
-const MAX_LAN_ROOMS_PER_SOURCE_IP = 10;
 const MAX_ID_LENGTH = 128;
 const MAX_TEXT_LENGTH = 256;
 const MAX_LAN_ROOM_DESCRIPTION_LENGTH = 120;
@@ -588,17 +587,12 @@ class LanStore {
     }
 
     const ownerToken = generateAccessToken();
-    if (this.countActiveRoomsForSource(request.sourceIp, nowMs) >= MAX_LAN_ROOMS_PER_SOURCE_IP) {
-      throw httpError(429, 'Too many active LAN rooms from this network');
-    }
-
     const inserted = this.createRoomRecord({
       roomId: request.roomId,
       playerId: request.playerId,
       displayName: request.displayName || request.playerId,
       description: request.description,
       allowNewJoins: request.allowNewJoins,
-      sourceIp: request.sourceIp,
       ownerToken
     }, nowMs);
 
@@ -631,7 +625,6 @@ class LanStore {
       networkSecret,
       ipv4SubnetOctet: deriveRoomIpv4SubnetOctet(request.roomId),
       ownerTokenHash: hashToken(request.ownerToken),
-      ownerSourceIp: request.sourceIp,
       createdAtMs: nowMs,
       updatedAtMs: nowMs,
       lastSessionStartedAtMs: 0
@@ -731,16 +724,6 @@ class LanStore {
     return Array.from(latestByPlayer.values())
       .filter((session) => resolveGameSessionState(session, nowMs) === 'game')
       .length;
-  }
-
-  countActiveRoomsForSource(sourceIp, nowMs) {
-    return Array.from(this.rooms.values()).filter((room) =>
-      room.ownerSourceIp === sourceIp &&
-      !isRoomClosed(room) &&
-      this.sessionsForRoom(room.roomId).some((session) =>
-        session.playerId === room.ownerPlayerId && isSessionOnline(session, nowMs)
-      )
-    ).length;
   }
 
   buildRoomMembers(room, nowMs) {

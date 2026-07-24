@@ -52,6 +52,8 @@ internal class SteamStsJarDownloadService(
         enabledProvider = { LauncherPreferences.isWorkshopWattAccelerationEnabled(context) },
     ),
 ) {
+    private val protocolClient = SteamCloudAcceleratedHttp.createProtocolClient(client)
+
     fun downloadDesktopJar(
         onProgress: (SteamStsJarDownloadProgress) -> Unit,
         waitIfPaused: suspend () -> Unit = {},
@@ -83,10 +85,10 @@ internal class SteamStsJarDownloadService(
         onProgress(SteamStsJarDownloadProgress(phase = SteamStsJarDownloadPhase.CONNECTING, progressPercent = 0))
         val identity = WorkshopSteamClientIdentity(context)
         val account = if (authenticated) readSteamAccountSession(identity) else null
-        val directoryClient = SteamDirectoryClient(client)
+        val directoryClient = SteamDirectoryClient(protocolClient)
         val outputFile = prepareOutputFile()
 
-        identity.createSession(client).use { session ->
+        identity.createSession(protocolClient).use { session ->
             waitIfPaused()
             val cmServers = directoryClient.loadServers()
             waitIfPaused()
@@ -113,7 +115,7 @@ internal class SteamStsJarDownloadService(
             val downloader = SteamDepotSingleFileDownloader(
                 client = client,
                 directoryClient = directoryClient,
-                sessionFactory = { identity.createSession(client) },
+                sessionFactory = { identity.createSession(protocolClient) },
                 sessionConnector = { downloadSession, servers ->
                     connectSession(downloadSession, servers, account)
                 },

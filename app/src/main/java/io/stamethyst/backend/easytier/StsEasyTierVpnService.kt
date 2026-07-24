@@ -3,9 +3,11 @@ package io.stamethyst.backend.easytier
 import android.content.Context
 import android.content.Intent
 import android.net.VpnService
+import android.os.Build
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
 import android.util.Log
+import io.stamethyst.R
 
 class StsEasyTierVpnService : VpnService() {
     companion object {
@@ -19,6 +21,9 @@ class StsEasyTierVpnService : VpnService() {
 
         private const val VPN_MTU = 1400
 
+        @Volatile
+        private var foregroundSessionActive = false
+
         fun startSession(
             context: Context,
             instanceName: String,
@@ -26,14 +31,17 @@ class StsEasyTierVpnService : VpnService() {
             routeCidrs: List<String>,
         ) {
             val appContext = context.applicationContext
-            appContext.startService(
-                Intent(appContext, StsEasyTierVpnService::class.java).apply {
-                    action = ACTION_START_SESSION
-                    putExtra(EXTRA_INSTANCE_NAME, instanceName)
-                    putExtra(EXTRA_IPV4_CIDR, ipv4Cidr)
-                    putStringArrayListExtra(EXTRA_ROUTE_CIDRS, ArrayList(routeCidrs))
-                }
-            )
+            val intent = Intent(appContext, StsEasyTierVpnService::class.java).apply {
+                action = ACTION_START_SESSION
+                putExtra(EXTRA_INSTANCE_NAME, instanceName)
+                putExtra(EXTRA_IPV4_CIDR, ipv4Cidr)
+                putStringArrayListExtra(EXTRA_ROUTE_CIDRS, ArrayList(routeCidrs))
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                appContext.startForegroundService(intent)
+            } else {
+                appContext.startService(intent)
+            }
         }
 
         fun stopSession(context: Context) {
@@ -44,6 +52,8 @@ class StsEasyTierVpnService : VpnService() {
                 }
             )
         }
+
+        fun isForegroundSessionActive(): Boolean = foregroundSessionActive
     }
 
     @Volatile
@@ -56,6 +66,7 @@ class StsEasyTierVpnService : VpnService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START_SESSION -> {
+                startForegroundSession(getString(R.string.main_easytier_notification_runtime_starting))
                 val safeIntent = Intent(intent)
                 val thread = Thread(
                     { runStartSession(startId, safeIntent) },
@@ -70,6 +81,7 @@ class StsEasyTierVpnService : VpnService() {
                 workerThread?.interrupt()
                 workerThread = null
                 closeTunnel()
+                stopForegroundSession()
                 stopSelf(startId)
             }
         }
@@ -79,6 +91,7 @@ class StsEasyTierVpnService : VpnService() {
     override fun onRevoke() {
         EasyTierJniBridge.stopAllInstances()
         closeTunnel()
+        stopForegroundSession()
         val snapshot = EasyTierSessionController.persistSnapshot(
             context = applicationContext,
             snapshot = EasyTierSessionController.buildPermissionRevokedSnapshot(
@@ -99,6 +112,7 @@ class StsEasyTierVpnService : VpnService() {
         workerThread?.interrupt()
         workerThread = null
         closeTunnel()
+        stopForegroundSession()
         super.onDestroy()
     }
 
@@ -164,6 +178,8 @@ class StsEasyTierVpnService : VpnService() {
                 instanceName = instanceName,
                 fd = fd,
             )
+            updateForegroundSession(getString(R.string.main_easytier_notification_connected))
+            EasyTierProcessService.releaseConnectForeground()
         }.onFailure { error ->
             Log.w(TAG, "Failed to start EasyTier VPN session", error)
             closeTunnel()
@@ -178,6 +194,7 @@ class StsEasyTierVpnService : VpnService() {
                 },
                 error = error,
             )
+            stopForegroundSession()
             stopSelf(startId)
         }
     }
@@ -254,5 +271,32 @@ class StsEasyTierVpnService : VpnService() {
     private fun closeTunnel() {
         runCatching { tunnelInterface?.close() }
         tunnelInterface = null
+    }
+
+    private fun startForegroundSession(message: String) {
+        startForeground(
+            EasyTierForegroundNotification.VPN_NOTIFICATION_ID,
+            EasyTierForegroundNotification.build(this, message),
+        )
+        foregroundSessionActive = true
+    }
+
+    private fun updateForegroundSession(message: String) {
+        EasyTierForegroundNotification.notify(
+            this,
+            EasyTierForegroundNotification.VPN_NOTIFICATION_ID,
+            message,
+        )
+    }
+
+    private fun stopForegroundSession() {
+        if (!foregroundSessionActive) return
+        foregroundSessionActive = false
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } else {
+            @Suppress("DEPRECATION")
+            stopForeground(true)
+        }
     }
 }

@@ -24,6 +24,7 @@ import io.stamethyst.backend.workshop.WorkshopModCardState
 import io.stamethyst.backend.workshop.WorkshopModStateResolver
 import io.stamethyst.backend.workshop.WorkshopResolvedModState
 import io.stamethyst.backend.workshop.WorkshopResolvedModStateKind
+import io.stamethyst.backend.workshop.TextureReplacerWorkshopInstaller
 import io.stamethyst.backend.workshop.allLocalJarPaths
 import io.stamethyst.backend.workshop.isActiveDownload
 import io.stamethyst.backend.workshop.shouldShowOnLauncherCards
@@ -176,8 +177,9 @@ internal class MainModManagementController(
         val workshopCards = loadWorkshopCardItems(host, optionalMods)
         optionalModsSnapshot.addAll(
             (optionalMods + workshopCards).map { mod ->
-                val highlighted = mod.newlyImported && !isPendingOptionalModEnabled(mod)
-                mod.copy(enabled = false, newlyImported = highlighted)
+                val isTexturePack = mod.workshop?.state == WorkshopModState.TexturePackInstalled
+                val highlighted = mod.newlyImported && !isTexturePack && !isPendingOptionalModEnabled(mod)
+                mod.copy(enabled = if (isTexturePack) mod.enabled else false, newlyImported = highlighted)
             }
         )
         markOptionalModsWithPendingSelectionDirty()
@@ -1012,6 +1014,10 @@ internal class MainModManagementController(
     }
 
     fun onToggleMod(host: Activity, mod: ModItemUi, enabled: Boolean) {
+        if (mod.workshop?.state == WorkshopModState.TexturePackInstalled) {
+            toggleTexturePack(host, mod, enabled)
+            return
+        }
         if (!hostCallbacks.canEditMainScreenState() || mod.required) {
             return
         }
@@ -1057,6 +1063,33 @@ internal class MainModManagementController(
         }
         if (!persistPendingSelection(host)) {
             restorePendingSelection(previousSelection)
+        }
+        hostCallbacks.republish(host)
+    }
+
+    private fun toggleTexturePack(host: Activity, mod: ModItemUi, enabled: Boolean) {
+        if (!hostCallbacks.canEditMainScreenState()) return
+        val workshop = mod.workshop ?: return
+        val previousSelection = snapshotPendingSelection()
+        try {
+            if (enabled) {
+                val result = enableModWithDependencies(host, mod, resolveOptionalModsWithPendingSelection())
+                emitAutoEnabledNotices(host, result)
+                if (result.missingDependencies.isNotEmpty()) {
+                    showMissingDependencyDialog(host, mod, result.missingDependencies)
+                }
+            }
+            TextureReplacerWorkshopInstaller.setPackEnabled(host, workshop.publishedFileId, enabled)
+            if (!persistPendingSelection(host)) restorePendingSelection(previousSelection)
+            refresh(host, storageAccessible = true)
+        } catch (error: Throwable) {
+            restorePendingSelection(previousSelection)
+            emitSnackbar(
+                host.getString(
+                    R.string.main_mod_toggle_failed,
+                    error.message ?: host.getString(R.string.feedback_unknown_error)
+                )
+            )
         }
         hostCallbacks.republish(host)
     }
@@ -1725,7 +1758,10 @@ internal class MainModManagementController(
         return recordsByPublishedFileId.values
             .filter { record ->
                 val absoluteJarPaths = resolveWorkshopJarPaths(host, record)
-                absoluteJarPaths.isEmpty() || absoluteJarPaths.none(installedPaths::contains)
+                val activeTask = downloadTasksByPublishedFileId[record.publishedFileId]
+                activeTask != null ||
+                    absoluteJarPaths.isEmpty() ||
+                    absoluteJarPaths.none(installedPaths::contains)
             }
             .map { record ->
                 record.toWorkshopModItem(
@@ -1828,10 +1864,18 @@ internal class MainModManagementController(
             version = versionText,
             fileSizeBytes = fileSizeBytes,
             description = description,
-            dependencies = emptyList(),
+            dependencies = if (contentKind == io.stamethyst.backend.workshop.WorkshopInstalledContentKind.TexturePack) {
+                listOf(ModManager.MOD_ID_TEXTURE_REPLACER)
+            } else {
+                emptyList()
+            },
             required = false,
             installed = false,
-            enabled = false,
+            enabled = if (contentKind == io.stamethyst.backend.workshop.WorkshopInstalledContentKind.TexturePack) {
+                TextureReplacerWorkshopInstaller.isPackEnabled(host, publishedFileId)
+            } else {
+                false
+            },
             explicitPriority = null,
             effectivePriority = null,
             newlyImported = isNewlyImportedWorkshopRecord(this, absoluteJarPath),
@@ -1955,6 +1999,9 @@ internal class MainModManagementController(
         val record = WorkshopMetadataStore(host).findByPublishedFileId(workshop.appId, workshop.publishedFileId)
         val localPaths = record?.allLocalJarPaths().orEmpty().ifEmpty { listOf(workshop.localJarPath) }
         localPaths.forEach { path -> deleteWorkshopTexturePackIfNeeded(path) }
+        if (record?.contentKind == io.stamethyst.backend.workshop.WorkshopInstalledContentKind.TexturePack) {
+            TextureReplacerWorkshopInstaller.removePack(host, workshop.publishedFileId)
+        }
         WorkshopDownloadTaskStore(host).removeAndMarkDeleted(workshop.publishedFileId)
         WorkshopMetadataStore(host).remove(workshop.appId, workshop.publishedFileId)
         return deletedDirectory
@@ -1992,7 +2039,11 @@ internal class MainModManagementController(
         }
         optionalModsWithPendingSelectionCache = optionalModsSnapshot.map { mod ->
             mod.copy(
-                enabled = isPendingOptionalModEnabled(mod),
+                enabled = if (mod.workshop?.state == WorkshopModState.TexturePackInstalled) {
+                    mod.enabled
+                } else {
+                    isPendingOptionalModEnabled(mod)
+                },
                 newlyImported = NewlyImportedModHighlightStore.contains(mod.storagePath),
                 favorite = isFavoriteMod(mod)
             )

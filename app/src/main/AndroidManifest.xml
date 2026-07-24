@@ -4,6 +4,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
 
@@ -103,6 +104,7 @@
         <service
             android:name="io.stamethyst.backend.easytier.StsEasyTierVpnService"
             android:exported="true"
+            android:foregroundServiceType="dataSync"
             android:process=":easytier"
             android:permission="android.permission.BIND_VPN_SERVICE">
             <intent-filter>

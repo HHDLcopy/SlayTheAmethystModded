@@ -9,10 +9,12 @@ import io.stamethyst.backend.github.WATT_PROXY_TYPE_DIRECT
 import io.stamethyst.backend.github.WATT_PROXY_TYPE_REVERSE_PROXY
 import io.stamethyst.backend.github.WattToolkitGithubRouteResolver
 import io.stamethyst.backend.github.WattToolkitRouteProfile
+import io.stamethyst.backend.github.WattToolkitForwardDns
 import io.stamethyst.backend.github.trustWattToolkitForwardCertificates
 import io.stamethyst.backend.network.NetworkAccelerationPolicy
 import io.stamethyst.config.LauncherConfig
 import java.io.File
+import javax.net.ssl.HttpsURLConnection
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import okhttp3.OkHttpClient
@@ -20,14 +22,14 @@ import okhttp3.Protocol
 
 internal val SteamCommunityWattToolkitRouteProfile = WattToolkitRouteProfile(
     name = "steam-community",
-    cacheFileName = "watt-steam-community-route-cache.json",
+    cacheFileName = "watt-steam-community-route-cache-v2.json",
     supportedHosts = setOf("steamcommunity.com", "www.steamcommunity.com"),
-    bootstrapForwardTargets = listOf("http://steamcommunity.rmbgame.net"),
+    bootstrapForwardTargets = listOf("https://steamcommunity.rmbgame.net"),
 )
 
 internal val SteamStoreWattToolkitRouteProfile = WattToolkitRouteProfile(
     name = "steam-store",
-    cacheFileName = "watt-steam-store-route-cache.json",
+    cacheFileName = "watt-steam-store-route-cache-v2.json",
     supportedHosts = setOf(
         "api.steampowered.com",
         "store.steampowered.com",
@@ -62,7 +64,7 @@ internal val SteamMediaWattToolkitRouteProfile = WattToolkitRouteProfile(
 
 internal val SteamContentCdnWattToolkitRouteProfile = WattToolkitRouteProfile(
     name = "steam-content-cdn",
-    cacheFileName = "watt-steam-content-cdn-route-cache.json",
+    cacheFileName = "watt-steam-content-cdn-route-cache-v2.json",
     supportedHosts = setOf(
         "st.dl.eccdnx.com",
         "shared.st.dl.eccdnx.com",
@@ -134,11 +136,28 @@ object SteamCloudAcceleratedHttp {
                 ExperimentalGithubDirectAccessInterceptor(
                     routeResolvers = runtime.resolvers,
                     directCallFactory = runtime.directHttpClient,
+                    forwardDns = runtime.forwardDns,
                     enabledProvider = accelerationEnabledProvider,
                 ),
             )
             .build()
     }
+
+    /**
+     * Builds the official Steam protocol client from a shared HTTP client.
+     *
+     * Steam CM directory responses determine the websocket endpoint used by
+     * JavaSteam and the protocol module. They must not be rewritten by Watt
+     * forwarding rules intended for Steam web/CDN traffic.
+     */
+    @JvmStatic
+    fun createProtocolClient(baseClient: OkHttpClient): OkHttpClient = baseClient.newBuilder()
+        .apply {
+            interceptors().clear()
+            networkInterceptors().clear()
+            hostnameVerifier(HttpsURLConnection.getDefaultHostnameVerifier())
+        }
+        .build()
 
     @JvmStatic
     fun clearRuntimeCacheForTests() {
@@ -150,6 +169,7 @@ internal fun createSteamCloudWattToolkitRuntime(
     filesDir: File,
     routeProfiles: List<WattToolkitRouteProfile> = defaultSteamCloudWattToolkitRouteProfiles,
 ): ExperimentalGithubDirectAccessRuntime {
+    val forwardDns = WattToolkitForwardDns()
     val resolvers = routeProfiles.map { routeProfile ->
         WattToolkitGithubRouteResolver(
             routeProfile = routeProfile,
@@ -167,6 +187,7 @@ internal fun createSteamCloudWattToolkitRuntime(
         .readTimeout(STEAM_CLOUD_DIRECT_ACCESS_READ_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         .writeTimeout(STEAM_CLOUD_DIRECT_ACCESS_READ_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         .hostnameVerifier(hostnameVerifier)
+        .dns(forwardDns)
         .trustWattToolkitForwardCertificates()
         .followRedirects(false)
         .followSslRedirects(false)
@@ -176,6 +197,7 @@ internal fun createSteamCloudWattToolkitRuntime(
         resolvers = resolvers,
         hostnameVerifier = hostnameVerifier,
         directHttpClient = directHttpClient,
+        forwardDns = forwardDns,
     )
 }
 

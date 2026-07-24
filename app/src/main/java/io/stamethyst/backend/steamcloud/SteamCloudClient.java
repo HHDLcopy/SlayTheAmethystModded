@@ -111,6 +111,7 @@ public final class SteamCloudClient implements AutoCloseable {
     private final SteamCloud steamCloud;
     private final Cloud cloudService;
     private final OkHttpClient httpClient;
+    private final OkHttpClient protocolHttpClient;
     private final File lastCmEndpointFile;
     private final boolean wattAccelerationEnabled;
     private final EnumSet<ProtocolTypes> protocolTypes = EnumSet.of(ProtocolTypes.WEB_SOCKET);
@@ -182,11 +183,12 @@ public final class SteamCloudClient implements AutoCloseable {
             DOWNLOAD_TIMEOUT_MS,
             DOWNLOAD_TIMEOUT_MS
         );
+        protocolHttpClient = SteamCloudAcceleratedHttp.createProtocolClient(httpClient);
         Log.i(TAG, "Steam Cloud Watt acceleration: " + (wattAccelerationEnabled ? "enabled" : "disabled") + '.');
 
         File cmServerListFile = new File(outputDir, CM_SERVER_LIST_FILE_NAME);
         SteamConfiguration steamConfiguration = SteamConfiguration.create(builder -> {
-            builder.withHttpClient(httpClient);
+            builder.withHttpClient(protocolHttpClient);
             builder.withConnectionTimeout(CONNECT_TIMEOUT_MS);
             builder.withProtocolTypes(protocolTypes);
             builder.withServerListProvider(new FileServerListProvider(cmServerListFile));
@@ -1046,6 +1048,11 @@ public final class SteamCloudClient implements AutoCloseable {
 
     private PreparedServerRecord selectWebSocketServerRecord() throws IOException {
         List<PreparedServerRecord> candidates = new ArrayList<>();
+
+        if (wattAccelerationEnabled) {
+            boolean refreshed = steamClient.getServers().forceRefreshServerList();
+            recordDiagnosticEvent("cm_server_list_refresh result=" + (refreshed ? "completed" : "failed"));
+        }
 
         ServerRecord serverListRecord = steamClient.getServers().getNextServerCandidate(protocolTypes);
         if (serverListRecord != null) {

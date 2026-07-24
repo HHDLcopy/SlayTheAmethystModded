@@ -6,6 +6,7 @@ import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.evacipated.cardcrawl.modthespire.lib.SpirePatch2;
 import com.evacipated.cardcrawl.modthespire.lib.SpirePostfixPatch;
 import com.evacipated.cardcrawl.modthespire.lib.SpirePrefixPatch;
+import com.evacipated.cardcrawl.modthespire.lib.SpireReturn;
 import com.megacrit.cardcrawl.core.Settings;
 import com.megacrit.cardcrawl.helpers.Hitbox;
 import com.megacrit.cardcrawl.helpers.ImageMaster;
@@ -13,6 +14,8 @@ import com.megacrit.cardcrawl.helpers.input.InputHelper;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 
 public final class TogetherInSpireChatKeyboardButtonPatches {
     private static final String CHAT_CONSOLE_CLASS = "spireTogether.chat.ChatConsole";
@@ -32,6 +35,9 @@ public final class TogetherInSpireChatKeyboardButtonPatches {
         new Color(0.10f, 0.12f, 0.15f, 0.92f);
     private static final Color BUTTON_BORDER =
         new Color(0.78f, 0.73f, 0.62f, 0.95f);
+    private static final char TEXT_SYNC_START = '\uE000';
+    private static final char TEXT_SYNC_END = '\uE001';
+    private static final int MAX_TEXT_SYNC_PAYLOAD_LENGTH = 16384;
 
     private static final Hitbox keyboardHitbox = new Hitbox(1.0f, 1.0f);
 
@@ -39,6 +45,10 @@ public final class TogetherInSpireChatKeyboardButtonPatches {
     private static volatile Field openedChatField;
     private static volatile Field currentTextField;
     private static volatile Method openMethod;
+    private static volatile Method setTextMethod;
+    private static final StringBuilder textSyncPayload = new StringBuilder();
+    private static boolean readingTextSyncPayload;
+    private static boolean discardTextSyncPayload;
     private static Texture keyboardTexture;
 
     private TogetherInSpireChatKeyboardButtonPatches() {
@@ -69,8 +79,53 @@ public final class TogetherInSpireChatKeyboardButtonPatches {
             TogetherInSpireInputFieldKeyboardPatches.requestAndroidKeyboard(
                 readCurrentText(),
                 "",
-                -1
+                -1,
+                TogetherInSpireInputFieldKeyboardPatches.CHAT_REQUEST_SOURCE
             );
+        }
+    }
+
+    @SpirePatch2(
+        cls = CHAT_CONSOLE_CLASS,
+        method = "acceptCharacter",
+        paramtypez = {char.class},
+        requiredModId = TogetherInSpireCompatRuntime.MOD_ID,
+        optional = true
+    )
+    public static class ChatTextSyncPatch {
+        @SpirePrefixPatch
+        public static SpireReturn<Boolean> Prefix(Object __instance, Object[] __args) {
+            if (__args == null || __args.length != 1 || !(__args[0] instanceof Character)) {
+                return SpireReturn.Continue();
+            }
+            char character = ((Character) __args[0]).charValue();
+            if (!readingTextSyncPayload) {
+                if (character != TEXT_SYNC_START) {
+                    return SpireReturn.Continue();
+                }
+                textSyncPayload.setLength(0);
+                readingTextSyncPayload = true;
+                discardTextSyncPayload = false;
+                return SpireReturn.Return(false);
+            }
+            if (character == TEXT_SYNC_END) {
+                if (!discardTextSyncPayload) {
+                    applyTextSync(__instance, textSyncPayload.toString());
+                }
+                textSyncPayload.setLength(0);
+                readingTextSyncPayload = false;
+                discardTextSyncPayload = false;
+                return SpireReturn.Return(false);
+            }
+            if (isBase64Character(character) &&
+                textSyncPayload.length() < MAX_TEXT_SYNC_PAYLOAD_LENGTH
+            ) {
+                textSyncPayload.append(character);
+            } else {
+                textSyncPayload.setLength(0);
+                discardTextSyncPayload = true;
+            }
+            return SpireReturn.Return(false);
         }
     }
 
@@ -162,6 +217,29 @@ public final class TogetherInSpireChatKeyboardButtonPatches {
             return readVisible();
         } catch (ReflectiveOperationException | LinkageError | RuntimeException ignored) {
             return false;
+        }
+    }
+
+    private static boolean isBase64Character(char character) {
+        return character >= 'A' && character <= 'Z' ||
+            character >= 'a' && character <= 'z' ||
+            character >= '0' && character <= '9' ||
+            character == '+' || character == '/' || character == '=';
+    }
+
+    private static void applyTextSync(Object chatConsole, String encodedText) {
+        try {
+            String text = new String(
+                Base64.getDecoder().decode(encodedText),
+                StandardCharsets.UTF_8
+            );
+            Method method = setTextMethod;
+            if (method == null || method.getDeclaringClass() != chatConsole.getClass()) {
+                method = chatConsole.getClass().getMethod("setText", String.class);
+                setTextMethod = method;
+            }
+            method.invoke(chatConsole, text);
+        } catch (ReflectiveOperationException | IllegalArgumentException | LinkageError ignored) {
         }
     }
 

@@ -23,6 +23,46 @@ internal object TextureReplacerWorkshopInstaller {
         return targetDir
     }
 
+    fun isPackEnabled(context: Context, publishedFileId: ULong): Boolean {
+        val id = publishedFileId.toString()
+        val packs = readPackOrder(RuntimePaths.textureReplacerPackOrderFile(context))
+        return (0 until packs.length()).any { index ->
+            val pack = packs.optJSONObject(index)
+            pack?.optString("id") == id && pack.optBoolean("enabled", true)
+        }
+    }
+
+    fun setPackEnabled(context: Context, publishedFileId: ULong, enabled: Boolean) {
+        val file = RuntimePaths.textureReplacerPackOrderFile(context)
+        val id = publishedFileId.toString()
+        val existing = readPackOrder(file)
+        val updated = JSONArray()
+        for (index in 0 until existing.length()) {
+            val item = existing.optJSONObject(index) ?: continue
+            updated.put(
+                if (item.optString("id") == id) {
+                    JSONObject(item.toString()).put("enabled", enabled)
+                } else {
+                    item
+                }
+            )
+        }
+        writeAtomically(file, updated.toString(2))
+    }
+
+    fun removePack(context: Context, publishedFileId: ULong) {
+        val file = RuntimePaths.textureReplacerPackOrderFile(context)
+        if (!file.isFile) return
+        val id = publishedFileId.toString()
+        val existing = readPackOrder(file)
+        val updated = JSONArray()
+        for (index in 0 until existing.length()) {
+            val item = existing.optJSONObject(index) ?: continue
+            if (item.optString("id") != id) updated.put(item)
+        }
+        writeAtomically(file, updated.toString(2))
+    }
+
     private fun replaceDirectory(sourceDir: File, targetDir: File) {
         val parent = targetDir.parentFile
         if (parent != null && !parent.exists() && !parent.mkdirs()) {

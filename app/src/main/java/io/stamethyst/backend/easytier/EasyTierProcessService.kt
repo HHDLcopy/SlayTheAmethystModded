@@ -1,10 +1,6 @@
 package io.stamethyst.backend.easytier
 
 import android.app.ActivityManager
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -16,8 +12,6 @@ import android.os.HandlerThread
 import android.os.IBinder
 import android.os.ResultReceiver
 import android.util.Log
-import androidx.core.app.NotificationCompat
-import io.stamethyst.LauncherActivity
 import io.stamethyst.R
 import io.stamethyst.config.CloudControlConfig
 import io.stamethyst.config.LauncherConfig
@@ -64,11 +58,10 @@ class EasyTierProcessService : Service() {
         const val RESULT_PERMISSION_REQUIRED = 6
         const val RESULT_SESSION_READY = 7
 
-        private const val CHANNEL_ID = "easytier_virtual_network"
-        private const val NOTIFICATION_ID = 646572
-
         @Volatile
         private var running = false
+        @Volatile
+        private var activeService: EasyTierProcessService? = null
 
         fun isRunning(context: Context): Boolean {
             if (running) {
@@ -79,6 +72,10 @@ class EasyTierProcessService : Service() {
             return manager.getRunningServices(Int.MAX_VALUE).any { service ->
                 service.service.className == EasyTierProcessService::class.java.name
             }
+        }
+
+        fun releaseConnectForeground() {
+            activeService?.releaseConnectForegroundInternal()
         }
 
         fun startConnect(
@@ -214,6 +211,7 @@ class EasyTierProcessService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        activeService = this
         CloudControlConfig.refreshOnAppStart(applicationContext)
         statusPollThread = HandlerThread("STS-EasyTierStatusPoll").also(HandlerThread::start)
         statusPollHandler = Handler(statusPollThread.looper)
@@ -245,8 +243,11 @@ class EasyTierProcessService : Service() {
 
             ACTION_CONNECT -> {
                 startForeground(
-                    NOTIFICATION_ID,
-                    buildNotification(getString(R.string.main_easytier_notification_connecting)),
+                    EasyTierForegroundNotification.CONNECT_NOTIFICATION_ID,
+                    EasyTierForegroundNotification.build(
+                        this,
+                        getString(R.string.main_easytier_notification_connecting),
+                    ),
                 )
                 if (running) {
                     val snapshot = EasyTierSessionController.currentSnapshot(applicationContext)
@@ -269,6 +270,9 @@ class EasyTierProcessService : Service() {
     }
 
     override fun onDestroy() {
+        if (activeService === this) {
+            activeService = null
+        }
         val previous = EasyTierStateStore.readSnapshot(applicationContext)
         running = false
         workerThread?.interrupt()
@@ -587,29 +591,13 @@ class EasyTierProcessService : Service() {
         EasyTierConnectionStatus.FAILED -> RESULT_FAILURE
     }
 
-    private fun buildNotification(message: String): Notification {
-        ensureNotificationChannel()
-        val intent = Intent(this, LauncherActivity::class.java)
-        val pendingIntent = PendingIntent.getActivity(
-            this,
-            0,
-            intent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_link)
-            .setContentTitle(getString(R.string.main_easytier_notification_title))
-            .setContentText(message)
-            .setContentIntent(pendingIntent)
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
-    }
-
     private fun updateNotification(message: String) {
-        val manager = getSystemService(NotificationManager::class.java)
-        manager.notify(NOTIFICATION_ID, buildNotification(message))
+        val notificationId = if (StsEasyTierVpnService.isForegroundSessionActive()) {
+            EasyTierForegroundNotification.VPN_NOTIFICATION_ID
+        } else {
+            EasyTierForegroundNotification.CONNECT_NOTIFICATION_ID
+        }
+        EasyTierForegroundNotification.notify(this, notificationId, message)
     }
 
     private fun notificationMessageForSnapshot(snapshot: EasyTierConnectionSnapshot): String? {
@@ -647,16 +635,13 @@ class EasyTierProcessService : Service() {
         }
     }
 
-    private fun ensureNotificationChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        val manager = getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(
-            NotificationChannel(
-                CHANNEL_ID,
-                getString(R.string.main_easytier_notification_title),
-                NotificationManager.IMPORTANCE_LOW,
-            )
-        )
+    private fun releaseConnectForegroundInternal() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } else {
+            @Suppress("DEPRECATION")
+            stopForeground(true)
+        }
     }
 
     private fun stopForegroundCompat() {

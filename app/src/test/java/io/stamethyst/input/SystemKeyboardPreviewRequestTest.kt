@@ -17,6 +17,7 @@ class SystemKeyboardPreviewRequestTest {
             )
         )
 
+        assertEquals("together_in_spire", request?.source)
         assertEquals("10.144.0.1", request?.initialText)
         assertEquals("0123456789.".toSet(), request?.allowedCharacters)
         assertEquals(15, request?.characterLimit)
@@ -32,9 +33,25 @@ class SystemKeyboardPreviewRequestTest {
             )
         )
 
+        assertEquals("together_in_spire", request?.source)
         assertEquals("联机房间", request?.initialText)
         assertNull(request?.allowedCharacters)
         assertNull(request?.characterLimit)
+    }
+
+    @Test
+    fun parse_preservesChatTextSynchronizationSource() {
+        val request = SystemKeyboardPreviewRequest.parse(
+            buildPayload(
+                source = "together_in_spire_chat",
+                initialText = "replace this text",
+                allowedCharacters = "",
+                characterLimit = -1,
+            )
+        )
+
+        assertEquals("together_in_spire_chat", request?.source)
+        assertEquals("replace this text", request?.initialText)
     }
 
     @Test
@@ -48,12 +65,13 @@ class SystemKeyboardPreviewRequestTest {
     }
 
     private fun buildPayload(
+        source: String = "together_in_spire",
         initialText: String,
         allowedCharacters: String,
         characterLimit: Int,
     ): String {
         return listOf(
-            "system_keyboard_preview:together_in_spire",
+            "system_keyboard_preview:$source",
             "123456789",
             encode(initialText),
             encode(allowedCharacters),

@@ -162,9 +162,10 @@ internal object SteamCloudAuthCoordinator {
             readTimeoutMs = 60_000L,
             callTimeoutMs = 60_000L,
         )
+        val protocolClient = SteamCloudAcceleratedHttp.createProtocolClient(httpClient)
         val authenticationClient = SteamAuthenticationClient(
-            directoryClient = SteamDirectoryClient(httpClient),
-            sessionFactory = { OkHttpSteamCmSession(httpClient) },
+            directoryClient = SteamDirectoryClient(protocolClient),
+            sessionFactory = { OkHttpSteamCmSession(protocolClient) },
         )
         val protocolEvents = mutableListOf<String>()
         val debugLogger: (String) -> Unit = { line ->

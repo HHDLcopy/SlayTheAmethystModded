@@ -19,6 +19,8 @@ public final class TogetherInSpireInputFieldKeyboardPatches {
         "amethyst.in_game_keyboard_request";
     private static final String REQUEST_SOURCE =
         "system_keyboard_preview:together_in_spire";
+    static final String CHAT_REQUEST_SOURCE =
+        "system_keyboard_preview:together_in_spire_chat";
 
     private static volatile Field ownerField;
     private static volatile Method getTextMethod;
@@ -68,6 +70,20 @@ public final class TogetherInSpireInputFieldKeyboardPatches {
         String allowedCharacters,
         int characterLimit
     ) {
+        requestAndroidKeyboard(
+            initialText,
+            allowedCharacters,
+            characterLimit,
+            REQUEST_SOURCE
+        );
+    }
+
+    static void requestAndroidKeyboard(
+        String initialText,
+        String allowedCharacters,
+        int characterLimit,
+        String requestSource
+    ) {
         String requestPath = System.getProperty(KEYBOARD_REQUEST_PROPERTY, "").trim();
         if (requestPath.isEmpty()) {
             return;
@@ -76,7 +92,8 @@ public final class TogetherInSpireInputFieldKeyboardPatches {
             new File(requestPath),
             initialText,
             allowedCharacters,
-            characterLimit
+            characterLimit,
+            requestSource
         );
     }
 
@@ -143,14 +160,15 @@ public final class TogetherInSpireInputFieldKeyboardPatches {
         File requestFile,
         String initialText,
         String allowedCharacters,
-        int characterLimit
+        int characterLimit,
+        String requestSource
     ) {
         File parent = requestFile.getParentFile();
         if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
             return;
         }
         try (FileWriter writer = new FileWriter(requestFile, false)) {
-            writer.write(REQUEST_SOURCE);
+            writer.write(requestSource);
             writer.write('\n');
             writer.write(Long.toString(System.currentTimeMillis()));
             writer.write('\n');

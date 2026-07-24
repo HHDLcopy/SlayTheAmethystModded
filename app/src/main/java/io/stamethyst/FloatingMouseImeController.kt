@@ -32,11 +32,17 @@ internal class FloatingMouseImeController(
         val initialText: String,
         val allowedCharacters: Set<Char>?,
         val characterLimit: Int?,
+        val textSyncSource: String? = null,
     )
 
     interface InputCallbacks {
         fun onCommitText(
             text: CharSequence?,
+            source: String
+        ): Boolean
+
+        fun onPreviewTextChanged(
+            text: CharSequence,
             source: String
         ): Boolean
 
@@ -629,6 +635,7 @@ internal class FloatingMouseImeController(
         private val inputInteractionCallback: () -> Unit
     ) : AppCompatEditText(context) {
         private var previewActive = false
+        private var previewTextSyncSource: String? = null
 
         init {
             inputType = DEFAULT_INPUT_TYPE
@@ -651,6 +658,7 @@ internal class FloatingMouseImeController(
 
         fun configurePreview(config: PreviewConfig?) {
             previewActive = config != null
+            previewTextSyncSource = config?.textSyncSource
             if (config == null) {
                 filters = emptyArray()
                 setSingleLine(false)
@@ -732,7 +740,9 @@ internal class FloatingMouseImeController(
 
         override fun onSelectionChanged(selStart: Int, selEnd: Int) {
             val textEnd = text?.length ?: 0
-            if (previewActive && (selStart != textEnd || selEnd != textEnd)) {
+            if (previewActive && previewTextSyncSource == null &&
+                (selStart != textEnd || selEnd != textEnd)
+            ) {
                 setSelection(textEnd)
                 return
             }
@@ -757,7 +767,7 @@ internal class FloatingMouseImeController(
                             "cursor=$newCursorPosition result=$result"
                     )
                     inputInteractionCallback.invoke()
-                    callbacks.onCommitText(text, source = "commit_text")
+                    publishPreviewTextOrCommit(text)
                     return true
                 }
 
@@ -783,17 +793,87 @@ internal class FloatingMouseImeController(
                     beforeLength: Int,
                     afterLength: Int
                 ): Boolean {
+                    val previewTextBeforeDelete = text?.toString()
                     val result = super.deleteSurroundingText(beforeLength, afterLength)
+                    val previewDeleteApplied = applyPreviewDeleteIfNeeded(
+                        previewTextBeforeDelete,
+                        beforeLength,
+                        afterLength,
+                        deleteByCodePoints = false,
+                    )
                     debugLogger(
                         "InputConnection.deleteSurroundingText before=$beforeLength " +
-                            "after=$afterLength result=$result"
+                            "after=$afterLength result=$result " +
+                            "previewDeleteApplied=$previewDeleteApplied"
                     )
                     inputInteractionCallback.invoke()
-                    callbacks.onDeleteSurroundingText(beforeLength, afterLength)
+                    publishPreviewTextOrDelete(beforeLength, afterLength)
+                    return true
+                }
+
+                override fun deleteSurroundingTextInCodePoints(
+                    beforeLength: Int,
+                    afterLength: Int
+                ): Boolean {
+                    val previewTextBeforeDelete = text?.toString()
+                    val result = super.deleteSurroundingTextInCodePoints(
+                        beforeLength,
+                        afterLength
+                    )
+                    val previewDeleteApplied = applyPreviewDeleteIfNeeded(
+                        previewTextBeforeDelete,
+                        beforeLength,
+                        afterLength,
+                        deleteByCodePoints = true,
+                    )
+                    debugLogger(
+                        "InputConnection.deleteSurroundingTextInCodePoints before=$beforeLength " +
+                            "after=$afterLength result=$result " +
+                            "previewDeleteApplied=$previewDeleteApplied"
+                    )
+                    inputInteractionCallback.invoke()
+                    publishPreviewTextOrDelete(beforeLength, afterLength)
                     return true
                 }
 
                 override fun sendKeyEvent(event: KeyEvent): Boolean {
+                    val textSyncSource = previewTextSyncSource
+                    if (textSyncSource != null) {
+                        val beforeText = text?.toString().orEmpty()
+                        val result = super.sendKeyEvent(event)
+                        val previewDeleteApplied = when {
+                            event.action != KeyEvent.ACTION_DOWN -> false
+                            event.keyCode == KeyEvent.KEYCODE_DEL -> applyPreviewDeleteIfNeeded(
+                                beforeText,
+                                beforeLength = 1,
+                                afterLength = 0,
+                                deleteByCodePoints = true,
+                            )
+                            event.keyCode == KeyEvent.KEYCODE_FORWARD_DEL -> applyPreviewDeleteIfNeeded(
+                                beforeText,
+                                beforeLength = 0,
+                                afterLength = 1,
+                                deleteByCodePoints = true,
+                            )
+                            else -> false
+                        }
+                        debugLogger(
+                            "InputConnection.sendKeyEvent event=${describeKeyEvent(event)} " +
+                                "result=$result previewDeleteApplied=$previewDeleteApplied"
+                        )
+                        if (beforeText != text?.toString().orEmpty()) {
+                            callbacks.onPreviewTextChanged(
+                                text?.toString().orEmpty(),
+                                textSyncSource
+                            )
+                        }
+                        if (event.action == KeyEvent.ACTION_UP &&
+                            event.keyCode == KeyEvent.KEYCODE_ENTER
+                        ) {
+                            callbacks.onPerformEditorAction(EditorInfo.IME_ACTION_DONE)
+                        }
+                        return true
+                    }
                     debugLogger(
                         "InputConnection.sendKeyEvent event=${describeKeyEvent(event)}"
                     )
@@ -804,7 +884,92 @@ internal class FloatingMouseImeController(
                 override fun performEditorAction(actionCode: Int): Boolean {
                     debugLogger("InputConnection.performEditorAction actionCode=$actionCode")
                     inputInteractionCallback.invoke()
+                    previewTextSyncSource?.let { source ->
+                        callbacks.onPreviewTextChanged(text?.toString().orEmpty(), source)
+                    }
                     return callbacks.onPerformEditorAction(actionCode)
+                }
+
+                private fun publishPreviewTextOrCommit(committedText: CharSequence?) {
+                    val textSyncSource = previewTextSyncSource
+                    if (textSyncSource == null) {
+                        callbacks.onCommitText(committedText, source = "commit_text")
+                        return
+                    }
+                    callbacks.onPreviewTextChanged(text?.toString().orEmpty(), textSyncSource)
+                }
+
+                private fun publishPreviewTextOrDelete(
+                    beforeLength: Int,
+                    afterLength: Int
+                ) {
+                    val textSyncSource = previewTextSyncSource
+                    if (textSyncSource == null) {
+                        callbacks.onDeleteSurroundingText(beforeLength, afterLength)
+                        return
+                    }
+                    callbacks.onPreviewTextChanged(text?.toString().orEmpty(), textSyncSource)
+                }
+
+                private fun applyPreviewDeleteIfNeeded(
+                    previewTextBeforeDelete: String?,
+                    beforeLength: Int,
+                    afterLength: Int,
+                    deleteByCodePoints: Boolean,
+                ): Boolean {
+                    if (previewTextSyncSource == null ||
+                        previewTextBeforeDelete != text?.toString()
+                    ) {
+                        return false
+                    }
+
+                    val editable = this@GameImeEditor.text ?: return false
+                    val selectionStart = this@GameImeEditor.selectionStart
+                        .coerceIn(0, editable.length)
+                    val selectionEnd = this@GameImeEditor.selectionEnd
+                        .coerceIn(0, editable.length)
+                    val selectedStart = minOf(selectionStart, selectionEnd)
+                    val selectedEnd = maxOf(selectionStart, selectionEnd)
+                    val deleteStart = offsetByDeleteLength(
+                        editable,
+                        selectedStart,
+                        -beforeLength.coerceAtLeast(0),
+                        deleteByCodePoints,
+                    )
+                    val deleteEnd = offsetByDeleteLength(
+                        editable,
+                        selectedEnd,
+                        afterLength.coerceAtLeast(0),
+                        deleteByCodePoints,
+                    )
+                    if (deleteStart == deleteEnd) {
+                        return false
+                    }
+                    editable.delete(deleteStart, deleteEnd)
+                    this@GameImeEditor.setSelection(deleteStart)
+                    return true
+                }
+
+                private fun offsetByDeleteLength(
+                    editable: CharSequence,
+                    index: Int,
+                    codePointOffset: Int,
+                    deleteByCodePoints: Boolean,
+                ): Int {
+                    if (!deleteByCodePoints) {
+                        return (index + codePointOffset).coerceIn(0, editable.length)
+                    }
+                    var offset = index
+                    var remaining = codePointOffset
+                    while (remaining < 0 && offset > 0) {
+                        offset = Character.offsetByCodePoints(editable, offset, -1)
+                        remaining += 1
+                    }
+                    while (remaining > 0 && offset < editable.length) {
+                        offset = Character.offsetByCodePoints(editable, offset, 1)
+                        remaining -= 1
+                    }
+                    return offset
                 }
             }
         }

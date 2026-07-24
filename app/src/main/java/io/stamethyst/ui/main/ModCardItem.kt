@@ -386,14 +386,14 @@ internal fun ModCard(
                     contentAlignment = Alignment.Center
                 ) {
                     val workshopState = mod.workshop?.state
-                    val showEnableCheckbox = mod.installed && when (workshopState) {
+                    val showEnableCheckbox = (mod.installed || workshopState == WorkshopModState.TexturePackInstalled) && when (workshopState) {
                         WorkshopModState.ImportedUnpatched,
                         WorkshopModState.Downloading,
                         WorkshopModState.DownloadPaused,
                         WorkshopModState.DownloadFailed,
                         WorkshopModState.NonStandardDownloaded,
-                        WorkshopModState.TexturePackInstalled,
                         WorkshopModState.FileMissing -> false
+                        WorkshopModState.TexturePackInstalled -> true
                         WorkshopModState.ImportedPatched,
                         WorkshopModState.UpdateAvailable,
                         null -> true
@@ -495,16 +495,7 @@ internal fun ModCard(
             ) {
                 Text(stringResource(R.string.main_mod_workshop_action_manual_handle))
             }
-            WorkshopModState.TexturePackInstalled -> OutlinedButton(
-                onClick = { showActionsDialog = true },
-                enabled = !batchSelectionMode,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 10.dp)
-                    .graphicsLayer { alpha = normalControlProgress }
-            ) {
-                Text(stringResource(R.string.main_mod_workshop_action_view_file))
-            }
+            WorkshopModState.TexturePackInstalled -> Unit
             WorkshopModState.Downloading -> {
                 val progress = mod.workshop.downloadProgressPercent
                     ?.coerceIn(0, 100)

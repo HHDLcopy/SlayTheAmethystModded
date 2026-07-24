@@ -40,6 +40,17 @@ class TextureReplacerWorkshopInstallerTest {
         assertEquals("123456", pack.getString("id"))
         assertEquals("Card Art Pack", pack.getString("name"))
         assertTrue(pack.getBoolean("enabled"))
+
+        TextureReplacerWorkshopInstaller.setPackEnabled(roots.context, 123456u, false)
+
+        assertTrue(!TextureReplacerWorkshopInstaller.isPackEnabled(roots.context, 123456u))
+        assertTrue(!JSONArray(RuntimePaths.textureReplacerPackOrderFile(roots.context).readText())
+            .getJSONObject(0)
+            .getBoolean("enabled"))
+
+        TextureReplacerWorkshopInstaller.removePack(roots.context, 123456u)
+
+        assertEquals(0, JSONArray(RuntimePaths.textureReplacerPackOrderFile(roots.context).readText()).length())
     }
 
     private class TestRoots private constructor(

@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets
 import java.util.Base64
 
 internal data class SystemKeyboardPreviewRequest(
+    val source: String,
     val initialText: String,
     val allowedCharacters: Set<Char>?,
     val characterLimit: Int?,
@@ -17,12 +18,14 @@ internal data class SystemKeyboardPreviewRequest(
                 return null
             }
             return try {
+                val source = lines.first().removePrefix(SOURCE_PREFIX)
                 val initialText = decode(lines.getOrNull(2).orEmpty())
                 val allowedText = decode(lines.getOrNull(3).orEmpty())
                 val characterLimit = lines.getOrNull(4)
                     ?.toIntOrNull()
                     ?.takeIf { it > 0 }
                 SystemKeyboardPreviewRequest(
+                    source = source,
                     initialText = initialText,
                     allowedCharacters = allowedText.takeIf(String::isNotEmpty)?.toSet(),
                     characterLimit = characterLimit,

@@ -3,6 +3,8 @@ package io.stamethyst.backend.steamcloud
 import io.stamethyst.backend.github.ExperimentalGithubDirectAccessRuntime
 import io.stamethyst.backend.github.ExperimentalGithubDirectAccessInterceptor
 import io.stamethyst.backend.github.GithubDirectHostnameVerifier
+import io.stamethyst.backend.github.WattToolkitForwardDns
+import io.stamethyst.backend.github.WattToolkitForwardTargetProbe
 import io.stamethyst.backend.github.WattToolkitGithubRouteResolver
 import java.net.InetAddress
 import mockwebserver3.MockResponse
@@ -15,6 +17,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -114,6 +117,153 @@ class SteamCloudAcceleratedHttpTest {
     }
 
     @Test
+    fun routeResolver_preservesFakeServerNameForForwardedTlsHost() {
+        apiServer.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    {
+                      "🦓": [
+                        {
+                          "Items": [
+                            {
+                              "MatchDomainNames": "api.steampowered.com",
+                              "ListenDomainNames": "api.steampowered.com",
+                              "ForwardDomainNames": "http://steamstore-forward.test:${steamStoreForwardServer.port}",
+                              "FakeServerName": "officecdn-microsoft-com.akamaized.net",
+                              "ProxyType": 0,
+                              "IgnoreSSLCertVerification": false
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+
+        val dns = Dns { listOf(InetAddress.getByName("127.0.0.1")) }
+        val resolver = WattToolkitGithubRouteResolver(
+            routeProfile = SteamStoreWattToolkitRouteProfile,
+            client = OkHttpClient.Builder().dns(dns).build(),
+            projectGroupsUrl = apiServer.url("/accelerator/projectgroups"),
+        )
+        val route = resolver.resolveRouteForHost("api.steampowered.com")
+
+        assertNotNull(route)
+        assertEquals("officecdn-microsoft-com.akamaized.net", route!!.fakeServerName)
+        assertEquals(
+            "officecdn-microsoft-com.akamaized.net",
+            route.buildForwardedUrl(
+                "https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/"
+                    .toHttpUrl(),
+            ).host,
+        )
+    }
+
+    @Test
+    fun interceptor_routesFakeTlsHostToForwardTargetDns() {
+        apiServer.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    {
+                      "🦓": [
+                        {
+                          "Items": [
+                            {
+                              "MatchDomainNames": "api.steampowered.com",
+                              "ListenDomainNames": "api.steampowered.com",
+                              "ForwardDomainNames": "http://steamstore-forward.test:${steamStoreForwardServer.port}",
+                              "FakeServerName": "officecdn-microsoft-com.akamaized.net",
+                              "ProxyType": 0,
+                              "IgnoreSSLCertVerification": true
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+        steamStoreForwardServer.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body("{\"response\":{\"result\":1}}")
+                .build(),
+        )
+
+        val routeDns = WattToolkitForwardDns(Dns { listOf(InetAddress.getByName("127.0.0.1")) })
+        val resolverDns = Dns { listOf(InetAddress.getByName("127.0.0.1")) }
+        val resolver = WattToolkitGithubRouteResolver(
+            routeProfile = SteamStoreWattToolkitRouteProfile,
+            client = OkHttpClient.Builder().dns(resolverDns).build(),
+            projectGroupsUrl = apiServer.url("/accelerator/projectgroups"),
+        )
+        val directClient = OkHttpClient.Builder()
+            .dns(routeDns)
+            .followRedirects(false)
+            .followSslRedirects(false)
+            .build()
+        val client = OkHttpClient.Builder()
+            .addInterceptor(
+                ExperimentalGithubDirectAccessInterceptor(
+                    routeResolvers = listOf(resolver),
+                    directCallFactory = directClient,
+                    forwardDns = routeDns,
+                ),
+            )
+            .build()
+
+        client.newCall(
+            Request.Builder()
+                .url("https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/")
+                .build(),
+        ).execute().use { response ->
+            assertEquals(200, response.code)
+            assertEquals("api.steampowered.com", response.request.url.host)
+        }
+
+        apiServer.takeRequest()
+        val forwardedRequest = steamStoreForwardServer.takeRequest()
+        assertEquals("api.steampowered.com", forwardedRequest.headers["Host"])
+        assertEquals(
+            "/ISteamRemoteStorage/GetPublishedFileDetails/v1/",
+            forwardedRequest.url.encodedPath,
+        )
+    }
+
+    @Test
+    fun steamCommunityBootstrap_usesHttpsForwardTarget() {
+        assertEquals(
+            "https://steamcommunity.rmbgame.net",
+            SteamCommunityWattToolkitRouteProfile.bootstrapForwardTargets.single(),
+        )
+    }
+
+    @Test
+    fun protocolClient_removesWattRoutingInterceptors() {
+        val acceleratedClient = OkHttpClient.Builder()
+            .addInterceptor(
+                ExperimentalGithubDirectAccessInterceptor(
+                    routeResolvers = emptyList(),
+                    directCallFactory = OkHttpClient(),
+                ),
+            )
+            .build()
+
+        val protocolClient = SteamCloudAcceleratedHttp.createProtocolClient(acceleratedClient)
+
+        assertEquals(1, acceleratedClient.interceptors.size)
+        assertTrue(protocolClient.interceptors.isEmpty())
+        assertTrue(protocolClient.networkInterceptors.isEmpty())
+    }
+
+    @Test
     fun routeResolver_matchesSteamContentCdnHostsFromWattProxyRule() {
         apiServer.enqueue(
             MockResponse.Builder()
@@ -160,6 +310,137 @@ class SteamCloudAcceleratedHttpTest {
                 "https://xz.pphimalayanrt.com/depot/646571/manifest/1616206291221819177/5".toHttpUrl(),
             ).host,
         )
+    }
+
+    @Test
+    fun routeResolver_matchesWildcardSteamContentCdnHosts() {
+        apiServer.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    {
+                      "🦓": [
+                        {
+                          "Items": [
+                            {
+                              "MatchDomainNames": "*.st.dl.eccdnx.com",
+                              "ListenDomainNames": "*.st.dl.eccdnx.com",
+                              "ForwardDomainNames": "cdn.queniuqe.com",
+                              "ProxyType": 1,
+                              "IgnoreSSLCertVerification": true,
+                              "FakeServerName": ""
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+
+        val dns = Dns { listOf(InetAddress.getByName("127.0.0.1")) }
+        val resolver = WattToolkitGithubRouteResolver(
+            routeProfile = SteamContentCdnWattToolkitRouteProfile,
+            client = OkHttpClient.Builder().dns(dns).build(),
+            projectGroupsUrl = apiServer.url("/accelerator/projectgroups"),
+        )
+
+        val route = resolver.resolveRouteForHost("st.dl.eccdnx.com")
+
+        assertNotNull(route)
+        assertTrue(route!!.logicalHosts.contains("st.dl.eccdnx.com"))
+        assertEquals("cdn.queniuqe.com", route.buildForwardedUrl("https://st.dl.eccdnx.com/file".toHttpUrl()).host)
+    }
+
+    @Test
+    fun routeResolver_ignoresUncheckedSteamContentCdnRoute() {
+        apiServer.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    {
+                      "🦓": [
+                        {
+                          "Items": [
+                            {
+                              "MatchDomainNames": "*.st.dl.eccdnx.com",
+                              "ListenDomainNames": "*.st.dl.eccdnx.com",
+                              "ForwardDomainNames": "cdn.queniuqe.com",
+                              "ProxyType": 1,
+                              "Checked": false
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+
+        val resolver = WattToolkitGithubRouteResolver(
+            routeProfile = SteamContentCdnWattToolkitRouteProfile,
+            client = OkHttpClient.Builder().build(),
+            projectGroupsUrl = apiServer.url("/accelerator/projectgroups"),
+        )
+
+        assertNull(resolver.resolveRouteForHost("st.dl.eccdnx.com"))
+    }
+
+    @Test
+    fun routeResolver_ranksForwardTargetsBySuccessRateThenLatency() {
+        apiServer.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    {
+                      "🦓": [
+                        {
+                          "Items": [
+                            {
+                              "MatchDomainNames": "store.steampowered.com",
+                              "ListenDomainNames": "store.steampowered.com",
+                              "ForwardDomainNames": "slow-node.test;fast-node.test",
+                              "ProxyType": 0,
+                              "Checked": true
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+
+        val resolver = WattToolkitGithubRouteResolver(
+            routeProfile = SteamStoreWattToolkitRouteProfile,
+            client = OkHttpClient.Builder().build(),
+            projectGroupsUrl = apiServer.url("/accelerator/projectgroups"),
+            forwardTargetProbe = { target ->
+                when (target) {
+                    "slow-node.test" -> WattToolkitForwardTargetProbe(
+                        successes = 2,
+                        attempts = 3,
+                        latencyMs = 5,
+                    )
+                    else -> WattToolkitForwardTargetProbe(
+                        successes = 3,
+                        attempts = 3,
+                        latencyMs = 40,
+                    )
+                }
+            },
+        )
+
+        val route = resolver.resolveRouteForHost("store.steampowered.com")
+
+        assertNotNull(route)
+        assertEquals(listOf("fast-node.test", "slow-node.test"), route!!.forwardTargets)
     }
 
     @Test
@@ -240,6 +521,85 @@ class SteamCloudAcceleratedHttpTest {
             "/ISteamRemoteStorage/GetPublishedFileDetails/v1/",
             forwardedRequest.url.encodedPath,
         )
+        assertEquals("api.steampowered.com", forwardedRequest.headers["Host"])
+    }
+
+    @Test
+    fun interceptor_failsOverToNextForwardTargetOnConnectionError() {
+        apiServer.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    {
+                      "🦓": [
+                        {
+                          "Items": [
+                            {
+                              "MatchDomainNames": "api.steampowered.com",
+                              "ListenDomainNames": "api.steampowered.com",
+                              "ForwardDomainNames": "http://127.0.0.1:1;http://steamstore-fallback.test:${steamStoreForwardServer.port}",
+                              "ProxyType": 0,
+                              "IgnoreSSLCertVerification": true,
+                              "Checked": true
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+        steamStoreForwardServer.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body("fallback-ok")
+                .build(),
+        )
+
+        val dns = Dns { listOf(InetAddress.getByName("127.0.0.1")) }
+        val resolver = WattToolkitGithubRouteResolver(
+            routeProfile = SteamStoreWattToolkitRouteProfile,
+            client = OkHttpClient.Builder().dns(dns).build(),
+            projectGroupsUrl = apiServer.url("/accelerator/projectgroups"),
+            forwardTargetProbe = {
+                WattToolkitForwardTargetProbe(successes = 1, attempts = 1, latencyMs = 1)
+            },
+        )
+        val runtime = ExperimentalGithubDirectAccessRuntime(
+            resolvers = listOf(resolver),
+            hostnameVerifier = GithubDirectHostnameVerifier { host ->
+                resolver.allowsUnsafeHostnameBypass(host)
+            },
+            directHttpClient = OkHttpClient.Builder()
+                .dns(dns)
+                .retryOnConnectionFailure(false)
+                .followRedirects(false)
+                .followSslRedirects(false)
+                .build(),
+        )
+        val client = OkHttpClient.Builder()
+            .dns(dns)
+            .addInterceptor(
+                ExperimentalGithubDirectAccessInterceptor(
+                    routeResolvers = runtime.resolvers,
+                    directCallFactory = runtime.directHttpClient,
+                ),
+            )
+            .build()
+
+        client.newCall(
+            Request.Builder()
+                .url("https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/")
+                .build(),
+        ).execute().use { response ->
+            assertEquals(200, response.code)
+            assertEquals("api.steampowered.com", response.request.url.host)
+        }
+
+        val forwardedRequest = steamStoreForwardServer.takeRequest()
+        assertEquals("/ISteamRemoteStorage/GetPublishedFileDetails/v1/", forwardedRequest.url.encodedPath)
         assertEquals("api.steampowered.com", forwardedRequest.headers["Host"])
     }
 

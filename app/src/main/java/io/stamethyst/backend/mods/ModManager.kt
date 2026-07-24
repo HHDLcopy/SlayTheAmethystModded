@@ -26,6 +26,7 @@ object ModManager {
     const val MOD_ID_AMETHYST_RUNTIME_COMPAT = "amethystruntimecompat"
     const val MOD_ID_AMETHYST_FLOATING_TOOLS = "amethystfloatingtools"
     const val MOD_ID_RAM_SAVER = "ramsaver"
+    const val MOD_ID_TEXTURE_REPLACER = "texturereplacer"
     const val OPTIONAL_MOD_PRIORITY_MIN = 0
     const val OPTIONAL_MOD_PRIORITY_MAX = 10
     private const val UNSET_OPTIONAL_MOD_PRIORITY_SORT_VALUE = OPTIONAL_MOD_PRIORITY_MAX + 1

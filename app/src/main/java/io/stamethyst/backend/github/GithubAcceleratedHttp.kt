@@ -4,8 +4,11 @@ import android.content.Context
 import io.stamethyst.backend.network.NetworkAccelerationPolicy
 import java.io.File
 import java.io.IOException
+import java.net.InetSocketAddress
 import java.net.ProtocolException
 import java.net.Proxy
+import java.net.InetAddress
+import java.net.Socket
 import java.security.cert.X509Certificate
 import java.util.LinkedHashSet
 import java.util.Locale
@@ -18,6 +21,7 @@ import javax.net.ssl.SSLSession
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 import okhttp3.ConnectionPool
+import okhttp3.Dns
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -79,6 +83,7 @@ internal data class ExperimentalGithubDirectAccessRuntime(
     val resolvers: List<WattToolkitGithubRouteResolver>,
     val hostnameVerifier: HostnameVerifier,
     val directHttpClient: OkHttpClient,
+    val forwardDns: WattToolkitForwardDns? = null,
 )
 
 internal object GithubAcceleratedHttp {
@@ -178,6 +183,7 @@ internal fun createExperimentalGithubDirectAccessRuntime(
     filesDir: File,
     routeProfiles: List<WattToolkitRouteProfile> = defaultExperimentalGithubDirectAccessProfiles,
 ): ExperimentalGithubDirectAccessRuntime {
+    val forwardDns = WattToolkitForwardDns()
     val resolvers = routeProfiles.map { routeProfile ->
         WattToolkitGithubRouteResolver(
             routeProfile = routeProfile,
@@ -195,6 +201,7 @@ internal fun createExperimentalGithubDirectAccessRuntime(
         .readTimeout(DEFAULT_READ_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         .writeTimeout(DEFAULT_READ_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         .hostnameVerifier(hostnameVerifier)
+        .dns(forwardDns)
         .trustWattToolkitForwardCertificates()
         .followRedirects(false)
         .followSslRedirects(false)
@@ -204,6 +211,7 @@ internal fun createExperimentalGithubDirectAccessRuntime(
         resolvers = resolvers,
         hostnameVerifier = hostnameVerifier,
         directHttpClient = directHttpClient,
+        forwardDns = forwardDns,
     )
 }
 
@@ -215,6 +223,7 @@ internal fun OkHttpClient.Builder.addExperimentalGithubDirectAccess(
         ExperimentalGithubDirectAccessInterceptor(
             routeResolvers = runtime.resolvers,
             directCallFactory = runtime.directHttpClient,
+            forwardDns = runtime.forwardDns,
             enabledProvider = enabledProvider,
         ),
     )
@@ -233,6 +242,7 @@ internal class ExperimentalGithubDirectAccessInterceptor(
     private val directCallFactory: okhttp3.Call.Factory,
     private val maxRedirects: Int = MAX_FOLLOW_UPS,
     private val enabledProvider: () -> Boolean = { true },
+    private val forwardDns: WattToolkitForwardDns? = null,
 ) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
@@ -249,7 +259,9 @@ internal class ExperimentalGithubDirectAccessInterceptor(
         }
     }
 
-    private fun executeDirectAccessRequest(initialLogicalRequest: Request): Response {
+    private fun executeDirectAccessRequest(
+        initialLogicalRequest: Request,
+    ): Response {
         var logicalRequest = initialLogicalRequest
         var followUpCount = 0
         while (true) {
@@ -261,20 +273,20 @@ internal class ExperimentalGithubDirectAccessInterceptor(
                     .request(logicalRequest)
                     .build()
             }
-            val networkRequest = buildNetworkRequest(logicalRequest, route)
+            var effectiveRoute = route
             val response = try {
-                directCallFactory.newCall(networkRequest).execute()
+                executeWithForwardTargetFallback(logicalRequest, route)
             } catch (error: IOException) {
                 val refreshedRoute = resolver?.refreshRouteForHost(logicalRequest.url.host) ?: throw error
-                val refreshedRequest = buildNetworkRequest(logicalRequest, refreshedRoute)
+                effectiveRoute = refreshedRoute
                 try {
-                    directCallFactory.newCall(refreshedRequest).execute()
+                    executeWithForwardTargetFallback(logicalRequest, refreshedRoute)
                 } catch (refreshedError: IOException) {
                     refreshedError.addSuppressed(error)
                     throw refreshedError
                 }
             }
-            val redirectTarget = response.redirectTarget(logicalRequest.url, route)
+            val redirectTarget = response.redirectTarget(logicalRequest.url, effectiveRoute)
             if (redirectTarget == null) {
                 return response.newBuilder()
                     .request(logicalRequest)
@@ -295,6 +307,22 @@ internal class ExperimentalGithubDirectAccessInterceptor(
         }
     }
 
+    private fun executeWithForwardTargetFallback(
+        logicalRequest: Request,
+        route: WattToolkitGithubRoute?,
+    ): Response {
+        val candidateRoutes = route?.forwardTargetCandidates() ?: listOf(null)
+        var lastError: IOException? = null
+        candidateRoutes.forEach { candidateRoute ->
+            try {
+                return directCallFactory.newCall(buildNetworkRequest(logicalRequest, candidateRoute)).execute()
+            } catch (error: IOException) {
+                lastError = error
+            }
+        }
+        throw lastError ?: IOException("No Steam acceleration route candidate was available")
+    }
+
     private fun buildNetworkRequest(
         logicalRequest: Request,
         route: WattToolkitGithubRoute?,
@@ -308,6 +336,9 @@ internal class ExperimentalGithubDirectAccessInterceptor(
         )
         val shouldForward = route.matchesLogicalHost(logicalUrl.host)
         val networkUrl = if (shouldForward) route.buildForwardedUrl(logicalUrl) else logicalUrl
+        if (shouldForward) {
+            forwardDns?.register(route)
+        }
         return logicalRequest.newBuilder()
             .url(networkUrl)
             .apply {
@@ -362,6 +393,7 @@ internal class WattToolkitGithubRouteResolver(
     private val projectGroupsUrl: HttpUrl = WATT_ACCELERATOR_PROJECTGROUPS_URL.toHttpUrl(),
     private val routeStore: WattToolkitGithubRouteStore = NoOpWattToolkitGithubRouteStore,
     private val bootstrapRouteProvider: (WattToolkitRouteProfile) -> WattToolkitGithubRoute? = ::defaultBootstrapRouteForProfile,
+    private val forwardTargetProbe: (String) -> WattToolkitForwardTargetProbe = ::probeWattToolkitForwardTarget,
     private val nowProvider: () -> Long = System::currentTimeMillis,
     private val sleepProvider: (Long) -> Unit = { delayMs -> Thread.sleep(delayMs) },
 ) {
@@ -439,6 +471,7 @@ internal class WattToolkitGithubRouteResolver(
             cachedRoute = null
             cachedAtMs = 0L
             persistedRouteLoaded = true
+            routeStore.clear()
         }
         val now = nowProvider()
         val fetched = runCatching(::fetchSupportedRouteWithRetries)
@@ -522,8 +555,9 @@ internal class WattToolkitGithubRouteResolver(
             }
             return WattToolkitGithubRoute(
                 logicalHosts = matchedProject.logicalHosts,
-                forwardTargets = matchedProject.forwardTargets,
+                forwardTargets = rankForwardTargets(matchedProject.forwardTargets),
                 ignoreSslCertVerification = matchedProject.ignoreSslCertVerification,
+                fakeServerName = matchedProject.fakeServerName,
             )
         }
     }
@@ -549,16 +583,22 @@ internal class WattToolkitGithubRouteResolver(
     private fun findMatchingProjectInItems(items: JSONArray): MatchedWattProject? {
         for (itemIndex in 0 until items.length()) {
             val item = items.optJSONObject(itemIndex) ?: continue
-            val logicalHosts = parseHosts(
+            val configuredHosts = parseHosts(
                 item.optString(WATT_MATCH_DOMAIN_NAMES_KEY),
                 item.optString(WATT_LISTEN_DOMAIN_NAMES_KEY),
-            ).intersect(normalizedSupportedHosts)
-            if (logicalHosts.isNotEmpty()) {
+            )
+            val logicalHosts = normalizedSupportedHosts.filterTo(LinkedHashSet()) { supportedHost ->
+                configuredHosts.any { configuredHost ->
+                    wattHostPatternMatches(configuredHost, supportedHost)
+                }
+            }
+            if (logicalHosts.isNotEmpty() && item.optBoolean(WATT_CHECKED_KEY, true)) {
                 return MatchedWattProject(
                     logicalHosts = logicalHosts,
                     forwardTargets = parseForwardTargets(item.optString(WATT_FORWARD_DOMAIN_NAMES_KEY)),
                     proxyType = item.optInt(WATT_PROXY_TYPE_KEY, -1),
                     ignoreSslCertVerification = item.optBoolean(WATT_IGNORE_SSL_CERT_KEY),
+                    fakeServerName = item.optString(WATT_FAKE_SERVER_NAME_KEY).trim(),
                 )
             }
             val nestedItems = item.optJSONArray(WATT_ITEMS_KEY) ?: continue
@@ -575,6 +615,35 @@ internal class WattToolkitGithubRouteResolver(
         val forwardTargets: List<String>,
         val proxyType: Int,
         val ignoreSslCertVerification: Boolean,
+        val fakeServerName: String,
+    )
+
+    private fun rankForwardTargets(targets: List<String>): List<String> {
+        val distinctTargets = targets.distinct()
+        if (distinctTargets.size < 2) {
+            return distinctTargets
+        }
+        return distinctTargets
+            .mapIndexed { index, target ->
+                RankedWattForwardTarget(
+                    target = target,
+                    originalIndex = index,
+                    probe = runCatching { forwardTargetProbe(target) }
+                        .getOrDefault(WattToolkitForwardTargetProbe.failed()),
+                )
+            }
+            .sortedWith(
+                compareByDescending<RankedWattForwardTarget> { it.probe.successRate }
+                    .thenBy { it.probe.latencyMs ?: Long.MAX_VALUE }
+                    .thenBy { it.originalIndex },
+            )
+            .map(RankedWattForwardTarget::target)
+    }
+
+    private data class RankedWattForwardTarget(
+        val target: String,
+        val originalIndex: Int,
+        val probe: WattToolkitForwardTargetProbe,
     )
 
     private companion object {
@@ -589,8 +658,16 @@ internal data class WattToolkitGithubRoute(
     val logicalHosts: Set<String>,
     val forwardTargets: List<String>,
     val ignoreSslCertVerification: Boolean = false,
+    val fakeServerName: String = "",
 ) {
     val forwardHosts: Set<String> = forwardTargets.mapNotNull(::extractForwardHost).toSet()
+    val networkHosts: Set<String> = buildSet {
+        addAll(forwardHosts)
+        normalizedFakeServerName()?.let(::add)
+        if (usesOriginFakeServerName()) {
+            addAll(logicalHosts)
+        }
+    }
 
     fun buildForwardedUrl(originalUrl: HttpUrl): HttpUrl {
         val firstTarget = forwardTargets.firstOrNull()?.trim().orEmpty()
@@ -599,13 +676,15 @@ internal data class WattToolkitGithubRoute(
         }
         return if (firstTarget.contains("://")) {
             val forwardedBase = firstTarget.toHttpUrlOrNull() ?: return originalUrl
+            val networkHost = networkHostFor(originalUrl.host) ?: forwardedBase.host
             forwardedBase.newBuilder()
+                .host(networkHost)
                 .encodedPath(originalUrl.encodedPath)
                 .encodedQuery(originalUrl.encodedQuery)
                 .build()
         } else {
             originalUrl.newBuilder()
-                .host(firstTarget)
+                .host(networkHostFor(originalUrl.host) ?: firstTarget)
                 .build()
         }
     }
@@ -614,7 +693,7 @@ internal data class WattToolkitGithubRoute(
         url: HttpUrl,
         fallbackLogicalHost: String,
     ): HttpUrl {
-        if (url.host.lowercase(Locale.ROOT) !in forwardHosts) {
+        if (url.host.lowercase(Locale.ROOT) !in networkHosts) {
             return url
         }
         return url.newBuilder()
@@ -625,19 +704,74 @@ internal data class WattToolkitGithubRoute(
     fun matchesLogicalHost(host: String): Boolean = host.lowercase(Locale.ROOT) in logicalHosts
 
     fun shouldBypassHostnameVerification(host: String): Boolean =
-        ignoreSslCertVerification && host.lowercase(Locale.ROOT) in forwardHosts
+        ignoreSslCertVerification && host.lowercase(Locale.ROOT) in networkHosts
+
+    fun networkHostFor(logicalHost: String): String? {
+        val fakeHost = normalizedFakeServerName()
+        return when {
+            fakeHost != null -> fakeHost
+            usesOriginFakeServerName() -> logicalHost.lowercase(Locale.ROOT)
+            else -> null
+        }
+    }
+
+    fun usesOriginFakeServerName(): Boolean = fakeServerName.trim() in setOf("{origin}", "@domain")
+
+    fun forwardTargetCandidates(): List<WattToolkitGithubRoute> {
+        if (forwardTargets.size < 2) {
+            return listOf(this)
+        }
+        return forwardTargets.indices.map { index ->
+            copy(forwardTargets = forwardTargets.drop(index))
+        }
+    }
+
+    private fun normalizedFakeServerName(): String? = fakeServerName
+        .trim()
+        .takeIf { it.isNotEmpty() && it != "{origin}" && it != "@domain" }
+        ?.lowercase(Locale.ROOT)
+}
+
+internal class WattToolkitForwardDns(
+    private val delegate: Dns = Dns.SYSTEM,
+) : Dns {
+    private val forwardHostsByNetworkHost = ConcurrentHashMap<String, String>()
+
+    fun register(route: WattToolkitGithubRoute) {
+        val targetHost = route.forwardHosts.firstOrNull() ?: return
+        val fakeHost = route.fakeServerName
+            .trim()
+            .takeIf { it.isNotEmpty() && it != "{origin}" && it != "@domain" }
+            ?.lowercase(Locale.ROOT)
+        if (fakeHost != null) {
+            forwardHostsByNetworkHost[fakeHost] = targetHost
+        } else if (route.usesOriginFakeServerName()) {
+            route.logicalHosts.forEach { logicalHost ->
+                forwardHostsByNetworkHost[logicalHost.lowercase(Locale.ROOT)] = targetHost
+            }
+        }
+    }
+
+    override fun lookup(hostname: String): List<InetAddress> {
+        val targetHost = forwardHostsByNetworkHost[hostname.lowercase(Locale.ROOT)] ?: hostname
+        return delegate.lookup(targetHost)
+    }
 }
 
 internal interface WattToolkitGithubRouteStore {
     fun load(): PersistedWattToolkitGithubRoute?
 
     fun save(route: PersistedWattToolkitGithubRoute)
+
+    fun clear() = Unit
 }
 
 internal object NoOpWattToolkitGithubRouteStore : WattToolkitGithubRouteStore {
     override fun load(): PersistedWattToolkitGithubRoute? = null
 
     override fun save(route: PersistedWattToolkitGithubRoute) = Unit
+
+    override fun clear() = Unit
 }
 
 internal class FileBackedWattToolkitGithubRouteStore(
@@ -663,6 +797,7 @@ internal class FileBackedWattToolkitGithubRouteStore(
                     logicalHosts = logicalHosts,
                     forwardTargets = forwardTargets,
                     ignoreSslCertVerification = snapshot.optBoolean("ignoreSslCertVerification"),
+                    fakeServerName = snapshot.optString("fakeServerName").trim(),
                 ),
                 cachedAtMs = snapshot.optLong("cachedAtMs"),
             )
@@ -677,6 +812,7 @@ internal class FileBackedWattToolkitGithubRouteStore(
                 put("logicalHosts", JSONArray(route.route.logicalHosts.sorted()))
                 put("forwardTargets", JSONArray(route.route.forwardTargets))
                 put("ignoreSslCertVerification", route.route.ignoreSslCertVerification)
+                put("fakeServerName", route.route.fakeServerName)
             }
             val parentDir = file.parentFile ?: file.absoluteFile.parentFile
             val tempFile = File.createTempFile(file.name, ".tmp", parentDir)
@@ -686,6 +822,10 @@ internal class FileBackedWattToolkitGithubRouteStore(
                 tempFile.delete()
             }
         }
+    }
+
+    override fun clear() {
+        runCatching { file.delete() }
     }
 }
 
@@ -712,6 +852,7 @@ private fun defaultBootstrapRouteForProfile(routeProfile: WattToolkitRouteProfil
                 logicalHosts = routeProfile.supportedHosts.map { it.lowercase(Locale.ROOT) }.toSet(),
                 forwardTargets = forwardTargets,
                 ignoreSslCertVerification = true,
+                fakeServerName = "",
             )
         }
 
@@ -732,12 +873,54 @@ private fun parseForwardTargets(raw: String): List<String> =
         .map(String::trim)
         .filter(String::isNotEmpty)
 
+internal data class WattToolkitForwardTargetProbe(
+    val successes: Int,
+    val attempts: Int,
+    val latencyMs: Long?,
+) {
+    val successRate: Double
+        get() = if (attempts <= 0) 0.0 else successes.toDouble() / attempts.toDouble()
+
+    companion object {
+        fun failed(attempts: Int = FORWARD_TARGET_PROBE_ATTEMPTS): WattToolkitForwardTargetProbe =
+            WattToolkitForwardTargetProbe(successes = 0, attempts = attempts, latencyMs = null)
+    }
+}
+
+private fun probeWattToolkitForwardTarget(target: String): WattToolkitForwardTargetProbe {
+    val url = target.toHttpUrlOrNull()
+        ?: "https://$target".toHttpUrlOrNull()
+        ?: return WattToolkitForwardTargetProbe.failed()
+    var successes = 0
+    val latencies = ArrayList<Long>(FORWARD_TARGET_PROBE_ATTEMPTS)
+    repeat(FORWARD_TARGET_PROBE_ATTEMPTS) {
+        val startedAt = System.nanoTime()
+        try {
+            Socket().use { socket ->
+                socket.connect(
+                    InetSocketAddress(url.host, url.port),
+                    FORWARD_TARGET_PROBE_TIMEOUT_MS.toInt(),
+                )
+            }
+            successes++
+            latencies += ((System.nanoTime() - startedAt) / 1_000_000L).coerceAtLeast(1L)
+        } catch (_: IOException) {
+            // Keep probing remaining samples so transient loss affects success rate.
+        }
+    }
+    return WattToolkitForwardTargetProbe(
+        successes = successes,
+        attempts = FORWARD_TARGET_PROBE_ATTEMPTS,
+        latencyMs = latencies.takeIf(List<Long>::isNotEmpty)?.average()?.toLong(),
+    )
+}
+
 private fun parseHosts(vararg hostGroups: String): Set<String> {
     val hosts = LinkedHashSet<String>()
     hostGroups.forEach { group ->
         group.split(';').forEach { rawHost ->
             val normalized = rawHost.trim()
-            if (normalized.isEmpty() || '*' in normalized) {
+            if (normalized.isEmpty()) {
                 return@forEach
             }
             val parsedHost = if ("://" in normalized) {
@@ -745,10 +928,27 @@ private fun parseHosts(vararg hostGroups: String): Set<String> {
             } else {
                 normalized
             } ?: return@forEach
-            hosts += parsedHost.lowercase(Locale.ROOT)
+            val lowerHost = parsedHost.lowercase(Locale.ROOT)
+            if (lowerHost == "*" || lowerHost.count { it == '*' } > 1 ||
+                ("*" in lowerHost && !lowerHost.startsWith("*."))
+            ) {
+                return@forEach
+            }
+            hosts += lowerHost
         }
     }
     return hosts
+}
+
+private fun wattHostPatternMatches(pattern: String, host: String): Boolean {
+    val normalizedPattern = pattern.lowercase(Locale.ROOT)
+    val normalizedHost = host.lowercase(Locale.ROOT)
+    if (normalizedPattern == normalizedHost) {
+        return true
+    }
+    val wildcardSuffix = normalizedPattern.removePrefix("*.")
+    return normalizedPattern.startsWith("*.") &&
+        (normalizedHost == wildcardSuffix || normalizedHost.endsWith(".$wildcardSuffix"))
 }
 
 private fun buildStringList(array: JSONArray?): List<String> {
@@ -795,10 +995,14 @@ private const val WATT_LISTEN_DOMAIN_NAMES_KEY = "ListenDomainNames"
 private const val WATT_FORWARD_DOMAIN_NAMES_KEY = "ForwardDomainNames"
 private const val WATT_PROXY_TYPE_KEY = "ProxyType"
 private const val WATT_IGNORE_SSL_CERT_KEY = "IgnoreSSLCertVerification"
+private const val WATT_FAKE_SERVER_NAME_KEY = "FakeServerName"
+private const val WATT_CHECKED_KEY = "Checked"
 internal const val WATT_PROXY_TYPE_DIRECT = 0
 internal const val WATT_PROXY_TYPE_REVERSE_PROXY = 1
 private const val DEFAULT_CONNECT_TIMEOUT_MS = 8_000L
 private const val DEFAULT_READ_TIMEOUT_MS = 18_000L
+private const val FORWARD_TARGET_PROBE_ATTEMPTS = 3
+private const val FORWARD_TARGET_PROBE_TIMEOUT_MS = 1_200L
 private const val MAX_FOLLOW_UPS = 10
 private const val HTTP_METHOD_GET = "GET"
 private const val HTTP_METHOD_HEAD = "HEAD"

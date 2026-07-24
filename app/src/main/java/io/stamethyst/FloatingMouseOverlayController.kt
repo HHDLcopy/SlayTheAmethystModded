@@ -32,6 +32,8 @@ import io.stamethyst.ui.haptics.LauncherHaptics
 import net.kdt.pojavlaunch.AWTInputBridge
 import net.kdt.pojavlaunch.LwjglGlfwKeycode
 import org.lwjgl.glfw.CallbackBridge
+import java.nio.charset.StandardCharsets
+import java.util.Base64
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -148,6 +150,9 @@ internal class FloatingMouseOverlayController(
 
     companion object {
         private const val IME_LOG_TAG = "STS-IME"
+        private const val TOGETHER_IN_SPIRE_CHAT_TEXT_SYNC_SOURCE = "together_in_spire_chat"
+        private const val TOGETHER_IN_SPIRE_CHAT_TEXT_SYNC_START = '\uE000'
+        private const val TOGETHER_IN_SPIRE_CHAT_TEXT_SYNC_END = '\uE001'
         private const val FLOATING_MOUSE_IDLE_ALPHA = 0.2f
         private const val FLOATING_MOUSE_ACTIVE_ALPHA = 1.0f
         private const val FLOATING_MOUSE_ACTIVE_KEEP_MS = 1500L
@@ -314,6 +319,13 @@ internal class FloatingMouseOverlayController(
             callbacks = object : FloatingMouseImeController.InputCallbacks {
                 override fun onCommitText(text: CharSequence?, source: String): Boolean {
                     return sendSoftKeyboardText(text, source)
+                }
+
+                override fun onPreviewTextChanged(
+                    text: CharSequence,
+                    source: String
+                ): Boolean {
+                    return sendPreviewTextSync(text, source)
                 }
 
                 override fun onDeleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
@@ -2206,6 +2218,31 @@ internal class FloatingMouseOverlayController(
             SoftKeyboardTarget.GLFW -> sendSoftKeyboardTextToGame(text)
             SoftKeyboardTarget.AWT -> sendSoftKeyboardTextToAwt(text)
         }
+    }
+
+    private fun sendPreviewTextSync(text: CharSequence, source: String): Boolean {
+        if (source != TOGETHER_IN_SPIRE_CHAT_TEXT_SYNC_SOURCE ||
+            !isNativeInputDispatchReady.invoke() ||
+            resolveSoftKeyboardTarget() != SoftKeyboardTarget.GLFW
+        ) {
+            return false
+        }
+        // ChatConsole cannot represent cursor edits, so replace its text atomically.
+        val encodedText = Base64.getEncoder().encodeToString(
+            text.toString().toByteArray(StandardCharsets.UTF_8)
+        )
+        CallbackBridge.sendChar(
+            TOGETHER_IN_SPIRE_CHAT_TEXT_SYNC_START,
+            CallbackBridge.getCurrentMods()
+        )
+        for (character in encodedText) {
+            CallbackBridge.sendChar(character, CallbackBridge.getCurrentMods())
+        }
+        CallbackBridge.sendChar(
+            TOGETHER_IN_SPIRE_CHAT_TEXT_SYNC_END,
+            CallbackBridge.getCurrentMods()
+        )
+        return true
     }
 
     private fun shouldSuppressDuplicateSoftKeyboardText(text: CharSequence, source: String): Boolean {

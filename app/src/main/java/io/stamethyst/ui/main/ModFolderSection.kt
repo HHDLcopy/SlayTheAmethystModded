@@ -90,6 +90,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import io.stamethyst.R
 import io.stamethyst.model.ModItemUi
+import io.stamethyst.model.WorkshopModState
 import io.stamethyst.ui.SearchHistoryStore
 import io.stamethyst.ui.SearchHistorySuggestions
 import kotlin.math.abs
@@ -1214,7 +1215,9 @@ internal fun ModFolderSection(
                                     isDraggedInOverlay = activeModDragSession?.mod?.storagePath == mod.storagePath,
                                     showModFileName = showModFileName,
                                     setExpanded = setCardExpanded,
-                                    selectionEnabled = organizationControlsEnabled && mod.canUseFolderSelection(),
+                                    selectionEnabled = organizationControlsEnabled &&
+                                        (mod.canUseFolderSelection() ||
+                                            mod.workshop?.state == WorkshopModState.TexturePackInstalled),
                                     fileActionsEnabled = modFileActionsEnabled && mod.installed,
                                     dragEnabled = folderModItem != null && mod.installed,
                                     dragEnabledState = latestOrganizationDragEnabled,

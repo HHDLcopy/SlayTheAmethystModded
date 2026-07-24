@@ -187,6 +187,9 @@ class GameInputHandler(
                 initialText = request.initialText,
                 allowedCharacters = request.allowedCharacters,
                 characterLimit = request.characterLimit,
+                textSyncSource = request.source.takeIf {
+                    it == "together_in_spire_chat"
+                },
             ),
         )
     }

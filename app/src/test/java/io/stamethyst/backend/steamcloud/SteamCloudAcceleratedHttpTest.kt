@@ -3,9 +3,12 @@ package io.stamethyst.backend.steamcloud
 import io.stamethyst.backend.github.ExperimentalGithubDirectAccessRuntime
 import io.stamethyst.backend.github.ExperimentalGithubDirectAccessInterceptor
 import io.stamethyst.backend.github.GithubDirectHostnameVerifier
+import io.stamethyst.backend.github.PersistedWattToolkitGithubRoute
 import io.stamethyst.backend.github.WattToolkitForwardDns
 import io.stamethyst.backend.github.WattToolkitForwardTargetProbe
+import io.stamethyst.backend.github.WattToolkitGithubRoute
 import io.stamethyst.backend.github.WattToolkitGithubRouteResolver
+import io.stamethyst.backend.github.WattToolkitGithubRouteStore
 import java.net.InetAddress
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
@@ -21,6 +24,8 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.util.concurrent.Executor
+import java.util.concurrent.TimeUnit
 
 class SteamCloudAcceleratedHttpTest {
     private lateinit var apiServer: MockWebServer
@@ -98,6 +103,120 @@ class SteamCloudAcceleratedHttpTest {
         assertTrue(
             SteamImageCdnWattToolkitRouteProfile.supportedHosts.contains(
                 "avatars.fastly.steamstatic.com",
+            ),
+        )
+    }
+
+    @Test
+    fun interceptor_refreshesCachedRouteAfterStaleHttpErrorAndRetriesOnce() {
+        apiServer.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    {
+                      "🦓": [
+                        {
+                          "Items": [
+                            {
+                              "MatchDomainNames": "steamcommunity.com;www.steamcommunity.com",
+                              "ForwardDomainNames": "http://new-community-route.test:${steamContentForwardServer.port}",
+                              "ProxyType": 0,
+                              "IgnoreSSLCertVerification": false
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+        steamStoreForwardServer.enqueue(
+            MockResponse.Builder()
+                .code(404)
+                .body("stale-route")
+                .build(),
+        )
+        steamContentForwardServer.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body("workshop-ok")
+                .build(),
+        )
+
+        val oldRoute = WattToolkitGithubRoute(
+            logicalHosts = setOf("steamcommunity.com", "www.steamcommunity.com"),
+            forwardTargets = listOf("http://old-community-route.test:${steamStoreForwardServer.port}"),
+        )
+        val routeStore = object : WattToolkitGithubRouteStore {
+            var persisted: PersistedWattToolkitGithubRoute? = PersistedWattToolkitGithubRoute(
+                route = oldRoute,
+                cachedAtMs = 1_000L,
+            )
+
+            override fun load(): PersistedWattToolkitGithubRoute? = persisted
+
+            override fun save(route: PersistedWattToolkitGithubRoute) {
+                persisted = route
+            }
+
+            override fun clear() {
+                persisted = null
+            }
+        }
+        val dns = Dns { listOf(InetAddress.getByName("127.0.0.1")) }
+        val resolver = WattToolkitGithubRouteResolver(
+            routeProfile = SteamCommunityWattToolkitRouteProfile,
+            client = OkHttpClient.Builder()
+                .callTimeout(5, TimeUnit.SECONDS)
+                .build(),
+            projectGroupsUrl = apiServer.url("/accelerator/projectgroups"),
+            routeStore = routeStore,
+            nowProvider = { 1_000L },
+            sleepProvider = {},
+            backgroundExecutor = Executor { /* keep unit test deterministic */ },
+        )
+        val directClient = OkHttpClient.Builder()
+            .dns(dns)
+            .callTimeout(5, TimeUnit.SECONDS)
+            .followRedirects(false)
+            .followSslRedirects(false)
+            .build()
+        val client = OkHttpClient.Builder()
+            .callTimeout(10, TimeUnit.SECONDS)
+            .addInterceptor(
+                ExperimentalGithubDirectAccessInterceptor(
+                    routeResolvers = listOf(resolver),
+                    directCallFactory = directClient,
+                ),
+            )
+            .build()
+
+        client.newCall(
+            Request.Builder()
+                .url("https://steamcommunity.com/workshop/browse/?appid=646570")
+                .build(),
+        ).execute().use { response ->
+            assertEquals(200, response.code)
+            assertEquals("steamcommunity.com", response.request.url.host)
+            assertEquals("workshop-ok", response.body.string())
+        }
+
+        assertEquals("/accelerator/projectgroups", apiServer.takeRequest(5, TimeUnit.SECONDS)?.url?.encodedPath)
+        val staleRequest = steamStoreForwardServer.takeRequest(5, TimeUnit.SECONDS)
+        assertEquals("/workshop/browse/", staleRequest?.url?.encodedPath)
+        assertEquals("steamcommunity.com", staleRequest?.headers?.get("Host"))
+        val refreshedRequest = steamContentForwardServer.takeRequest(5, TimeUnit.SECONDS)
+        assertEquals("/workshop/browse/", refreshedRequest?.url?.encodedPath)
+        assertEquals("steamcommunity.com", refreshedRequest?.headers?.get("Host"))
+    }
+
+    @Test
+    fun steamImageRouteProfile_supportsSteamUserContentImageHosts() {
+        assertTrue(
+            SteamImageCdnWattToolkitRouteProfile.supportedHosts.containsAll(
+                setOf("images.steamusercontent.com", "steamusercontent.com"),
             ),
         )
     }
@@ -279,7 +398,8 @@ class SteamCloudAcceleratedHttpTest {
                               "ListenDomainNames": "st.dl.eccdnx.com;xz.pphimalayanrt.com;dl.steam.clngaa.com;files.steam.nsclouds.cn",
                               "ForwardDomainNames": "http://cdn.queniuqe.com:${steamContentForwardServer.port}",
                               "ProxyType": 1,
-                              "IgnoreSSLCertVerification": true
+                              "IgnoreSSLCertVerification": true,
+                              "Checked": false
                             }
                           ]
                         }
@@ -355,7 +475,7 @@ class SteamCloudAcceleratedHttpTest {
     }
 
     @Test
-    fun routeResolver_ignoresUncheckedSteamContentCdnRoute() {
+    fun routeResolver_acceptsUncheckedSteamContentCdnRouteForWorkshopDownloads() {
         apiServer.enqueue(
             MockResponse.Builder()
                 .code(200)
@@ -387,7 +507,10 @@ class SteamCloudAcceleratedHttpTest {
             projectGroupsUrl = apiServer.url("/accelerator/projectgroups"),
         )
 
-        assertNull(resolver.resolveRouteForHost("st.dl.eccdnx.com"))
+        val route = resolver.resolveRouteForHost("st.dl.eccdnx.com")
+
+        assertNotNull(route)
+        assertEquals(listOf("cdn.queniuqe.com"), route!!.forwardTargets)
     }
 
     @Test
@@ -440,7 +563,163 @@ class SteamCloudAcceleratedHttpTest {
         val route = resolver.resolveRouteForHost("store.steampowered.com")
 
         assertNotNull(route)
-        assertEquals(listOf("fast-node.test", "slow-node.test"), route!!.forwardTargets)
+        // Probe-ranked Watt order first, then bootstrap fallback hops.
+        assertEquals(
+            listOf("fast-node.test", "slow-node.test", "steamstore.rmbgame.net"),
+            route!!.forwardTargets,
+        )
+    }
+
+    @Test
+    fun routeResolver_prefersPersistedBestPathWithoutBlockingOnProjectGroups() {
+        val routeStore = object : WattToolkitGithubRouteStore {
+            var loadCount = 0
+            var persisted: PersistedWattToolkitGithubRoute? = PersistedWattToolkitGithubRoute(
+                route = WattToolkitGithubRoute(
+                    logicalHosts = setOf("steamcommunity.com", "www.steamcommunity.com"),
+                    forwardTargets = listOf("https://cached-community.rmbgame.net"),
+                    ignoreSslCertVerification = true,
+                ),
+                cachedAtMs = 1_000L,
+            )
+
+            override fun load(): PersistedWattToolkitGithubRoute? {
+                loadCount++
+                return persisted
+            }
+
+            override fun save(route: PersistedWattToolkitGithubRoute) {
+                persisted = route
+            }
+
+            override fun clear() {
+                persisted = null
+            }
+        }
+        val resolver = WattToolkitGithubRouteResolver(
+            routeProfile = SteamCommunityWattToolkitRouteProfile,
+            client = OkHttpClient.Builder().build(),
+            projectGroupsUrl = apiServer.url("/accelerator/projectgroups"),
+            routeStore = routeStore,
+            nowProvider = { 1_000L + (30L * 60L * 1_000L) + 1L },
+            backgroundExecutor = Executor { /* no background work in this unit test */ },
+        )
+
+        val route = resolver.resolveRouteForHost("steamcommunity.com")
+
+        assertNotNull(route)
+        assertEquals(listOf("https://cached-community.rmbgame.net"), route!!.forwardTargets)
+        assertEquals(0, apiServer.requestCount)
+        assertEquals(1, routeStore.loadCount)
+    }
+
+    @Test
+    fun routeResolver_skipsRecentlyFailedCachedTargetAndUsesBootstrap() {
+        val routeStore = object : WattToolkitGithubRouteStore {
+            var persisted: PersistedWattToolkitGithubRoute? = PersistedWattToolkitGithubRoute(
+                route = WattToolkitGithubRoute(
+                    logicalHosts = setOf("steamcommunity.com", "www.steamcommunity.com"),
+                    forwardTargets = listOf("www.valvesoftware.com"),
+                    ignoreSslCertVerification = false,
+                    fakeServerName = "www.valvesoftware.com",
+                ),
+                cachedAtMs = 1_000L,
+            )
+
+            override fun load(): PersistedWattToolkitGithubRoute? = persisted
+
+            override fun save(route: PersistedWattToolkitGithubRoute) {
+                persisted = route
+            }
+
+            override fun clear() {
+                persisted = null
+            }
+        }
+        val resolver = WattToolkitGithubRouteResolver(
+            routeProfile = SteamCommunityWattToolkitRouteProfile,
+            client = OkHttpClient.Builder().build(),
+            projectGroupsUrl = apiServer.url("/accelerator/projectgroups"),
+            routeStore = routeStore,
+            nowProvider = { 2_000L },
+            backgroundExecutor = Executor { /* no background work in this unit test */ },
+        )
+
+        // Warm poison cache, then mark it failed like a real connect timeout would.
+        assertEquals(
+            listOf("www.valvesoftware.com"),
+            resolver.resolveRouteForHost("steamcommunity.com")!!.forwardTargets,
+        )
+        val refreshed = resolver.refreshRouteForHost(
+            host = "steamcommunity.com",
+            excludedForwardTargets = listOf("www.valvesoftware.com"),
+        )
+
+        assertNotNull(refreshed)
+        assertEquals(
+            listOf("https://steamcommunity.rmbgame.net"),
+            refreshed!!.forwardTargets,
+        )
+        assertEquals(
+            listOf("https://steamcommunity.rmbgame.net"),
+            resolver.resolveRouteForHost("steamcommunity.com")!!.forwardTargets,
+        )
+        // Unconfirmed rediscovery stays in-memory only; poison disk entry is cleared.
+        assertNull(routeStore.persisted)
+    }
+
+    @Test
+    fun routeResolver_confirmSuccessfulForwardTarget_reordersPreferredPath() {
+        val routeStore = object : WattToolkitGithubRouteStore {
+            var persisted: PersistedWattToolkitGithubRoute? = PersistedWattToolkitGithubRoute(
+                route = WattToolkitGithubRoute(
+                    logicalHosts = setOf("steamcommunity.com", "www.steamcommunity.com"),
+                    forwardTargets = listOf(
+                        "https://slow-community.rmbgame.net",
+                        "https://fast-community.rmbgame.net",
+                    ),
+                ),
+                cachedAtMs = 1_000L,
+            )
+
+            override fun load(): PersistedWattToolkitGithubRoute? = persisted
+
+            override fun save(route: PersistedWattToolkitGithubRoute) {
+                persisted = route
+            }
+
+            override fun clear() {
+                persisted = null
+            }
+        }
+        val resolver = WattToolkitGithubRouteResolver(
+            routeProfile = SteamCommunityWattToolkitRouteProfile,
+            client = OkHttpClient.Builder().build(),
+            projectGroupsUrl = apiServer.url("/accelerator/projectgroups"),
+            routeStore = routeStore,
+            nowProvider = { 2_000L },
+            backgroundExecutor = Executor { /* no background work in this unit test */ },
+        )
+
+        // Warm restored cache first.
+        assertEquals(
+            listOf("https://slow-community.rmbgame.net", "https://fast-community.rmbgame.net"),
+            resolver.resolveRouteForHost("steamcommunity.com")!!.forwardTargets,
+        )
+
+        resolver.confirmSuccessfulForwardTarget(
+            host = "steamcommunity.com",
+            successfulTarget = "https://fast-community.rmbgame.net",
+        )
+
+        assertEquals(
+            listOf("https://fast-community.rmbgame.net", "https://slow-community.rmbgame.net"),
+            resolver.resolveRouteForHost("steamcommunity.com")!!.forwardTargets,
+        )
+        assertEquals(
+            listOf("https://fast-community.rmbgame.net", "https://slow-community.rmbgame.net"),
+            routeStore.persisted!!.route.forwardTargets,
+        )
     }
 
     @Test
@@ -619,7 +898,8 @@ class SteamCloudAcceleratedHttpTest {
                               "ListenDomainNames": "st.dl.eccdnx.com;xz.pphimalayanrt.com;dl.steam.clngaa.com;files.steam.nsclouds.cn",
                               "ForwardDomainNames": "http://cdn.queniuqe.com:${steamContentForwardServer.port}",
                               "ProxyType": 1,
-                              "IgnoreSSLCertVerification": true
+                              "IgnoreSSLCertVerification": true,
+                              "Checked": false
                             }
                           ]
                         }

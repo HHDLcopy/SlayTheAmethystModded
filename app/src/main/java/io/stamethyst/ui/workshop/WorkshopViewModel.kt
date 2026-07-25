@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.ResultReceiver
+import android.os.SystemClock
 import android.util.Log
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -82,8 +83,13 @@ internal class WorkshopViewModel : ViewModel() {
     }
 
     fun load(context: Context, initialListMode: WorkshopListMode = WorkshopListMode.Browse) {
+        val loadStartedAtMs = SystemClock.elapsedRealtime()
         WorkshopDownloadCenterStore.initialize(context)
         if (loaded) {
+            Log.i(
+                WORKSHOP_PERF_TAG,
+                "load skip alreadyLoaded=true mode=$initialListMode elapsedMs=${SystemClock.elapsedRealtime() - loadStartedAtMs}",
+            )
             refreshDownloadState(context)
             if (uiState.listMode != initialListMode) {
                 when (initialListMode) {
@@ -95,7 +101,9 @@ internal class WorkshopViewModel : ViewModel() {
         }
         loaded = true
         activeListMode = initialListMode
+        val serviceStartedAtMs = SystemClock.elapsedRealtime()
         service = WorkshopService(context)
+        val serviceCreateMs = SystemClock.elapsedRealtime() - serviceStartedAtMs
         metadataStore = WorkshopMetadataStore(context)
         metadataStore?.markMissingFiles()
         val steamLoggedIn = service?.hasSteamAuth() == true
@@ -103,6 +111,10 @@ internal class WorkshopViewModel : ViewModel() {
             steamLoggedIn = steamLoggedIn,
             listMode = activeListMode,
             installedMods = metadataStore?.list().orEmpty(),
+        )
+        Log.i(
+            WORKSHOP_PERF_TAG,
+            "load firstInit serviceCreateMs=$serviceCreateMs steamLoggedIn=$steamLoggedIn mode=$activeListMode setupMs=${SystemClock.elapsedRealtime() - loadStartedAtMs}",
         )
         viewModelScope.launch(Dispatchers.IO) {
             WorkshopDownloadProcessService.startNextQueued(context)
@@ -315,6 +327,11 @@ internal class WorkshopViewModel : ViewModel() {
         val currentService = service ?: return
         activeListMode = WorkshopListMode.Browse
         val requestGeneration = ++browseRequestGeneration
+        val browseStartedAtMs = SystemClock.elapsedRealtime()
+        Log.i(
+            WORKSHOP_PERF_TAG,
+            "loadBrowsePage start gen=$requestGeneration page=$page append=$append sort=$activeSort time=$activeTimeFilter category=$activeCategory queryLen=${queryText.length}",
+        )
         viewModelScope.launch {
             uiState = if (append) {
                 uiState.copy(loadingMore = true, errorMessage = null)
@@ -354,12 +371,20 @@ internal class WorkshopViewModel : ViewModel() {
                     hasMorePages = result.hasNextPage,
                     errorMessage = if (merged.isEmpty()) context.getString(R.string.workshop_error_no_entries_found) else null,
                 )
+                Log.i(
+                    WORKSHOP_PERF_TAG,
+                    "loadBrowsePage success gen=$requestGeneration page=$page items=${merged.size} hasNext=${result.hasNextPage} elapsedMs=${SystemClock.elapsedRealtime() - browseStartedAtMs}",
+                )
             }.onFailure { error ->
                 if (activeListMode != WorkshopListMode.Browse || requestGeneration != browseRequestGeneration) return@onFailure
                 uiState = uiState.copy(
                     browseLoading = false,
                     loadingMore = false,
                     errorMessage = error.message ?: error.javaClass.simpleName,
+                )
+                Log.w(
+                    WORKSHOP_PERF_TAG,
+                    "loadBrowsePage failure gen=$requestGeneration page=$page elapsedMs=${SystemClock.elapsedRealtime() - browseStartedAtMs} error=${error.message ?: error.javaClass.simpleName}",
                 )
             }
         }
@@ -450,6 +475,10 @@ internal class WorkshopViewModel : ViewModel() {
             findCachedDetails(appId, publishedFileId)
                 ?.takeIf { cachedDetails -> cachedDetails.canReuseForDetailOpen(fallbackSummary) }
                 ?.let { cachedDetails ->
+                    Log.i(
+                        WORKSHOP_PERF_TAG,
+                        "loadDetails cacheHit publishedFileId=$publishedFileId appId=$appId",
+                    )
                     showLoadedDetails(
                         context = context,
                         currentService = currentService,
@@ -464,6 +493,11 @@ internal class WorkshopViewModel : ViewModel() {
         }
         detailLoadsInFlight += detailKey
         viewModelScope.launch {
+            val loadStartedAtMs = SystemClock.elapsedRealtime()
+            Log.i(
+                WORKSHOP_PERF_TAG,
+                "loadDetails start publishedFileId=$publishedFileId appId=$appId clearSelected=$clearSelected hasFallback=${fallbackSummary != null}",
+            )
             try {
                 uiState = uiState.copy(
                     selected = if (clearSelected) null else uiState.selected,
@@ -493,8 +527,16 @@ internal class WorkshopViewModel : ViewModel() {
                     withContext(Dispatchers.IO) { currentService.getDetails(appId, publishedFileId, summaryFallback) }
                 }.onSuccess { loadedDetails ->
                     val details = loadedDetails.mergeCachedCommunityData(findCachedDetails(appId, publishedFileId))
+                    Log.i(
+                        WORKSHOP_PERF_TAG,
+                        "loadDetails success publishedFileId=$publishedFileId deps=${details.dependencies.size} commentsPending=${details.shouldLoadInitialWorkshopComments()} elapsedMs=${SystemClock.elapsedRealtime() - loadStartedAtMs}",
+                    )
                     showLoadedDetails(context, currentService, details)
                 }.onFailure { error ->
+                    Log.w(
+                        WORKSHOP_PERF_TAG,
+                        "loadDetails failed publishedFileId=$publishedFileId elapsedMs=${SystemClock.elapsedRealtime() - loadStartedAtMs} error=${error.message ?: error.javaClass.simpleName}",
+                    )
                     uiState = uiState.copy(
                         detailLoadingId = null,
                         detailSubscriptionStatus = WorkshopDetailSubscriptionStatus.Unknown,
@@ -1908,3 +1950,4 @@ private const val BAIDU_AUTO_DETECT_LANGUAGE = "auto"
 private const val BAIDU_DEFAULT_TARGET_LANGUAGE = "zh"
 private const val BAIDU_STS_GAME_TITLE = "Slay the Spire"
 private const val WORKSHOP_SUBSCRIPTION_LOG_TAG = "WorkshopSubscribe"
+private const val WORKSHOP_PERF_TAG = "WorkshopPerf"

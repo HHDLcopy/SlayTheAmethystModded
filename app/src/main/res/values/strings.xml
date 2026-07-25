@@ -2467,6 +2467,7 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="workshop_status_update_check_failed">Update check failed: %1$s</string>
     <string name="workshop_comments_unavailable">Steam comments cannot be read right now.</string>
     <string name="workshop_download_waiting_size">Waiting for size info</string>
+    <string name="workshop_download_speed_format">%1$s/s</string>
     <string name="workshop_share_download_log_failed">Failed to share download log: %1$s</string>
     <string name="workshop_share_download_log_chooser_title">Share download log</string>
     <string name="workshop_detail_title">Mod details</string>

@@ -1219,7 +1219,7 @@ private fun WorkshopDownloadProgress.downloadLogLine(): String = buildString {
     }
 }
 
-private const val PROGRESS_PERSIST_INTERVAL_MS = 2_000L
+private const val PROGRESS_PERSIST_INTERVAL_MS = 500L
 private const val PROGRESS_LOG_INTERVAL_MS = 15_000L
 private const val PROGRESS_LOG_PERCENT_STEP = 5
 

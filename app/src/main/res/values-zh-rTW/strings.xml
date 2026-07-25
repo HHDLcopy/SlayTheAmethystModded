@@ -2463,6 +2463,7 @@
     <string name="workshop_status_update_check_failed">更新檢查失敗：%1$s</string>
     <string name="workshop_comments_unavailable">暫時無法讀取 Steam 評論區。</string>
     <string name="workshop_download_waiting_size">等待大小資訊</string>
+    <string name="workshop_download_speed_format">%1$s/s</string>
     <string name="workshop_share_download_log_failed">分享下載日誌失敗：%1$s</string>
     <string name="workshop_share_download_log_chooser_title">分享下載日誌</string>
     <string name="workshop_detail_title">模組詳情</string>

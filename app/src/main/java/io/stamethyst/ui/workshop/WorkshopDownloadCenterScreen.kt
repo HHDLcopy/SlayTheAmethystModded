@@ -1,17 +1,19 @@
 package io.stamethyst.ui.workshop
 
 import android.app.Activity
-import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.os.SystemClock
 import android.util.LruCache
 import android.widget.Toast
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -48,6 +50,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -68,8 +71,9 @@ import io.stamethyst.ui.Icons
 import io.stamethyst.ui.LoadingSkeletonBlock
 import io.stamethyst.ui.icon.ArrowBack
 import io.stamethyst.ui.rememberLoadingSkeletonStyle
-import kotlinx.coroutines.delay
+import java.util.Locale
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -106,7 +110,7 @@ internal fun WorkshopDownloadCenterScreen(
                 WorkshopDownloadCenterStore.loadTasksWithRecovery(context)
             }
             WorkshopDownloadCenterStore.replaceInMemory(loadedTasks)
-            delay(1000)
+            delay(WORKSHOP_DOWNLOAD_PROGRESS_REFRESH_INTERVAL_MS)
         }
     }
 
@@ -222,7 +226,7 @@ private fun DownloadTaskCard(
                             text = task.progressSummary(),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
+                            maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
@@ -363,19 +367,28 @@ private fun DownloadDetailIconButton(
 @Composable
 private fun DownloadProgressIndicator(task: WorkshopDownloadTaskUi) {
     val percent = task.progressPercent
-    if (percent != null) {
-        val animatedProgress by animateFloatAsState(
-            targetValue = percent.coerceIn(0, 100) / 100f,
-            label = "workshopDownloadProgress",
-        )
-        LinearProgressIndicator(
+    val targetProgress = percent?.coerceIn(0, 100)?.div(100f)
+    val animatedProgress by animateFloatAsState(
+        targetValue = targetProgress ?: 0f,
+        animationSpec = tween(
+            durationMillis = DOWNLOAD_PROGRESS_ANIMATION_MS,
+            easing = FastOutSlowInEasing,
+        ),
+        label = "workshopDownloadProgress",
+    )
+    when {
+        targetProgress != null -> LinearProgressIndicator(
             progress = { animatedProgress },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(6.dp),
         )
-    } else if (task.status.isActiveDownload()) {
-        LinearProgressIndicator(Modifier.fillMaxWidth())
-    } else {
-        Spacer(Modifier.height(4.dp))
+        task.status.isActiveDownload() -> LinearProgressIndicator(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(6.dp),
+        )
+        else -> Spacer(Modifier.height(6.dp))
     }
 }
 
@@ -586,7 +599,69 @@ private fun WorkshopDownloadTaskUi.progressSummary(): String {
         fileSizeBytes > 0L -> formatBytes(fileSizeBytes)
         else -> stringResource(R.string.workshop_download_waiting_size)
     }
-    return listOfNotNull(percentText, bytesText).joinToString(" · ")
+    val speedText = rememberDownloadSpeedText(this)
+    return listOfNotNull(percentText, bytesText, speedText).joinToString(" · ")
+}
+
+@Composable
+private fun rememberDownloadSpeedText(task: WorkshopDownloadTaskUi): String? {
+    val speedBps = rememberDownloadSpeedBytesPerSecond(task) ?: return null
+    return stringResource(R.string.workshop_download_speed_format, formatBytes(speedBps))
+}
+
+@Composable
+private fun rememberDownloadSpeedBytesPerSecond(task: WorkshopDownloadTaskUi): Long? {
+    val isMeasuring = task.status == WorkshopDownloadTaskStatus.Downloading ||
+        task.status == WorkshopDownloadTaskStatus.Pausing
+    val latestBytes by rememberUpdatedState(task.downloadedBytes)
+    var speedBps by remember(task.publishedFileId) { mutableStateOf<Long?>(null) }
+
+    LaunchedEffect(task.publishedFileId, isMeasuring) {
+        if (!isMeasuring) {
+            speedBps = null
+            return@LaunchedEffect
+        }
+
+        var previousBytes = latestBytes
+        var previousAtElapsedMs = SystemClock.elapsedRealtime()
+        var lastProgressAtElapsedMs = previousAtElapsedMs
+        var smoothedBps: Long? = null
+        while (true) {
+            delay(DOWNLOAD_SPEED_TICK_MS)
+            val now = SystemClock.elapsedRealtime()
+            val currentBytes = latestBytes
+            val elapsedMs = now - previousAtElapsedMs
+            if (elapsedMs < DOWNLOAD_SPEED_SAMPLE_MIN_MS) continue
+
+            val deltaBytes = currentBytes - previousBytes
+            if (deltaBytes < 0L) {
+                previousBytes = currentBytes
+                previousAtElapsedMs = now
+                lastProgressAtElapsedMs = now
+                smoothedBps = null
+                speedBps = null
+                continue
+            }
+
+            if (deltaBytes > 0L) {
+                val instantBps = (deltaBytes * 1000L) / elapsedMs.coerceAtLeast(1L)
+                smoothedBps = if (smoothedBps == null) {
+                    instantBps
+                } else {
+                    ((smoothedBps * 3L) + instantBps) / 4L
+                }
+                lastProgressAtElapsedMs = now
+            }
+            if (now - lastProgressAtElapsedMs >= DOWNLOAD_SPEED_STALL_MS) {
+                smoothedBps = 0L
+            }
+            speedBps = smoothedBps
+            previousBytes = currentBytes
+            previousAtElapsedMs = now
+        }
+    }
+
+    return if (isMeasuring) speedBps else null
 }
 
 private fun WorkshopDownloadTaskUi.fileProgressText(): String? {
@@ -603,7 +678,8 @@ private fun WorkshopDownloadTaskUi.chunkProgressText(): String? {
 
 @Composable
 private fun formatBytes(bytes: Long): String {
-    if (bytes <= 0L) return stringResource(R.string.workshop_unknown_value)
+    if (bytes < 0L) return stringResource(R.string.workshop_unknown_value)
+    if (bytes == 0L) return "0 B"
     val units = arrayOf("B", "KB", "MB", "GB")
     var value = bytes.toDouble()
     var unitIndex = 0
@@ -612,11 +688,16 @@ private fun formatBytes(bytes: Long): String {
         unitIndex++
     }
     return if (unitIndex == 0) {
-        "${bytes} ${units[unitIndex]}"
+        "$bytes ${units[unitIndex]}"
     } else {
-        "${String.format(java.util.Locale.US, "%.1f", value)} ${units[unitIndex]}"
+        "${String.format(Locale.US, "%.1f", value)} ${units[unitIndex]}"
     }
 }
+
+private const val DOWNLOAD_PROGRESS_ANIMATION_MS = 450
+private const val DOWNLOAD_SPEED_TICK_MS = 500L
+private const val DOWNLOAD_SPEED_SAMPLE_MIN_MS = 350L
+private const val DOWNLOAD_SPEED_STALL_MS = 2_000L
 
 private fun Activity.shareDownloadLog(task: WorkshopDownloadTaskUi) {
     runCatching {

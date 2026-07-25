@@ -163,7 +163,7 @@ internal fun WorkshopDetailScreen(
     LaunchedEffect(state.downloadInProgress) {
         if (!state.downloadInProgress) return@LaunchedEffect
         while (true) {
-            delay(1000L)
+            delay(WORKSHOP_DOWNLOAD_PROGRESS_REFRESH_INTERVAL_MS)
             viewModel.refreshDownloadTaskState(context.applicationContext)
         }
     }

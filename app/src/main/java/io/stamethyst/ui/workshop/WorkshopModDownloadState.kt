@@ -24,6 +24,8 @@ internal enum class WorkshopModDownloadState(
     Unavailable(R.string.workshop_download_state_unavailable, R.string.workshop_download_state_unavailable, false),
 }
 
+internal const val WORKSHOP_DOWNLOAD_PROGRESS_REFRESH_INTERVAL_MS = 500L
+
 internal fun resolveWorkshopModDownloadState(
     item: WorkshopItemSummary,
     installedMods: List<WorkshopInstalledModRecord>,

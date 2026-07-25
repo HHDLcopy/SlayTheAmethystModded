@@ -5,9 +5,11 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
 import io.stamethyst.backend.github.GithubAcceleratedHttp
+import io.stamethyst.backend.steamcloud.SteamCloudAcceleratedHttp
 import java.io.File
 import java.security.MessageDigest
 import okhttp3.Request
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 internal object RemoteBitmapCacheStore {
     private const val DIRECTORY_NAME = "remote-bitmap-cache"
@@ -48,12 +50,7 @@ internal object RemoteBitmapCacheStore {
             val directory = cacheDirectory(context).apply { mkdirs() }
             val outputFile = cacheFile(context, cacheKey)
             val tempFile = File(directory, "$cacheKey.tmp")
-            val client = GithubAcceleratedHttp.createClient(
-                context = context,
-                connectTimeoutMs = CONNECT_TIMEOUT_MS,
-                readTimeoutMs = READ_TIMEOUT_MS,
-                followRedirects = true
-            )
+            val client = createClient(context, imageUrl)
             val request = Request.Builder()
                 .url(imageUrl)
                 .header("User-Agent", "SlayTheAmethyst-MarkdownImage")
@@ -81,6 +78,35 @@ internal object RemoteBitmapCacheStore {
 
     private fun cacheDirectory(context: Context): File =
         File(context.applicationContext.filesDir, DIRECTORY_NAME)
+
+    private fun createClient(context: Context, imageUrl: String) =
+        if (isSteamUrl(imageUrl)) {
+            SteamCloudAcceleratedHttp.createClient(
+                context = context,
+                connectTimeoutMs = CONNECT_TIMEOUT_MS.toLong(),
+                readTimeoutMs = READ_TIMEOUT_MS.toLong(),
+                callTimeoutMs = READ_TIMEOUT_MS.toLong() + CONNECT_TIMEOUT_MS.toLong(),
+            )
+        } else {
+            GithubAcceleratedHttp.createClient(
+                context = context,
+                connectTimeoutMs = CONNECT_TIMEOUT_MS,
+                readTimeoutMs = READ_TIMEOUT_MS,
+                followRedirects = true,
+            )
+        }
+
+    private fun isSteamUrl(imageUrl: String): Boolean {
+        val host = imageUrl.toHttpUrlOrNull()?.host?.lowercase() ?: return false
+        return host == "steamcommunity.com" ||
+            host.endsWith(".steamcommunity.com") ||
+            host == "steampowered.com" ||
+            host.endsWith(".steampowered.com") ||
+            host == "steamusercontent.com" ||
+            host.endsWith(".steamusercontent.com") ||
+            host.endsWith(".steamstatic.com") ||
+            host.endsWith(".akamaihd.net")
+    }
 
     private fun cacheKey(imageUrl: String): String {
         val digest = MessageDigest.getInstance("SHA-256")

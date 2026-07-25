@@ -22,7 +22,8 @@ import okhttp3.Protocol
 
 internal val SteamCommunityWattToolkitRouteProfile = WattToolkitRouteProfile(
     name = "steam-community",
-    cacheFileName = "watt-steam-community-route-cache-v2.json",
+    // v3 invalidates poisoned v2 entries that pinned non-workshop hosts (e.g. valvesoftware).
+    cacheFileName = "watt-steam-community-route-cache-v3.json",
     supportedHosts = setOf("steamcommunity.com", "www.steamcommunity.com"),
     bootstrapForwardTargets = listOf("https://steamcommunity.rmbgame.net"),
 )
@@ -46,6 +47,8 @@ internal val SteamImageCdnWattToolkitRouteProfile = WattToolkitRouteProfile(
     supportedHosts = setOf(
         "steamcdn-a.akamaihd.net",
         "steamuserimages-a.akamaihd.net",
+        "images.steamusercontent.com",
+        "steamusercontent.com",
         "cdn.akamai.steamstatic.com",
         "community.akamai.steamstatic.com",
         "avatars.akamai.steamstatic.com",
@@ -79,6 +82,10 @@ internal val SteamContentCdnWattToolkitRouteProfile = WattToolkitRouteProfile(
     ),
     bootstrapForwardTargets = emptyList(),
     supportedProxyTypes = setOf(WATT_PROXY_TYPE_DIRECT, WATT_PROXY_TYPE_REVERSE_PROXY),
+    // SteamPipe CDN rules are published as unchecked while their health is being updated.
+    // Workshop downloads still need the available reverse-proxy route instead of falling
+    // back to the origin CDN whenever that flag is false.
+    allowUncheckedRoutes = true,
 )
 
 private val defaultSteamCloudWattToolkitRouteProfiles = listOf(

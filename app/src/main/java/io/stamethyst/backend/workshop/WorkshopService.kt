@@ -1,6 +1,7 @@
 package io.stamethyst.backend.workshop
 
 import android.content.Context
+import android.os.SystemClock
 import android.util.Log
 import io.stamethyst.backend.steamcloud.SteamCloudAcceleratedHttp
 import io.stamethyst.backend.steamcloud.SteamAuthenticationCircuitBreaker
@@ -18,6 +19,8 @@ import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -52,7 +55,10 @@ internal class WorkshopService(
         connectTimeoutMs = 15_000L,
         readTimeoutMs = 60_000L,
         callTimeoutMs = 120_000L,
-        enabled = LauncherPreferences.isWorkshopWattAccelerationEnabled(context),
+        // Keep the interceptor installed so a long-lived service can resume acceleration
+        // after a VPN/region state change; enabledProvider gates each request dynamically.
+        enabled = true,
+        enabledProvider = { LauncherPreferences.isWorkshopWattAccelerationEnabled(context) },
     ),
     private val contentDownloaderFactory: ((WorkshopService) -> WorkshopContentDownloader)? = null,
 ) {
@@ -103,8 +109,16 @@ internal class WorkshopService(
     fun authSnapshot(): AuthSnapshot = SteamCloudAuthStore.readSnapshot(context)
 
     suspend fun browse(query: WorkshopBrowseQuery): WorkshopBrowseResult = withContext(Dispatchers.IO) {
+        val browseStartedAtMs = SystemClock.elapsedRealtime()
         val page = searchWorkshop(query)
+        val searchMs = SystemClock.elapsedRealtime() - browseStartedAtMs
+        val enrichStartedAtMs = SystemClock.elapsedRealtime()
         val items = enrichBrowseMetadata(page.items).take(query.pageSize)
+        val enrichMs = SystemClock.elapsedRealtime() - enrichStartedAtMs
+        Log.i(
+            TAG,
+            "perf browse totalMs=${SystemClock.elapsedRealtime() - browseStartedAtMs} searchMs=$searchMs enrichMs=$enrichMs page=${query.page} pageSize=${query.pageSize} rawItems=${page.items.size} items=${items.size} queryLen=${query.searchText.length} sort=${query.sort} time=${query.timeFilter} category=${query.category}",
+        )
         WorkshopBrowseResult(
             items = items,
             total = items.size,
@@ -423,36 +437,65 @@ internal class WorkshopService(
         includeCommunityData: Boolean = true,
         includeDependencyData: Boolean = true,
     ): WorkshopItemDetails = withContext(Dispatchers.IO) {
+        val getDetailsStartedAtMs = SystemClock.elapsedRealtime()
         val languagePreference = steamLanguagePreference
-        val requestBody = FormBody.Builder()
-            .add("itemcount", "1")
-            .add("publishedfileids[0]", publishedFileId.toString())
-            .add("appid", appId.toString())
-            .build()
-        val request = Request.Builder()
-            .url("https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/".toHttpUrl())
-            .post(requestBody)
-            .build()
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) error("Steam workshop details failed: ${response.code}")
-            val payload = response.body?.string().orEmpty()
-            val envelope = json.decodeFromString<PublishedFileDetailsEnvelope>(payload)
-            val detail = envelope.response.publishedFileDetails.firstOrNull() ?: error("No workshop detail returned")
+        coroutineScope {
+            // These requests use independent Steam endpoints. Fetch them together so a
+            // slow API or community response does not add its full latency to the other.
+            val apiDetail = async(Dispatchers.IO) {
+                val apiStartedAtMs = SystemClock.elapsedRealtime()
+                val requestBody = FormBody.Builder()
+                    .add("itemcount", "1")
+                    .add("publishedfileids[0]", publishedFileId.toString())
+                    .add("appid", appId.toString())
+                    .build()
+                val request = Request.Builder()
+                    .url("https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/".toHttpUrl())
+                    .post(requestBody)
+                    .build()
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) error("Steam workshop details failed: ${response.code}")
+                    val payload = response.body?.string().orEmpty()
+                    val envelope = json.decodeFromString<PublishedFileDetailsEnvelope>(payload)
+                    val detail = envelope.response.publishedFileDetails.firstOrNull()
+                        ?: error("No workshop detail returned")
+                    Log.i(
+                        TAG,
+                        "perf getDetails apiDetail publishedFileId=$publishedFileId code=${response.code} payloadBytes=${payload.length} children=${detail.children.size} elapsedMs=${SystemClock.elapsedRealtime() - apiStartedAtMs}",
+                    )
+                    detail to payload
+                }
+            }
             val localizedDetail = if (includeCommunityData) {
-                runCatching {
-                    loadLocalizedDetailPageWithCache(
-                        publishedFileId = publishedFileId,
-                        languageRequestValue = languagePreference.requestValue,
-                    )
-                }.onFailure { error ->
-                    logWarning(
-                        "getDetails community detail failed appId=$appId publishedFileId=$publishedFileId",
-                        error,
-                    )
-                }.getOrNull()
+                async(Dispatchers.IO) {
+                    val communityStartedAtMs = SystemClock.elapsedRealtime()
+                    runCatching {
+                        loadLocalizedDetailPageWithCache(
+                            publishedFileId = publishedFileId,
+                            languageRequestValue = languagePreference.requestValue,
+                        )
+                    }.onFailure { error ->
+                        Log.w(
+                            TAG,
+                            "perf getDetails communityDetail failed publishedFileId=$publishedFileId elapsedMs=${SystemClock.elapsedRealtime() - communityStartedAtMs} error=${error.message ?: error.javaClass.simpleName}",
+                        )
+                        logWarning(
+                            "getDetails community detail failed appId=$appId publishedFileId=$publishedFileId",
+                            error,
+                        )
+                    }.onSuccess { detail ->
+                        Log.i(
+                            TAG,
+                            "perf getDetails communityDetail ok publishedFileId=$publishedFileId descChars=${detail.description.length} previews=${detail.previewMedia.size} required=${detail.requiredItemIds.size} comments=${detail.commentCount} elapsedMs=${SystemClock.elapsedRealtime() - communityStartedAtMs}",
+                        )
+                    }.getOrNull()
+                }
             } else {
                 null
             }
+            val (detail, payload) = apiDetail.await()
+            val communityDetail = localizedDetail?.await()
+            val awaitDoneAtMs = SystemClock.elapsedRealtime()
             val cardSummary = fallbackSummary?.takeIf { summary ->
                 summary.appId == appId && summary.publishedFileId == publishedFileId
             }
@@ -462,7 +505,7 @@ internal class WorkshopService(
                     summary.updatedAtMillis <= 0L ||
                     summary.updatedAtMillis == apiUpdatedAtMillis
             } == true
-            val localizedDescription = localizedDetail?.description.orEmpty()
+            val localizedDescription = communityDetail?.description.orEmpty()
             val fallbackDescription = cardSummary?.description.orEmpty()
                 .takeIf { fallbackMatchesApiVersion }
                 .orEmpty()
@@ -481,7 +524,7 @@ internal class WorkshopService(
                 previewUrl = detail.previewUrl.orEmpty().ifBlank { cardSummary?.previewUrl.orEmpty() },
                 description = description,
                 authorName = detail.creatorName.orEmpty()
-                    .ifBlank { localizedDetail?.authorName.orEmpty() }
+                    .ifBlank { communityDetail?.authorName.orEmpty() }
                     .ifBlank { cardSummary?.authorName.orEmpty() },
                 fileSizeBytes = detail.fileSize ?: cardSummary?.fileSizeBytes ?: 0L,
                 updatedAtMillis = apiUpdatedAtMillis ?: cardSummary?.updatedAtMillis ?: 0L,
@@ -491,11 +534,12 @@ internal class WorkshopService(
             val dependencyIds = if (includeDependencyData) {
                 (
                     detail.children.mapNotNull { child -> child.publishedFileId.toULongOrNull() } +
-                        localizedDetail?.requiredItemIds.orEmpty()
+                        communityDetail?.requiredItemIds.orEmpty()
                     ).distinct()
             } else {
                 emptyList()
             }
+            val depsStartedAtMs = SystemClock.elapsedRealtime()
             val dependencyDetailsById = if (dependencyIds.isNotEmpty()) {
                 loadDependencyDetails(appId, dependencyIds).associateBy { childDetail ->
                     childDetail.publishedFileId.toULongOrNull()
@@ -503,14 +547,15 @@ internal class WorkshopService(
             } else {
                 emptyMap()
             }
-            val commentThreadContext = localizedDetail?.commentThreadContext
+            val depsMs = SystemClock.elapsedRealtime() - depsStartedAtMs
+            val commentThreadContext = communityDetail?.commentThreadContext
                 ?: detail.toCommentThreadContext(publishedFileId)
-            val commentCount = localizedDetail?.commentCount
+            val commentCount = communityDetail?.commentCount
             val previewMedia = buildWorkshopPreviewMedia(
                 summary.previewUrl,
-                localizedDetail?.previewMedia.orEmpty(),
+                communityDetail?.previewMedia.orEmpty(),
             )
-            WorkshopItemDetails(
+            val result = WorkshopItemDetails(
                 summary = summary,
                 fileUrl = detail.fileUrl,
                 hcontentFile = detail.hcontentFile?.takeIf { it > 0L }?.toULong(),
@@ -536,6 +581,11 @@ internal class WorkshopService(
                 commentTotalPages = commentCount?.let(::resolveCommentTotalPages),
                 hasNextCommentPage = commentCount?.let { count -> count > COMMENT_PAGE_SIZE } == true,
             )
+            Log.i(
+                TAG,
+                "perf getDetails total publishedFileId=$publishedFileId parallelAwaitMs=${awaitDoneAtMs - getDetailsStartedAtMs} depsMs=$depsMs deps=${dependencyIds.size} community=${communityDetail != null} totalMs=${SystemClock.elapsedRealtime() - getDetailsStartedAtMs}",
+            )
+            result
         }
     }
 
@@ -639,6 +689,7 @@ internal class WorkshopService(
         publishedFileId: ULong,
         languageRequestValue: String,
     ): LocalizedWorkshopDetail {
+        val pageStartedAtMs = SystemClock.elapsedRealtime()
         val request = Request.Builder()
             .url(
                 "https://steamcommunity.com/sharedfiles/filedetails/".toHttpUrl().newBuilder()
@@ -651,6 +702,7 @@ internal class WorkshopService(
             .build()
 
         return workshopClient.newCall(request).execute().use { response ->
+            val httpMs = SystemClock.elapsedRealtime() - pageStartedAtMs
             if (response.code == HTTP_TOO_MANY_REQUESTS) {
                 throw SteamCommunityRateLimitException(response.code)
             }
@@ -659,7 +711,8 @@ internal class WorkshopService(
             if (looksLikeCaptivePortal(payload)) {
                 error("Steam workshop community detail returned a captive portal page")
             }
-            LocalizedWorkshopDetail(
+            val parseStartedAtMs = SystemClock.elapsedRealtime()
+            val parsed = LocalizedWorkshopDetail(
                 description = extractWorkshopDescription(payload),
                 authorName = extractWorkshopAuthorName(payload),
                 previewMedia = extractPreviewMediaItems(payload),
@@ -667,6 +720,11 @@ internal class WorkshopService(
                 commentThreadContext = extractCommentThreadContext(payload),
                 commentCount = extractCommentCount(payload),
             )
+            Log.i(
+                TAG,
+                "perf loadLocalizedDetailPage publishedFileId=$publishedFileId lang=$languageRequestValue code=${response.code} httpMs=$httpMs parseMs=${SystemClock.elapsedRealtime() - parseStartedAtMs} htmlBytes=${payload.length} totalMs=${SystemClock.elapsedRealtime() - pageStartedAtMs}",
+            )
+            parsed
         }
     }
 
@@ -706,6 +764,7 @@ internal class WorkshopService(
         publishedFileId: ULong,
         languageRequestValue: String,
     ): LocalizedWorkshopDetail {
+        val cacheStartedAtMs = SystemClock.elapsedRealtime()
         val key = CommunityDetailCacheKey(publishedFileId, languageRequestValue)
         var cachedDetail: LocalizedWorkshopDetail? = null
         var shouldFetch = false
@@ -727,10 +786,21 @@ internal class WorkshopService(
                 }
             }
         }
-        cachedDetail?.let { return it }
+        cachedDetail?.let { hit ->
+            Log.i(
+                TAG,
+                "perf communityDetailCache hit publishedFileId=$publishedFileId lang=$languageRequestValue elapsedMs=${SystemClock.elapsedRealtime() - cacheStartedAtMs}",
+            )
+            return hit
+        }
         val pending = requireNotNull(deferred)
         if (!shouldFetch) {
-            return pending.await()
+            val joined = pending.await()
+            Log.i(
+                TAG,
+                "perf communityDetailCache joinInFlight publishedFileId=$publishedFileId lang=$languageRequestValue elapsedMs=${SystemClock.elapsedRealtime() - cacheStartedAtMs}",
+            )
+            return joined
         }
 
         try {
@@ -748,6 +818,10 @@ internal class WorkshopService(
                 }
             }
             pending.complete(detail)
+            Log.i(
+                TAG,
+                "perf communityDetailCache fetch publishedFileId=$publishedFileId lang=$languageRequestValue useful=${detail.hasUsefulContent()} elapsedMs=${SystemClock.elapsedRealtime() - cacheStartedAtMs}",
+            )
             return detail
         } catch (error: Throwable) {
             pending.completeExceptionally(error)
@@ -1015,12 +1089,26 @@ internal class WorkshopService(
     }
 
     private suspend fun searchWorkshop(query: WorkshopBrowseQuery): WorkshopBrowseParseResult {
+        val searchStartedAtMs = SystemClock.elapsedRealtime()
         if (query.searchText.isNotBlank()) {
+            val authSearchStartedAtMs = SystemClock.elapsedRealtime()
             authenticatedPublishedFileSearch(query)
                 ?.takeIf { it.items.isNotEmpty() }
-                ?.let { return it }
+                ?.let { result ->
+                    Log.i(
+                        TAG,
+                        "perf searchWorkshop path=authProtocol items=${result.items.size} elapsedMs=${SystemClock.elapsedRealtime() - authSearchStartedAtMs} totalMs=${SystemClock.elapsedRealtime() - searchStartedAtMs}",
+                    )
+                    return result
+                }
+            Log.i(
+                TAG,
+                "perf searchWorkshop path=authProtocolMiss elapsedMs=${SystemClock.elapsedRealtime() - authSearchStartedAtMs}",
+            )
         }
+        val primeStartedAtMs = SystemClock.elapsedRealtime()
         primeSteamWebSessionIfNeeded()
+        val primeMs = SystemClock.elapsedRealtime() - primeStartedAtMs
         val searchUrl = "https://steamcommunity.com/workshop/browse/".toHttpUrl().newBuilder()
             .addQueryParameter("appid", query.appId.toString())
             .addQueryParameter("searchtext", query.searchText)
@@ -1040,6 +1128,7 @@ internal class WorkshopService(
                 }
             }
             .build()
+        val httpStartedAtMs = SystemClock.elapsedRealtime()
         val html = workshopClient.newCall(
             Request.Builder()
                 .url(searchUrl)
@@ -1051,7 +1140,14 @@ internal class WorkshopService(
             if (!response.isSuccessful) error("Steam workshop browse failed: ${response.code}")
             response.body?.string().orEmpty()
         }
+        val httpMs = SystemClock.elapsedRealtime() - httpStartedAtMs
+        val parseStartedAtMs = SystemClock.elapsedRealtime()
         val page = WorkshopBrowseParser.parsePage(html, query.page)
+        val parseMs = SystemClock.elapsedRealtime() - parseStartedAtMs
+        Log.i(
+            TAG,
+            "perf searchWorkshop path=htmlBrowse primeMs=$primeMs httpMs=$httpMs parseMs=$parseMs htmlBytes=${html.length} items=${page.items.size} totalMs=${SystemClock.elapsedRealtime() - searchStartedAtMs}",
+        )
         if (page.items.isEmpty() && looksLikeCaptivePortal(html)) {
             error("当前网络返回了 Wi-Fi/校园网认证页面，请先完成网络认证后重试")
         }
@@ -1091,11 +1187,21 @@ internal class WorkshopService(
     }
 
     private fun enrichBrowseMetadata(items: List<WorkshopItemSummary>): List<WorkshopItemSummary> {
-        if (items.isEmpty() || items.all { it.fileSizeBytes > 0L && it.downloadCount > 0L }) return items
+        if (items.isEmpty() || items.all { it.fileSizeBytes > 0L && it.downloadCount > 0L }) {
+            Log.i(TAG, "perf enrichBrowseMetadata skipped items=${items.size}")
+            return items
+        }
+        val enrichStartedAtMs = SystemClock.elapsedRealtime()
         val appId = items.first().appId
         val metadataById = runCatching { loadBrowseMetadata(appId, items) }.getOrDefault(emptyMap())
-        if (metadataById.isEmpty()) return items
-        return items.map { item ->
+        if (metadataById.isEmpty()) {
+            Log.i(
+                TAG,
+                "perf enrichBrowseMetadata emptyMap items=${items.size} elapsedMs=${SystemClock.elapsedRealtime() - enrichStartedAtMs}",
+            )
+            return items
+        }
+        val enriched = items.map { item ->
             metadataById[item.publishedFileId]?.let { metadata ->
                 item.copy(
                     fileSizeBytes = metadata.fileSizeBytes ?: item.fileSizeBytes,
@@ -1103,6 +1209,11 @@ internal class WorkshopService(
                 )
             } ?: item
         }
+        Log.i(
+            TAG,
+            "perf enrichBrowseMetadata items=${items.size} metadataHits=${metadataById.size} elapsedMs=${SystemClock.elapsedRealtime() - enrichStartedAtMs}",
+        )
+        return enriched
     }
 
     private fun loadBrowseMetadata(appId: UInt, items: List<WorkshopItemSummary>): Map<ULong, BrowseItemMetadata> {
@@ -1119,10 +1230,17 @@ internal class WorkshopService(
             .url("https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/".toHttpUrl())
             .post(requestBody)
             .build()
+        val httpStartedAtMs = SystemClock.elapsedRealtime()
         return browseDetailClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) return emptyMap()
+            if (!response.isSuccessful) {
+                Log.w(
+                    TAG,
+                    "perf loadBrowseMetadata failed code=${response.code} missing=${missingMetadataItems.size} elapsedMs=${SystemClock.elapsedRealtime() - httpStartedAtMs}",
+                )
+                return emptyMap()
+            }
             val payload = response.body?.string().orEmpty()
-            runCatching {
+            val parsed = runCatching {
                 json.decodeFromString<PublishedFileDetailsEnvelope>(payload)
                     .response
                     .publishedFileDetails
@@ -1139,6 +1257,11 @@ internal class WorkshopService(
                     }
                     .toMap()
             }.getOrDefault(emptyMap())
+            Log.i(
+                TAG,
+                "perf loadBrowseMetadata missing=${missingMetadataItems.size} hits=${parsed.size} payloadBytes=${payload.length} elapsedMs=${SystemClock.elapsedRealtime() - httpStartedAtMs}",
+            )
+            parsed
         }
     }
 

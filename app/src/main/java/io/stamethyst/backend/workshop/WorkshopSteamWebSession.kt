@@ -1,5 +1,7 @@
 package io.stamethyst.backend.workshop
 
+import android.os.SystemClock
+import android.util.Log
 import java.security.SecureRandom
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -67,19 +69,25 @@ internal class WorkshopSteamWebSession(
         client: OkHttpClient,
         languagePreference: SteamLanguagePreference,
     ) {
+        val primeStartedAtMs = SystemClock.elapsedRealtime()
         if (account == null) {
             synchronized(lock) {
                 currentScope = null
                 primedScope = null
                 webLoginContext = null
             }
+            Log.i(PERF_TAG, "ensurePrimed skip noAccount elapsedMs=${SystemClock.elapsedRealtime() - primeStartedAtMs}")
             return
         }
         val scope = "${account.steamId}:${account.refreshToken.hashCode()}"
         synchronized(lock) {
-            if (primedScope == scope && webLoginContext != null) return
+            if (primedScope == scope && webLoginContext != null) {
+                Log.i(PERF_TAG, "ensurePrimed skip alreadyPrimed elapsedMs=${SystemClock.elapsedRealtime() - primeStartedAtMs}")
+                return
+            }
         }
 
+        val tokenStartedAtMs = SystemClock.elapsedRealtime()
         val accessToken = withContext(Dispatchers.IO) {
             SteamAuthenticationClient(
                 directoryClient = SteamDirectoryClient(baseClient),
@@ -89,6 +97,7 @@ internal class WorkshopSteamWebSession(
             allowRenewal = false,
         ).accessToken
         }
+        val tokenMs = SystemClock.elapsedRealtime() - tokenStartedAtMs
 
         synchronized(lock) {
             currentScope = scope
@@ -99,17 +108,27 @@ internal class WorkshopSteamWebSession(
             )
         }
 
+        val urls = listOf(
+            "https://store.steampowered.com/account/preferences/",
+            "https://steamcommunity.com/login/home/?goto=workshop%2F",
+        )
         withContext(Dispatchers.IO) {
-            listOf(
-                "https://store.steampowered.com/account/preferences/",
-                "https://steamcommunity.com/login/home/?goto=workshop%2F",
-            ).forEach { url ->
-                runCatching { primeUrl(client, url, languagePreference) }
+            urls.forEach { url ->
+                val urlStartedAtMs = SystemClock.elapsedRealtime()
+                val result = runCatching { primeUrl(client, url, languagePreference) }
+                Log.i(
+                    PERF_TAG,
+                    "ensurePrimed primeUrl host=${url.substringAfter("https://").substringBefore("/")} ok=${result.isSuccess} elapsedMs=${SystemClock.elapsedRealtime() - urlStartedAtMs}",
+                )
             }
         }
         synchronized(lock) {
             primedScope = scope
         }
+        Log.i(
+            PERF_TAG,
+            "ensurePrimed done tokenMs=$tokenMs totalMs=${SystemClock.elapsedRealtime() - primeStartedAtMs}",
+        )
     }
 
     private fun projectedCookiesFor(url: HttpUrl): List<Cookie> {
@@ -269,6 +288,7 @@ private fun generateSteamWebSessionId(): String {
 }
 
 private val steamWebSessionRandom = SecureRandom()
+private const val PERF_TAG = "WorkshopPerf"
 private const val STEAM_WEB_SESSION_USER_AGENT =
     "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Mobile Safari/537.36"
 private val HEX_CHARS = charArrayOf('0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f')

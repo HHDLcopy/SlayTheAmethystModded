@@ -7,6 +7,7 @@ internal object SearchHistoryStore {
     private const val PREFS_NAME = "search_history"
     private const val KEY_MODS = "mods"
     private const val KEY_WORKSHOP = "workshop"
+    private const val KEY_SETTINGS = "settings"
     internal const val MAX_ENTRIES = 8
 
     fun loadModSearchHistory(context: Context): List<String> {
@@ -31,6 +32,18 @@ internal object SearchHistoryStore {
 
     fun deleteWorkshopSearch(context: Context, query: String): List<String> {
         return delete(context, KEY_WORKSHOP, query)
+    }
+
+    fun loadSettingsSearchHistory(context: Context): List<String> {
+        return load(context, KEY_SETTINGS)
+    }
+
+    fun recordSettingsSearch(context: Context, query: String): List<String> {
+        return record(context, KEY_SETTINGS, query)
+    }
+
+    fun deleteSettingsSearch(context: Context, query: String): List<String> {
+        return delete(context, KEY_SETTINGS, query)
     }
 
     private fun record(context: Context, key: String, query: String): List<String> {

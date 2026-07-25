@@ -1175,6 +1175,8 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="main_folder_default_name_format">Folder %1$d</string>
     <string name="main_unassigned_default_name">Uncategorized</string>
     <string name="settings_title">Settings</string>
+    <string name="settings_search_placeholder">Search settings</string>
+    <string name="settings_search_empty">No settings match this search.</string>
     <string name="settings_home_subtitle">Choose a settings section</string>
     <string name="settings_category_launcher_title">Launcher</string>
     <string name="settings_category_launcher_subtitle">Tutorial, appearance, updates, and setup guide</string>

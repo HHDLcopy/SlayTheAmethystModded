@@ -12,21 +12,32 @@ import io.stamethyst.ui.settings.services.*
 import io.stamethyst.ui.settings.steamcloud.*
 
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import io.stamethyst.R
 import io.stamethyst.backend.render.VirtualResolutionMode
 import io.stamethyst.backend.update.UpdateSource
@@ -45,6 +56,8 @@ import io.stamethyst.config.RenderSurfaceBackend
 import io.stamethyst.config.SpecialKeyInputMode
 import io.stamethyst.config.TouchMouseInteractionMode
 import io.stamethyst.config.TouchscreenInputMode
+import io.stamethyst.ui.AppSearchBar
+import io.stamethyst.ui.SearchHistoryStore
 import io.stamethyst.ui.feedback.FeedbackSubmissionNotice
 import io.stamethyst.ui.preferences.LauncherPreferences
 
@@ -124,6 +137,77 @@ internal fun LauncherSettingsScreenContent(
     onDismissFeedbackSubmissionNotice: () -> Unit = {},
 ) {
     val blockingInteractionLocked = uiState.busyOperation.usesBlockingOverlay()
+    val context = LocalContext.current.applicationContext
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+    val density = LocalDensity.current
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    var searchHistoryExpanded by remember { mutableStateOf(false) }
+    var wasSearchKeyboardVisible by remember { mutableStateOf(false) }
+    var searchHistory by remember(context) {
+        mutableStateOf(SearchHistoryStore.loadSettingsSearchHistory(context))
+    }
+    val searchKeyboardVisible = WindowInsets.ime.getBottom(density) > 0
+    LaunchedEffect(searchKeyboardVisible) {
+        if (
+            wasSearchKeyboardVisible &&
+            !searchKeyboardVisible &&
+            searchHistoryExpanded
+        ) {
+            focusManager.clearFocus(force = true)
+            searchHistoryExpanded = false
+        }
+        wasSearchKeyboardVisible = searchKeyboardVisible
+    }
+    fun submitSettingsSearch(query: String = searchQuery) {
+        val normalizedQuery = query.trim()
+        keyboardController?.hide()
+        searchHistoryExpanded = false
+        if (normalizedQuery.isNotEmpty()) {
+            searchHistory = SearchHistoryStore.recordSettingsSearch(context, normalizedQuery)
+        }
+    }
+    val filterKeyword = searchQuery.trim()
+    val searchActive = filterKeyword.isNotEmpty()
+    val resolvedSearchEntries = SettingsSearchEntries.map { entry ->
+        ResolvedSettingsSearchEntry(
+            entry = entry,
+            title = stringResource(entry.titleResId),
+            subtitle = entry.subtitleResId?.let { stringResource(it) },
+            categoryTitle = stringResource(entry.categoryTitleResId),
+        )
+    }
+    val searchSections = if (searchActive) {
+        SettingsHomeDestinations.mapNotNull { destination ->
+            val categoryTitleResId = destination.spec.titleResId
+            val categoryTitle = stringResource(categoryTitleResId)
+            val categorySubtitle = stringResource(destination.spec.subtitleResId)
+            val categoryMatched =
+                categoryTitle.contains(filterKeyword, ignoreCase = true) ||
+                    categorySubtitle.contains(filterKeyword, ignoreCase = true)
+            val matchingEntries = resolvedSearchEntries.filter { item ->
+                item.entry.categoryTitleResId == categoryTitleResId &&
+                    (
+                        item.title.contains(filterKeyword, ignoreCase = true) ||
+                            item.subtitle?.contains(filterKeyword, ignoreCase = true) == true ||
+                            item.categoryTitle.contains(filterKeyword, ignoreCase = true)
+                        )
+            }
+            if (!categoryMatched && matchingEntries.isEmpty()) {
+                null
+            } else {
+                SettingsSearchSection(
+                    destination = destination,
+                    categoryTitle = categoryTitle,
+                    categoryMatched = categoryMatched,
+                    entries = matchingEntries,
+                )
+            }
+        }
+    } else {
+        emptyList()
+    }
+
     SettingsRouteScaffold(
         modifier = modifier,
         uiState = uiState,
@@ -131,16 +215,75 @@ internal fun LauncherSettingsScreenContent(
         showBackButton = showBackButton,
         onGoBack = onGoBack,
     ) {
-        SettingsHomeDestinations.forEach { destination ->
-            item(key = destination.route.toString()) {
-                val spec = destination.spec
-                SettingsCategoryCard(
-                    iconResId = spec.iconResId,
-                    title = stringResource(spec.titleResId),
-                    subtitle = stringResource(spec.subtitleResId),
-                    enabled = !blockingInteractionLocked,
-                    onClick = { onOpenSettingsRoute(destination.route) },
-                )
+        item(key = "settings_search") {
+            AppSearchBar(
+                query = searchQuery,
+                onQueryChange = { searchQuery = it },
+                onSearch = { submitSettingsSearch(it) },
+                expanded = searchHistoryExpanded,
+                onExpandedChange = { searchHistoryExpanded = it },
+                history = searchHistory,
+                onHistorySelected = { selected ->
+                    searchQuery = selected
+                    submitSettingsSearch(selected)
+                },
+                onHistoryDeleted = { entry ->
+                    searchHistory = SearchHistoryStore.deleteSettingsSearch(context, entry)
+                },
+                placeholder = stringResource(R.string.settings_search_placeholder),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 0.dp, vertical = 2.dp),
+                shape = RoundedCornerShape(10.dp),
+            )
+        }
+        if (searchActive) {
+            if (searchSections.isEmpty()) {
+                item(key = "settings_search_empty") {
+                    Text(
+                        text = stringResource(R.string.settings_search_empty),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 12.dp),
+                    )
+                }
+            }
+            searchSections.forEach { section ->
+                item(key = "search_section_${section.destination.route}") {
+                    SettingsSectionCard(title = section.categoryTitle) {
+                        if (section.categoryMatched) {
+                            SettingsActionListItem(
+                                title = section.categoryTitle,
+                                supportingText = stringResource(section.destination.spec.subtitleResId),
+                                enabled = !blockingInteractionLocked,
+                                onClick = { onOpenSettingsRoute(section.destination.route) },
+                            )
+                        }
+                        section.entries.forEach { item ->
+                            SettingsActionListItem(
+                                title = item.title,
+                                supportingText = item.subtitle,
+                                enabled = !blockingInteractionLocked,
+                                onClick = { onOpenSettingsRoute(item.entry.route) },
+                            )
+                        }
+                    }
+                }
+            }
+        } else {
+            SettingsHomeDestinations.forEach { destination ->
+                item(key = destination.route.toString()) {
+                    val spec = destination.spec
+                    SettingsCategoryCard(
+                        iconResId = spec.iconResId,
+                        title = stringResource(spec.titleResId),
+                        subtitle = stringResource(spec.subtitleResId),
+                        enabled = !blockingInteractionLocked,
+                        onClick = { onOpenSettingsRoute(destination.route) },
+                    )
+                }
             }
         }
     }
@@ -150,6 +293,20 @@ internal fun LauncherSettingsScreenContent(
         onDismiss = onDismissFeedbackSubmissionNotice,
     )
 }
+
+private data class ResolvedSettingsSearchEntry(
+    val entry: SettingsSearchEntry,
+    val title: String,
+    val subtitle: String?,
+    val categoryTitle: String,
+)
+
+private data class SettingsSearchSection(
+    val destination: SettingsHomeDestination,
+    val categoryTitle: String,
+    val categoryMatched: Boolean,
+    val entries: List<ResolvedSettingsSearchEntry>,
+)
 
 @Composable
 internal fun LauncherSettingsLauncherScreenContent(

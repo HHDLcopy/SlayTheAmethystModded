@@ -51,7 +51,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DockedSearchBar
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -66,7 +65,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
-import androidx.compose.material3.SearchBarDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -116,11 +114,11 @@ import io.stamethyst.backend.workshop.WorkshopItemSummary
 import io.stamethyst.backend.workshop.WorkshopModCategory
 import io.stamethyst.backend.workshop.WorkshopPreviewCacheStore
 import io.stamethyst.backend.workshop.isActiveDownload
+import io.stamethyst.ui.AppSearchBar
 import io.stamethyst.ui.CollapsibleFloatingGlassHeader
 import io.stamethyst.ui.Icons
 import io.stamethyst.ui.LoadingSkeletonBlock
 import io.stamethyst.ui.SearchHistoryStore
-import io.stamethyst.ui.SearchHistorySuggestions
 import io.stamethyst.ui.icon.ArrowBack
 import io.stamethyst.ui.icon.KeyboardArrowUp
 import io.stamethyst.ui.rememberLoadingSkeletonStyle
@@ -986,35 +984,18 @@ private fun SearchPanelContent(
         modifier,
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        DockedSearchBar(
-            modifier = Modifier.fillMaxWidth(),
-            inputField = {
-                SearchBarDefaults.InputField(
-                    query = query,
-                    onQueryChange = {
-                        onQueryChange(it)
-                        onSearchHistoryExpandedChange(true)
-                    },
-                    onSearch = onSearch,
-                    expanded = searchHistoryExpanded,
-                    onExpandedChange = onSearchHistoryExpandedChange,
-                    placeholder = { Text(stringResource(R.string.workshop_search_placeholder)) },
-                    trailingIcon = {
-                        TextButton(
-                            onClick = { onSearch(query) },
-                        ) { Text(stringResource(R.string.workshop_search_action)) }
-                    },
-                )
-            },
+        AppSearchBar(
+            query = query,
+            onQueryChange = onQueryChange,
+            onSearch = onSearch,
             expanded = searchHistoryExpanded,
             onExpandedChange = onSearchHistoryExpandedChange,
-        ) {
-            SearchHistorySuggestions(
-                history = searchHistory,
-                onSelect = onSearchHistorySelected,
-                onDelete = onSearchHistoryDeleted,
-            )
-        }
+            history = searchHistory,
+            onHistorySelected = onSearchHistorySelected,
+            onHistoryDeleted = onSearchHistoryDeleted,
+            placeholder = stringResource(R.string.workshop_search_placeholder),
+            modifier = Modifier.fillMaxWidth(),
+        )
         val filterButtonContentPadding = PaddingValues(horizontal = 8.dp)
         Row(
             modifier = Modifier.fillMaxWidth(),

@@ -39,13 +39,11 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.DockedSearchBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SearchBarDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -91,8 +89,8 @@ import androidx.compose.ui.zIndex
 import io.stamethyst.R
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.model.WorkshopModState
+import io.stamethyst.ui.AppSearchBar
 import io.stamethyst.ui.SearchHistoryStore
-import io.stamethyst.ui.SearchHistorySuggestions
 import kotlin.math.abs
 import kotlinx.coroutines.delay
 import sh.calvin.reorderable.ReorderableItem
@@ -775,43 +773,26 @@ internal fun ModFolderSection(
                         }
 
                         ModFolderLazyItem.FilterInput -> {
-                            DockedSearchBar(
+                            AppSearchBar(
+                                query = filterText,
+                                onQueryChange = { interactionState.filterText = it },
+                                onSearch = { submitModSearch(it) },
+                                expanded = modSearchHistoryExpanded,
+                                onExpandedChange = { modSearchHistoryExpanded = it },
+                                history = modSearchHistory,
+                                onHistorySelected = { selected ->
+                                    interactionState.filterText = selected
+                                    submitModSearch(selected)
+                                },
+                                onHistoryDeleted = { entry ->
+                                    modSearchHistory = SearchHistoryStore.deleteModSearch(context, entry)
+                                },
+                                placeholder = stringResource(R.string.main_folder_filter_hint),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(horizontal = 8.dp, vertical = 2.dp),
-                                inputField = {
-                                    SearchBarDefaults.InputField(
-                                        query = filterText,
-                                        onQueryChange = {
-                                            interactionState.filterText = it
-                                            modSearchHistoryExpanded = true
-                                        },
-                                        onSearch = { submitModSearch(it) },
-                                        expanded = modSearchHistoryExpanded,
-                                        onExpandedChange = { modSearchHistoryExpanded = it },
-                                        placeholder = { Text(stringResource(R.string.main_folder_filter_hint)) },
-                                        trailingIcon = {
-                                            TextButton(onClick = { submitModSearch() }) {
-                                                Text(stringResource(R.string.workshop_search_action))
-                                            }
-                                        },
-                                    )
-                                },
-                                expanded = modSearchHistoryExpanded,
-                                onExpandedChange = { modSearchHistoryExpanded = it },
                                 shape = RoundedCornerShape(10.dp),
-                            ) {
-                                SearchHistorySuggestions(
-                                    history = modSearchHistory,
-                                    onSelect = { selected ->
-                                        interactionState.filterText = selected
-                                        submitModSearch(selected)
-                                    },
-                                    onDelete = { entry ->
-                                        modSearchHistory = SearchHistoryStore.deleteModSearch(context, entry)
-                                    },
-                                )
-                            }
+                            )
                         }
 
                         ModFolderLazyItem.DependencyFolder -> {

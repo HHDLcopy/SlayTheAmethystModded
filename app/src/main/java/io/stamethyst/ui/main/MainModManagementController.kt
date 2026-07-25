@@ -96,6 +96,11 @@ internal class MainModManagementController(
         val missingDependencies: List<String>
     )
 
+    private data class AssociationDisableResult(
+        val autoDisabledAssociationModNames: List<String>,
+        val blockedDependentModNames: List<String>
+    )
+
     private enum class EnableReason {
         ROOT,
         DEPENDENCY,
@@ -1034,20 +1039,21 @@ internal class MainModManagementController(
                     showMissingDependencyDialog(host, mod, result.missingDependencies)
                 }
             } else {
-                val dependentModNames = findEnabledDependentModNames(
-                    targetMod = mod,
+                val result = disableModWithAssociations(
+                    host = host,
+                    rootMod = mod,
                     optionalMods = resolveOptionalModsWithPendingSelection()
                 )
-                if (dependentModNames.isNotEmpty()) {
+                if (result.blockedDependentModNames.isNotEmpty()) {
                     emitDialog(
                         title = host.getString(R.string.main_mod_toggle_off_blocked_title),
                         message = host.getString(
                             R.string.main_mod_delete_blocked_message,
-                            dependentModNames.joinToString(", ")
+                            result.blockedDependentModNames.joinToString(", ")
                         )
                     )
                 } else {
-                    setPendingOptionalModEnabled(host, mod, false)
+                    emitAutoDisabledNotices(host, result)
                 }
             }
         } catch (error: Throwable) {
@@ -1334,28 +1340,32 @@ internal class MainModManagementController(
     }
 
     private fun batchDisableMods(host: Activity, targetMods: List<ModItemUi>) {
-        val exclusionIds = LinkedHashSet<String>()
-        targetMods.forEach { mod ->
-            collectModIdentityIds(mod).forEach { exclusionIds.add(it) }
-        }
-
+        val autoDisabledAssociations = LinkedHashSet<String>()
         val blocked = LinkedHashMap<String, List<String>>()
         targetMods.forEach { mod ->
             if (!isPendingOptionalModEnabled(mod)) {
                 return@forEach
             }
-            val dependents = findEnabledDependentModNamesExcludingTargets(
-                targetMod = mod,
-                optionalMods = resolveOptionalModsWithPendingSelection(),
-                excludedIds = exclusionIds
+            val result = disableModWithAssociations(
+                host = host,
+                rootMod = mod,
+                optionalMods = resolveOptionalModsWithPendingSelection()
             )
-            if (dependents.isEmpty()) {
-                setPendingOptionalModEnabled(host, mod, false)
+            if (result.blockedDependentModNames.isNotEmpty()) {
+                blocked[resolveModDisplayName(mod)] = result.blockedDependentModNames
             } else {
-                blocked[resolveModDisplayName(mod)] = dependents
+                autoDisabledAssociations.addAll(result.autoDisabledAssociationModNames)
             }
         }
 
+        if (autoDisabledAssociations.isNotEmpty()) {
+            emitSnackbar(
+                host.getString(
+                    R.string.main_mod_auto_disabled_associations,
+                    autoDisabledAssociations.joinToString(", ")
+                )
+            )
+        }
         if (blocked.isNotEmpty()) {
             val detail = blocked.entries.joinToString("；") { entry ->
                 host.getString(
@@ -1484,19 +1494,100 @@ internal class MainModManagementController(
         }
     }
 
+    private fun emitAutoDisabledNotices(host: Activity, result: AssociationDisableResult) {
+        if (result.autoDisabledAssociationModNames.isNotEmpty()) {
+            emitSnackbar(
+                host.getString(
+                    R.string.main_mod_auto_disabled_associations,
+                    result.autoDisabledAssociationModNames.joinToString(", ")
+                )
+            )
+        }
+    }
+
+    private fun disableModWithAssociations(
+        host: Activity,
+        rootMod: ModItemUi,
+        optionalMods: List<ModItemUi>
+    ): AssociationDisableResult {
+        val modsToDisable = expandModsWithAssociations(listOf(rootMod), optionalMods)
+        val exclusionIds = LinkedHashSet<String>()
+        modsToDisable.forEach { mod ->
+            collectModIdentityIds(mod).forEach { exclusionIds.add(it) }
+        }
+
+        val blockedDependentModNames = LinkedHashSet<String>()
+        modsToDisable.forEach { mod ->
+            findEnabledDependentModNamesExcludingTargets(
+                targetMod = mod,
+                optionalMods = optionalMods,
+                excludedIds = exclusionIds
+            ).forEach { blockedDependentModNames.add(it) }
+        }
+        if (blockedDependentModNames.isNotEmpty()) {
+            return AssociationDisableResult(
+                autoDisabledAssociationModNames = emptyList(),
+                blockedDependentModNames = ArrayList(blockedDependentModNames)
+            )
+        }
+
+        val rootVisitKey = resolveModEnableVisitKey(rootMod)
+        val autoDisabledAssociationModNames = LinkedHashSet<String>()
+        modsToDisable.forEach { mod ->
+            if (!isPendingOptionalModEnabled(mod)) {
+                return@forEach
+            }
+            setPendingOptionalModEnabled(host, mod, false)
+            val visitKey = resolveModEnableVisitKey(mod)
+            if (visitKey.isNotEmpty() && visitKey != rootVisitKey) {
+                autoDisabledAssociationModNames.add(resolveModDisplayName(mod))
+            }
+        }
+        return AssociationDisableResult(
+            autoDisabledAssociationModNames = ArrayList(autoDisabledAssociationModNames),
+            blockedDependentModNames = emptyList()
+        )
+    }
+
+    private fun expandModsWithAssociations(
+        targetMods: List<ModItemUi>,
+        optionalMods: List<ModItemUi>
+    ): List<ModItemUi> {
+        val modByAssociationKey = LinkedHashMap<String, ModItemUi>()
+        optionalMods.forEach { mod ->
+            resolveModAssociationKey(mod)?.let { key ->
+                modByAssociationKey[key] = mod
+            }
+        }
+        val associationState = associationStore.snapshot()
+        val expanded = LinkedHashMap<String, ModItemUi>()
+        targetMods.forEach { mod ->
+            if (!mod.installed || mod.required) {
+                return@forEach
+            }
+            val visitKey = resolveModEnableVisitKey(mod)
+            if (visitKey.isNotEmpty()) {
+                expanded[visitKey] = mod
+            }
+            associationState.groupFor(mod)?.modKeys.orEmpty().forEach { associatedKey ->
+                val associatedMod = modByAssociationKey[associatedKey] ?: return@forEach
+                if (!associatedMod.installed || associatedMod.required) {
+                    return@forEach
+                }
+                val associatedVisitKey = resolveModEnableVisitKey(associatedMod)
+                if (associatedVisitKey.isNotEmpty()) {
+                    expanded.putIfAbsent(associatedVisitKey, associatedMod)
+                }
+            }
+        }
+        return ArrayList(expanded.values)
+    }
+
     private fun findEnabledDependentModNames(
         targetMod: ModItemUi,
         optionalMods: List<ModItemUi>
     ): List<String> {
-        val targetIds = LinkedHashSet<String>()
-        val normalizedModId = normalizeModId(targetMod.modId)
-        if (normalizedModId.isNotEmpty()) {
-            targetIds.add(normalizedModId)
-        }
-        val normalizedManifestId = normalizeModId(targetMod.manifestModId)
-        if (normalizedManifestId.isNotEmpty()) {
-            targetIds.add(normalizedManifestId)
-        }
+        val targetIds = collectModIdentityIds(targetMod)
         if (targetIds.isEmpty()) {
             return emptyList()
         }

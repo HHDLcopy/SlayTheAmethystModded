@@ -273,12 +273,6 @@ internal class ExperimentalGithubDirectAccessInterceptor(
         while (true) {
             val resolver = routeResolvers.firstOrNull { candidate -> candidate.supports(logicalRequest.url.host) }
             val route = resolver?.resolveRouteForHost(logicalRequest.url.host)
-            if (resolver != null && route == null) {
-                return directCallFactory.newCall(logicalRequest).execute()
-                    .newBuilder()
-                    .request(logicalRequest)
-                    .build()
-            }
             var effectiveRoute = route
             var usedForwardTarget: String? = null
             val response = try {

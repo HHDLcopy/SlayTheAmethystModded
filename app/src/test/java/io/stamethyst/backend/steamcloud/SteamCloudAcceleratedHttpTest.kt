@@ -883,6 +883,91 @@ class SteamCloudAcceleratedHttpTest {
     }
 
     @Test
+    fun interceptor_followsCdnRedirectWhenWattHasNoRouteForTheInitialHost() {
+        apiServer.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    {
+                      "🦓": [
+                        {
+                          "Items": [
+                            {
+                              "MatchDomainNames": "st.dl.eccdnx.com",
+                              "ListenDomainNames": "st.dl.eccdnx.com",
+                              "ForwardDomainNames": "http://cdn.queniuqe.com:${steamStoreForwardServer.port}",
+                              "ProxyType": 1,
+                              "IgnoreSSLCertVerification": true
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+        steamContentForwardServer.enqueue(
+            MockResponse.Builder()
+                .code(302)
+                .addHeader(
+                    "Location",
+                    "http://redirected-cdn.test:${steamStoreForwardServer.port}/manifest",
+                )
+                .build(),
+        )
+        steamStoreForwardServer.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body("manifest-bytes")
+                .build(),
+        )
+
+        val dns = Dns { listOf(InetAddress.getByName("127.0.0.1")) }
+        val resolver = WattToolkitGithubRouteResolver(
+            routeProfile = SteamContentCdnWattToolkitRouteProfile,
+            client = OkHttpClient.Builder().dns(dns).build(),
+            projectGroupsUrl = apiServer.url("/accelerator/projectgroups"),
+            backgroundExecutor = Executor { /* no background work in this unit test */ },
+        )
+        val runtime = ExperimentalGithubDirectAccessRuntime(
+            resolvers = listOf(resolver),
+            hostnameVerifier = GithubDirectHostnameVerifier { host ->
+                resolver.allowsUnsafeHostnameBypass(host)
+            },
+            directHttpClient = OkHttpClient.Builder()
+                .dns(dns)
+                .followRedirects(false)
+                .followSslRedirects(false)
+                .build(),
+        )
+        val client = OkHttpClient.Builder()
+            .dns(dns)
+            .addInterceptor(
+                ExperimentalGithubDirectAccessInterceptor(
+                    routeResolvers = runtime.resolvers,
+                    directCallFactory = runtime.directHttpClient,
+                ),
+            )
+            .build()
+
+        client.newCall(
+            Request.Builder()
+                .url("http://xz.pphimalayanrt.com:${steamContentForwardServer.port}/depot/646571/manifest")
+                .build(),
+        ).execute().use { response ->
+            assertEquals(200, response.code)
+            assertEquals("redirected-cdn.test", response.request.url.host)
+            assertEquals("manifest-bytes", response.body.string())
+        }
+
+        assertEquals("/accelerator/projectgroups", apiServer.takeRequest(5, TimeUnit.SECONDS)?.url?.encodedPath)
+        assertEquals("/depot/646571/manifest", steamContentForwardServer.takeRequest(5, TimeUnit.SECONDS)?.url?.encodedPath)
+        assertEquals("/manifest", steamStoreForwardServer.takeRequest(5, TimeUnit.SECONDS)?.url?.encodedPath)
+    }
+
+    @Test
     fun interceptor_routesSteamContentCdnRequestThroughWattForwardTarget() {
         apiServer.enqueue(
             MockResponse.Builder()

@@ -43,9 +43,8 @@ internal object WorkshopBrowseParser {
         """SharedFileBindMouseHover\(\s*"sharedfile_(\d+)"\s*,\s*false\s*,\s*(\{.*?\})\s*\);""",
         setOf(RegexOption.DOT_MATCHES_ALL),
     )
-    private val ssrRenderContextRegex = Regex(
-        """window\.SSR\.renderContext\s*=\s*JSON\.parse\(\s*"(.+?)"\s*\)\s*;?""",
-        setOf(RegexOption.DOT_MATCHES_ALL),
+    private val ssrRenderContextPrefixRegex = Regex(
+        """window\.SSR\.renderContext\s*=\s*JSON\.parse\(\s*""",
     )
     private val pageButtonRegex = Regex("""class=['"][^'"]*\bpagebtn\b""", RegexOption.IGNORE_CASE)
 
@@ -138,7 +137,7 @@ internal object WorkshopBrowseParser {
         html: String,
         fallbackPage: WorkshopBrowseParseResult,
     ): WorkshopBrowseParseResult {
-        val encodedRenderContext = ssrRenderContextRegex.find(html)?.groupValues?.getOrNull(1) ?: return fallbackPage
+        val encodedRenderContext = extractSsrRenderContextJsonString(html) ?: return fallbackPage
         val renderContext = decodeJsonStringLiteral(encodedRenderContext) ?: return fallbackPage
         val renderContextObject = runCatching {
             json.parseToJsonElement(renderContext) as? JsonObject
@@ -235,6 +234,20 @@ internal object WorkshopBrowseParser {
                 .jsonPrimitive
                 .contentOrNull
         }.getOrNull()
+
+    private fun extractSsrRenderContextJsonString(html: String): String? {
+        val openingQuoteIndex = ssrRenderContextPrefixRegex.find(html)?.range?.last?.plus(1) ?: return null
+        if (html.getOrNull(openingQuoteIndex) != '"') return null
+        var escaped = false
+        for (index in openingQuoteIndex + 1 until html.length) {
+            when {
+                escaped -> escaped = false
+                html[index] == '\\' -> escaped = true
+                html[index] == '"' -> return html.substring(openingQuoteIndex + 1, index)
+            }
+        }
+        return null
+    }
 }
 
 internal data class WorkshopBrowseParseResult(

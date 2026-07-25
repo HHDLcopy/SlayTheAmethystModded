@@ -204,4 +204,45 @@ class WorkshopBrowseParserTest {
         assertEquals(23L, unratedItem.downloadCount)
         assertEquals(null, unratedItem.rating)
     }
+
+    @Test
+    fun parsesSsrContextWhenItemDescriptionContainsEscapedQuotes() {
+        val queryData =
+            """
+            {
+              "mutations": [],
+              "queries": [
+                {
+                  "state": {
+                    "data": {
+                      "current_page": 1,
+                      "total_pages": 1,
+                      "results": [
+                        {
+                          "publishedfileid": "3769585454",
+                          "creator": "76561199212854088",
+                          "consumer_appid": 646570,
+                          "preview_url": "https://example.com/video-core.png",
+                          "title": "Sts Video Core",
+                          "short_description": "VideoApi.playFullscreen(\"examplemod/videos/intro.webm\")"
+                        }
+                      ]
+                    }
+                  },
+                  "queryKey": ["workshop_browse", { "appid": 646570 }, 1]
+                }
+              ]
+            }
+            """.trimIndent()
+        val renderContext = """{"queryData":${Json.encodeToString(queryData)}}"""
+        val html = """
+            <script>window.SSR.renderContext=JSON.parse(${Json.encodeToString(renderContext)});</script>
+        """.trimIndent()
+
+        val page = WorkshopBrowseParser.parsePage(html, page = 1)
+
+        assertEquals(1, page.items.size)
+        assertEquals(3769585454uL, page.items.single().publishedFileId)
+        assertEquals("Sts Video Core", page.items.single().title)
+    }
 }

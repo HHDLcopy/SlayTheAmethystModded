@@ -268,6 +268,42 @@ class ModFolderUiHelpersTest {
         assertEquals(ToggleableState.On, model.toggleState)
     }
 
+    @Test
+    fun canUseFolderOrganization_returnsTrueForInstalledTexturePackWorkshopCard() {
+        val texturePack = createMod(
+            storagePath = "workshop:646570:4321",
+            modId = "workshop:4321",
+            manifestModId = "workshop:4321",
+            installed = false,
+            enabled = true,
+            workshop = WorkshopModUi(
+                appId = 646570U,
+                publishedFileId = 4321UL,
+                state = WorkshopModState.TexturePackInstalled
+            )
+        )
+
+        assertTrue(texturePack.canUseFolderOrganization())
+    }
+
+    @Test
+    fun canUseFolderSelection_includesInstalledTexturePackWorkshopCard() {
+        val texturePack = createMod(
+            storagePath = "workshop:646570:4321",
+            modId = "workshop:4321",
+            manifestModId = "workshop:4321",
+            installed = false,
+            enabled = true,
+            workshop = WorkshopModUi(
+                appId = 646570U,
+                publishedFileId = 4321UL,
+                state = WorkshopModState.TexturePackInstalled
+            )
+        )
+
+        assertTrue(texturePack.canUseFolderSelection())
+    }
+
     private fun createMod(
         storagePath: String,
         modId: String = "testmod",

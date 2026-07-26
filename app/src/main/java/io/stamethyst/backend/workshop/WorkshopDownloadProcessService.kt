@@ -23,6 +23,7 @@ import java.nio.charset.StandardCharsets
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.concurrent.thread
 import kotlinx.coroutines.runBlocking
+import top.apricityx.workshop.workshop.WorkshopSteamRateLimitedException
 
 class WorkshopDownloadProcessService : Service() {
     companion object {
@@ -251,6 +252,21 @@ class WorkshopDownloadProcessService : Service() {
                 stopSelf()
             }
             startNextQueued(applicationContext)
+            return START_NOT_STICKY
+        }
+        val rateLimitStore = WorkshopSteamRateLimitStore(applicationContext)
+        if (rateLimitStore.remainingMillis() > 0L) {
+            pauseForSteamRateLimit(
+                taskStore = startingTaskStore,
+                metadataStore = WorkshopMetadataStore(applicationContext),
+                details = startingTask.details,
+                message = rateLimitStore.cooldownMessage(),
+                receiver = receiver,
+            )
+            if (workerThreads.isEmpty()) {
+                stopForegroundCompat()
+                stopSelf()
+            }
             return START_NOT_STICKY
         }
         val startingDetails = startingTask.details
@@ -748,28 +764,41 @@ class WorkshopDownloadProcessService : Service() {
                     })
                 }
                 null -> {
-                    val error = throwable.message ?: throwable.javaClass.simpleName
-                    taskStore.update(details.summary.publishedFileId) {
-                        it.copy(
-                            status = WorkshopDownloadTaskStatus.Failed,
-                            message = "下载失败：$error",
-                            errorClass = throwable.javaClass.name,
-                            errorMessage = error,
-                            errorStackTrace = throwable.stackTraceToString(),
-                            updatedAtMillis = System.currentTimeMillis(),
-                            preservePartialDownload = true,
+                    if (throwable.hasWorkshopSteamRateLimitCause()) {
+                        val rateLimitStore = WorkshopSteamRateLimitStore(applicationContext)
+                        rateLimitStore.activate()
+                        pauseForSteamRateLimit(
+                            taskStore = taskStore,
+                            metadataStore = metadataStore,
+                            details = details,
+                            message = rateLimitStore.cooldownMessage(),
+                            receiver = receiver,
+                            existingRecord = existingRecord,
                         )
+                    } else {
+                        val error = throwable.message ?: throwable.javaClass.simpleName
+                        taskStore.update(details.summary.publishedFileId) {
+                            it.copy(
+                                status = WorkshopDownloadTaskStatus.Failed,
+                                message = "下载失败：$error",
+                                errorClass = throwable.javaClass.name,
+                                errorMessage = error,
+                                errorStackTrace = throwable.stackTraceToString(),
+                                updatedAtMillis = System.currentTimeMillis(),
+                                preservePartialDownload = true,
+                            )
+                        }
+                        taskStore.appendLog(details.summary.publishedFileId, "下载失败：$error")
+                        taskStore.appendLog(details.summary.publishedFileId, throwable.stackTraceToString())
+                        restoreExistingRecordOrUpdateState(
+                            metadataStore = metadataStore,
+                            existingRecord = existingRecord,
+                            details = details,
+                            fallbackState = WorkshopModCardState.DownloadFailed,
+                            fallbackStatusText = "下载失败：${throwable.message ?: throwable.javaClass.simpleName}",
+                        )
+                        receiver?.send(RESULT_FAILURE, errorBundle(throwable))
                     }
-                    taskStore.appendLog(details.summary.publishedFileId, "下载失败：$error")
-                    taskStore.appendLog(details.summary.publishedFileId, throwable.stackTraceToString())
-                    restoreExistingRecordOrUpdateState(
-                        metadataStore = metadataStore,
-                        existingRecord = existingRecord,
-                        details = details,
-                        fallbackState = WorkshopModCardState.DownloadFailed,
-                        fallbackStatusText = "下载失败：${throwable.message ?: throwable.javaClass.simpleName}",
-                    )
-                    receiver?.send(RESULT_FAILURE, errorBundle(throwable))
                 }
             }
         } finally {
@@ -813,6 +842,42 @@ class WorkshopDownloadProcessService : Service() {
         receiver?.send(RESULT_CANCELLED, Bundle().apply {
             putString(EXTRA_MESSAGE, message)
             putString(EXTRA_TASK_STATUS, "Cancelled")
+        })
+    }
+
+    private fun pauseForSteamRateLimit(
+        taskStore: WorkshopDownloadTaskStore,
+        metadataStore: WorkshopMetadataStore,
+        details: WorkshopItemDetails,
+        message: String,
+        receiver: ResultReceiver?,
+        existingRecord: WorkshopInstalledModRecord? = metadataStore.findByPublishedFileId(
+            appId = details.summary.appId,
+            publishedFileId = details.summary.publishedFileId,
+        )?.restoreCandidateForInterruptedUpdate(),
+    ) {
+        taskStore.update(details.summary.publishedFileId) {
+            it.copy(
+                status = WorkshopDownloadTaskStatus.Paused,
+                message = message,
+                errorClass = WorkshopSteamRateLimitedException::class.java.name,
+                errorMessage = message,
+                errorStackTrace = "",
+                updatedAtMillis = System.currentTimeMillis(),
+                preservePartialDownload = true,
+            )
+        }
+        taskStore.appendLog(details.summary.publishedFileId, message)
+        restoreExistingRecordOrUpdateState(
+            metadataStore = metadataStore,
+            existingRecord = existingRecord,
+            details = details,
+            fallbackState = WorkshopModCardState.DownloadPaused,
+            fallbackStatusText = message,
+        )
+        receiver?.send(RESULT_PAUSED, Bundle().apply {
+            putString(EXTRA_MESSAGE, message)
+            putString(EXTRA_TASK_STATUS, "Paused")
         })
     }
 
@@ -867,6 +932,15 @@ class WorkshopDownloadProcessService : Service() {
     }
 
     private fun WorkshopItemDetails.hasDownloadSource(): Boolean = !fileUrl.isNullOrBlank() || hcontentFile != null
+
+    private fun Throwable.hasWorkshopSteamRateLimitCause(): Boolean {
+        var current: Throwable? = this
+        while (current != null) {
+            if (current is WorkshopSteamRateLimitedException) return true
+            current = current.cause
+        }
+        return false
+    }
 
     private fun sendProgress(
         receiver: ResultReceiver?,

@@ -16,7 +16,7 @@ internal object SteamCloudDiagnosticsStore {
     private const val FAILURE_HISTORY_DIR_NAME = "failures"
     private const val LOGIN_HISTORY_DIR_NAME = "login-history"
     private const val FAILURE_HISTORY_LIMIT = 10
-    private const val LOGIN_HISTORY_LIMIT = 10
+    private const val LOGIN_HISTORY_LIMIT = 5
 
     @JvmStatic
     fun summaryFile(context: Context): File = File(SteamCloudManifestStore.outputDir(context), SUMMARY_FILE_NAME)
@@ -195,7 +195,7 @@ internal object SteamCloudDiagnosticsStore {
         if (outcome.equals("FAILED", ignoreCase = true)) {
             runCatching { writeFailureHistory(context, operation, startedAtMs, completedAtMs, text) }
         }
-        if (operation == "credentials_login") {
+        if (operation == "credentials_login" && outcome.equals("FAILED", ignoreCase = true)) {
             runCatching { writeLoginHistory(context, startedAtMs, completedAtMs, outcome, text) }
         }
     }
@@ -238,9 +238,24 @@ internal object SteamCloudDiagnosticsStore {
             throw IOException("Failed to create Steam Cloud login history directory: ${dir.absolutePath}")
         }
         val normalizedOutcome = outcome.trim().lowercase(Locale.US).ifBlank { "unknown" }
-        val fileName = "login-$normalizedOutcome-${formatFileTimestamp(startedAtMs)}-${formatFileTimestamp(completedAtMs)}.txt"
-        File(dir, fileName).writeText(text, Charsets.UTF_8)
+        val baseFileName = "login-$normalizedOutcome-${formatFileTimestamp(startedAtMs)}-${formatFileTimestamp(completedAtMs)}.txt"
+        allocateLoginHistoryFile(dir, baseFileName).writeText(text, Charsets.UTF_8)
         pruneLoginHistory(dir)
+    }
+
+    private fun allocateLoginHistoryFile(dir: File, baseFileName: String): File {
+        val plain = File(dir, baseFileName)
+        if (plain.createNewFile()) {
+            return plain
+        }
+        val stem = baseFileName.removeSuffix(".txt")
+        for (sequence in 1..99) {
+            val candidate = File(dir, "$stem-$sequence.txt")
+            if (candidate.createNewFile()) {
+                return candidate
+            }
+        }
+        throw IOException("Failed to allocate Steam login history slot in ${dir.absolutePath}")
     }
 
     private fun pruneFailureHistory(dir: File) {

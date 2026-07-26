@@ -12,14 +12,8 @@ import java.util.Locale
 internal object EasyTierDiagnosticsStore {
     private const val SUMMARY_FILE_NAME = "last-session-summary.txt"
     private const val EVENT_HISTORY_DIR_NAME = "events"
-    private const val EVENT_HISTORY_LIMIT = 20
-    private val HISTORY_STATES = setOf(
-        EasyTierConnectionStatus.CONNECTED,
-        EasyTierConnectionStatus.RECONNECTING,
-        EasyTierConnectionStatus.DISCONNECTED,
-        EasyTierConnectionStatus.FAILED,
-        EasyTierConnectionStatus.PERMISSION_REQUIRED,
-    )
+    private const val EVENT_HISTORY_LIMIT = 5
+    private val HISTORY_STATES = setOf(EasyTierConnectionStatus.FAILED)
 
     @JvmStatic
     fun summaryFile(context: Context): File = File(EasyTierStateStore.outputDir(context), SUMMARY_FILE_NAME)
@@ -114,15 +108,31 @@ internal object EasyTierDiagnosticsStore {
         if (!dir.isDirectory && !dir.mkdirs()) {
             throw IOException("Failed to create EasyTier event history directory: ${dir.absolutePath}")
         }
-        val fileName = buildString {
+        val baseFileName = buildString {
             append("event-")
             append(snapshot.status.name.lowercase(Locale.US))
             append("-")
             append(formatFileTimestamp(snapshot.lastUpdatedAtMs.takeIf { it > 0L } ?: System.currentTimeMillis()))
             append(".txt")
         }
-        EasyTierAtomicFileStore.writeText(File(dir, fileName), text, Charsets.UTF_8)
+        val target = allocateHistoryFile(dir, baseFileName)
+        EasyTierAtomicFileStore.writeText(target, text, Charsets.UTF_8)
         pruneHistory(dir)
+    }
+
+    private fun allocateHistoryFile(dir: File, baseFileName: String): File {
+        val plain = File(dir, baseFileName)
+        if (plain.createNewFile()) {
+            return plain
+        }
+        val stem = baseFileName.removeSuffix(".txt")
+        for (sequence in 1..99) {
+            val candidate = File(dir, "$stem-$sequence.txt")
+            if (candidate.createNewFile()) {
+                return candidate
+            }
+        }
+        throw IOException("Failed to allocate EasyTier event history slot in ${dir.absolutePath}")
     }
 
     private fun pruneHistory(dir: File) {

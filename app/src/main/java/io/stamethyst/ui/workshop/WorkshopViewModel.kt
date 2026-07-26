@@ -18,6 +18,7 @@ import io.stamethyst.backend.workshop.BaiduAiTextTranslationClient
 import io.stamethyst.backend.workshop.BaiduTranslationApiException
 import io.stamethyst.backend.workshop.BaiduTranslationCredentials
 import io.stamethyst.backend.workshop.BaiduTranslationCredentialsRepository
+import io.stamethyst.backend.workshop.WorkshopBrowseFailureLogStore
 import io.stamethyst.backend.workshop.WorkshopBrowseQuery
 import io.stamethyst.backend.workshop.WorkshopBrowseSort
 import io.stamethyst.backend.workshop.WorkshopBrowseTimeFilter
@@ -333,6 +334,14 @@ internal class WorkshopViewModel : ViewModel() {
             "loadBrowsePage start gen=$requestGeneration page=$page append=$append sort=$activeSort time=$activeTimeFilter category=$activeCategory queryLen=${queryText.length}",
         )
         viewModelScope.launch {
+            val browseQuery = WorkshopBrowseQuery(
+                searchText = queryText,
+                sort = activeSort,
+                timeFilter = activeTimeFilter,
+                category = activeCategory,
+                page = page,
+                pageSize = WorkshopUiState.PAGE_SIZE,
+            )
             uiState = if (append) {
                 uiState.copy(loadingMore = true, errorMessage = null)
             } else {
@@ -348,16 +357,7 @@ internal class WorkshopViewModel : ViewModel() {
             }
             runCatching {
                 withContext(Dispatchers.IO) {
-                    currentService.browse(
-                        WorkshopBrowseQuery(
-                            searchText = queryText,
-                            sort = activeSort,
-                            timeFilter = activeTimeFilter,
-                            category = activeCategory,
-                            page = page,
-                            pageSize = WorkshopUiState.PAGE_SIZE,
-                        )
-                    )
+                    currentService.browse(browseQuery)
                 }
             }.onSuccess { result ->
                 if (activeListMode != WorkshopListMode.Browse || requestGeneration != browseRequestGeneration) return@onSuccess
@@ -376,6 +376,14 @@ internal class WorkshopViewModel : ViewModel() {
                     "loadBrowsePage success gen=$requestGeneration page=$page items=${merged.size} hasNext=${result.hasNextPage} elapsedMs=${SystemClock.elapsedRealtime() - browseStartedAtMs}",
                 )
             }.onFailure { error ->
+                WorkshopBrowseFailureLogStore.writeFailure(
+                    context = context,
+                    query = browseQuery,
+                    page = page,
+                    append = append,
+                    elapsedMs = SystemClock.elapsedRealtime() - browseStartedAtMs,
+                    error = error,
+                )
                 if (activeListMode != WorkshopListMode.Browse || requestGeneration != browseRequestGeneration) return@onFailure
                 uiState = uiState.copy(
                     browseLoading = false,

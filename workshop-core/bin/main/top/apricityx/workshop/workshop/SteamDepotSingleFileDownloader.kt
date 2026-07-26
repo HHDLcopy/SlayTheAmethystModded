@@ -5,9 +5,21 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.RandomAccessFile
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import java.util.zip.ZipInputStream
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import top.apricityx.workshop.steam.protocol.CdnServer
@@ -46,6 +58,7 @@ class SteamDepotSingleFileDownloader(
     private val directoryClient: SteamDirectoryClient,
     private val sessionFactory: () -> SteamCmSession,
     private val sessionConnector: suspend (SteamCmSession, List<CmServer>) -> SessionContext,
+    private val maxConcurrentChunks: Int = DEFAULT_MAX_CONCURRENT_CHUNKS,
 ) {
     suspend fun download(
         request: SteamDepotFileDownloadRequest,
@@ -172,8 +185,6 @@ class SteamDepotSingleFileDownloader(
 
         val chunks = manifestFile.chunks.sortedBy(ManifestChunk::offset)
         val totalBytes = manifestFile.size
-        var writtenBytes = 0L
-        var completedChunks = 0
         emitProgress(
             SteamDepotFileDownloadProgress(
                 writtenBytes = 0L,
@@ -183,33 +194,33 @@ class SteamDepotSingleFileDownloader(
             ),
         )
 
-        RandomAccessFile(request.outputFile, "rw").use { output ->
-            output.setLength(totalBytes)
-            for (chunk in chunks) {
-                waitIfPaused()
-                val processed = downloadChunkWithRetries(
-                    request = request,
-                    contentServers = contentServers,
-                    proxyServer = proxyServer,
-                    contentClient = contentClient,
-                    cdnTransport = cdnTransport,
-                    cdnAuthTokenCache = cdnAuthTokenCache,
-                    chunk = chunk,
-                    waitIfPaused = waitIfPaused,
-                )
-                output.seek(chunk.offset)
-                output.write(processed)
-                writtenBytes += processed.size.toLong()
-                completedChunks += 1
-                emitProgress(
-                    SteamDepotFileDownloadProgress(
-                        writtenBytes = writtenBytes,
-                        totalBytes = totalBytes,
-                        completedChunks = completedChunks,
-                        totalChunks = chunks.size,
-                    ),
-                )
-            }
+        val stageDir = createChunkStageDir(
+            parent = parent ?: request.outputFile.absoluteFile.parentFile ?: File("."),
+            outputName = request.outputFile.name,
+        )
+        try {
+            cacheFileChunks(
+                request = request,
+                manifestFile = manifestFile,
+                chunks = chunks,
+                stageDir = stageDir,
+                contentServers = contentServers,
+                proxyServer = proxyServer,
+                contentClient = contentClient,
+                cdnTransport = cdnTransport,
+                cdnAuthTokenCache = cdnAuthTokenCache,
+                emitProgress = emitProgress,
+                waitIfPaused = waitIfPaused,
+            )
+            assembleFileChunks(
+                outputFile = request.outputFile,
+                manifestFile = manifestFile,
+                chunks = chunks,
+                stageDir = stageDir,
+                waitIfPaused = waitIfPaused,
+            )
+        } finally {
+            stageDir.deleteRecursively()
         }
 
         when (val validation = WorkshopFileIntegrityVerifier.assess(request.outputFile, manifestFile)) {
@@ -219,6 +230,86 @@ class SteamDepotSingleFileDownloader(
                 "Downloaded file checksum mismatch for ${manifestFile.path} " +
                     "(expected=${validation.expectedShaHex} actual=${validation.actualShaHex})",
             )
+        }
+    }
+
+    private suspend fun cacheFileChunks(
+        request: SteamDepotFileDownloadRequest,
+        manifestFile: ManifestFile,
+        chunks: List<ManifestChunk>,
+        stageDir: File,
+        contentServers: List<CdnServer>,
+        proxyServer: CdnServer?,
+        contentClient: SteamContentClient,
+        cdnTransport: SteamCdnTransport,
+        cdnAuthTokenCache: ConcurrentHashMap<String, String>,
+        emitProgress: suspend (SteamDepotFileDownloadProgress) -> Unit,
+        waitIfPaused: suspend () -> Unit,
+    ) = coroutineScope {
+        val semaphore = Semaphore(maxConcurrentChunks.coerceAtLeast(1))
+        val writtenBytes = AtomicLong(0L)
+        val completedChunks = AtomicInteger(0)
+        val emitMutex = Mutex()
+
+        chunks.mapIndexed { index, chunk ->
+            async(Dispatchers.IO) {
+                semaphore.withPermit {
+                    currentCoroutineContext().ensureActive()
+                    waitIfPaused()
+                    val processed = downloadChunkWithRetries(
+                        request = request,
+                        contentServers = contentServers,
+                        proxyServer = proxyServer,
+                        contentClient = contentClient,
+                        cdnTransport = cdnTransport,
+                        cdnAuthTokenCache = cdnAuthTokenCache,
+                        chunk = chunk,
+                        waitIfPaused = waitIfPaused,
+                    )
+                    writeAtomically(chunkStageFile(stageDir, index, chunk), processed)
+                    val downloaded = writtenBytes.addAndGet(processed.size.toLong())
+                    val completed = completedChunks.incrementAndGet()
+                    emitMutex.withLock {
+                        emitProgress(
+                            SteamDepotFileDownloadProgress(
+                                writtenBytes = downloaded,
+                                totalBytes = manifestFile.size,
+                                completedChunks = completed,
+                                totalChunks = chunks.size,
+                            ),
+                        )
+                    }
+                }
+            }
+        }.awaitAll()
+    }
+
+    private suspend fun assembleFileChunks(
+        outputFile: File,
+        manifestFile: ManifestFile,
+        chunks: List<ManifestChunk>,
+        stageDir: File,
+        waitIfPaused: suspend () -> Unit,
+    ) {
+        waitIfPaused()
+        RandomAccessFile(outputFile, "rw").use { output ->
+            output.setLength(manifestFile.size)
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            chunks.forEachIndexed { index, chunk ->
+                currentCoroutineContext().ensureActive()
+                waitIfPaused()
+                output.seek(chunk.offset)
+                chunkStageFile(stageDir, index, chunk).inputStream().buffered().use { input ->
+                    while (true) {
+                        currentCoroutineContext().ensureActive()
+                        val read = input.read(buffer)
+                        if (read == -1) {
+                            break
+                        }
+                        output.write(buffer, 0, read)
+                    }
+                }
+            }
         }
     }
 
@@ -250,6 +341,9 @@ class SteamDepotSingleFileDownloader(
                     )
                     return ChunkProcessor.process(raw, chunk, request.depotKey)
                 } catch (error: Throwable) {
+                    if (error is CancellationException || error is InterruptedException) {
+                        throw error
+                    }
                     lastError = error
                 }
             }
@@ -304,6 +398,29 @@ class SteamDepotSingleFileDownloader(
         return List(servers.size) { index -> servers[(index + offset) % servers.size] }
     }
 
+    private fun createChunkStageDir(parent: File, outputName: String): File {
+        val stageRoot = File.createTempFile("$outputName.chunks-", ".tmp", parent)
+        if (!stageRoot.delete() || !stageRoot.mkdirs()) {
+            throw WorkshopDownloadException("Failed to create chunk staging directory: ${stageRoot.absolutePath}")
+        }
+        return stageRoot
+    }
+
+    private fun chunkStageFile(
+        stageDir: File,
+        index: Int,
+        chunk: ManifestChunk,
+    ): File = File(stageDir, "$index-${chunk.idHex}.chunk")
+
+    private fun writeAtomically(target: File, bytes: ByteArray) {
+        val temp = File(target.parentFile, "${target.name}.tmp")
+        temp.writeBytes(bytes)
+        if (!temp.renameTo(target)) {
+            temp.copyTo(target, overwrite = true)
+            temp.delete()
+        }
+    }
+
     private fun ManifestFile.matchesTargetFileName(fileName: String): Boolean {
         val normalizedPath = path.replace('\\', '/')
         val normalizedFileName = fileName.trim().replace('\\', '/')
@@ -312,6 +429,7 @@ class SteamDepotSingleFileDownloader(
     }
 
     private companion object {
+        private const val DEFAULT_MAX_CONCURRENT_CHUNKS = 4
         private const val MAX_CHUNK_DOWNLOAD_ATTEMPTS = 3
         private const val CHUNK_RETRY_DELAY_MILLIS = 750L
     }

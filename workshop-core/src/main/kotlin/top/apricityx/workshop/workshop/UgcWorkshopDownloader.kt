@@ -5,6 +5,7 @@ import top.apricityx.workshop.steam.protocol.OkHttpSteamCmSession
 import top.apricityx.workshop.steam.protocol.SteamCmSession
 import top.apricityx.workshop.steam.protocol.SteamContentClient
 import top.apricityx.workshop.steam.protocol.SteamDirectoryClient
+import top.apricityx.workshop.steam.protocol.SteamAuthenticationException
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -51,7 +52,10 @@ class UgcWorkshopDownloader(
             connectResult
                 .onSuccess { log("Connected to Steam CM cell=${it.cellId} steamId=${it.steamId}") }
                 .onFailure {
-                    if (allowPublicCdnFallbackOnSessionFailure) {
+                    if (it.isSteamRateLimited()) {
+                        log("Steam CM login was rate limited; stopping before CDN fallback")
+                        throw WorkshopSteamRateLimitedException(it)
+                    } else if (allowPublicCdnFallbackOnSessionFailure) {
                         log("Steam CM connection failed, continuing with public CDN flow: ${it.message}")
                     } else {
                         throw it
@@ -175,6 +179,17 @@ class UgcWorkshopDownloader(
                 log = log,
             )
         }
+    }
+
+    private fun Throwable.isSteamRateLimited(): Boolean {
+        var current: Throwable? = this
+        while (current != null) {
+            if (current is SteamAuthenticationException && current.resultCode == STEAM_RESULT_RATE_LIMIT_EXCEEDED) {
+                return true
+            }
+            current = current.cause
+        }
+        return false
     }
 
     private suspend fun downloadManifest(
@@ -536,6 +551,8 @@ class UgcWorkshopDownloader(
         private const val CHUNK_RETRY_DELAY_MILLIS = 750L
     }
 }
+
+private const val STEAM_RESULT_RATE_LIMIT_EXCEEDED = 84
 
 private fun Throwable.fullMessage(): String = buildString {
     append(this@fullMessage::class.simpleName ?: "Error")

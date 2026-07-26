@@ -43,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -289,6 +290,7 @@ internal fun ModCard(
             }
             .padding(horizontal = 8.dp, vertical = 3.dp)
             .onGloballyPositioned { cardCoordinates = it }
+            .shadow(elevation = 2.dp, shape = cardShape, clip = false)
             .clip(cardShape)
             .border(
                 if (batchSelected || mod.newlyImported) 2.dp else 1.dp,
@@ -305,11 +307,11 @@ internal fun ModCard(
             )
             .background(
                 if (batchSelected) {
-                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.82f)
+                    MaterialTheme.colorScheme.primaryContainer
                 } else if (mod.newlyImported) {
-                    MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.7f)
+                    MaterialTheme.colorScheme.tertiaryContainer
                 } else if (mod.enabled) {
-                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+                    MaterialTheme.colorScheme.primaryContainer
                 } else {
                     MaterialTheme.colorScheme.surfaceContainer
                 },

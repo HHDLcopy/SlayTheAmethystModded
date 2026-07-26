@@ -63,3 +63,9 @@ sealed interface ResolvedWorkshopItem {
 }
 
 class WorkshopDownloadException(message: String, cause: Throwable? = null) : Exception(message, cause)
+
+/** Steam temporarily rejected the CM login because the client is rate limited. */
+class WorkshopSteamRateLimitedException(cause: Throwable? = null) : Exception(
+    "Steam temporarily rate limited workshop downloads",
+    cause,
+)

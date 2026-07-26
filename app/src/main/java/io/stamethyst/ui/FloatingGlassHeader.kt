@@ -27,7 +27,7 @@ fun FloatingGlassHeader(
     onHeightChanged: (Int) -> Unit = {},
     shape: Shape = RoundedCornerShape(24.dp),
     contentPadding: PaddingValues = PaddingValues(16.dp),
-    shadowElevation: Dp = 0.dp,
+    shadowElevation: Dp = 6.dp,
     contentSpacing: Dp = 14.dp,
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -56,7 +56,7 @@ fun CollapsibleFloatingGlassHeader(
     onHeightChanged: (Int) -> Unit = {},
     shape: Shape = RoundedCornerShape(24.dp),
     contentPadding: PaddingValues = PaddingValues(16.dp),
-    shadowElevation: Dp = 0.dp,
+    shadowElevation: Dp = 6.dp,
     expandedContentTopPadding: Dp = 14.dp,
     pinnedContent: @Composable ColumnScope.() -> Unit,
     expandedContent: (@Composable ColumnScope.() -> Unit)? = null,

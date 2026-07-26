@@ -506,6 +506,7 @@ fun LauncherContent(
                             settingsViewModel = settingsViewModel,
                             workshopViewModel = workshopViewModel,
                             feedbackUnreadCount = feedbackInboxState.unreadIssueCount,
+                            feedbackActiveIssueCount = feedbackInboxState.subscriptions.count { !it.isClosed },
                             feedbackSubmissionNotice = pendingFeedbackNotice,
                             onDismissFeedbackSubmissionNotice = {
                                 pendingFeedbackNotice = null
@@ -548,10 +549,18 @@ fun LauncherContent(
                             },
                             backStack = navigator.backStack,
                             transitionSpec = {
-                                horizontalPageTransition(forward = forwardPageTransition)
+                                if (currentRoute == Route.FeedbackSubscriptions) {
+                                    leftPageTransition()
+                                } else {
+                                    horizontalPageTransition(forward = forwardPageTransition)
+                                }
                             },
                             popTransitionSpec = {
-                                horizontalPageTransition(forward = false)
+                                if (currentRoute == Route.FeedbackSubscriptions) {
+                                    leftPageTransition()
+                                } else {
+                                    horizontalPageTransition(forward = false)
+                                }
                             },
                             entryProvider = entryProvider {
                         entry<Route.QuickStart> {
@@ -647,6 +656,7 @@ fun LauncherContent(
                                     onOpenWorkshopDetails = ::openInstalledWorkshopDetails,
                                     updateNotice = updateNotice,
                                     feedbackUnreadCount = feedbackInboxState.unreadIssueCount,
+                                    feedbackActiveIssueCount = feedbackInboxState.subscriptions.count { !it.isClosed },
                                     onOpenFeedbackUpdates = { openFeedbackUpdates() },
                                     onOpenFeedbackSubscriptions = { navigator.push(Route.FeedbackSubscriptions) },
                                     onUpdateNoticeClick = settingsViewModel::showUpdatePrompt,
@@ -1189,6 +1199,7 @@ private fun LauncherDockPager(
     settingsViewModel: SettingsScreenViewModel,
     workshopViewModel: WorkshopViewModel,
     feedbackUnreadCount: Int,
+    feedbackActiveIssueCount: Int,
     feedbackSubmissionNotice: FeedbackSubmissionNotice?,
     onDismissFeedbackSubmissionNotice: () -> Unit,
     onOpenFeedback: () -> Unit,
@@ -1257,6 +1268,7 @@ private fun LauncherDockPager(
                         updateNotice = updateNotice,
                         onOpenFeedback = onOpenFeedback,
                         feedbackUnreadCount = feedbackUnreadCount,
+                        feedbackActiveIssueCount = feedbackActiveIssueCount,
                         onOpenFeedbackUpdates = onOpenFeedbackUpdates,
                         onOpenFeedbackSubscriptions = onOpenFeedbackSubscriptions,
                         onUpdateNoticeClick = settingsViewModel::showUpdatePrompt,
@@ -1445,6 +1457,18 @@ private fun horizontalPageTransition(forward: Boolean): ContentTransform {
         slideOutHorizontally(
             animationSpec = tween(durationMillis = PAGE_TRANSITION_DURATION_MS),
             targetOffsetX = { fullWidth -> -fullWidth * direction }
+        )
+    )
+}
+
+private fun leftPageTransition(): ContentTransform {
+    return slideInHorizontally(
+        animationSpec = tween(durationMillis = PAGE_TRANSITION_DURATION_MS),
+        initialOffsetX = { fullWidth -> -fullWidth }
+    ).togetherWith(
+        slideOutHorizontally(
+            animationSpec = tween(durationMillis = PAGE_TRANSITION_DURATION_MS),
+            targetOffsetX = { fullWidth -> -fullWidth }
         )
     )
 }

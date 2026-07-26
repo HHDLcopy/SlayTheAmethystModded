@@ -1,10 +1,17 @@
 package io.stamethyst.backend.workshop
 
+import android.content.Context
 import android.os.SystemClock
 import android.util.Log
+import io.stamethyst.backend.steamcloud.SteamCloudAuthStore
 import java.security.SecureRandom
+import java.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
@@ -47,9 +54,12 @@ enum class SteamLanguagePreference(
 }
 
 internal class WorkshopSteamWebSession(
+    context: Context,
     private val baseClient: OkHttpClient,
     private val identity: WorkshopSteamClientIdentity,
 ) {
+    private val appContext = context.applicationContext
+
     val cookieJar: SteamWebSessionCookieJar = SteamWebSessionCookieJar(
         projectedCookiesProvider = ::projectedCookiesFor,
         sessionScopeProvider = { currentScope },
@@ -80,22 +90,53 @@ internal class WorkshopSteamWebSession(
             return
         }
         val scope = "${account.steamId}:${account.refreshToken.hashCode()}"
+        val nowMs = System.currentTimeMillis()
         synchronized(lock) {
-            if (primedScope == scope && webLoginContext != null) {
+            if (
+                primedScope == scope &&
+                webLoginContext?.isUsableAt(nowMs) == true
+            ) {
                 Log.i(PERF_TAG, "ensurePrimed skip alreadyPrimed elapsedMs=${SystemClock.elapsedRealtime() - primeStartedAtMs}")
                 return
             }
         }
 
         val tokenStartedAtMs = SystemClock.elapsedRealtime()
-        val accessToken = withContext(Dispatchers.IO) {
-            SteamAuthenticationClient(
+        val cachedToken = SteamCloudAuthStore.readCachedWebAccessToken(
+            context = appContext,
+            steamId = account.steamId,
+            refreshToken = account.refreshToken,
+            minimumRemainingLifetimeMs = STEAM_WEB_ACCESS_TOKEN_REFRESH_SKEW_MS,
+        )
+        val webAccessToken = cachedToken?.toWorkshopWebAccessToken() ?: withContext(Dispatchers.IO) {
+            val accessToken = SteamAuthenticationClient(
                 directoryClient = SteamDirectoryClient(baseClient),
                 sessionFactory = { identity.createSession(baseClient) },
-        ).generateAccessTokenForApp(
-            account = account,
-            allowRenewal = false,
-        ).accessToken
+            ).generateAccessTokenForApp(
+                account = account,
+                allowRenewal = false,
+            ).accessToken
+            val jwtExpirationMs = accessToken.expirationMillisOrNull()
+            SteamWebAccessToken(
+                value = accessToken,
+                expiresAtMs = jwtExpirationMs
+                    ?: (System.currentTimeMillis() + STEAM_WEB_ACCESS_TOKEN_FALLBACK_LIFETIME_MS),
+                wasCached = false,
+                hasJwtExpiration = jwtExpirationMs != null,
+            )
+        }
+        if (
+            !webAccessToken.wasCached &&
+            webAccessToken.hasJwtExpiration &&
+            webAccessToken.expiresAtMs > System.currentTimeMillis() + STEAM_WEB_ACCESS_TOKEN_REFRESH_SKEW_MS
+        ) {
+            SteamCloudAuthStore.cacheWebAccessToken(
+                context = appContext,
+                steamId = account.steamId,
+                refreshToken = account.refreshToken,
+                accessToken = webAccessToken.value,
+                expiresAtMs = webAccessToken.expiresAtMs,
+            )
         }
         val tokenMs = SystemClock.elapsedRealtime() - tokenStartedAtMs
 
@@ -103,8 +144,9 @@ internal class WorkshopSteamWebSession(
             currentScope = scope
             webLoginContext = SteamWebLoginContext(
                 steamId = account.steamId,
-                accessToken = accessToken,
+                accessToken = webAccessToken.value,
                 sessionId = generateSteamWebSessionId(),
+                accessTokenExpiresAtMs = webAccessToken.expiresAtMs,
             )
         }
 
@@ -127,7 +169,7 @@ internal class WorkshopSteamWebSession(
         }
         Log.i(
             PERF_TAG,
-            "ensurePrimed done tokenMs=$tokenMs totalMs=${SystemClock.elapsedRealtime() - primeStartedAtMs}",
+            "ensurePrimed done tokenSource=${if (webAccessToken.wasCached) "cache" else "cm"} tokenMs=$tokenMs totalMs=${SystemClock.elapsedRealtime() - primeStartedAtMs}",
         )
     }
 
@@ -265,7 +307,41 @@ private data class SteamWebLoginContext(
     val steamId: Long,
     val accessToken: String,
     val sessionId: String,
+    val accessTokenExpiresAtMs: Long,
 )
+
+private data class SteamWebAccessToken(
+    val value: String,
+    val expiresAtMs: Long,
+    val wasCached: Boolean,
+    val hasJwtExpiration: Boolean,
+)
+
+private fun SteamCloudAuthStore.CachedWebAccessToken.toWorkshopWebAccessToken(): SteamWebAccessToken =
+    SteamWebAccessToken(
+        value = accessToken,
+        expiresAtMs = expiresAtMs,
+        wasCached = true,
+        hasJwtExpiration = true,
+    )
+
+private fun SteamWebLoginContext.isUsableAt(nowMs: Long): Boolean =
+    accessTokenExpiresAtMs > nowMs + STEAM_WEB_ACCESS_TOKEN_REFRESH_SKEW_MS
+
+internal fun String.expirationMillisOrNull(): Long? {
+    val payload = split('.').getOrNull(1) ?: return null
+    val decodedPayload = runCatching {
+        String(Base64.getUrlDecoder().decode(payload), Charsets.UTF_8)
+    }.getOrNull() ?: return null
+    val expirationSeconds = runCatching {
+        Json.parseToJsonElement(decodedPayload)
+            .jsonObject["exp"]
+            ?.jsonPrimitive
+            ?.longOrNull
+    }.getOrNull() ?: return null
+    if (expirationSeconds <= 0L || expirationSeconds > Long.MAX_VALUE / 1_000L) return null
+    return expirationSeconds * 1_000L
+}
 
 internal fun String.isSteamDomain(): Boolean {
     val normalizedHost = lowercase()
@@ -289,6 +365,8 @@ private fun generateSteamWebSessionId(): String {
 
 private val steamWebSessionRandom = SecureRandom()
 private const val PERF_TAG = "WorkshopPerf"
+private const val STEAM_WEB_ACCESS_TOKEN_REFRESH_SKEW_MS = 5 * 60 * 1_000L
+private const val STEAM_WEB_ACCESS_TOKEN_FALLBACK_LIFETIME_MS = 45 * 60 * 1_000L
 private const val STEAM_WEB_SESSION_USER_AGENT =
     "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Mobile Safari/537.36"
 private val HEX_CHARS = charArrayOf('0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f')

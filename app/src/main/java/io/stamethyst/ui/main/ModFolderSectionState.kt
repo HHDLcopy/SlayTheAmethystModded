@@ -14,6 +14,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.unit.IntSize
 import io.stamethyst.model.ModItemUi
+import io.stamethyst.model.WorkshopModState
 
 internal data class ModDragOverlayAnchor(
     val pointerWindow: Offset,
@@ -164,4 +165,8 @@ internal fun buildFolderUiModels(
     }
 }
 
-internal fun ModItemUi.canUseFolderSelection(): Boolean = installed
+internal fun ModItemUi.canUseFolderSelection(): Boolean =
+    canUseFolderOrganization()
+
+internal fun ModItemUi.canUseFolderOrganization(): Boolean =
+    installed || workshop?.state == WorkshopModState.TexturePackInstalled

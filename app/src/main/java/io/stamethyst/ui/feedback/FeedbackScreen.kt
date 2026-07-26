@@ -37,6 +37,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -54,12 +55,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.stamethyst.R
@@ -74,7 +73,10 @@ import io.stamethyst.navigation.currentNavigator
 import io.stamethyst.ui.Icons
 import io.stamethyst.ui.LoadingSkeletonBlock
 import io.stamethyst.ui.icon.ArrowBack
+import io.stamethyst.ui.icon.CheckCircle
 import io.stamethyst.ui.icon.Close
+import io.stamethyst.ui.icon.Pending
+import io.stamethyst.ui.icon.Refresh
 import io.stamethyst.ui.icon.Search
 import io.stamethyst.ui.rememberLoadingSkeletonStyle
 import java.text.SimpleDateFormat
@@ -462,6 +464,17 @@ private fun LauncherFeedbackSubscriptionsScreenContent(
                         Icon(
                             imageVector = Icons.ArrowBack,
                             contentDescription = stringResource(R.string.common_content_desc_back)
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(
+                        onClick = onRefreshSubscriptions,
+                        enabled = !uiState.busy && !inboxState.syncing
+                    ) {
+                        Icon(
+                            imageVector = Icons.Refresh,
+                            contentDescription = stringResource(R.string.feedback_refresh_now)
                         )
                     }
                 }
@@ -899,21 +912,6 @@ private fun FeedbackSubscriptionsContent(
         }
 
         item {
-            FeedbackSectionCard(title = stringResource(R.string.feedback_section_intro_title)) {
-                Text(
-                    text = stringResource(R.string.feedback_subscriptions_intro),
-                    style = MaterialTheme.typography.bodySmall
-                )
-                OutlinedButton(
-                    onClick = onRefreshSubscriptions,
-                    enabled = !uiState.busy
-                ) {
-                    Text(stringResource(R.string.feedback_refresh_now))
-                }
-            }
-        }
-
-        item {
             FeedbackSectionCard(title = stringResource(R.string.feedback_subscriptions_list_title)) {
                 if (inboxState.subscriptions.isEmpty()) {
                     Text(
@@ -1176,19 +1174,23 @@ private fun FeedbackSubscriptionRow(
                 )
             }
         }
-        Text(
-            text = buildFeedbackIssueMetaText(
-                issueNumber = subscription.issueNumber,
-                isClosed = subscription.isClosed
-            ),
-            style = MaterialTheme.typography.bodySmall
+        FeedbackIssueMeta(
+            issueNumber = subscription.issueNumber,
+            isClosed = subscription.isClosed
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            TextButton(onClick = onOpenConversation) {
-                Text(stringResource(R.string.feedback_open_conversation))
-            }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             TextButton(onClick = onUnsubscribe) {
                 Text(stringResource(R.string.feedback_unsubscribe))
+            }
+            IconButton(onClick = onOpenConversation) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_chevron_right),
+                    contentDescription = stringResource(R.string.feedback_open_conversation)
+                )
             }
         }
     }
@@ -1224,17 +1226,11 @@ private fun FeedbackIssueBrowserCard(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = buildFeedbackIssueMetaText(
-                        issueNumber = issue.issueNumber,
-                        isClosed = issue.isClosed,
-                        updatedAtMs = issue.updatedAtMs,
-                        commentCount = issue.commentCount
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                FeedbackIssueMeta(
+                    issueNumber = issue.issueNumber,
+                    isClosed = issue.isClosed,
+                    updatedAtMs = issue.updatedAtMs,
+                    commentCount = issue.commentCount
                 )
             }
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1640,40 +1636,60 @@ private val FeedbackIssueResolvedColor = Color(0xFF2E7D32)
 private val FeedbackIssueInProgressColor = Color(0xFFC62828)
 
 @Composable
-private fun buildFeedbackIssueMetaText(
+private fun FeedbackIssueMeta(
     issueNumber: Long,
     isClosed: Boolean,
     updatedAtMs: Long? = null,
     commentCount: Int? = null
-) = buildAnnotatedString {
-    append("#")
-    append(issueNumber.toString())
-    append(" · ")
-    withStyle(
-        SpanStyle(
-            color = if (isClosed) {
-                FeedbackIssueResolvedColor
-            } else {
-                FeedbackIssueInProgressColor
-            }
-        )
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        append(
-            stringResource(
-                if (isClosed) {
-                    R.string.feedback_meta_resolved
-                } else {
-                    R.string.feedback_meta_in_progress
-                }
+        Surface(
+            shape = RoundedCornerShape(50),
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+        ) {
+            Text(
+                text = "#$issueNumber",
+                style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
             )
+        }
+        Icon(
+            imageVector = if (isClosed) Icons.CheckCircle else Icons.Pending,
+            contentDescription = null,
+            tint = if (isClosed) FeedbackIssueResolvedColor else FeedbackIssueInProgressColor,
+            modifier = Modifier.width(18.dp)
         )
-    }
-    updatedAtMs?.let {
-        append(" · ")
-        append(formatFeedbackIssueListTime(it))
-    }
-    commentCount?.let {
-        append(" · ")
-        append(stringResource(R.string.feedback_meta_comments_format, it))
+        Text(
+            text = stringResource(
+                if (isClosed) R.string.feedback_meta_resolved else R.string.feedback_meta_in_progress
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            color = if (isClosed) FeedbackIssueResolvedColor else FeedbackIssueInProgressColor
+        )
+        if (updatedAtMs != null || commentCount != null) {
+            Text(
+                text = buildString {
+                    updatedAtMs?.let {
+                        append(formatFeedbackIssueListTime(it))
+                    }
+                    commentCount?.let {
+                        if (isNotEmpty()) append(" · ")
+                        append(stringResource(R.string.feedback_meta_comments_format, it))
+                    }
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        } else {
+            Spacer(modifier = Modifier.weight(1f))
+        }
     }
 }

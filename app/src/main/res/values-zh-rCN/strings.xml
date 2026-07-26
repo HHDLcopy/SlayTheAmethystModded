@@ -1078,6 +1078,9 @@
     <string name="main_feedback_reply_card_title">反馈的议题有新回复</string>
     <string name="main_feedback_reply_card_single">你关注的反馈议题有新的回复</string>
     <string name="main_feedback_reply_card_multiple">你关注的 %1$d 个反馈议题有新的回复，打开列表查看进展。</string>
+    <string name="main_feedback_tracking_card_title">关注的议题仍在进行中</string>
+    <string name="main_feedback_tracking_card_single">关注的反馈议题尚未关闭，请耐心等待并保持关注！</string>
+    <string name="main_feedback_tracking_card_multiple">你关注的 %1$d 个反馈议题尚未关闭，可继续打开列表查看进展。</string>
     <string name="main_feedback_reply_card_action">查看</string>
     <string name="main_update_notice_card_title">检测到更新</string>
     <string name="main_update_notice_card_version">当前 %1$s · 最新 %2$s</string>
@@ -1385,7 +1388,9 @@
     <string name="settings_steam_cloud_challenge_device_code_retry_title">请输入新的 Steam Guard 2FA 验证码</string>
     <string name="settings_steam_cloud_challenge_email_code_title">输入 Steam 邮箱验证码</string>
     <string name="settings_steam_cloud_challenge_email_code_retry_title">请输入新的 Steam 邮箱验证码</string>
-    <string name="settings_steam_cloud_challenge_device_confirmation_desc">请在受信设备上确认这次 Steam 登录。Steam 接受确认后，本页会自动继续。如果提示异地登录，请选择 Steam 客户端登录，地址填加速器/VPN所在的地址，登录原因选择其他。如果异地登录/风险登录的验证过不去，请移步其他平台找教程。如果 Steam 未弹出登录请求，请使用加速器后，重新登录。</string>
+    <string name="settings_steam_cloud_challenge_device_confirmation_desc">请在受信设备上确认这次 Steam 登录。Steam 接受确认后，本页会自动继续。</string>
+    <string name="settings_steam_cloud_challenge_device_confirmation_remote_login_warning">如果提示异地登录，请选择 Steam 客户端登录，地址填加速器/VPN所在的地址，登录原因选择其他。如果异地登录/风险登录的验证过不去，请移步其他平台找教程。</string>
+    <string name="settings_steam_cloud_challenge_device_confirmation_accelerator_tip">如果 Steam 未弹出登录请求，请使用加速器后，重新登录。</string>
     <string name="settings_steam_cloud_challenge_device_code_desc">请输入当前 Steam Guard 2FA 验证码。</string>
     <string name="settings_steam_cloud_challenge_email_code_desc">请输入 Steam 发到邮箱的验证码。</string>
     <string name="settings_steam_cloud_challenge_email_code_desc_with_hint">请输入 Steam 发到 %1$s 的邮箱验证码。</string>
@@ -1746,7 +1751,7 @@
     <string name="feedback_issue_browser_loaded_all">已经加载完当前可见的议题列表。</string>
     <string name="feedback_updates_badge">有更新</string>
     <string name="feedback_open_conversation">打开对话</string>
-    <string name="feedback_unsubscribe">取消订阅</string>
+    <string name="feedback_unsubscribe">取消关注</string>
     <string name="feedback_followed">已关注</string>
     <string name="feedback_author_format">发起者：%1$s</string>
     <string name="feedback_follow">关注</string>
@@ -1830,7 +1835,7 @@
     <string name="feedback_issue_body_preview_reproduction_steps">复现步骤：</string>
     <string name="feedback_sync_completed">我关注的议题已同步。</string>
     <string name="feedback_sync_failed">同步失败：%1$s</string>
-    <string name="feedback_busy_unsubscribing">正在取消订阅…</string>
+    <string name="feedback_busy_unsubscribing">正在取消关注…</string>
     <string name="feedback_unsubscribed">已取消关注 Issue #%1$d。</string>
     <string name="feedback_filter_all">全部议题</string>
     <string name="feedback_filter_open">只看进行中</string>

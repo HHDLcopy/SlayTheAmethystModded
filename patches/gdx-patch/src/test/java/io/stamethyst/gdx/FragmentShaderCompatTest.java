@@ -146,6 +146,46 @@ public class FragmentShaderCompatTest {
     }
 
     @Test
+    public void normalizeShaders_downgradeModernSkyboxSyntaxForGles100() {
+        String vertex = "#version 330 core\n" +
+            "layout(location = 0) in vec3 a_position;\n" +
+            "out vec3 v_direction;\n" +
+            "void main() {\n" +
+            "    v_direction = a_position;\n" +
+            "    gl_Position = vec4(a_position, 1.0);\n" +
+            "}\n";
+        String fragment = "#version 330 core\n" +
+            "in vec3 v_direction;\n" +
+            "out vec4 fragColor;\n" +
+            "uniform samplerCube u_skybox;\n" +
+            "void main() {\n" +
+            "    fragColor = texture(u_skybox, v_direction);\n" +
+            "}\n";
+        String previousEnabled = System.getProperty(ENABLED_PROP);
+        String previousNativeDir = System.getProperty(NATIVE_DIR_PROP);
+        try {
+            System.setProperty(ENABLED_PROP, "true");
+            System.setProperty(NATIVE_DIR_PROP, "/tmp/native");
+
+            String normalizedVertex = FragmentShaderCompat.normalizeVertexShader(vertex);
+            String normalizedFragment = FragmentShaderCompat.normalizeFragmentShader(fragment);
+
+            assertTrue(normalizedVertex.startsWith("#version 100\n"));
+            assertTrue(normalizedVertex.contains("attribute vec3 a_position;"));
+            assertTrue(normalizedVertex.contains("varying vec3 v_direction;"));
+            assertFalse(normalizedVertex.contains("layout("));
+            assertTrue(normalizedFragment.startsWith("#version 100\n"));
+            assertTrue(normalizedFragment.contains("varying vec3 v_direction;"));
+            assertFalse(normalizedFragment.contains("out vec4 fragColor;"));
+            assertTrue(normalizedFragment.contains("gl_FragColor = textureCube(u_skybox"));
+            assertFalse(normalizedFragment.contains("texture2D(u_skybox"));
+        } finally {
+            restoreProperty(ENABLED_PROP, previousEnabled);
+            restoreProperty(NATIVE_DIR_PROP, previousNativeDir);
+        }
+    }
+
+    @Test
     public void normalizeFragmentShader_enablesDerivativeExtensionForLegacyShader() {
         String original = "void main() {\n    float width = fwidth(1.0);\n" +
             "    gl_FragColor = vec4(width);\n}\n";

@@ -8,8 +8,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import io.stamethyst.R
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -29,7 +31,9 @@ internal fun AppSearchBar(
     shape: Shape = SearchBarDefaults.dockedShape,
 ) {
     DockedSearchBar(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .shadow(elevation = 2.dp, shape = shape, clip = false),
         inputField = {
             SearchBarDefaults.InputField(
                 query = query,
@@ -51,6 +55,9 @@ internal fun AppSearchBar(
         expanded = expanded,
         onExpandedChange = onExpandedChange,
         shape = shape,
+        colors = SearchBarDefaults.colors(
+            containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh,
+        ),
     ) {
         SearchHistorySuggestions(
             history = history,

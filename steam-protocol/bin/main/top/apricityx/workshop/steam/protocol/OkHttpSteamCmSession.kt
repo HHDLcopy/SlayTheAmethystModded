@@ -46,6 +46,10 @@ class OkHttpSteamCmSession(
     private val machineName: String = DEFAULT_MACHINE_NAME,
     private val machineId: ByteArray = defaultSteamMachineId(),
 ) : SteamCmSession {
+    init {
+        activeSessions += this
+    }
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val pendingRequests = ConcurrentHashMap<Long, PendingRequest<out MessageLite>>()
     private val _currentSession = MutableStateFlow<SessionContext?>(null)
@@ -482,7 +486,20 @@ class OkHttpSteamCmSession(
     }
 
     override fun close() {
+        activeSessions -= this
         closeTransport()
+    }
+
+    companion object {
+        private val activeSessions = ConcurrentHashMap.newKeySet<OkHttpSteamCmSession>()
+        private const val OBFUSCATION_MASK = 0xBAADF00D.toInt()
+        private const val REQUEST_TIMEOUT_MS = DEFAULT_HTTP_TIMEOUT_SECONDS * 1_000L
+
+        fun closeAllActiveSessions() {
+            activeSessions.toList().forEach { session ->
+                runCatching { session.close() }
+            }
+        }
     }
 
     private fun closeTransport() {
@@ -644,10 +661,6 @@ class OkHttpSteamCmSession(
             (this[3].toInt() and 0xFF)
     }
 
-    private companion object {
-        private const val OBFUSCATION_MASK = 0xBAADF00D.toInt()
-        private const val REQUEST_TIMEOUT_MS = DEFAULT_HTTP_TIMEOUT_SECONDS * 1_000L
-    }
 }
 
 private fun <T> CompletableDeferred<T>.completeIfNeeded(value: T) {

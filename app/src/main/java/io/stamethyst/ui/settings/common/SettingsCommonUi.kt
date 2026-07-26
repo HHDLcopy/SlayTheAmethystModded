@@ -28,8 +28,6 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
@@ -52,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
@@ -313,6 +312,7 @@ internal fun SettingsActionListItem(
         ),
         modifier = Modifier
             .fillMaxWidth()
+            .shadow(2.dp, RoundedCornerShape(12.dp), clip = false)
             .clip(RoundedCornerShape(12.dp))
             .hapticClickable(
                 enabled = enabled,
@@ -353,10 +353,11 @@ internal fun SettingsDangerActionListItem(
             )
         },
         colors = ListItemDefaults.colors(
-            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.22f)
+            containerColor = MaterialTheme.colorScheme.errorContainer
         ),
         modifier = Modifier
             .fillMaxWidth()
+            .shadow(2.dp, RoundedCornerShape(12.dp), clip = false)
             .clip(RoundedCornerShape(12.dp))
             .hapticClickable(
                 enabled = enabled,
@@ -390,7 +391,10 @@ internal fun SettingsRadioOptionRow(
             enabled = enabled
         )
         Spacer(modifier = Modifier.width(8.dp))
-        Text(text = text)
+        Text(
+            text = text,
+            modifier = Modifier.weight(1f)
+        )
     }
 }
 
@@ -408,70 +412,67 @@ internal fun <T> SettingsDropdownField(
     optionDescription: (@Composable (T) -> String?)? = null,
     onOptionSelected: (T) -> Unit,
 ) {
-    var expanded by remember(label, options, enabled) { mutableStateOf(false) }
+    var showDialog by rememberSaveable(label) { mutableStateOf(false) }
 
-    Box(modifier = Modifier.fillMaxWidth()) {
-        ListItem(
-            headlineContent = {
-                Text(text = label)
-            },
-            supportingContent = {
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(
-                        text = valueText,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    supportingText?.let {
+    SettingsActionListItem(
+        title = label,
+        supportingText = valueText,
+        enabled = enabled,
+        onClick = { showDialog = true }
+    )
+    supportingText?.let {
+        Text(
+            text = it,
+            color = supportingTextColor,
+            style = MaterialTheme.typography.bodySmall
+        )
+    }
+
+    if (showDialog) {
+        AlertDialog(
+            onDismissRequest = { showDialog = false },
+            title = { Text(label) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    options.forEach { option ->
+                        val optionIsEnabled = enabled && optionEnabled(option)
+                        SettingsRadioOptionRow(
+                            selected = valueText == optionLabel(option),
+                            enabled = optionIsEnabled,
+                            text = optionLabel(option),
+                            onSelect = {
+                                onOptionSelected(option)
+                                showDialog = false
+                            }
+                        )
+                        optionDescription?.invoke(option)?.let { description ->
+                            Text(
+                                text = description,
+                                color = if (optionIsEnabled) {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.padding(start = 48.dp)
+                            )
+                        }
+                    }
+                    supportingText?.let { description ->
                         Text(
-                            text = it,
+                            text = description,
                             color = supportingTextColor,
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
                 }
             },
-            trailingContent = {
-                Text(
-                    text = if (expanded) "▲" else "▼",
-                    style = MaterialTheme.typography.titleMedium
-                )
-            },
-            colors = ListItemDefaults.colors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-            ),
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .hapticClickable(enabled = enabled) { expanded = true }
-        )
-
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false }
-        ) {
-            options.forEach { option ->
-                val optionIsEnabled = optionEnabled(option)
-                DropdownMenuItem(
-                    enabled = optionIsEnabled,
-                    text = {
-                        Column {
-                            Text(text = optionLabel(option))
-                            optionDescription?.invoke(option)?.let { description ->
-                                Text(
-                                    text = description,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    },
-                    onClick = {
-                        expanded = false
-                        onOptionSelected(option)
-                    }
-                )
+            confirmButton = {
+                HapticTextButton(onClick = { showDialog = false }) {
+                    Text(stringResource(R.string.main_folder_dialog_confirm))
+                }
             }
-        }
+        )
     }
 }
 

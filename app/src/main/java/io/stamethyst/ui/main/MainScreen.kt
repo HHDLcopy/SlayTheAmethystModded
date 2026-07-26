@@ -212,6 +212,7 @@ private fun LauncherGamePage(
     actions: MainScreenActions,
     updateNotice: LauncherUpdateNoticeUiState?,
     feedbackUnreadCount: Int,
+    feedbackActiveIssueCount: Int,
     onOpenFeedbackUpdates: () -> Unit,
     onOpenFeedbackSubscriptions: () -> Unit,
     onUpdateNoticeClick: () -> Unit,
@@ -284,9 +285,10 @@ private fun LauncherGamePage(
                     onModSizeClick = onModSizeClick,
                 )
 
-                if (feedbackUnreadCount > 0) {
+                if (feedbackUnreadCount > 0 || feedbackActiveIssueCount > 0) {
                     FeedbackReplyUpdateCard(
                         unreadCount = feedbackUnreadCount,
+                        activeIssueCount = feedbackActiveIssueCount,
                         onView = onOpenFeedbackSubscriptions,
                     )
                 }
@@ -430,7 +432,11 @@ private fun HeaderPinnedRow(
 
 @Composable
 private fun LoadingStateCard() {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f)),
+    ) {
         Column(
             modifier = Modifier.padding(20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -476,7 +482,7 @@ private fun GameLaunchActionBar(
         modifier = modifier
             .height(56.dp),
         elevation = ButtonDefaults.buttonElevation(
-            defaultElevation = 2.dp,
+            defaultElevation = 6.dp,
             pressedElevation = 1.dp,
             disabledElevation = 0.dp,
         ),
@@ -683,8 +689,10 @@ private fun GameStatusHeroCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f),
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
         ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f)),
     ) {
         Column(
             modifier = Modifier.padding(18.dp),
@@ -742,7 +750,7 @@ private fun GameMetricCard(
     Surface(
         modifier = surfaceModifier,
         shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.56f),
+        color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
     ) {
         Column(
@@ -766,14 +774,28 @@ private fun GameMetricCard(
 @Composable
 private fun FeedbackReplyUpdateCard(
     unreadCount: Int,
+    activeIssueCount: Int,
     onView: () -> Unit,
 ) {
+    val titleResId = if (unreadCount > 0) {
+        R.string.main_feedback_reply_card_title
+    } else {
+        R.string.main_feedback_tracking_card_title
+    }
+    val summaryText = when {
+        unreadCount == 1 -> stringResource(R.string.main_feedback_reply_card_single)
+        unreadCount > 1 -> stringResource(R.string.main_feedback_reply_card_multiple, unreadCount)
+        activeIssueCount == 1 -> stringResource(R.string.main_feedback_tracking_card_single)
+        else -> stringResource(R.string.main_feedback_tracking_card_multiple, activeIssueCount)
+    }
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.72f),
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
             contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
         ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.18f)),
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -799,16 +821,12 @@ private fun FeedbackReplyUpdateCard(
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Text(
-                        text = stringResource(R.string.main_feedback_reply_card_title),
+                        text = stringResource(titleResId),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
-                        text = if (unreadCount == 1) {
-                            stringResource(R.string.main_feedback_reply_card_single)
-                        } else {
-                            stringResource(R.string.main_feedback_reply_card_multiple, unreadCount)
-                        },
+                        text = summaryText,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.82f),
                     )
@@ -834,6 +852,8 @@ private fun LauncherUpdateNoticeCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         onClick = onClick,
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f)),
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -888,6 +908,11 @@ private fun SteamCloudOverviewCard(
         modifier = Modifier.fillMaxWidth(),
         onClick = onClick,
         enabled = visibleIndicator,
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = 2.dp,
+            disabledElevation = 2.dp,
+        ),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f)),
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -963,10 +988,11 @@ private fun EasyTierOverviewCard(
     val hasDetails = indicator.assignedIpv4Cidr.isNotBlank()
     Card(
         modifier = Modifier
-            .fillMaxWidth()
-            .animateContentSize(animationSpec = tween(durationMillis = 220)),
+            .fillMaxWidth(),
         onClick = onClick,
         enabled = indicator.visible,
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f)),
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -1011,7 +1037,9 @@ private fun EasyTierOverviewCard(
                 }
             }
             Column(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .animateContentSize(animationSpec = tween(durationMillis = 220)),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Text(
@@ -1263,7 +1291,7 @@ private fun EasyTierTroubleshootingCard(
 ) {
     Surface(
         shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.28f),
+        color = MaterialTheme.colorScheme.errorContainer,
         border = BorderStroke(
             width = 1.dp,
             color = MaterialTheme.colorScheme.error.copy(alpha = 0.28f),
@@ -3031,6 +3059,7 @@ fun LauncherMainScreen(
     onOpenWorkshopDetails: (ModItemUi) -> Unit = {},
     updateNotice: LauncherUpdateNoticeUiState? = null,
     feedbackUnreadCount: Int = 0,
+    feedbackActiveIssueCount: Int = 0,
     onOpenFeedbackUpdates: () -> Unit = {},
     onOpenFeedbackSubscriptions: () -> Unit = {},
     onUpdateNoticeClick: () -> Unit = {},
@@ -3049,6 +3078,7 @@ fun LauncherMainScreen(
             onOpenFeedback = onOpenFeedback,
             updateNotice = updateNotice,
             feedbackUnreadCount = feedbackUnreadCount,
+            feedbackActiveIssueCount = feedbackActiveIssueCount,
             onOpenFeedbackUpdates = onOpenFeedbackUpdates,
             onOpenFeedbackSubscriptions = onOpenFeedbackSubscriptions,
             onUpdateNoticeClick = onUpdateNoticeClick,
@@ -3665,6 +3695,7 @@ internal fun LauncherGameScreenContent(
     onOpenFeedback: () -> Unit = {},
     updateNotice: LauncherUpdateNoticeUiState? = null,
     feedbackUnreadCount: Int = 0,
+    feedbackActiveIssueCount: Int = 0,
     onOpenFeedbackUpdates: () -> Unit = {},
     onOpenFeedbackSubscriptions: () -> Unit = {},
     onUpdateNoticeClick: () -> Unit = {},
@@ -3684,6 +3715,7 @@ internal fun LauncherGameScreenContent(
         onOpenFeedback = onOpenFeedback,
         updateNotice = updateNotice,
         feedbackUnreadCount = feedbackUnreadCount,
+        feedbackActiveIssueCount = feedbackActiveIssueCount,
         onOpenFeedbackUpdates = onOpenFeedbackUpdates,
         onOpenFeedbackSubscriptions = onOpenFeedbackSubscriptions,
         onUpdateNoticeClick = onUpdateNoticeClick,
@@ -3736,6 +3768,7 @@ private fun LauncherMainScreenContent(
     onOpenWorkshop: () -> Unit = {},
     updateNotice: LauncherUpdateNoticeUiState? = null,
     feedbackUnreadCount: Int = 0,
+    feedbackActiveIssueCount: Int = 0,
     onOpenFeedbackUpdates: () -> Unit = {},
     onOpenFeedbackSubscriptions: () -> Unit = {},
     onUpdateNoticeClick: () -> Unit = {},
@@ -4021,6 +4054,7 @@ private fun LauncherMainScreenContent(
                             actions = actions,
                             updateNotice = updateNotice,
                             feedbackUnreadCount = feedbackUnreadCount,
+                            feedbackActiveIssueCount = feedbackActiveIssueCount,
                             onOpenFeedbackUpdates = onOpenFeedbackUpdates,
                             onOpenFeedbackSubscriptions = onOpenFeedbackSubscriptions,
                             onUpdateNoticeClick = onUpdateNoticeClick,
@@ -5712,6 +5746,10 @@ private fun SteamCloudConflictChoiceCard(
         SteamCloudConflictCardSide.LOCAL -> MaterialTheme.colorScheme.primary
         SteamCloudConflictCardSide.CLOUD -> MaterialTheme.colorScheme.secondary
     }
+    val containerColor = when (summary.side) {
+        SteamCloudConflictCardSide.LOCAL -> MaterialTheme.colorScheme.primaryContainer
+        SteamCloudConflictCardSide.CLOUD -> MaterialTheme.colorScheme.secondaryContainer
+    }
     val timestampLabelResId = when (summary.side) {
         SteamCloudConflictCardSide.LOCAL -> R.string.main_steam_cloud_conflict_card_latest_modified
         SteamCloudConflictCardSide.CLOUD -> R.string.main_steam_cloud_conflict_card_manifest_refreshed_at
@@ -5724,7 +5762,7 @@ private fun SteamCloudConflictChoiceCard(
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
-        color = tint.copy(alpha = 0.08f),
+        color = containerColor,
         border = BorderStroke(1.dp, tint.copy(alpha = 0.24f))
     ) {
         Column(
@@ -6272,7 +6310,8 @@ private fun StorageIssueCard(
         shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.errorContainer,
         tonalElevation = 0.dp,
-        shadowElevation = 0.dp
+        shadowElevation = 6.dp,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f))
     ) {
         Column(
             modifier = Modifier

@@ -20,6 +20,10 @@ internal object SteamCloudAuthStore {
     private const val KEY_LAST_PULL_AT_MS = "last_pull_at_ms"
     private const val KEY_LAST_PUSH_AT_MS = "last_push_at_ms"
     private const val KEY_LAST_ERROR = "last_error"
+    private const val KEY_WEB_ACCESS_TOKEN = "web_access_token"
+    private const val KEY_WEB_ACCESS_TOKEN_EXPIRES_AT_MS = "web_access_token_expires_at_ms"
+    private const val KEY_WEB_ACCESS_TOKEN_STEAM_ID_64 = "web_access_token_steam_id_64"
+    private const val KEY_WEB_ACCESS_TOKEN_REFRESH_FINGERPRINT = "web_access_token_refresh_fingerprint"
 
     data class SavedAuthMaterial(
         val accountName: String,
@@ -46,6 +50,11 @@ internal object SteamCloudAuthStore {
                 refreshTokenConfigured &&
                 isValidSteamId64(steamId64)
     }
+
+    data class CachedWebAccessToken(
+        val accessToken: String,
+        val expiresAtMs: Long,
+    )
 
     fun readAuthMaterial(context: Context): SavedAuthMaterial? {
         return readSafely(context, "read Steam Cloud auth material") { prefs ->
@@ -107,6 +116,53 @@ internal object SteamCloudAuthStore {
                 .remove(KEY_LAST_PULL_AT_MS)
                 .remove(KEY_LAST_PUSH_AT_MS)
                 .remove(KEY_LAST_ERROR)
+                .remove(KEY_WEB_ACCESS_TOKEN)
+                .remove(KEY_WEB_ACCESS_TOKEN_EXPIRES_AT_MS)
+                .remove(KEY_WEB_ACCESS_TOKEN_STEAM_ID_64)
+                .remove(KEY_WEB_ACCESS_TOKEN_REFRESH_FINGERPRINT)
+                .apply()
+        }
+    }
+
+    fun readCachedWebAccessToken(
+        context: Context,
+        steamId: Long,
+        refreshToken: String,
+        nowMs: Long = System.currentTimeMillis(),
+        minimumRemainingLifetimeMs: Long,
+    ): CachedWebAccessToken? {
+        return readSafely(context, "read cached Steam web access token") { prefs ->
+            val accessToken = prefs.getString(KEY_WEB_ACCESS_TOKEN, null)?.trim().orEmpty()
+            val expiresAtMs = prefs.getLong(KEY_WEB_ACCESS_TOKEN_EXPIRES_AT_MS, 0L)
+            val storedSteamId = prefs.getString(KEY_WEB_ACCESS_TOKEN_STEAM_ID_64, null)?.trim().orEmpty()
+            val storedRefreshFingerprint = prefs.getString(KEY_WEB_ACCESS_TOKEN_REFRESH_FINGERPRINT, null)?.trim().orEmpty()
+            if (
+                accessToken.isBlank() ||
+                expiresAtMs <= nowMs + minimumRemainingLifetimeMs ||
+                storedSteamId != steamId.toString() ||
+                storedRefreshFingerprint != refreshToken.fingerprintForCacheScope()
+            ) {
+                return@readSafely null
+            }
+            CachedWebAccessToken(accessToken = accessToken, expiresAtMs = expiresAtMs)
+        }
+    }
+
+    fun cacheWebAccessToken(
+        context: Context,
+        steamId: Long,
+        refreshToken: String,
+        accessToken: String,
+        expiresAtMs: Long,
+    ) {
+        require(accessToken.isNotBlank()) { "Steam web access token must not be blank." }
+        require(expiresAtMs > System.currentTimeMillis()) { "Steam web access token must expire in the future." }
+        writeSafely(context, "cache Steam web access token") { prefs ->
+            prefs.edit()
+                .putString(KEY_WEB_ACCESS_TOKEN, accessToken.trim())
+                .putLong(KEY_WEB_ACCESS_TOKEN_EXPIRES_AT_MS, expiresAtMs)
+                .putString(KEY_WEB_ACCESS_TOKEN_STEAM_ID_64, steamId.toString())
+                .putString(KEY_WEB_ACCESS_TOKEN_REFRESH_FINGERPRINT, refreshToken.fingerprintForCacheScope())
                 .apply()
         }
     }
@@ -263,6 +319,11 @@ internal object SteamCloudAuthStore {
 
     private fun isValidSteamId64(value: String): Boolean =
         value.toULongOrNull()?.let { it > 0uL } == true
+
+    private fun String.fingerprintForCacheScope(): String =
+        java.security.MessageDigest.getInstance("SHA-256")
+            .digest(toByteArray(Charsets.UTF_8))
+            .joinToString(separator = "") { byte -> "%02x".format(byte.toInt() and 0xFF) }
 
     private fun SharedPreferences.optionalLong(key: String): Long? {
         if (!contains(key)) {

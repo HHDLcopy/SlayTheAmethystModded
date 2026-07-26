@@ -73,6 +73,8 @@ class WorkshopDownloadEngine(
             throw error
         } catch (error: InterruptedException) {
             throw error
+        } catch (error: WorkshopSteamRateLimitedException) {
+            throw error
         } catch (error: Throwable) {
             val failureMessage = error.userVisibleDownloadFailureMessage()
             send(DownloadEvent.LogAppended("Download failed: $failureMessage"))

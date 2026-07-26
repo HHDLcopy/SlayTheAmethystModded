@@ -628,7 +628,7 @@ private fun DetailPreviewGalleryCard(
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = workshopDetailCardColors(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(
@@ -1729,7 +1729,7 @@ private fun DependencyCard(
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = workshopDetailCardColors(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1833,6 +1833,7 @@ private fun DetailDescriptionCard(
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = workshopDetailCardColors(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Column(
             Modifier
@@ -1937,6 +1938,7 @@ private fun DetailCommentsCard(
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = workshopDetailCardColors(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Box(
             modifier = Modifier
@@ -2079,6 +2081,7 @@ private fun CommentItemCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = workshopDetailCardColors(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)),
     ) {
         Column(
@@ -2117,7 +2120,10 @@ private fun CommentItemCard(
 
 @Composable
 private fun DetailErrorCard(message: String, onRetry: () -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+    ) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(stringResource(R.string.workshop_detail_load_failed), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(
@@ -2243,7 +2249,7 @@ private fun WorkshopDetailGallerySkeletonCard(skeletonStyle: LoadingSkeletonStyl
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = workshopDetailCardColors(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2292,6 +2298,7 @@ private fun WorkshopDetailDescriptionSkeletonCard(skeletonStyle: LoadingSkeleton
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = workshopDetailCardColors(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2326,6 +2333,7 @@ private fun WorkshopDetailCommentsSkeletonCard(skeletonStyle: LoadingSkeletonSty
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = workshopDetailCardColors(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             LoadingSkeletonBlock(

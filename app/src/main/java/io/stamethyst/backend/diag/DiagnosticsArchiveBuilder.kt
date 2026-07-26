@@ -13,6 +13,7 @@ import io.stamethyst.backend.launch.JvmLogRotationManager
 import io.stamethyst.backend.steamcloud.SteamCloudDiagnosticsStore
 import io.stamethyst.backend.steamcloud.SteamCloudManifestStore
 import io.stamethyst.backend.workshop.WorkshopAutoImportPatchLogStore
+import io.stamethyst.backend.workshop.WorkshopBrowseFailureLogStore
 import io.stamethyst.backend.workshop.WorkshopDownloadLogService
 import io.stamethyst.backend.workshop.WorkshopDownloadTaskRecord
 import io.stamethyst.backend.workshop.WorkshopDownloadTaskStore
@@ -42,8 +43,7 @@ internal data class DiagnosticsArchiveResult(
 
 internal object DiagnosticsArchiveBuilder {
     private const val SHARE_DIR_NAME = "share"
-    private const val MAX_HISTOGRAMS_IN_ARCHIVE = 6
-    private const val MAX_HISTOGRAM_SUMMARY_CLASSES = 12
+    private const val MAX_WORKSHOP_DOWNLOAD_TASKS_IN_ARCHIVE = 10
 
     fun buildJvmLogExportFileName(): String {
         val formatter = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US)
@@ -97,42 +97,30 @@ internal object DiagnosticsArchiveBuilder {
         ZipOutputStream(output).use { zipOutput ->
             writeTextEntry(
                 zipOutput,
-                "sts/jvm_logs/device_info.txt",
+                "sts/info/device_info.txt",
                 buildJvmLogDeviceInfo(context)
             )
             val latestCrashSummary = LatestLogCrashDetector.detect(context)
             val lastNonBlankLogLine = LatestLogCrashDetector.readLastNonBlankLine(context)
-            val exitSummary = ProcessExitInfoCapture.peekLatestInterestingProcessExitInfo(context)
             val processExitTrace = ProcessExitInfoCapture.readLatestInterestingProcessExitTrace(context)
-            val processExitTraceSummary = ProcessExitInfoCapture.summarizeProcessExitTrace(processExitTrace)
-            val signalDumpSummary = SignalCrashDumpReader.readSummary(context)
             writeTextEntry(
                 zipOutput,
-                "sts/jvm_logs/latest_log_summary.txt",
+                "sts/logs/latest_log_summary.txt",
                 DiagnosticsSummaryFormatter.buildLatestLogSummary(
                     latestCrash = latestCrashSummary,
                     lastNonBlankLine = lastNonBlankLogLine
                 )
             )
-            writeTextEntry(
-                zipOutput,
-                "sts/jvm_logs/process_exit_info.txt",
-                DiagnosticsSummaryFormatter.buildProcessExitInfoSummary(
-                    exitSummary = exitSummary,
-                    signalDumpSummary = signalDumpSummary,
-                    processExitTraceSummary = processExitTraceSummary
-                )
-            )
             processExitTrace?.let { traceText ->
                 writeTextEntry(
                     zipOutput,
-                    "sts/jvm_logs/process_exit_trace.txt",
+                    "sts/logs/process_exit_trace.txt",
                     traceText
                 )
             }
             writeTextEntry(
                 zipOutput,
-                "sts/jvm_logs/launcher_settings.txt",
+                "sts/info/launcher_settings.txt",
                 LauncherSettingsDiagnosticsFormatter.buildFromContext(context)
             )
             exportedCount += writeOptionalFile(
@@ -165,6 +153,12 @@ internal object DiagnosticsArchiveBuilder {
                 SteamCloudDiagnosticsStore.loginHistoryDir(context),
                 "sts/steam_cloud/phase1/login-history"
             )
+            exportedCount += writeOptionalDirectoryFiles(
+                zipOutput,
+                SteamCloudDiagnosticsStore.loginHistoryDir(context),
+                "sts/steam_login",
+                limit = 5
+            )
             val phase0Dir = File(RuntimePaths.storageRoot(context), "steam-cloud-phase0")
             exportedCount += writeOptionalFile(
                 zipOutput,
@@ -184,7 +178,7 @@ internal object DiagnosticsArchiveBuilder {
 
             val writtenJvmEntries = LinkedHashSet<String>()
             JvmLogRotationManager.listLogFiles(context).forEach { logFile ->
-                val entryName = "sts/jvm_logs/${logFile.name}"
+                val entryName = "sts/logs/${logFile.name}"
                 if (writtenJvmEntries.add(entryName) && logFile.isFile) {
                     writeFileToZip(zipOutput, logFile, entryName)
                     exportedCount++
@@ -194,69 +188,58 @@ internal object DiagnosticsArchiveBuilder {
             exportedCount += writeOptionalFile(
                 zipOutput,
                 RuntimePaths.bootBridgeEventsLog(context),
-                "sts/jvm_logs/${RuntimePaths.bootBridgeEventsLog(context).name}"
+                "sts/logs/${RuntimePaths.bootBridgeEventsLog(context).name}"
             )
             exportedCount += writeOptionalFile(
                 zipOutput,
                 RuntimePaths.jvmGcLog(context),
-                "sts/jvm_logs/${RuntimePaths.jvmGcLog(context).name}"
+                "sts/logs/${RuntimePaths.jvmGcLog(context).name}"
             )
             exportedCount += writeOptionalFile(
                 zipOutput,
                 RuntimePaths.jvmHeapSnapshot(context),
-                "sts/jvm_logs/${RuntimePaths.jvmHeapSnapshot(context).name}"
+                "sts/logs/${RuntimePaths.jvmHeapSnapshot(context).name}"
             )
             exportedCount += writeOptionalFile(
                 zipOutput,
                 RuntimePaths.jvmSignalDump(context),
-                "sts/jvm_logs/${RuntimePaths.jvmSignalDump(context).name}"
-            )
-            exportedCount += writeOptionalFile(
-                zipOutput,
-                RuntimePaths.performanceLaunchAuditLog(context),
-                "sts/jvm_logs/${RuntimePaths.performanceLaunchAuditLog(context).name}"
+                "sts/logs/${RuntimePaths.jvmSignalDump(context).name}"
             )
             RuntimePaths.listMemoryDiagnosticsFiles(context).forEach { memoryLogFile ->
                 exportedCount += writeOptionalFile(
                     zipOutput,
                     memoryLogFile,
-                    "sts/jvm_logs/${memoryLogFile.name}"
+                    "sts/memory_diagnostics/${memoryLogFile.name}"
                 )
             }
-            RuntimePaths.listLogcatCaptureFiles(context).forEach { logcatFile ->
+            RuntimePaths.listLogcatCaptureFiles(context)
+                .groupBy { if (it.name.contains("system")) "system" else "app" }
+                .values
+                .flatMap { it.take(5) }
+                .forEach { logcatFile ->
                 exportedCount += writeOptionalFile(
                     zipOutput,
                     logcatFile,
-                    "sts/logcat/${logcatFile.name}"
+                    "sts/logcat/${if (logcatFile.name.contains("system")) "system" else "app"}/${logcatFile.name}"
                 )
             }
-            RuntimePaths.listLauncherLogcatCaptureFiles(context).forEach { logcatFile ->
+            RuntimePaths.listLauncherLogcatCaptureFiles(context)
+                .groupBy { if (it.name.contains("system")) "system" else "app" }
+                .values
+                .flatMap { it.take(5) }
+                .forEach { logcatFile ->
                 exportedCount += writeOptionalFile(
                     zipOutput,
                     logcatFile,
-                    "sts/logcat/${logcatFile.name}"
+                    "sts/logcat/${if (logcatFile.name.contains("system")) "system" else "app"}/${logcatFile.name}"
                 )
             }
             exportedCount += writeLauncherCrashReportsForArchive(zipOutput, context)
 
             exportedCount += writeWorkshopDownloadDiagnostics(zipOutput, context)
+            exportedCount += writeWorkshopBrowseFailureLogsForArchive(zipOutput, context)
             exportedCount += writeWorkshopAutoImportPatchLogsForArchive(zipOutput, context)
             exportedCount += writeEasyTierDiagnosticsForArchive(zipOutput, context)
-
-            val histogramFiles = collectHistogramFiles(context)
-            writeTextEntry(
-                zipOutput,
-                "sts/jvm_histograms/summary.txt",
-                buildHistogramSummary(histogramFiles)
-            )
-            histogramFiles.forEach { histogramFile ->
-                writeFileToZip(
-                    zipOutput,
-                    histogramFile,
-                    "sts/jvm_histograms/${histogramFile.name}"
-                )
-                exportedCount++
-            }
 
             if (crashContext != null) {
                 writeTextEntry(
@@ -276,79 +259,6 @@ internal object DiagnosticsArchiveBuilder {
             }
         }
         return exportedCount
-    }
-
-    private fun collectHistogramFiles(context: Context): List<File> {
-        return RuntimePaths.jvmHistogramsDir(context)
-            .listFiles()
-            ?.asSequence()
-            ?.filter { it.isFile && it.name.endsWith(".txt", ignoreCase = true) }
-            ?.sortedByDescending { it.name }
-            ?.take(MAX_HISTOGRAMS_IN_ARCHIVE)
-            ?.toList()
-            .orEmpty()
-    }
-
-    private fun buildHistogramSummary(histogramFiles: List<File>): String {
-        if (histogramFiles.isEmpty()) {
-            return "No JVM histogram dumps captured yet.\n"
-        }
-
-        val latest = histogramFiles.first()
-        val lines = try {
-            latest.readLines(StandardCharsets.UTF_8)
-        } catch (_: Throwable) {
-            return buildString {
-                append("Histogram files captured: ").append(histogramFiles.size).append('\n')
-                append("Latest file: ").append(latest.name).append('\n')
-                append("Failed to read latest histogram file.\n")
-            }
-        }
-
-        val header = LinkedHashMap<String, String>()
-        val topClasses = ArrayList<String>(MAX_HISTOGRAM_SUMMARY_CLASSES)
-        var inBody = false
-        for (rawLine in lines) {
-            val line = rawLine.trimEnd()
-            if (!inBody) {
-                if (line.isBlank()) {
-                    inBody = true
-                    continue
-                }
-                val separatorIndex = line.indexOf('=')
-                if (separatorIndex > 0 && separatorIndex < line.length - 1) {
-                    val key = line.substring(0, separatorIndex).trim()
-                    val value = line.substring(separatorIndex + 1).trim()
-                    if (key.isNotEmpty()) {
-                        header[key] = value
-                    }
-                }
-                continue
-            }
-            val trimmed = line.trim()
-            if (trimmed.isEmpty() || trimmed.startsWith("num") || trimmed.startsWith("-")) {
-                continue
-            }
-            topClasses.add(trimmed)
-            if (topClasses.size >= MAX_HISTOGRAM_SUMMARY_CLASSES) {
-                break
-            }
-        }
-
-        return buildString {
-            append("Histogram files captured: ").append(histogramFiles.size).append('\n')
-            append("Latest file: ").append(latest.name).append('\n')
-            header.forEach { (key, value) ->
-                append(key).append('=').append(value).append('\n')
-            }
-            append('\n')
-            append("Top classes from latest dump:\n")
-            if (topClasses.isEmpty()) {
-                append("(no class rows parsed)\n")
-            } else {
-                topClasses.forEach { row -> append(row).append('\n') }
-            }
-        }
     }
 
     private fun buildCrashSummary(
@@ -403,6 +313,7 @@ internal object DiagnosticsArchiveBuilder {
         }
 
         val sortedTasks = tasks.sortedByDescending { it.updatedAtMillis }
+            .take(MAX_WORKSHOP_DOWNLOAD_TASKS_IN_ARCHIVE)
         writeTextEntry(
             zipOutput,
             "sts/workshop/download_tasks/index.txt",
@@ -423,6 +334,31 @@ internal object DiagnosticsArchiveBuilder {
                 zipOutput,
                 rawWorkshopDownloadLogFile(context, task),
                 "sts/workshop/raw_download_logs/${rawWorkshopDownloadLogArchiveName(task)}"
+            )
+        }
+        return exportedCount
+    }
+
+    @Throws(IOException::class)
+    internal fun writeWorkshopBrowseFailureLogsForArchive(
+        zipOutput: ZipOutputStream,
+        context: Context
+    ): Int {
+        val logFiles = WorkshopBrowseFailureLogStore.listLogFiles(context)
+        if (logFiles.isEmpty()) {
+            return 0
+        }
+        writeTextEntry(
+            zipOutput,
+            "sts/workshop/market_failed/index.txt",
+            buildWorkshopBrowseFailureLogIndex(logFiles)
+        )
+        var exportedCount = 0
+        logFiles.forEach { logFile ->
+            exportedCount += writeOptionalFile(
+                zipOutput,
+                logFile,
+                "sts/workshop/market_failed/${logFile.name}"
             )
         }
         return exportedCount
@@ -502,7 +438,9 @@ internal object DiagnosticsArchiveBuilder {
         val historyCount = writeOptionalDirectoryFiles(
             zipOutput,
             EasyTierDiagnosticsStore.eventHistoryDir(context),
-            "sts/easytier/events"
+            "sts/easytier",
+            limit = 5,
+            predicate = { it.name.contains("-failed-") }
         )
         return exportedConfigEntry + stateCount + summaryCount + historyCount
     }
@@ -533,6 +471,22 @@ internal object DiagnosticsArchiveBuilder {
             append("  Size: ").append(logFile.length()).append(" bytes\n")
             append("  Modified At Ms: ").append(logFile.lastModified()).append('\n')
             append("  Log Entry: sts/workshop/auto_import_patch_logs/")
+                .append(logFile.name)
+                .append('\n')
+            append('\n')
+        }
+    }
+
+    private fun buildWorkshopBrowseFailureLogIndex(logFiles: List<File>): String = buildString {
+        append("Workshop browse failure logs\n")
+        append("Log slots: ").append(WorkshopBrowseFailureLogStore.MAX_LOG_SLOTS).append('\n')
+        append("Log count: ").append(logFiles.size).append('\n')
+        append('\n')
+        logFiles.forEach { logFile ->
+            append("- ").append(logFile.name).append('\n')
+            append("  Size: ").append(logFile.length()).append(" bytes\n")
+            append("  Modified At Ms: ").append(logFile.lastModified()).append('\n')
+            append("  Log Entry: sts/workshop/market_failed/")
                 .append(logFile.name)
                 .append('\n')
             append('\n')
@@ -622,10 +576,13 @@ internal object DiagnosticsArchiveBuilder {
     private fun writeOptionalDirectoryFiles(
         zipOutput: ZipOutputStream,
         dir: File,
-        entryDirName: String
+        entryDirName: String,
+        limit: Int? = null,
+        predicate: (File) -> Boolean = { true }
     ): Int {
-        val files = dir.listFiles { file -> file.isFile && file.length() > 0L }
-            ?.sortedBy { it.name }
+        val files = dir.listFiles { file -> file.isFile && file.length() > 0L && predicate(file) }
+            ?.sortedByDescending { it.lastModified() }
+            ?.let { list -> limit?.let(list::take) ?: list }
             ?: return 0
         var count = 0
         files.forEach { file ->

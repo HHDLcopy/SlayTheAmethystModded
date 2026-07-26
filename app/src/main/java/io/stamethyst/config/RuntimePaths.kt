@@ -4,6 +4,7 @@ import android.content.Context
 import java.io.File
 
 object RuntimePaths {
+    const val MAX_LAUNCHER_CRASH_REPORT_SLOTS = 5
     private const val ANDROID_DATA_SEGMENT = "data"
     private const val ANDROID_FILES_SEGMENT = "files"
     private const val ANDROID_PATH_SEPARATOR = "/"
@@ -15,6 +16,7 @@ object RuntimePaths {
     private const val MTS_MOD_FILE_LIST_FILE_NAME = ".mts_mod_file_list"
     private const val JVM_LOG_DIR_NAME = "jvm_logs"
     private const val WORKSHOP_AUTO_IMPORT_PATCH_LOG_DIR_NAME = "workshop_auto_import_patch_logs"
+    private const val WORKSHOP_BROWSE_FAILURE_LOG_DIR_NAME = "workshop_browse_failure_logs"
     private const val MEMORY_DIAGNOSTICS_LOG_FILE_NAME = "memory_diagnostics.log"
     private const val PERFORMANCE_LAUNCH_AUDIT_LOG_FILE_NAME = "performance_launch_audit.log"
     private const val JVM_GC_LOG_FILE_NAME = "jvm_gc.log"
@@ -248,6 +250,10 @@ object RuntimePaths {
     fun performanceLaunchAuditLog(context: Context): File =
         File(jvmLogsDir(context), PERFORMANCE_LAUNCH_AUDIT_LOG_FILE_NAME)
 
+    @JvmStatic
+    fun workshopBrowseFailureLogsDir(context: Context): File =
+        File(stsRoot(context), WORKSHOP_BROWSE_FAILURE_LOG_DIR_NAME)
+
     fun startupTraceLog(context: Context): File = File(jvmLogsDir(context), "startup_trace.log")
 
     @JvmStatic
@@ -325,6 +331,7 @@ object RuntimePaths {
             ?.asSequence()
             ?.filter { file -> file.isFile && isLauncherCrashReportFileName(file.name) }
             ?.sortedWith(compareByDescending<File> { it.lastModified() }.thenByDescending { it.name })
+            ?.take(MAX_LAUNCHER_CRASH_REPORT_SLOTS)
             ?.toList()
             .orEmpty()
     }

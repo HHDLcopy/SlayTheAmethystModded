@@ -48,18 +48,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import io.stamethyst.R
 import io.stamethyst.backend.steamcloud.SteamCloudLoginChallenge
@@ -401,22 +406,27 @@ private fun steamCloudChallengeTitle(challenge: SteamCloudLoginChallenge): Strin
 }
 
 @Composable
-private fun steamCloudChallengeDescription(challenge: SteamCloudLoginChallenge): String {
-    return when (challenge.kind) {
-        SteamCloudLoginChallengeKind.DEVICE_CONFIRMATION ->
-            stringResource(R.string.settings_steam_cloud_challenge_device_confirmation_desc)
+private fun steamCloudChallengeDescription(challenge: SteamCloudLoginChallenge) = buildAnnotatedString {
+    when (challenge.kind) {
+        SteamCloudLoginChallengeKind.DEVICE_CONFIRMATION -> {
+            append(stringResource(R.string.settings_steam_cloud_challenge_device_confirmation_desc))
+            withStyle(SpanStyle(color = Color.Red, fontWeight = FontWeight.Bold)) {
+                append(stringResource(R.string.settings_steam_cloud_challenge_device_confirmation_remote_login_warning))
+            }
+            append(stringResource(R.string.settings_steam_cloud_challenge_device_confirmation_accelerator_tip))
+        }
 
         SteamCloudLoginChallengeKind.DEVICE_CODE ->
-            stringResource(R.string.settings_steam_cloud_challenge_device_code_desc)
+            append(stringResource(R.string.settings_steam_cloud_challenge_device_code_desc))
 
         SteamCloudLoginChallengeKind.EMAIL_CODE ->
             if (challenge.emailHint.isNotBlank()) {
-                stringResource(
+                append(stringResource(
                     R.string.settings_steam_cloud_challenge_email_code_desc_with_hint,
                     challenge.emailHint
-                )
+                ))
             } else {
-                stringResource(R.string.settings_steam_cloud_challenge_email_code_desc)
+                append(stringResource(R.string.settings_steam_cloud_challenge_email_code_desc))
             }
     }
 }

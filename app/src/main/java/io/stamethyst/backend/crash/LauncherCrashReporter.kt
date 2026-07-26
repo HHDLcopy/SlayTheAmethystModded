@@ -31,6 +31,7 @@ object LauncherCrashReporter {
     private const val FALLBACK_REPORT_DIR_NAME = "launcher_crash_reports"
     private const val EXIT_MARKER_FILE_NAME = ".last_launcher_exit_marker"
     private const val UNCAUGHT_MARKER_FILE_NAME = ".last_launcher_uncaught_crash"
+    private const val MAX_CRASH_REPORTS = 5
 
     private val installed = AtomicBoolean(false)
 
@@ -276,6 +277,7 @@ object LauncherCrashReporter {
         FileOutputStream(reportFile, false).use { output ->
             output.write(reportText.toByteArray(StandardCharsets.UTF_8))
         }
+        pruneCrashReports(reportDir)
         return reportFile.absolutePath
     }
 
@@ -293,7 +295,17 @@ object LauncherCrashReporter {
         FileOutputStream(reportFile, false).use { output ->
             output.write(reportText.toByteArray(StandardCharsets.UTF_8))
         }
+        pruneCrashReports(reportDir)
         return reportFile.absolutePath
+    }
+
+    private fun pruneCrashReports(reportDir: File) {
+        reportDir.listFiles()
+            ?.asSequence()
+            ?.filter { it.isFile && it.name.startsWith(REPORT_PREFIX) && it.name.endsWith(".txt") }
+            ?.sortedWith(compareByDescending<File> { it.lastModified() }.thenByDescending { it.name })
+            ?.drop(MAX_CRASH_REPORTS)
+            ?.forEach { it.delete() }
     }
 
     private fun currentProcessName(context: Context): String {

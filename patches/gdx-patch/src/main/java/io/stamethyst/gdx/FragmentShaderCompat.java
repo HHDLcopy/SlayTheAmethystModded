@@ -10,6 +10,10 @@ public final class FragmentShaderCompat {
     private static final String NATIVE_DIR_PROP = "amethyst.gdx.native_dir";
     private static final Pattern LEGACY_TEXTURE_FUNCTION_PATTERN =
         Pattern.compile("(?<![A-Za-z0-9_])texture\\s*\\(");
+    private static final Pattern MODERN_TEXTURE_CALL_PATTERN =
+        Pattern.compile("(?<![A-Za-z0-9_])texture\\s*\\(\\s*([A-Za-z_][A-Za-z0-9_]*)");
+    private static final Pattern SAMPLER_CUBE_UNIFORM_PATTERN =
+        Pattern.compile("\\buniform\\s+(?:(?:lowp|mediump|highp)\\s+)?samplerCube\\s+([A-Za-z_][A-Za-z0-9_]*)");
     private static final Pattern STANDARD_DERIVATIVE_PATTERN =
         Pattern.compile("\\b(?:fwidth|dFdx|dFdy)\\s*\\(");
     private static final Pattern STANDARD_DERIVATIVE_EXTENSION_PATTERN =
@@ -37,6 +41,19 @@ public final class FragmentShaderCompat {
         Pattern.compile("(?m)^\\s*precision\\s+(?:lowp|mediump|highp)\\s+float\\s*;");
     private static final Pattern INT_PRECISION_PATTERN =
         Pattern.compile("(?m)^\\s*precision\\s+(?:lowp|mediump|highp)\\s+int\\s*;");
+    private static final Pattern LAYOUT_QUALIFIER_PATTERN =
+        Pattern.compile("(?m)^\\s*layout\\s*\\([^\\r\\n]*\\)\\s*");
+    private static final Pattern VERTEX_INPUT_QUALIFIER_PATTERN =
+        Pattern.compile("(?m)^(\\s*)(?:(?:flat|smooth|noperspective)\\s+)?in\\b");
+    private static final Pattern VERTEX_OUTPUT_QUALIFIER_PATTERN =
+        Pattern.compile("(?m)^(\\s*)(?:(?:flat|smooth|noperspective)\\s+)?out\\b");
+    private static final Pattern FRAGMENT_INPUT_QUALIFIER_PATTERN =
+        Pattern.compile("(?m)^(\\s*)(?:(?:flat|smooth|noperspective)\\s+)?in\\b");
+    private static final Pattern FRAGMENT_OUTPUT_PATTERN =
+        Pattern.compile(
+            "(?m)^\\s*(?:(?:flat|smooth|noperspective)\\s+)?out\\s+vec4\\s+" +
+                "([A-Za-z_][A-Za-z0-9_]*)\\s*;\\s*(?:\\r?\\n)?"
+        );
 
     private FragmentShaderCompat() {
     }
@@ -52,7 +69,10 @@ public final class FragmentShaderCompat {
         String stripped = stripLeadingDesktopVersionDirective(source, "vertex");
         String versioned = ensureGles100VersionDirective(stripped, "vertex");
         String withoutJavaFloatSuffixes = removeJavaFloatLiteralSuffixes(versioned);
-        return promoteVectorScalarIntegerLiterals(withoutJavaFloatSuffixes);
+        String legacyCompatible = isModernGlesVersionDirective(withoutJavaFloatSuffixes)
+            ? withoutJavaFloatSuffixes
+            : downgradeModernVertexShaderSyntax(withoutJavaFloatSuffixes);
+        return promoteVectorScalarIntegerLiterals(legacyCompatible);
     }
 
     public static String normalizeFragmentShader(String source) {
@@ -137,10 +157,103 @@ public final class FragmentShaderCompat {
     }
 
     private static String ensureLegacyFragmentCompatibility(String source) {
-        String patched = source;
+        String patched = downgradeModernFragmentShaderSyntax(source);
         patched = ensureStandardDerivativesExtension(patched);
-        patched = LEGACY_TEXTURE_FUNCTION_PATTERN.matcher(patched).replaceAll("texture2D(");
-        return patched;
+        return rewriteLegacyTextureFunctions(patched);
+    }
+
+    private static String downgradeModernVertexShaderSyntax(String source) {
+        String withoutLayouts = LAYOUT_QUALIFIER_PATTERN.matcher(source).replaceAll("");
+        String attributes = VERTEX_INPUT_QUALIFIER_PATTERN.matcher(withoutLayouts)
+            .replaceAll("$1attribute");
+        return VERTEX_OUTPUT_QUALIFIER_PATTERN.matcher(attributes).replaceAll("$1varying");
+    }
+
+    private static String downgradeModernFragmentShaderSyntax(String source) {
+        String withoutLayouts = LAYOUT_QUALIFIER_PATTERN.matcher(source).replaceAll("");
+        Matcher outputMatcher = FRAGMENT_OUTPUT_PATTERN.matcher(withoutLayouts);
+        StringBuffer withoutOutputs = new StringBuffer(withoutLayouts.length());
+        String outputName = null;
+        while (outputMatcher.find()) {
+            if (outputName == null) {
+                outputName = outputMatcher.group(1);
+            }
+            outputMatcher.appendReplacement(withoutOutputs, "");
+        }
+        outputMatcher.appendTail(withoutOutputs);
+
+        String varyings = FRAGMENT_INPUT_QUALIFIER_PATTERN.matcher(withoutOutputs.toString())
+            .replaceAll("$1varying");
+        return outputName == null ? varyings : replaceIdentifierOutsideComments(
+            varyings,
+            outputName,
+            "gl_FragColor"
+        );
+    }
+
+    private static String rewriteLegacyTextureFunctions(String source) {
+        Set<String> cubeSamplers = new HashSet<String>();
+        Matcher samplerMatcher = SAMPLER_CUBE_UNIFORM_PATTERN.matcher(blankComments(source));
+        while (samplerMatcher.find()) {
+            cubeSamplers.add(samplerMatcher.group(1));
+        }
+
+        Matcher textureMatcher = MODERN_TEXTURE_CALL_PATTERN.matcher(source);
+        StringBuffer out = null;
+        while (textureMatcher.find()) {
+            if (out == null) {
+                out = new StringBuffer(source.length());
+            }
+            String function = cubeSamplers.contains(textureMatcher.group(1))
+                ? "textureCube("
+                : "texture2D(";
+            textureMatcher.appendReplacement(out, function + textureMatcher.group(1));
+        }
+        if (out == null) {
+            return LEGACY_TEXTURE_FUNCTION_PATTERN.matcher(source).replaceAll("texture2D(");
+        }
+        textureMatcher.appendTail(out);
+        return out.toString();
+    }
+
+    private static String replaceIdentifierOutsideComments(
+        String source,
+        String identifier,
+        String replacement
+    ) {
+        StringBuilder out = null;
+        int lastAppend = 0;
+        int index = 0;
+        while (index < source.length()) {
+            int commentEnd = skipComment(source, index);
+            if (commentEnd != index) {
+                index = commentEnd;
+                continue;
+            }
+            if (startsWithIdentifier(source, index, identifier)) {
+                if (out == null) {
+                    out = new StringBuilder(source.length() + replacement.length());
+                }
+                out.append(source, lastAppend, index).append(replacement);
+                index += identifier.length();
+                lastAppend = index;
+                continue;
+            }
+            index++;
+        }
+        if (out == null) {
+            return source;
+        }
+        out.append(source, lastAppend, source.length());
+        return out.toString();
+    }
+
+    private static boolean startsWithIdentifier(String source, int index, String identifier) {
+        int end = index + identifier.length();
+        return end <= source.length() &&
+            source.regionMatches(index, identifier, 0, identifier.length()) &&
+            (index == 0 || !isIdentifierPart(source.charAt(index - 1))) &&
+            (end == source.length() || !isIdentifierPart(source.charAt(end)));
     }
 
     private static String removeBuiltInFunctionRedefinitions(String source) {

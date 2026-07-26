@@ -71,7 +71,7 @@ internal class WorkshopService(
     private val json = Json { ignoreUnknownKeys = true }
     private val identity = WorkshopSteamClientIdentity(context)
     private val protocolClient = SteamCloudAcceleratedHttp.createProtocolClient(client)
-    private val steamWebSession = WorkshopSteamWebSession(protocolClient, identity)
+    private val steamWebSession = WorkshopSteamWebSession(context, protocolClient, identity)
     private val steamLanguagePreference: SteamLanguagePreference
         get() = runCatching { LauncherPreferences.readWorkshopSteamLanguage(context) }
             .getOrDefault(SteamLanguagePreference.SimplifiedChinese)
@@ -1090,22 +1090,6 @@ internal class WorkshopService(
 
     private suspend fun searchWorkshop(query: WorkshopBrowseQuery): WorkshopBrowseParseResult {
         val searchStartedAtMs = SystemClock.elapsedRealtime()
-        if (query.searchText.isNotBlank()) {
-            val authSearchStartedAtMs = SystemClock.elapsedRealtime()
-            authenticatedPublishedFileSearch(query)
-                ?.takeIf { it.items.isNotEmpty() }
-                ?.let { result ->
-                    Log.i(
-                        TAG,
-                        "perf searchWorkshop path=authProtocol items=${result.items.size} elapsedMs=${SystemClock.elapsedRealtime() - authSearchStartedAtMs} totalMs=${SystemClock.elapsedRealtime() - searchStartedAtMs}",
-                    )
-                    return result
-                }
-            Log.i(
-                TAG,
-                "perf searchWorkshop path=authProtocolMiss elapsedMs=${SystemClock.elapsedRealtime() - authSearchStartedAtMs}",
-            )
-        }
         val primeStartedAtMs = SystemClock.elapsedRealtime()
         primeSteamWebSessionIfNeeded()
         val primeMs = SystemClock.elapsedRealtime() - primeStartedAtMs
@@ -1126,32 +1110,60 @@ internal class WorkshopService(
                 if (query.sort.usesTimeFilter) {
                     addQueryParameter("days", query.timeFilter.days.toString())
                 }
-            }
+        }
             .build()
         val httpStartedAtMs = SystemClock.elapsedRealtime()
-        val html = workshopClient.newCall(
-            Request.Builder()
-                .url(searchUrl)
-                .header("Accept-Language", steamLanguagePreference.acceptLanguageValue)
-                .header("User-Agent", USER_AGENT)
-                .get()
-                .build()
-        ).execute().use { response ->
-            if (!response.isSuccessful) error("Steam workshop browse failed: ${response.code}")
-            response.body?.string().orEmpty()
+        var webFailure: Throwable? = null
+        val html = try {
+            workshopClient.newCall(
+                Request.Builder()
+                    .url(searchUrl)
+                    .header("Accept-Language", steamLanguagePreference.acceptLanguageValue)
+                    .header("User-Agent", USER_AGENT)
+                    .get()
+                    .build()
+            ).execute().use { response ->
+                if (!response.isSuccessful) error("Steam workshop browse failed: ${response.code}")
+                response.body?.string().orEmpty()
+            }
+        } catch (error: Throwable) {
+            if (error is CancellationException) throw error
+            webFailure = error
+            null
         }
-        val httpMs = SystemClock.elapsedRealtime() - httpStartedAtMs
-        val parseStartedAtMs = SystemClock.elapsedRealtime()
-        val page = WorkshopBrowseParser.parsePage(html, query.page)
-        val parseMs = SystemClock.elapsedRealtime() - parseStartedAtMs
+        val webPage = html?.let { responseHtml ->
+            val httpMs = SystemClock.elapsedRealtime() - httpStartedAtMs
+            val parseStartedAtMs = SystemClock.elapsedRealtime()
+            val page = WorkshopBrowseParser.parsePage(responseHtml, query.page)
+            val parseMs = SystemClock.elapsedRealtime() - parseStartedAtMs
+            Log.i(
+                TAG,
+                "perf searchWorkshop path=authenticatedHtmlBrowse primeMs=$primeMs httpMs=$httpMs parseMs=$parseMs htmlBytes=${responseHtml.length} items=${page.items.size} totalMs=${SystemClock.elapsedRealtime() - searchStartedAtMs}",
+            )
+            if (page.items.isEmpty() && looksLikeCaptivePortal(responseHtml)) {
+                error("当前网络返回了 Wi-Fi/校园网认证页面，请先完成网络认证后重试")
+            }
+            page
+        }
+        if (webPage?.items?.isNotEmpty() == true || query.searchText.isBlank()) {
+            return webPage ?: throw checkNotNull(webFailure)
+        }
+
+        val authSearchStartedAtMs = SystemClock.elapsedRealtime()
+        authenticatedPublishedFileSearch(query)
+            ?.takeIf { it.items.isNotEmpty() }
+            ?.let { result ->
+                Log.i(
+                    TAG,
+                    "perf searchWorkshop path=authProtocolFallback items=${result.items.size} elapsedMs=${SystemClock.elapsedRealtime() - authSearchStartedAtMs} totalMs=${SystemClock.elapsedRealtime() - searchStartedAtMs}",
+                )
+                return result
+            }
         Log.i(
             TAG,
-            "perf searchWorkshop path=htmlBrowse primeMs=$primeMs httpMs=$httpMs parseMs=$parseMs htmlBytes=${html.length} items=${page.items.size} totalMs=${SystemClock.elapsedRealtime() - searchStartedAtMs}",
+            "perf searchWorkshop path=authProtocolFallbackMiss elapsedMs=${SystemClock.elapsedRealtime() - authSearchStartedAtMs}",
         )
-        if (page.items.isEmpty() && looksLikeCaptivePortal(html)) {
-            error("当前网络返回了 Wi-Fi/校园网认证页面，请先完成网络认证后重试")
-        }
-        return page
+        return webPage ?: throw checkNotNull(webFailure)
     }
 
     private suspend fun authenticatedPublishedFileSearch(query: WorkshopBrowseQuery): WorkshopBrowseParseResult? {

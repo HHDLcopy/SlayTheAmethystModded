@@ -63,6 +63,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -642,7 +643,7 @@ internal fun ModFolderSection(
                         isCurrent = folderUiModel.folderTokenId == currentFolderTokenId
                     )
                 },
-                controlsEnabled = organizationControlsEnabled && mod.installed,
+                controlsEnabled = organizationControlsEnabled && mod.canUseFolderOrganization(),
                 onDismiss = { pendingMoveMod = null },
                 onSelectTarget = { targetFolderTokenId ->
                     pendingMoveMod = null
@@ -899,6 +900,7 @@ internal fun ModFolderSection(
                                                 scaleX = folderScale
                                                 scaleY = folderScale
                                             }
+                                            .shadow(elevation = 2.dp, shape = headerShape, clip = false)
                                             .then(
                                                 if (isSourceFolderDuringModDrag) {
                                                     Modifier
@@ -1196,11 +1198,9 @@ internal fun ModFolderSection(
                                     isDraggedInOverlay = activeModDragSession?.mod?.storagePath == mod.storagePath,
                                     showModFileName = showModFileName,
                                     setExpanded = setCardExpanded,
-                                    selectionEnabled = organizationControlsEnabled &&
-                                        (mod.canUseFolderSelection() ||
-                                            mod.workshop?.state == WorkshopModState.TexturePackInstalled),
+                                    selectionEnabled = organizationControlsEnabled && mod.canUseFolderSelection(),
                                     fileActionsEnabled = modFileActionsEnabled && mod.installed,
-                                    dragEnabled = folderModItem != null && mod.installed,
+                                    dragEnabled = folderModItem != null && mod.canUseFolderSelection(),
                                     dragEnabledState = latestOrganizationDragEnabled,
                                     showDragHandle = folderModItem != null && !batchSelectionMode,
                                     dragAffordanceAlpha = dragAffordanceAlpha,
@@ -1352,6 +1352,7 @@ private fun DependencyFolderListItem(
         modifier = Modifier
             .fillMaxWidth()
             .padding(start = 6.dp, top = 8.dp, end = 6.dp, bottom = 8.dp)
+            .shadow(elevation = 2.dp, shape = folderShape, clip = false)
             .clip(folderShape)
             .background(MaterialTheme.colorScheme.surfaceContainer, folderShape)
             .border(
@@ -1894,4 +1895,4 @@ private const val FOLDER_PLACEMENT_ANIMATION_MS = 220
 private const val FOLDER_TOGGLE_THROTTLE_MS = 260L
 private val FOLDER_BODY_ANIMATION_OFFSET = 10.dp
 private val BATCH_EDIT_BOTTOM_INSET = 148.dp
-private val MOD_LIST_TOP_PLACEHOLDER_HEIGHT = 0.dp
+private val MOD_LIST_TOP_PLACEHOLDER_HEIGHT = 8.dp

@@ -21,7 +21,7 @@ internal data class PackageLogcatCaptureConfig(
     val clearCaptureFilesOnStart: Boolean,
     val stopWhenNoTrackedProcessesIdleMs: Long? = null,
     val maxBytesPerFile: Long = 768L * 1024L,
-    val maxFiles: Int = 4
+    val maxFiles: Int = 5
 )
 
 internal class PackageLogcatCaptureWorker(

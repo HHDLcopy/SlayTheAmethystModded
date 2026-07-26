@@ -187,12 +187,13 @@ internal class MainModManagementController(
                 mod.copy(enabled = if (isTexturePack) mod.enabled else false, newlyImported = highlighted)
             }
         )
+        val folderOrganizableMods = optionalMods + workshopCards.filter { it.canUseFolderOrganization() }
         markOptionalModsWithPendingSelectionDirty()
         prunePendingSelectionToInstalled()
         profileState = profileStore.load(host, pendingEnabledOptionalModIds)
         profileState = profileStore.sanitizeSelections(host, profileState, collectInstalledOptionalModKeys())
         MainFolderAssignmentHandoffStore.consumePendingAssignments(host, folderStateStore)
-        sanitizeFolderAssignments(optionalMods)
+        sanitizeFolderAssignments(folderOrganizableMods)
         associationStore.sanitize(host, optionalMods)
         persistFolderState(host)
     }
@@ -1107,7 +1108,7 @@ internal class MainModManagementController(
             return
         }
         val targets = mods
-            .filter { mod -> mod.installed && !mod.required }
+            .filter { mod -> mod.canUseFolderSelection() && !mod.required }
             .distinctBy { mod -> mod.storagePath }
         if (targets.isEmpty()) {
             return
@@ -1304,7 +1305,16 @@ internal class MainModManagementController(
         val autoEnabledAssociations = LinkedHashSet<String>()
         val missingDependencies = LinkedHashSet<String>()
         targetMods.forEach { mod ->
-            if (!mod.installed || mod.required || isPendingOptionalModEnabled(mod)) {
+            if (mod.required || isPendingOptionalModEnabled(mod)) {
+                return@forEach
+            }
+            if (mod.workshop?.state == WorkshopModState.TexturePackInstalled) {
+                val workshop = mod.workshop
+                setPendingOptionalModEnabled(host, mod, true)
+                TextureReplacerWorkshopInstaller.setPackEnabled(host, workshop.publishedFileId, true)
+                return@forEach
+            }
+            if (!mod.installed) {
                 return@forEach
             }
             val result = enableModWithDependencies(
@@ -1346,6 +1356,12 @@ internal class MainModManagementController(
         val blocked = LinkedHashMap<String, List<String>>()
         targetMods.forEach { mod ->
             if (!isPendingOptionalModEnabled(mod)) {
+                return@forEach
+            }
+            if (mod.workshop?.state == WorkshopModState.TexturePackInstalled) {
+                val workshop = mod.workshop
+                setPendingOptionalModEnabled(host, mod, false)
+                TextureReplacerWorkshopInstaller.setPackEnabled(host, workshop.publishedFileId, false)
                 return@forEach
             }
             val result = disableModWithAssociations(
@@ -2446,7 +2462,7 @@ internal class MainModManagementController(
         targetFolderId: String?,
         emitUndoSnackbar: Boolean
     ) {
-        if (!hostCallbacks.canEditMainScreenState()) {
+        if (!hostCallbacks.canEditMainScreenState() || !mod.canUseFolderOrganization()) {
             return
         }
         ensureFolderStateLoaded(host)
@@ -2518,7 +2534,7 @@ internal class MainModManagementController(
             return
         }
         val targets = mods
-            .filter { mod -> mod.installed && !mod.required }
+            .filter { mod -> mod.canUseFolderOrganization() && !mod.required }
             .distinctBy { mod -> mod.storagePath }
         if (targets.isEmpty()) {
             return

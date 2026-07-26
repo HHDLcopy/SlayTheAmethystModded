@@ -759,7 +759,10 @@ private fun BrowsePaginationFooter(
         Spacer(modifier = Modifier.height(72.dp))
         return
     }
-    Card(modifier = modifier.fillMaxWidth()) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+    ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -785,6 +788,7 @@ private fun WorkshopStatusHeader(
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(
@@ -876,7 +880,10 @@ private fun SearchPanel(
     }
 
     if (contained) {
-        Card(modifier = modifier.fillMaxWidth()) {
+        Card(
+            modifier = modifier.fillMaxWidth(),
+            elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+        ) {
             SearchPanelContent(
                 modifier = Modifier.padding(0.dp),
                 query = query,
@@ -1211,6 +1218,7 @@ internal fun WorkshopSummaryCard(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = 96.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Row(
             Modifier.padding(12.dp),
@@ -1258,6 +1266,7 @@ internal fun WorkshopListSkeletonCard(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = 96.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Row(
             Modifier.padding(12.dp),
@@ -1597,6 +1606,7 @@ internal fun WorkshopPreviewImage(
     Card(
         modifier = modifier,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Box(
             modifier = Modifier
@@ -1653,6 +1663,7 @@ private fun ErrorPanel(
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(stringResource(R.string.workshop_error_loading_title), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onErrorContainer)
@@ -1674,7 +1685,10 @@ private fun EmptyPanel(
     val resolvedTitle = title ?: stringResource(R.string.workshop_empty_title)
     val resolvedDescription = description ?: stringResource(R.string.workshop_empty_description)
     val resolvedActionLabel = actionLabel ?: stringResource(R.string.common_action_refresh)
-    Card(modifier = modifier.fillMaxWidth()) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+    ) {
         Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(resolvedTitle, style = MaterialTheme.typography.titleMedium)
             Text(resolvedDescription, color = MaterialTheme.colorScheme.onSurfaceVariant)

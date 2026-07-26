@@ -335,6 +335,12 @@ class MainScreenViewModel : ViewModel() {
             val onAction: (() -> Unit)? = null
         ) : Effect
         data class ShowDialog(val title: UiText, val message: UiText) : Effect
+        data class ShowBlockedModDisableDialog(
+            val title: UiText,
+            val message: UiText,
+            val onForceDisable: () -> Unit,
+            val onDisableDependents: () -> Unit,
+        ) : Effect
         data class ShowModNameMigrationFailureDialog(
             val failedMods: List<FailedModNameMigrationUi>
         ) : Effect

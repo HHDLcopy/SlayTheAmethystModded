@@ -1149,6 +1149,8 @@
     <string name="main_mod_association_removed">已刪除關聯：%1$s</string>
     <string name="main_mod_association_group_cleared">已解除「%1$s」所在關聯組</string>
     <string name="main_mod_toggle_off_blocked_title">無法取消模組</string>
+    <string name="main_mod_force_disable">強制關閉</string>
+    <string name="main_mod_disable_all_dependents">關閉所有依賴它的模組</string>
     <string name="main_mod_toggle_failed">更新模組勾選狀態失敗：%1$s</string>
     <string name="main_priority_unknown_mod">無法識別模組標識，載入優先順序設定失敗。</string>
     <string name="main_priority_updated">已將「%1$s」的載入優先順序設為 #%2$d</string>

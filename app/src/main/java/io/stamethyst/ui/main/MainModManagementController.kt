@@ -1045,7 +1045,9 @@ internal class MainModManagementController(
                     optionalMods = resolveOptionalModsWithPendingSelection()
                 )
                 if (result.blockedDependentModNames.isNotEmpty()) {
-                    emitDialog(
+                    emitBlockedModDisableDialog(
+                        host = host,
+                        rootMod = mod,
                         title = host.getString(R.string.main_mod_toggle_off_blocked_title),
                         message = host.getString(
                             R.string.main_mod_delete_blocked_message,
@@ -1547,6 +1549,83 @@ internal class MainModManagementController(
             autoDisabledAssociationModNames = ArrayList(autoDisabledAssociationModNames),
             blockedDependentModNames = emptyList()
         )
+    }
+
+    private fun emitBlockedModDisableDialog(
+        host: Activity,
+        rootMod: ModItemUi,
+        title: String,
+        message: String,
+    ) {
+        hostCallbacks.emitEffect(
+            MainScreenViewModel.Effect.ShowBlockedModDisableDialog(
+                title = UiText.DynamicString(title),
+                message = UiText.DynamicString(message),
+                onForceDisable = { forceDisableMod(host, rootMod) },
+                onDisableDependents = { disableModAndDependents(host, rootMod) },
+            )
+        )
+    }
+
+    private fun forceDisableMod(host: Activity, rootMod: ModItemUi) {
+        val optionalMods = resolveOptionalModsWithPendingSelection()
+        disableModsIgnoringDependents(host, expandModsWithAssociations(listOf(rootMod), optionalMods), optionalMods)
+    }
+
+    private fun disableModAndDependents(host: Activity, rootMod: ModItemUi) {
+        val optionalMods = resolveOptionalModsWithPendingSelection()
+        val targets = collectModDisableClosure(rootMod, optionalMods)
+        disableModsIgnoringDependents(host, targets, optionalMods)
+    }
+
+    private fun disableModsIgnoringDependents(
+        host: Activity,
+        targets: List<ModItemUi>,
+        optionalMods: List<ModItemUi>,
+    ) {
+        val previousSelection = snapshotPendingSelection()
+        val expandedTargets = expandModsWithAssociations(targets, optionalMods)
+        expandedTargets.forEach { mod ->
+            if (isPendingOptionalModEnabled(mod)) {
+                setPendingOptionalModEnabled(host, mod, false)
+            }
+        }
+        if (!persistPendingSelection(host)) {
+            restorePendingSelection(previousSelection)
+            return
+        }
+        hostCallbacks.republish(host)
+    }
+
+    private fun collectModDisableClosure(rootMod: ModItemUi, optionalMods: List<ModItemUi>): List<ModItemUi> {
+        val targets = LinkedHashMap<String, ModItemUi>()
+        fun addExpanded(mods: List<ModItemUi>) {
+            expandModsWithAssociations(mods, optionalMods).forEach { mod ->
+                val key = resolveModEnableVisitKey(mod)
+                if (key.isNotEmpty()) {
+                    targets.putIfAbsent(key, mod)
+                }
+            }
+        }
+        addExpanded(listOf(rootMod))
+        var changed = true
+        while (changed) {
+            changed = false
+            val targetIds = LinkedHashSet<String>()
+            targets.values.forEach { targetIds.addAll(collectModIdentityIds(it)) }
+            val dependents = optionalMods.filter { mod ->
+                isPendingOptionalModEnabled(mod) &&
+                    collectModIdentityIds(mod).none { targetIds.contains(it) } &&
+                    mod.dependencies.any { dependency ->
+                        val normalizedDependency = normalizeModId(dependency)
+                        normalizedDependency.isNotEmpty() && targetIds.contains(normalizedDependency)
+                    }
+            }
+            val beforeSize = targets.size
+            addExpanded(dependents)
+            changed = targets.size != beforeSize
+        }
+        return ArrayList(targets.values)
     }
 
     private fun expandModsWithAssociations(

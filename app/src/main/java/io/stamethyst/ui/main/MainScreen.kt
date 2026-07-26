@@ -3136,6 +3136,7 @@ fun LauncherCrashRecoveryScreen(
                         onAction = effect.onAction
                     )
                 is MainScreenViewModel.Effect.ShowDialog -> effectDialog = effect
+                is MainScreenViewModel.Effect.ShowBlockedModDisableDialog -> Unit
                 is MainScreenViewModel.Effect.ShowModNameMigrationFailureDialog -> Unit
                 is MainScreenViewModel.Effect.OpenExportModPicker -> Unit
                 is MainScreenViewModel.Effect.LaunchIntent -> hostActivity?.startActivity(effect.intent)
@@ -3200,6 +3201,9 @@ internal fun LauncherMainRoute(
         task.status.isActiveDownload()
     }
     var effectDialog by remember { mutableStateOf<MainScreenViewModel.Effect.ShowDialog?>(null) }
+    var blockedModDisableDialog by remember {
+        mutableStateOf<MainScreenViewModel.Effect.ShowBlockedModDisableDialog?>(null)
+    }
     var modNameMigrationFailureDialog by remember {
         mutableStateOf<MainScreenViewModel.Effect.ShowModNameMigrationFailureDialog?>(null)
     }
@@ -3294,6 +3298,7 @@ internal fun LauncherMainRoute(
                         onAction = effect.onAction
                     )
                 is MainScreenViewModel.Effect.ShowDialog -> effectDialog = effect
+                is MainScreenViewModel.Effect.ShowBlockedModDisableDialog -> blockedModDisableDialog = effect
                 is MainScreenViewModel.Effect.ShowModNameMigrationFailureDialog -> {
                     modNameMigrationFailureDialog = effect
                 }
@@ -3319,6 +3324,44 @@ internal fun LauncherMainRoute(
                     Text(text = stringResource(R.string.common_action_confirm))
                 }
             }
+        )
+    }
+
+    blockedModDisableDialog?.let { dialog ->
+        AlertDialog(
+            onDismissRequest = { blockedModDisableDialog = null },
+            title = { Text(dialog.title.resolve()) },
+            text = { Text(dialog.message.resolve()) },
+            confirmButton = {
+                Column(horizontalAlignment = Alignment.End) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = {
+                                blockedModDisableDialog = null
+                                dialog.onForceDisable()
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.error,
+                                contentColor = MaterialTheme.colorScheme.onError,
+                            ),
+                        ) {
+                            Text(stringResource(R.string.main_mod_force_disable))
+                        }
+                        TextButton(onClick = { blockedModDisableDialog = null }) {
+                            Text(stringResource(R.string.common_action_confirm))
+                        }
+                    }
+                    TextButton(
+                        onClick = {
+                            blockedModDisableDialog = null
+                            dialog.onDisableDependents()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(stringResource(R.string.main_mod_disable_all_dependents))
+                    }
+                }
+            },
         )
     }
 

@@ -1150,6 +1150,8 @@
     <string name="main_mod_association_removed">已删除关联：%1$s</string>
     <string name="main_mod_association_group_cleared">已解除「%1$s」所在关联组</string>
     <string name="main_mod_toggle_off_blocked_title">无法取消模组</string>
+    <string name="main_mod_force_disable">强制关闭</string>
+    <string name="main_mod_disable_all_dependents">关闭所有被依赖的模组</string>
     <string name="main_mod_toggle_failed">更新模组勾选状态失败：%1$s</string>
     <string name="main_priority_unknown_mod">无法识别模组标识，加载优先级设置失败。</string>
     <string name="main_priority_updated">已将「%1$s」的加载优先级设为 #%2$d</string>

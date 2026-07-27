@@ -544,6 +544,10 @@ Do you still want to continue?</string>
     <string name="main_mod_suggestion_dialog_title_format">Notice</string>
     <string name="main_mod_patch_badge_content_description">Open import patch details</string>
     <string name="main_mod_patch_dialog_title_format">Import patches</string>
+    <string name="main_mod_patch_dialog_upgrade_message">One or more import patches have a newer version. Re-import this mod to apply the upgrade.</string>
+    <string name="main_mod_patch_dialog_version_format">Applied v%1$d / current v%2$d</string>
+    <string name="main_mod_patch_dialog_current_version_format">Current v%1$d</string>
+    <string name="main_mod_patch_dialog_future_imports">Settings apply to future imports. Re-import this mod after changing a setting.</string>
     <string name="main_mod_patch_section_atlas_title">Atlas filter compatibility</string>
     <string name="main_mod_patch_section_downscale_title">Atlas offline downscale</string>
     <string name="main_mod_patch_section_manifest_title">ModTheSpire.json root fix</string>
@@ -834,6 +838,13 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="mod_import_patch_downfall_detail_merchant">Merchant classes: %1$d</string>
     <string name="mod_import_patch_downfall_detail_hexaghost">Hexaghost body classes: %1$d</string>
     <string name="mod_import_patch_downfall_detail_boss_panel">Boss mechanic panel classes: %1$d</string>
+    <string name="mod_import_patch_firstperson_title">FirstPersonView gyro camera</string>
+    <string name="mod_import_patch_firstperson_summary">Use the phone gyroscope for the first-person view while keeping normal click and touch input.</string>
+    <string name="mod_import_patch_firstperson_applied">Patched FirstPersonView to use the phone gyroscope for camera movement.</string>
+    <string name="mod_import_patch_firstperson_noop">FirstPersonView camera reads did not need patching.</string>
+    <string name="mod_import_patch_firstperson_detail_classes">Patched classes: %1$d</string>
+    <string name="mod_import_patch_firstperson_detail_yaw">Yaw cursor reads: %1$d</string>
+    <string name="mod_import_patch_firstperson_detail_pitch">Pitch cursor reads: %1$d</string>
     <string name="mod_import_patch_vupshion_title">VUPShionMod startup compatibility</string>
     <string name="mod_import_patch_vupshion_summary">Remove Steam ownership startup gate and related fragile paths.</string>
     <string name="mod_import_patch_vupshion_applied">Patched VUPShionMod startup compatibility.</string>

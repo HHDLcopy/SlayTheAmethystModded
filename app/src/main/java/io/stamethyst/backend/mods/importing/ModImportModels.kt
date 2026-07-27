@@ -66,8 +66,6 @@ internal data class ModImportItemPlan(
     val launchModId: String = "",
     val reservedComponent: String = "",
     val duplicateConflictKey: String? = null,
-    val preparedImportFile: File? = null,
-    val preparedPatchResults: List<ImportPatchResult> = emptyList(),
     val patchPlans: List<ImportPatchPlan> = emptyList()
 ) {
     val displayModId: String
@@ -185,9 +183,8 @@ internal data class ModImportExecutionReport(
 }
 
 internal enum class ModImportPatchSkipReason {
-    DuplicateZipEntryPreApplied,
     DisabledByDecision,
-    AlreadyPrepared,
+    DisabledBySetting,
     ModuleUnavailable
 }
 

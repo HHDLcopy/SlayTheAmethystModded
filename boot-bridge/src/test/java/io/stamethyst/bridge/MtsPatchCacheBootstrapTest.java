@@ -128,7 +128,7 @@ public class MtsPatchCacheBootstrapTest {
     }
 
     @Test
-    public void preparePrepackagedLaunch_marksSettingsAppliesGameDirectoryAndPreparesAnnotationsWithoutInitializingMods() throws Throwable {
+    public void preparePrepackagedLaunch_marksSettingsAppliesGameDirectoryPreparesAnnotationsAndInitializesWorkshopInfos() throws Throwable {
         File root = Files.createTempDirectory("mts-patch-cache-bootstrap-prepare-").toFile();
         ClassLoader previousLoader = Thread.currentThread().getContextClassLoader();
         String previousUserDir = System.getProperty("user.dir");
@@ -144,12 +144,18 @@ public class MtsPatchCacheBootstrapTest {
             System.setProperty(PROP_GAME_DIR, gameDir.getAbsolutePath());
             System.clearProperty(PROP_PREPARED);
 
+            Class<?> mtsLoader = cachedLoader.loadClass("com.evacipated.cardcrawl.modthespire.Loader");
+            assertNull(mtsLoader.getMethod("getWorkshopInfos").invoke(null));
+
             MtsPatchCacheBootstrap.preparePrepackagedLaunch();
 
             assertEquals(gameDir.getAbsolutePath(), System.getProperty("user.dir"));
             assertEquals("2", System.getProperty(PROP_PREPARED));
             assertNull(System.getProperty(PROP_INITIALIZED));
             assertNull(System.getProperty(PROP_INITIALIZED_DIR));
+            Object workshopInfos = mtsLoader.getMethod("getWorkshopInfos").invoke(null);
+            assertTrue(workshopInfos instanceof java.util.List);
+            assertTrue(((java.util.List<?>) workshopInfos).isEmpty());
             Class<?> settings = cachedLoader.loadClass("com.megacrit.cardcrawl.core.Settings");
             assertTrue(settings.getField("isModded").getBoolean(null));
             assertFalse(settings.getField("isDev").getBoolean(null));
@@ -599,6 +605,8 @@ public class MtsPatchCacheBootstrapTest {
                         "package com.evacipated.cardcrawl.modthespire;\n" +
                                 "public final class Loader {\n" +
                                 "  public static ModInfo[] MODINFOS = new ModInfo[] { new ModInfo(), new ModInfo() };\n" +
+                                "  private static java.util.List WORKSHOP_INFOS;\n" +
+                                "  public static java.util.List getWorkshopInfos() { return WORKSHOP_INFOS; }\n" +
                                 "}\n"
                 ).getBytes(StandardCharsets.UTF_8)
         );

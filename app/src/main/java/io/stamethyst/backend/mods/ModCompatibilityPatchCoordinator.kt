@@ -1,6 +1,8 @@
 package io.stamethyst.backend.mods
 
 import android.content.Context
+import io.stamethyst.backend.mods.importing.patches.ImportPatchRegistry
+import io.stamethyst.backend.mods.importing.patches.texture.AtlasFilterPatchModule
 import io.stamethyst.config.RuntimePaths
 import java.io.File
 import java.io.FileInputStream
@@ -104,7 +106,7 @@ internal object ModCompatibilityPatchCoordinator {
         installedModsById: Map<String, File>,
         launchSnapshot: ModManager.LaunchModSnapshot?
     ) {
-        if (!CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(context)) {
+        if (!ImportPatchRegistry.isEnabled(context, AtlasFilterPatchModule.id)) {
             ModCompatibilityDiagnostics.appendCompatLog(
                 context,
                 "global atlas filter compat skip: disabled by user setting (runtime fallback disabled)"

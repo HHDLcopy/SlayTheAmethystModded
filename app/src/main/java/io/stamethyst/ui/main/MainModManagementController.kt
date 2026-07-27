@@ -8,12 +8,12 @@ import androidx.appcompat.app.AlertDialog
 import io.stamethyst.R
 import io.stamethyst.backend.file_interactive.FileShareCompat
 import io.stamethyst.backend.file_interactive.SafFileExporter
-import io.stamethyst.backend.mods.AtlasOfflineDownscaleStrategy
 import io.stamethyst.backend.mods.ImportedModPatchRegistry
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.mods.ModManifestNameRewriter
 import io.stamethyst.backend.mods.MtsLaunchManifestValidator
+import io.stamethyst.backend.mods.importing.patches.ImportPatchRegistry
 import io.stamethyst.backend.resources.RuntimeResourceProvider
 import io.stamethyst.backend.workshop.WorkshopDownloadProcessService
 import io.stamethyst.backend.workshop.WorkshopDownloadTaskRecord
@@ -30,12 +30,12 @@ import io.stamethyst.backend.workshop.isActiveDownload
 import io.stamethyst.backend.workshop.shouldShowOnLauncherCards
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.model.ModItemUi
+import io.stamethyst.model.ModImportPatchUi
 import io.stamethyst.model.WorkshopModState
 import io.stamethyst.model.WorkshopModUi
 import io.stamethyst.ui.LauncherTransientNoticeDuration
 import io.stamethyst.ui.UiText
 import io.stamethyst.ui.UiBusyOperation
-import io.stamethyst.ui.settings.importing.ModImportFlowCoordinator
 import io.stamethyst.ui.settings.files.SettingsFileService
 import io.stamethyst.ui.workshop.WorkshopDownloadCenterStore
 import io.stamethyst.ui.workshop.toRecord
@@ -676,13 +676,6 @@ internal class MainModManagementController(
         }
     }
 
-    fun onModJarsPicked(host: Activity, uris: List<Uri>?) {
-        if (hostCallbacks.isBusy() || uris.isNullOrEmpty()) {
-            return
-        }
-        startModJarImport(host, uris)
-    }
-
     fun onDeleteMod(host: Activity, mod: ModItemUi) {
         if (hostCallbacks.isBusy() || mod.required) {
             return
@@ -1216,49 +1209,6 @@ internal class MainModManagementController(
             )
         }
         return issues
-    }
-
-    private fun startModJarImport(
-        host: Activity,
-        uris: List<Uri>,
-        replaceExistingDuplicates: Boolean = false,
-        skipDuplicateCheck: Boolean = false,
-        importAtlasDownscaleStrategy: AtlasOfflineDownscaleStrategy? = null,
-        skipAtlasDownscalePrompt: Boolean = false
-    ) {
-        ModImportFlowCoordinator.startModJarImport(
-            host = host,
-            executor = executor,
-            uris = uris,
-            callbacks = ModImportFlowCoordinator.Callbacks(
-                setBusy = { busy, message, operation, progressPercent ->
-                    setBusy(
-                        busy = busy,
-                        message = message,
-                        operation = operation,
-                        progressPercent = progressPercent
-                    )
-                },
-                showNotice = { message, duration ->
-                    emitSnackbar(
-                        message = message,
-                        duration = if (duration == Toast.LENGTH_SHORT) {
-                            LauncherTransientNoticeDuration.SHORT
-                        } else {
-                            LauncherTransientNoticeDuration.LONG
-                        }
-                    )
-                },
-                onImportApplied = {
-                    refresh(host, storageAccessible = true)
-                    hostCallbacks.republish(host)
-                }
-            ),
-            replaceExistingDuplicates = replaceExistingDuplicates,
-            skipDuplicateCheck = skipDuplicateCheck,
-            importAtlasDownscaleStrategy = importAtlasDownscaleStrategy,
-            skipAtlasDownscalePrompt = skipAtlasDownscalePrompt
-        )
     }
 
     private fun resolveExportableModFile(mod: ModItemUi): File? {
@@ -1849,15 +1799,33 @@ internal class MainModManagementController(
         val downloadTasksByPublishedFileId = loadDownloadCenterTaskRecords(host)
         return ModManager.listInstalledMods(host).map { mod ->
             val workshopRecord = workshopRecordsByInstalledPath[mod.jarFile.absolutePath]
-            val importPatchDetails = if (mod.required) {
+            val importPatchInfo = if (mod.required) {
                 null
             } else {
                 ImportedModPatchRegistry.lookupKey(host, mod.jarFile.absolutePath)
                     ?.let(importedPatchInfoByPath::get)
-                    ?.let { patchInfo ->
-                        SettingsFileService.buildModImportPatchDetailMessage(host, patchInfo)
-                    }
             }
+            val importPatchDetails = importPatchInfo?.let { patchInfo ->
+                SettingsFileService.buildModImportPatchDetailMessage(host, patchInfo)
+            }
+            val importPatches = importPatchInfo?.let { patchInfo ->
+                ImportPatchRegistry.moduleStates(host, patchInfo)
+                    .asSequence()
+                    .filter { state -> state.appliedVersion != null }
+                    .map { state ->
+                        ModImportPatchUi(
+                            moduleId = state.id,
+                            name = state.displayName,
+                            summary = state.summary,
+                            appliedVersion = state.appliedVersion,
+                            currentVersion = state.version,
+                            userConfigurable = state.userConfigurable,
+                            enabled = state.enabled,
+                            isOutdated = state.outdated
+                        )
+                    }
+                    .toList()
+            }.orEmpty()
             ModItemUi(
                 modId = mod.modId,
                 manifestModId = mod.manifestModId,
@@ -1873,6 +1841,10 @@ internal class MainModManagementController(
                 explicitPriority = mod.explicitPriority,
                 effectivePriority = mod.effectivePriority,
                 importPatchDetails = importPatchDetails,
+                importPatches = importPatches,
+                hasOutdatedImportPatches = importPatchInfo?.let(
+                    ImportPatchRegistry::hasOutdatedAppliedPatches
+                ) == true,
                 alias = ModAliasStore.resolveAlias(mod.jarFile.absolutePath, aliases),
                 newlyImported = NewlyImportedModHighlightStore.contains(mod.jarFile.absolutePath) ||
                     workshopRecord?.let { record ->

@@ -37,6 +37,11 @@ class StsDesktopJarPatcherTest {
     }
 
     @Test
+    fun requiredPatchClasses_includeFirstPersonGyroBridge() {
+        assertTrue(REQUIRED_STS_PATCH_CLASSES.contains(STS_PATCH_FIRST_PERSON_GYRO_BRIDGE_CLASS))
+    }
+
+    @Test
     fun requiredPatchClasses_doNotRequireOptionsPanelFromPatchJar() {
         assertFalse(REQUIRED_STS_PATCH_CLASSES.contains(STS_PATCH_OPTIONS_PANEL_CLASS))
     }
@@ -118,6 +123,22 @@ class StsDesktopJarPatcherTest {
 
         assertTrue(namedInnerIncluded)
         assertTrue(anonymousInnerIncluded)
+    }
+
+    @Test
+    fun shouldPatchStsEntry_acceptsFirstPersonGyroBridge() {
+        val method = StsDesktopJarPatcher::class.java.getDeclaredMethod(
+            "shouldPatchStsEntry",
+            String::class.java
+        )
+        method.isAccessible = true
+
+        val included = method.invoke(
+            StsDesktopJarPatcher,
+            STS_PATCH_FIRST_PERSON_GYRO_BRIDGE_CLASS
+        ) as Boolean
+
+        assertTrue(included)
     }
 
     @Test

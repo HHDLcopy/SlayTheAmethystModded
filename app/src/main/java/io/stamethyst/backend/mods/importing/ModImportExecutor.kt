@@ -4,7 +4,7 @@ import android.content.Context
 import android.system.ErrnoException
 import android.system.Os
 import io.stamethyst.R
-import io.stamethyst.backend.mods.DuplicateZipEntryNormalizer
+import io.stamethyst.backend.mods.ImportedModPatchRecord
 import io.stamethyst.backend.mods.ImportedModPatchInfo
 import io.stamethyst.backend.mods.ImportedModPatchRegistry
 import io.stamethyst.backend.mods.ModManager
@@ -19,7 +19,6 @@ import io.stamethyst.backend.mods.importing.patches.mods.frieren.FrierenImportPa
 import io.stamethyst.backend.mods.importing.patches.mods.jacketnoanoko.JacketNoAnoKoImportPatchModule
 import io.stamethyst.backend.mods.importing.patches.mods.ori.OriImportPatchModule
 import io.stamethyst.backend.mods.importing.patches.mods.vupshion.VupShionImportPatchModule
-import io.stamethyst.backend.mods.importing.patches.structure.DuplicateZipEntryPatchModule
 import io.stamethyst.backend.mods.importing.patches.structure.ManifestRootPatchModule
 import io.stamethyst.backend.mods.importing.patches.texture.AtlasFilterPatchModule
 import io.stamethyst.backend.mods.importing.patches.texture.AtlasOfflineDownscalePatchModule
@@ -33,12 +32,9 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
-import java.util.LinkedHashSet
+import java.util.LinkedHashMap
 
 internal object ModImportExecutor {
-    internal fun normalizeWorkingJarForImport(workingJar: File) =
-        DuplicateZipEntryNormalizer.normalizeInPlaceIfNeeded(workingJar)
-
     private class ProgressReporter(
         val totalSteps: Int,
         private val onProgress: (ModImportExecutionProgress) -> Unit
@@ -76,7 +72,7 @@ internal object ModImportExecutor {
             conflictKey == null || decisions.duplicateDecisionFor(conflictKey) != DuplicateImportDecision.SkipNew
         }
         val progress = ProgressReporter(
-            totalSteps = executableItems.sumOf { countItemSteps(it, decisions, modulesById) },
+            totalSteps = executableItems.sumOf { countItemSteps(context, it, decisions, modulesById) },
             onProgress = onProgress
         )
         val results = ArrayList<ModImportExecutionItemResult>()
@@ -149,9 +145,9 @@ internal object ModImportExecutor {
         progress: ProgressReporter,
         onPatchEvent: (ModImportPatchExecutionEvent) -> Unit
     ): ModImportExecutionItemResult {
-        val preparedWorkingJar = item.preparedImportFile
-        val workingJar = preparedWorkingJar ?: File(plan.session.sessionDir, "working-${item.source.index}.jar")
-        var activeWorkingJar = workingJar
+        // A plan may have rewritten a disposable inspection copy. Every real import starts
+        // from the untouched source so both manager and per-item switches are authoritative.
+        val workingJar = File(plan.session.sessionDir, "working-${item.source.index}.jar")
         var committedTarget: File? = null
         var commitMarker: File? = null
         return try {
@@ -159,23 +155,15 @@ internal object ModImportExecutor {
                 item = item,
                 message = context.importString(R.string.mod_import_progress_prepare_working_copy, item.source.displayName)
             )
-            if (preparedWorkingJar == null) {
-                copyFile(item.source.file, workingJar)
-                val normalized = normalizeWorkingJarForImport(workingJar)
-                if (normalized.rewritten) {
-                    activeWorkingJar = File(plan.session.sessionDir, "normalized-working-${item.source.index}.jar")
-                    copyFile(workingJar, activeWorkingJar)
-                }
-            }
-            val patchResults = ArrayList<ImportPatchResult>(item.preparedPatchResults)
-            val preparedPatchModuleIds = item.preparedPatchResults.mapTo(LinkedHashSet()) { it.moduleId }
+            copyFile(item.source.file, workingJar)
+            val patchResults = ArrayList<ImportPatchResult>()
             for (patchPlan in item.patchPlans) {
-                if (patchPlan.moduleId == DuplicateZipEntryPatchModule.id) {
+                if (!ImportPatchRegistry.isEnabled(context, patchPlan.moduleId)) {
                     onPatchEvent(
                         ModImportPatchExecutionEvent.Skipped(
                             item = item,
                             patchPlan = patchPlan,
-                            reason = ModImportPatchSkipReason.DuplicateZipEntryPreApplied
+                            reason = ModImportPatchSkipReason.DisabledBySetting
                         )
                     )
                     continue
@@ -186,16 +174,6 @@ internal object ModImportExecutor {
                             item = item,
                             patchPlan = patchPlan,
                             reason = ModImportPatchSkipReason.DisabledByDecision
-                        )
-                    )
-                    continue
-                }
-                if (preparedPatchModuleIds.contains(patchPlan.moduleId)) {
-                    onPatchEvent(
-                        ModImportPatchExecutionEvent.Skipped(
-                            item = item,
-                            patchPlan = patchPlan,
-                            reason = ModImportPatchSkipReason.AlreadyPrepared
                         )
                     )
                     continue
@@ -227,7 +205,7 @@ internal object ModImportExecutor {
                     )
                     val result = module.apply(
                         context = context,
-                        workingJar = activeWorkingJar,
+                        workingJar = workingJar,
                         item = item,
                         plan = patchPlan,
                         decisions = decisions
@@ -270,7 +248,7 @@ internal object ModImportExecutor {
                 item = item,
                 message = context.importString(R.string.mod_import_progress_validate_manifest, item.source.displayName)
             )
-            val finalLaunchModId = MtsLaunchManifestValidator.resolveLaunchModId(activeWorkingJar).trim()
+            val finalLaunchModId = MtsLaunchManifestValidator.resolveLaunchModId(workingJar).trim()
             val replaceExisting = item.duplicateConflictKey?.let { conflictKey ->
                 decisions.duplicateDecisionFor(conflictKey) == DuplicateImportDecision.ReplaceExisting
             } == true
@@ -289,10 +267,9 @@ internal object ModImportExecutor {
                 val marker = importCommitMarker(target)
                 commitMarker = marker
                 writeImportCommitMarker(marker, target)
-                moveFileReplacing(activeWorkingJar, target)
+                moveFileReplacing(workingJar, target)
             }
             committedTarget = target
-            activeWorkingJar = target
             val targetPath = target.absolutePath
             progress.step(
                 item = item,
@@ -343,7 +320,7 @@ internal object ModImportExecutor {
             ImportedModPatchRegistry.put(
                 context = context,
                 storagePath = targetPath,
-                patchInfo = buildLegacyPatchInfo(item, patchResults)
+                patchInfo = buildImportedPatchInfo(item, patchResults)
             )
             commitMarker?.delete()
             commitMarker = null
@@ -387,9 +364,6 @@ internal object ModImportExecutor {
             }
             if (workingJar.exists()) {
                 workingJar.delete()
-            }
-            if (activeWorkingJar != workingJar && committedTarget == null && activeWorkingJar.exists()) {
-                activeWorkingJar.delete()
             }
             ModImportExecutionItemResult(
                 itemId = item.id,
@@ -449,14 +423,14 @@ internal object ModImportExecutor {
     }
 
     private fun countItemSteps(
+        context: Context,
         item: ModImportItemPlan,
         decisions: ModImportDecisions,
         modulesById: Map<String, ImportPatchModule>
     ): Int {
         val enabledPatchSteps = item.patchPlans.count { patchPlan ->
-            patchPlan.moduleId != DuplicateZipEntryPatchModule.id &&
+            ImportPatchRegistry.isEnabled(context, patchPlan.moduleId) &&
                 decisions.isPatchEnabled(item.id, patchPlan) &&
-                item.preparedPatchResults.none { it.moduleId == patchPlan.moduleId } &&
                 modulesById.containsKey(patchPlan.moduleId)
         }
         val replaceExisting = item.duplicateConflictKey?.let { conflictKey ->
@@ -568,7 +542,7 @@ internal object ModImportExecutor {
         }
     }
 
-    private fun buildLegacyPatchInfo(
+    private fun buildImportedPatchInfo(
         item: ModImportItemPlan,
         patchResults: List<ImportPatchResult>
     ): ImportedModPatchInfo {
@@ -594,8 +568,16 @@ internal object ModImportExecutor {
         var patchedOriBoxBlurShaderEntries = 0
         var patchedOriTextureSamplesBefore = 0
         var patchedOriTextureSamplesAfter = 0
+        val appliedPatches = LinkedHashMap<String, ImportedModPatchRecord>()
 
         patchResults.filter { it.applied }.forEach { result ->
+            val existingRecord = appliedPatches[result.moduleId]
+            if (existingRecord == null || result.moduleVersion > existingRecord.version) {
+                appliedPatches[result.moduleId] = ImportedModPatchRecord(
+                    moduleId = result.moduleId,
+                    version = result.moduleVersion.coerceAtLeast(0)
+                )
+            }
             when (result.moduleId) {
                 AtlasFilterPatchModule.id -> {
                     patchedAtlasEntries += result.metrics["patchedAtlasEntries"] ?: 0
@@ -668,7 +650,8 @@ internal object ModImportExecutor {
             patchedOriGaussianBlurShaderEntries = patchedOriGaussianBlurShaderEntries,
             patchedOriBoxBlurShaderEntries = patchedOriBoxBlurShaderEntries,
             patchedOriTextureSamplesBefore = patchedOriTextureSamplesBefore,
-            patchedOriTextureSamplesAfter = patchedOriTextureSamplesAfter
+            patchedOriTextureSamplesAfter = patchedOriTextureSamplesAfter,
+            appliedPatches = appliedPatches.values.toList()
         )
     }
 

@@ -10,6 +10,8 @@ import io.stamethyst.backend.easytier.EasyTierSessionController
 import io.stamethyst.backend.easytier.EasyTierStateStore
 import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.mods.ModManager
+import io.stamethyst.backend.mods.importing.patches.ImportPatchRegistry
+import io.stamethyst.backend.mods.importing.patches.texture.AtlasFilterPatchModule
 import io.stamethyst.backend.render.RendererBackendResolver
 import io.stamethyst.backend.render.RendererDecision
 import io.stamethyst.backend.render.RendererBackend
@@ -448,7 +450,7 @@ object StsLaunchSpec {
         args.add("-Djava.awt.graphicsenv=net.java.openjdk.cacio.ctc.CTCGraphicsEnvironment")
         args.add(
             "-Damethyst.gdx.global_atlas_filter_compat=" +
-                if (CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(context)) "true" else "false"
+                if (ImportPatchRegistry.isEnabled(context, AtlasFilterPatchModule.id)) "true" else "false"
         )
         args.add(
             "-Damethyst.gdx.runtime_texture_compat=" +

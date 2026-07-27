@@ -13,6 +13,10 @@ object CompatibilitySettings {
         setDownfallImportCompatEnabled(context, true)
         setVupShionModCompatEnabled(context, true)
         setChaofanModCompatEnabled(context, true)
+        setJacketNoAnoKoModCompatEnabled(
+            context,
+            LauncherConfig.DEFAULT_JACKET_NO_ANO_KO_MOD_COMPAT_ENABLED
+        )
         setFragmentShaderPrecisionCompatEnabled(
             context,
             LauncherConfig.DEFAULT_FRAGMENT_SHADER_PRECISION_COMPAT_ENABLED
@@ -204,6 +208,11 @@ object CompatibilitySettings {
     @JvmStatic
     fun isJacketNoAnoKoModCompatEnabled(context: Context): Boolean {
         return LauncherConfig.isJacketNoAnoKoModCompatEnabled(context)
+    }
+
+    @JvmStatic
+    fun setJacketNoAnoKoModCompatEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setJacketNoAnoKoModCompatEnabled(context, enabled)
     }
 
     @JvmStatic

@@ -8,6 +8,13 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.mods.RuntimeTextureAtlasDownscaleQuality
+import io.stamethyst.backend.mods.importing.patches.ImportPatchRegistry
+import io.stamethyst.backend.mods.importing.patches.mods.chaofanmod.ChaofanModImportPatchModule
+import io.stamethyst.backend.mods.importing.patches.mods.downfall.DownfallImportPatchModule
+import io.stamethyst.backend.mods.importing.patches.mods.frieren.FrierenImportPatchModule
+import io.stamethyst.backend.mods.importing.patches.mods.vupshion.VupShionImportPatchModule
+import io.stamethyst.backend.mods.importing.patches.structure.ManifestRootPatchModule
+import io.stamethyst.backend.mods.importing.patches.texture.AtlasFilterPatchModule
 
 @Stable
 class CompatibilityScreenViewModel : ViewModel() {
@@ -67,12 +74,12 @@ class CompatibilityScreenViewModel : ViewModel() {
         uiState = uiState.copy(
             busy = false,
             busyMessage = null,
-            globalAtlasFilterCompatEnabled = CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(host),
-            modManifestRootCompatEnabled = CompatibilitySettings.isModManifestRootCompatEnabled(host),
-            frierenModCompatEnabled = CompatibilitySettings.isFrierenModCompatEnabled(host),
-            downfallImportCompatEnabled = CompatibilitySettings.isDownfallImportCompatEnabled(host),
-            vupShionModCompatEnabled = CompatibilitySettings.isVupShionModCompatEnabled(host),
-            chaofanModCompatEnabled = CompatibilitySettings.isChaofanModCompatEnabled(host),
+            globalAtlasFilterCompatEnabled = ImportPatchRegistry.isEnabled(host, AtlasFilterPatchModule.id),
+            modManifestRootCompatEnabled = ImportPatchRegistry.isEnabled(host, ManifestRootPatchModule.id),
+            frierenModCompatEnabled = ImportPatchRegistry.isEnabled(host, FrierenImportPatchModule.id),
+            downfallImportCompatEnabled = ImportPatchRegistry.isEnabled(host, DownfallImportPatchModule.id),
+            vupShionModCompatEnabled = ImportPatchRegistry.isEnabled(host, VupShionImportPatchModule.id),
+            chaofanModCompatEnabled = ImportPatchRegistry.isEnabled(host, ChaofanModImportPatchModule.id),
             fragmentShaderPrecisionCompatEnabled = CompatibilitySettings.isFragmentShaderPrecisionCompatEnabled(host),
             runtimeTextureCompatEnabled = CompatibilitySettings.isRuntimeTextureCompatEnabled(host),
             mainMenuPreviewReuseCompatEnabled = CompatibilitySettings.isMainMenuPreviewReuseCompatEnabled(host),
@@ -130,7 +137,7 @@ class CompatibilityScreenViewModel : ViewModel() {
         if (uiState.busy) {
             return
         }
-        CompatibilitySettings.setGlobalAtlasFilterCompatEnabled(host, enabled)
+        ImportPatchRegistry.setEnabled(host, AtlasFilterPatchModule.id, enabled)
         uiState = uiState.copy(globalAtlasFilterCompatEnabled = enabled)
     }
 
@@ -138,7 +145,7 @@ class CompatibilityScreenViewModel : ViewModel() {
         if (uiState.busy) {
             return
         }
-        CompatibilitySettings.setModManifestRootCompatEnabled(host, enabled)
+        ImportPatchRegistry.setEnabled(host, ManifestRootPatchModule.id, enabled)
         uiState = uiState.copy(modManifestRootCompatEnabled = enabled)
     }
 
@@ -146,7 +153,7 @@ class CompatibilityScreenViewModel : ViewModel() {
         if (uiState.busy) {
             return
         }
-        CompatibilitySettings.setFrierenModCompatEnabled(host, enabled)
+        ImportPatchRegistry.setEnabled(host, FrierenImportPatchModule.id, enabled)
         uiState = uiState.copy(frierenModCompatEnabled = enabled)
     }
 
@@ -154,7 +161,7 @@ class CompatibilityScreenViewModel : ViewModel() {
         if (uiState.busy) {
             return
         }
-        CompatibilitySettings.setDownfallImportCompatEnabled(host, enabled)
+        ImportPatchRegistry.setEnabled(host, DownfallImportPatchModule.id, enabled)
         uiState = uiState.copy(downfallImportCompatEnabled = enabled)
     }
 
@@ -162,7 +169,7 @@ class CompatibilityScreenViewModel : ViewModel() {
         if (uiState.busy) {
             return
         }
-        CompatibilitySettings.setVupShionModCompatEnabled(host, enabled)
+        ImportPatchRegistry.setEnabled(host, VupShionImportPatchModule.id, enabled)
         uiState = uiState.copy(vupShionModCompatEnabled = enabled)
     }
 
@@ -170,7 +177,7 @@ class CompatibilityScreenViewModel : ViewModel() {
         if (uiState.busy) {
             return
         }
-        CompatibilitySettings.setChaofanModCompatEnabled(host, enabled)
+        ImportPatchRegistry.setEnabled(host, ChaofanModImportPatchModule.id, enabled)
         uiState = uiState.copy(chaofanModCompatEnabled = enabled)
     }
 

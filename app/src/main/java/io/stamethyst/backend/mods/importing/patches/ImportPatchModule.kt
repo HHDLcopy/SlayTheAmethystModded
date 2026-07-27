@@ -25,6 +25,13 @@ internal interface ImportPatchModule {
     val category: ImportPatchCategory
     val defaultEnabled: Boolean
     val userConfigurable: Boolean
+    /**
+     * Some expensive candidate scans can be deferred by callers such as the workshop importer.
+     * This is intentionally separate from [userConfigurable], because every registered patch can
+     * now be controlled by the import-patch manager.
+     */
+    val supportsDeferredInspection: Boolean
+        get() = false
     val order: Int
     val failurePolicy: ImportPatchFailurePolicy
 

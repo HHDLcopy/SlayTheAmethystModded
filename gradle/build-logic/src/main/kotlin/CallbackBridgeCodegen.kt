@@ -129,6 +129,17 @@ object CallbackBridgeCodegen {
             androidCriticalNative = true
         ),
         CallbackBridgeMethod(
+            name = "nativeSetGyroscope",
+            returnType = "void",
+            parameters = listOf(
+                CallbackBridgeParameter("float", "x"),
+                CallbackBridgeParameter("float", "y"),
+                CallbackBridgeParameter("float", "z")
+            ),
+            androidVisibility = "public",
+            androidCriticalNative = true
+        ),
+        CallbackBridgeMethod(
             name = "nativeSendScroll",
             returnType = "void",
             parameters = listOf(
@@ -249,6 +260,27 @@ object CallbackBridgeCodegen {
         ),
         CallbackBridgeMethod(
             name = "nativeGetCursorY",
+            returnType = "float",
+            parameters = emptyList(),
+            androidVisibility = "public",
+            jvmVisibility = "public"
+        ),
+        CallbackBridgeMethod(
+            name = "nativeGetGyroscopeX",
+            returnType = "float",
+            parameters = emptyList(),
+            androidVisibility = "public",
+            jvmVisibility = "public"
+        ),
+        CallbackBridgeMethod(
+            name = "nativeGetGyroscopeY",
+            returnType = "float",
+            parameters = emptyList(),
+            androidVisibility = "public",
+            jvmVisibility = "public"
+        ),
+        CallbackBridgeMethod(
+            name = "nativeGetGyroscopeZ",
             returnType = "float",
             parameters = emptyList(),
             androidVisibility = "public",

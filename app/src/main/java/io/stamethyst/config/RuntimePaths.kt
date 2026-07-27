@@ -221,6 +221,7 @@ object RuntimePaths {
     fun touchscreenCardHoldStateFile(context: Context): File =
         File(stsRoot(context), TOUCHSCREEN_CARD_HOLD_STATE_FILE_NAME)
 
+
     @JvmStatic
     fun gamePresenceStateFile(context: Context): File =
         File(stsRoot(context), GAME_PRESENCE_STATE_FILE_NAME)

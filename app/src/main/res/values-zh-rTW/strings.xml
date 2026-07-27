@@ -544,6 +544,10 @@
     <string name="main_mod_suggestion_dialog_title_format">提示</string>
     <string name="main_mod_patch_badge_content_description">檢視匯入修補詳情</string>
     <string name="main_mod_patch_dialog_title_format">匯入修補</string>
+    <string name="main_mod_patch_dialog_upgrade_message">一個或多個匯入修補已有新版本。請重新匯入此模組以套用升級。</string>
+    <string name="main_mod_patch_dialog_version_format">已套用 v%1$d / 目前 v%2$d</string>
+    <string name="main_mod_patch_dialog_current_version_format">目前 v%1$d</string>
+    <string name="main_mod_patch_dialog_future_imports">設定會套用於後續匯入。變更設定後請重新匯入此模組。</string>
     <string name="main_mod_patch_section_atlas_title">Atlas 過濾相容修補</string>
     <string name="main_mod_patch_section_downscale_title">Atlas 離線預降取樣</string>
     <string name="main_mod_patch_section_manifest_title">ModTheSpire.json 根路徑修復</string>
@@ -834,6 +838,13 @@
     <string name="mod_import_patch_downfall_detail_merchant">商人類：%1$d</string>
     <string name="mod_import_patch_downfall_detail_hexaghost">Hexaghost 身體類：%1$d</string>
     <string name="mod_import_patch_downfall_detail_boss_panel">Boss 機制面板類：%1$d</string>
+    <string name="mod_import_patch_firstperson_title">FirstPersonView 陀螺儀視角</string>
+    <string name="mod_import_patch_firstperson_summary">使用手機陀螺儀控制第一人稱視角，普通點擊和觸控輸入仍然保留。</string>
+    <string name="mod_import_patch_firstperson_applied">已將 FirstPersonView 的視角移動改為使用手機陀螺儀。</string>
+    <string name="mod_import_patch_firstperson_noop">FirstPersonView 的視角讀取無需修補。</string>
+    <string name="mod_import_patch_firstperson_detail_classes">修補的類別：%1$d</string>
+    <string name="mod_import_patch_firstperson_detail_yaw">水平視角讀取：%1$d</string>
+    <string name="mod_import_patch_firstperson_detail_pitch">垂直視角讀取：%1$d</string>
     <string name="mod_import_patch_vupshion_title">VUPShionMod 啟動相容</string>
     <string name="mod_import_patch_vupshion_summary">移除 Steam 所有權啟動門檻及相關脆弱路徑。</string>
     <string name="mod_import_patch_vupshion_applied">已修補 VUPShionMod 啟動相容。</string>

@@ -4,7 +4,6 @@ import io.stamethyst.ui.settings.baidu.*
 import io.stamethyst.ui.settings.common.*
 import io.stamethyst.ui.settings.files.*
 import io.stamethyst.ui.settings.first_run.*
-import io.stamethyst.ui.settings.importing.*
 import io.stamethyst.ui.settings.mobileglues.*
 import io.stamethyst.ui.settings.native_library.*
 import io.stamethyst.ui.settings.sections.*
@@ -90,10 +89,11 @@ import io.stamethyst.backend.launch.JvmLogRotationManager
 import io.stamethyst.backend.launch.MtsClasspathWarmupCoordinator
 import io.stamethyst.backend.launch.MtsPatchCacheCoordinator
 import io.stamethyst.backend.launch.MtsStartupCacheCoordinator
-import io.stamethyst.backend.mods.AtlasOfflineDownscaleStrategy
 import io.stamethyst.backend.mods.ImportDownscaleMaterialPolicy
 import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.mods.ModManager
+import io.stamethyst.backend.mods.importing.patches.ImportPatchRegistry
+import io.stamethyst.backend.mods.importing.patches.texture.AtlasOfflineDownscalePatchModule
 import io.stamethyst.backend.mods.RuntimeDownscaleMaterialPolicy
 import io.stamethyst.backend.mods.StsDesktopJarIntegrity
 import io.stamethyst.backend.update.LauncherUpdateService
@@ -2026,7 +2026,7 @@ class SettingsScreenViewModel : ViewModel() {
     }
 
     fun onWorkshopAutoImportAtlasDownscaleChanged(host: Activity, enabled: Boolean) {
-        LauncherPreferences.setWorkshopAutoImportAtlasDownscaleEnabled(host, enabled)
+        ImportPatchRegistry.setEnabled(host, AtlasOfflineDownscalePatchModule.id, enabled)
         refreshStatus(host)
     }
 
@@ -3753,58 +3753,6 @@ class SettingsScreenViewModel : ViewModel() {
         if (isQuickStartSteamImportCancelled(generation)) {
             throw CancellationException("Quick start Steam import was cancelled")
         }
-    }
-
-    fun onModJarsPicked(
-        host: Activity,
-        uris: List<Uri>?,
-        onCompleted: (() -> Unit)? = null
-    ) {
-        if (uiState.busy || uris.isNullOrEmpty()) {
-            return
-        }
-        startModJarImport(host, uris, onCompleted)
-    }
-
-    private fun startModJarImport(
-        host: Activity,
-        uris: List<Uri>,
-        onCompleted: (() -> Unit)? = null,
-        replaceExistingDuplicates: Boolean = false,
-        duplicateReplaceOptions: DuplicateModImportReplaceOptions = DuplicateModImportReplaceOptions(),
-        skipDuplicateCheck: Boolean = false,
-        importAtlasDownscaleStrategy: AtlasOfflineDownscaleStrategy? = null,
-        skipAtlasDownscalePrompt: Boolean = false
-    ) {
-        ModImportFlowCoordinator.startModJarImport(
-            host = host,
-            executor = executor,
-            uris = uris,
-            callbacks = ModImportFlowCoordinator.Callbacks(
-                setBusy = { busy, message, operation, progressPercent ->
-                    setBusy(
-                        busy = busy,
-                        message = message,
-                        operation = operation,
-                        progressPercent = progressPercent
-                    )
-                },
-                showNotice = { message, duration ->
-                    showToast(host, message, duration)
-                },
-                onImportApplied = {
-                    refreshStatus(host)
-                },
-                onFlowFinished = {
-                    onCompleted?.invoke()
-                }
-            ),
-            replaceExistingDuplicates = replaceExistingDuplicates,
-            duplicateReplaceOptions = duplicateReplaceOptions,
-            skipDuplicateCheck = skipDuplicateCheck,
-            importAtlasDownscaleStrategy = importAtlasDownscaleStrategy,
-            skipAtlasDownscalePrompt = skipAtlasDownscalePrompt
-        )
     }
 
     private fun applySnapshot(

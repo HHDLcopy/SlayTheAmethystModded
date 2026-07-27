@@ -4,7 +4,6 @@ import io.stamethyst.ui.settings.baidu.*
 import io.stamethyst.ui.settings.common.*
 import io.stamethyst.ui.settings.files.*
 import io.stamethyst.ui.settings.first_run.*
-import io.stamethyst.ui.settings.importing.*
 import io.stamethyst.ui.settings.mobileglues.*
 import io.stamethyst.ui.settings.native_library.*
 import io.stamethyst.ui.settings.sections.*
@@ -17,6 +16,10 @@ import io.stamethyst.R
 import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.mods.ImportDownscaleMaterialPolicy
 import io.stamethyst.backend.mods.RuntimeDownscaleMaterialPolicy
+import io.stamethyst.backend.mods.importing.patches.ImportPatchRegistry
+import io.stamethyst.backend.mods.importing.patches.ImportPatchSettings
+import io.stamethyst.backend.mods.importing.patches.texture.AtlasFilterPatchModule
+import io.stamethyst.backend.mods.importing.patches.texture.AtlasOfflineDownscalePatchModule
 import io.stamethyst.backend.launch.MtsPatchCacheCoordinator
 import io.stamethyst.backend.render.AndroidGameModeSnapshot
 import io.stamethyst.backend.render.AndroidGameModeSupport
@@ -289,14 +292,14 @@ internal object SettingsRepository {
                 workshopSteamLanguage = LauncherPreferences.readWorkshopSteamLanguage(context),
                 workshopAutoImportEnabled = LauncherPreferences.isWorkshopAutoImportEnabled(context),
                 workshopAutoImportAtlasDownscaleEnabled =
-                    LauncherPreferences.isWorkshopAutoImportAtlasDownscaleEnabled(context),
+                    ImportPatchRegistry.isEnabled(context, AtlasOfflineDownscalePatchModule.id),
                 workshopAutoImportAtlasDownscaleMaxEdgePx =
                     LauncherPreferences.readWorkshopAutoImportAtlasDownscaleMaxEdgePx(context),
                 baiduTranslationCredentialsConfigured = BaiduTranslationCredentialsRepository(context).hasConfiguredCredentials(),
             ),
             compatibility = CompatibilitySnapshot(
                 globalAtlasFilterCompatEnabled =
-                    CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(context),
+                    ImportPatchRegistry.isEnabled(context, AtlasFilterPatchModule.id),
                 modManifestRootCompatEnabled =
                     CompatibilitySettings.isModManifestRootCompatEnabled(context),
                 runtimeTextureCompatEnabled = CompatibilitySettings.isRuntimeTextureCompatEnabled(context),
@@ -543,15 +546,12 @@ internal object SettingsRepository {
             context,
             LauncherPreferences.DEFAULT_WORKSHOP_AUTO_IMPORT_ENABLED
         )
-        LauncherPreferences.setWorkshopAutoImportAtlasDownscaleEnabled(
-            context,
-            LauncherPreferences.DEFAULT_WORKSHOP_AUTO_IMPORT_ATLAS_DOWNSCALE_ENABLED
-        )
         LauncherPreferences.saveWorkshopAutoImportAtlasDownscaleMaxEdgePx(
             context,
             LauncherPreferences.DEFAULT_WORKSHOP_AUTO_IMPORT_ATLAS_DOWNSCALE_MAX_EDGE_PX
         )
         CompatibilitySettings.resetToDefaults(context)
+        ImportPatchSettings.resetToDefaults(context)
     }
 
     private fun buildUpdateStatusSummary(context: Context): String {

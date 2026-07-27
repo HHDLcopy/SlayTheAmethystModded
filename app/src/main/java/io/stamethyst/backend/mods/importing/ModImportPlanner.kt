@@ -5,7 +5,6 @@ import android.database.Cursor
 import android.net.Uri
 import android.provider.OpenableColumns
 import io.stamethyst.R
-import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.mods.DuplicateZipNormalizationResult
 import io.stamethyst.backend.mods.DuplicateZipEntryNormalizer
 import io.stamethyst.backend.mods.JarFileIoUtils
@@ -196,33 +195,44 @@ internal object ModImportPlanner {
                 detail = context.importString(R.string.mod_import_block_unsupported_detail)
             )
         }
+        // Planning is allowed to rewrite this disposable copy so candidate patches can be
+        // detected and validated. It must never become the execution input.
         val inspectionFile = File(session.sessionDir, "inspect-${source.index}.jar")
-        var activeInspectionFile = inspectionFile
-        var preparedFileToKeep: File? = null
         return try {
             progress.runStepWithProgress("正在复制检查副本", source.displayName) { stepProgress ->
                 copyFile(source.file, inspectionFile, stepProgress)
             }
             val normalizationResult = progress.runStep("正在规范化 jar 结构", source.displayName) {
-                normalizeAndValidateInspectionJar(inspectionFile)
-            }
-            if (normalizationResult.rewritten) {
-                activeInspectionFile = File(session.sessionDir, "normalized-inspect-${source.index}.jar")
-                copyFile(inspectionFile, activeInspectionFile)
+                if (ImportPatchRegistry.isEnabled(context, DuplicateZipEntryPatchModule.id)) {
+                    normalizeAndValidateInspectionJar(inspectionFile)
+                } else {
+                    // Keep inspection identical to the source when this structural patch is
+                    // disabled. Otherwise later manifest validation could observe a patch that
+                    // execution is explicitly forbidden to apply.
+                    DuplicateZipNormalizationResult(
+                        totalEntries = 0,
+                        uniqueEntries = 0,
+                        duplicateEntriesRemoved = 0,
+                        rewritten = false
+                    )
+                }
             }
             val duplicatePlan = buildDuplicateZipPlan(
                 context = context,
                 result = normalizationResult
             )
-            val manifestRootPatch = progress.runStep("正在检查嵌套 manifest", source.displayName) {
-                runManifestRootPlan(context, activeInspectionFile)
+            val manifestRootPlan = progress.runStep("正在检查嵌套 manifest", source.displayName) {
+                if (ImportPatchRegistry.isEnabled(context, ManifestRootPatchModule.id)) {
+                    inspectManifestRootPatch(context, inspectionFile)
+                } else {
+                    null
+                }
             }
-            val manifestRootPlan = manifestRootPatch?.plan
             val manifestResult = progress.runStep("正在读取 ModTheSpire 清单", source.displayName) {
-                runCatching { ModJarSupport.readModManifest(activeInspectionFile) }
+                runCatching { ModJarSupport.readModManifest(inspectionFile) }
             }
             val manifest = manifestResult.getOrElse { error ->
-                if (isLikelyModTheSpireJar(activeInspectionFile)) {
+                if (isLikelyModTheSpireJar(inspectionFile)) {
                     return blockedItem(
                         itemId = itemId,
                         source = source,
@@ -268,7 +278,7 @@ internal object ModImportPlanner {
             }
 
             val launchFailure = progress.runStep("正在校验 ModTheSpire 启动清单", source.displayName) {
-                MtsLaunchManifestValidator.validateModJar(activeInspectionFile)
+                MtsLaunchManifestValidator.validateModJar(inspectionFile)
             }
             if (launchFailure != null) {
                 return blockedItem(
@@ -280,16 +290,14 @@ internal object ModImportPlanner {
                     normalizedModId = normalizedModId
                 )
             }
-            val launchModId = MtsLaunchManifestValidator.resolveLaunchModId(activeInspectionFile).trim()
-            val atlasFilterPatch = progress.runStep("正在预处理 atlas 过滤器兼容性", source.displayName) {
-                runAtlasFilterPlan(context, activeInspectionFile)
+            val launchModId = MtsLaunchManifestValidator.resolveLaunchModId(inspectionFile).trim()
+            val atlasFilterPlan = progress.runStep("正在预处理 atlas 过滤器兼容性", source.displayName) {
+                if (ImportPatchRegistry.isEnabled(context, AtlasFilterPatchModule.id)) {
+                    inspectAtlasFilterPatch(context, inspectionFile)
+                } else {
+                    null
+                }
             }
-            val atlasFilterPlan = atlasFilterPatch?.plan
-            val preparedPatchResults = listOfNotNull(
-                manifestRootPatch?.result,
-                atlasFilterPatch?.result,
-            )
-            val hasPreparedChanges = normalizationResult.rewritten || preparedPatchResults.any { it.applied }
             val baseItem = ModImportItemPlan(
                 id = itemId,
                 source = source,
@@ -305,26 +313,11 @@ internal object ModImportPlanner {
                     duplicatePlan = duplicatePlan,
                     manifestRootPlan = manifestRootPlan,
                     atlasFilterPlan = atlasFilterPlan,
-                    inspectionFile = activeInspectionFile,
+                    inspectionFile = inspectionFile,
                     options = options
                 )
             }
-            val preparedImportFile = if (hasPreparedChanges) {
-                File(session.sessionDir, "prepared-${source.index}.jar").also { preparedFile ->
-                    if (preparedFile.exists() && !preparedFile.delete()) {
-                        throw IOException("Failed to clear stale prepared import file: ${preparedFile.absolutePath}")
-                    }
-                    if (!activeInspectionFile.renameTo(preparedFile)) {
-                        copyFile(activeInspectionFile, preparedFile)
-                    }
-                    preparedFileToKeep = preparedFile
-                }
-            } else {
-                null
-            }
             baseItem.copy(
-                preparedImportFile = preparedImportFile,
-                preparedPatchResults = preparedPatchResults,
                 patchPlans = patchPlans,
             )
         } catch (error: Throwable) {
@@ -343,11 +336,8 @@ internal object ModImportPlanner {
                 detail = error.message ?: error.javaClass.simpleName
             )
         } finally {
-            if (inspectionFile != preparedFileToKeep && inspectionFile.exists()) {
+            if (inspectionFile.exists()) {
                 inspectionFile.delete()
-            }
-            if (activeInspectionFile != inspectionFile && activeInspectionFile != preparedFileToKeep && activeInspectionFile.exists()) {
-                activeInspectionFile.delete()
             }
         }
     }
@@ -362,9 +352,18 @@ internal object ModImportPlanner {
         options: ModImportPlanningOptions
     ): List<ImportPatchPlan> {
         val plans = ArrayList<ImportPatchPlan>()
-        duplicatePlan?.let { plans.add(it) }
-        manifestRootPlan?.let { plans.add(it) }
-        atlasFilterPlan?.let { plans.add(it) }
+        fun addEnabledInspectionPlan(plan: ImportPatchPlan?) {
+            val enabled = plan?.let { ImportPatchRegistry.isEnabled(context, it.moduleId) } ?: false
+            if (plan != null &&
+                enabled &&
+                (options.includeUserConfigurablePatches || !plan.userConfigurable)
+            ) {
+                plans.add(plan.copy(defaultEnabled = enabled))
+            }
+        }
+        addEnabledInspectionPlan(duplicatePlan)
+        addEnabledInspectionPlan(manifestRootPlan)
+        addEnabledInspectionPlan(atlasFilterPlan)
         val modules = ImportPatchRegistry.modules(context)
         modules.forEach { module ->
             if (module.id == DuplicateZipEntryPatchModule.id ||
@@ -376,13 +375,22 @@ internal object ModImportPlanner {
             if (!options.includeUserConfigurablePatches && module.userConfigurable) {
                 return@forEach
             }
-            if (options.deferUserConfigurablePatchInspection && module.userConfigurable) {
-                plans.add(module.basePlan(applicable = true))
+            if (options.deferUserConfigurablePatchInspection && module.supportsDeferredInspection) {
+                plans.add(
+                    module.basePlan(applicable = true).copy(
+                        defaultEnabled = ImportPatchRegistry.isEnabled(context, module.id)
+                    )
+                )
+                return@forEach
+            }
+            if (!ImportPatchRegistry.isEnabled(context, module.id)) {
                 return@forEach
             }
             val plan = module.plan(context, item, inspectionFile) ?: return@forEach
             if (plan.applicable) {
-                plans.add(plan)
+                plans.add(
+                    plan.copy(defaultEnabled = ImportPatchRegistry.isEnabled(context, module.id))
+                )
             }
         }
         return plans.sortedBy { plan ->
@@ -424,20 +432,15 @@ internal object ModImportPlanner {
         if (!result.changed) {
             return null
         }
-        return DuplicateZipEntryPatchModule.basePlan(
-            applicable = true,
-            details = listOf(
+        val details = listOf(
                 context.importString(R.string.mod_import_patch_zip_entry_detail_total, result.totalEntries),
                 context.importString(R.string.mod_import_patch_zip_entry_detail_unique, result.uniqueEntries),
                 context.importString(R.string.mod_import_patch_zip_entry_detail_removed, result.duplicateEntriesRemoved)
             )
-        )
+        return DuplicateZipEntryPatchModule.basePlan(applicable = true, details = details)
     }
 
-    private fun runManifestRootPlan(context: Context, inspectionFile: File): PreAppliedPatch? {
-        if (!CompatibilitySettings.isModManifestRootCompatEnabled(context)) {
-            return null
-        }
+    private fun inspectManifestRootPatch(context: Context, inspectionFile: File): ImportPatchPlan? {
         val result = ModManifestRootCompatPatcher.patchNestedManifestRootInPlace(inspectionFile)
         if (!result.hasPatchedChanges) {
             return null
@@ -446,27 +449,10 @@ internal object ModImportPlanner {
             context.importString(R.string.mod_import_patch_manifest_root_detail_moved, result.patchedFileEntries),
             context.importString(R.string.mod_import_patch_manifest_root_detail_prefix, result.sourceRootPrefix)
         )
-        return PreAppliedPatch(
-            plan = ManifestRootPatchModule.basePlan(applicable = true, details = details),
-            result = ImportPatchResult(
-                moduleId = ManifestRootPatchModule.id,
-                moduleVersion = ManifestRootPatchModule.version,
-                displayNameResId = ManifestRootPatchModule.displayNameResId,
-                summaryResId = ManifestRootPatchModule.summaryResId,
-                displayName = context.importString(ManifestRootPatchModule.displayNameResId),
-                applied = true,
-                summary = context.importString(R.string.mod_import_patch_manifest_root_applied),
-                details = details,
-                metrics = mapOf("patchedFileEntries" to result.patchedFileEntries),
-                attributes = mapOf("sourceRootPrefix" to result.sourceRootPrefix)
-            )
-        )
+        return ManifestRootPatchModule.basePlan(applicable = true, details = details)
     }
 
-    private fun runAtlasFilterPlan(context: Context, inspectionFile: File): PreAppliedPatch? {
-        if (!CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(context)) {
-            return null
-        }
+    private fun inspectAtlasFilterPatch(context: Context, inspectionFile: File): ImportPatchPlan? {
         val result = ModAtlasFilterCompatPatcher.patchMipMapFiltersInPlace(inspectionFile)
         if (!result.hasPatchedChanges) {
             return null
@@ -475,23 +461,7 @@ internal object ModImportPlanner {
             context.importString(R.string.mod_import_patch_atlas_filter_detail_files, result.patchedAtlasEntries),
             context.importString(R.string.mod_import_patch_atlas_filter_detail_lines, result.patchedFilterLines)
         )
-        return PreAppliedPatch(
-            plan = AtlasFilterPatchModule.basePlan(applicable = true, details = details),
-            result = ImportPatchResult(
-                moduleId = AtlasFilterPatchModule.id,
-                moduleVersion = AtlasFilterPatchModule.version,
-                displayNameResId = AtlasFilterPatchModule.displayNameResId,
-                summaryResId = AtlasFilterPatchModule.summaryResId,
-                displayName = context.importString(AtlasFilterPatchModule.displayNameResId),
-                applied = true,
-                summary = context.importString(R.string.mod_import_patch_atlas_filter_applied),
-                details = details,
-                metrics = mapOf(
-                    "patchedAtlasEntries" to result.patchedAtlasEntries,
-                    "patchedFilterLines" to result.patchedFilterLines,
-                )
-            )
-        )
+        return AtlasFilterPatchModule.basePlan(applicable = true, details = details)
     }
 
     private fun applyDuplicateConflicts(
@@ -736,11 +706,6 @@ internal object ModImportPlanner {
             )
         }
     }
-
-    private data class PreAppliedPatch(
-        val plan: ImportPatchPlan,
-        val result: ImportPatchResult,
-    )
 
     private const val PLANNING_INSPECTION_STEPS_PER_SOURCE = 7
     private const val COPY_PROGRESS_PERCENT_STEP = 1

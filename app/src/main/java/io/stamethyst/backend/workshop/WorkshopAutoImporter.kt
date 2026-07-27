@@ -14,6 +14,7 @@ import io.stamethyst.backend.mods.importing.ModImportPlanningOptions
 import io.stamethyst.backend.mods.importing.ModImportPlanningProgress
 import io.stamethyst.backend.mods.importing.ModImportPlanner
 import io.stamethyst.backend.mods.importing.ModImportPlan
+import io.stamethyst.backend.mods.importing.patches.ImportPatchRegistry
 import io.stamethyst.backend.mods.importing.patches.texture.AtlasOfflineDownscalePatchModule
 import io.stamethyst.ui.preferences.LauncherPreferences
 import java.io.File
@@ -158,16 +159,15 @@ internal object WorkshopAutoImporter {
         context: Context,
         plan: io.stamethyst.backend.mods.importing.ModImportPlan
     ): ModImportDecisions {
-        val atlasDownscaleEnabled = LauncherPreferences.isWorkshopAutoImportAtlasDownscaleEnabled(context)
+        val atlasDownscaleEnabled = ImportPatchRegistry.isEnabled(
+            context,
+            ATLAS_OFFLINE_DOWNSCALE_PATCH_ID
+        )
         val patchEnabled = LinkedHashMap<String, Boolean>()
         plan.importableItems.forEach { item ->
             item.patchPlans.forEach { patch ->
                 patchEnabled[ModImportDecisions.patchDecisionKey(item.id, patch.moduleId)] =
-                    if (patch.moduleId == ATLAS_OFFLINE_DOWNSCALE_PATCH_ID) {
-                        atlasDownscaleEnabled
-                    } else {
-                        patch.defaultEnabled
-                    }
+                    ImportPatchRegistry.isEnabled(context, patch.moduleId)
             }
         }
         return ModImportDecisions(
@@ -197,16 +197,13 @@ internal object WorkshopAutoImporter {
         plan.items.forEach { item ->
             log(
                 logFile,
-                "导入项：id=${item.id} file=${item.source.displayName} status=${item.status.name} modId=${item.normalizedModId.ifBlank { "<empty>" }} modName=${item.displayModName} patchPlans=${item.patchPlans.size} preparedPatchResults=${item.preparedPatchResults.size} blockingReason=${item.blockingReason?.name.orEmpty()} blockingDetail=${item.blockingDetail.ifBlank { "<empty>" }}"
+                "导入项：id=${item.id} file=${item.source.displayName} status=${item.status.name} modId=${item.normalizedModId.ifBlank { "<empty>" }} modName=${item.displayModName} patchPlans=${item.patchPlans.size} blockingReason=${item.blockingReason?.name.orEmpty()} blockingDetail=${item.blockingDetail.ifBlank { "<empty>" }}"
             )
             item.patchPlans.forEach { patch ->
                 log(
                     logFile,
                     "修补计划：item=${item.id} module=${patch.moduleId} version=${patch.moduleVersion} name=${patch.displayName} category=${patch.category.name} defaultEnabled=${patch.defaultEnabled} userConfigurable=${patch.userConfigurable} failurePolicy=${patch.failurePolicy.name} applicable=${patch.applicable} details=${patch.details.joinToString(" | ").ifBlank { "<empty>" }}"
                 )
-            }
-            item.preparedPatchResults.forEach { result ->
-                log(logFile, "修补完成（规划阶段预处理）：item=${item.id} ${result.toLogText()}")
             }
         }
         plan.duplicateConflicts.forEach { conflict ->
@@ -278,9 +275,8 @@ internal object WorkshopAutoImporter {
     }
 
     private fun ModImportPatchSkipReason.logText(): String = when (this) {
-        ModImportPatchSkipReason.DuplicateZipEntryPreApplied -> "duplicate_zip_entry_pre_applied"
         ModImportPatchSkipReason.DisabledByDecision -> "disabled_by_decision"
-        ModImportPatchSkipReason.AlreadyPrepared -> "already_prepared"
+        ModImportPatchSkipReason.DisabledBySetting -> "disabled_by_setting"
         ModImportPatchSkipReason.ModuleUnavailable -> "module_unavailable"
     }
 

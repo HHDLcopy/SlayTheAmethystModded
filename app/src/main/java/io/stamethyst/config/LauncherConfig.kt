@@ -116,6 +116,7 @@ object LauncherConfig {
     private const val PREF_KEY_DOWNFALL_IMPORT_COMPAT = "compat_downfall_import_compat"
     private const val PREF_KEY_VUPSHION_MOD_COMPAT = "compat_vupshion_mod_compat"
     private const val PREF_KEY_CHAOFANMOD_COMPAT = "compat_chaofanmod_compat"
+    private const val PREF_KEY_JACKET_NO_ANO_KO_MOD_COMPAT = "compat_jacket_no_anoko_mod_compat"
     private const val PREF_KEY_FRAGMENT_SHADER_PRECISION_COMPAT =
         "compat_fragment_shader_precision_compat"
     private const val PREF_KEY_RUNTIME_TEXTURE_COMPAT = "compat_runtime_texture_compat"
@@ -340,6 +341,7 @@ object LauncherConfig {
     const val JVM_HEAP_STEP_MB = 128
     const val DEFAULT_JVM_COMPRESSED_POINTERS_ENABLED = false
     const val DEFAULT_JVM_STRING_DEDUPLICATION_ENABLED = false
+    const val DEFAULT_JACKET_NO_ANO_KO_MOD_COMPAT_ENABLED = true
     const val DEFAULT_FRAGMENT_SHADER_PRECISION_COMPAT_ENABLED = true
     const val DEFAULT_MAIN_MENU_PREVIEW_REUSE_COMPAT_ENABLED = true
     const val DEFAULT_ROOM_CONTEXT_HAND_LAYOUT_RESCUE_COMPAT_ENABLED = true
@@ -1311,7 +1313,16 @@ object LauncherConfig {
     }
 
     fun isJacketNoAnoKoModCompatEnabled(context: Context): Boolean {
-        return false
+        return prefs(context).getBoolean(
+            PREF_KEY_JACKET_NO_ANO_KO_MOD_COMPAT,
+            DEFAULT_JACKET_NO_ANO_KO_MOD_COMPAT_ENABLED
+        )
+    }
+
+    fun setJacketNoAnoKoModCompatEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_JACKET_NO_ANO_KO_MOD_COMPAT, enabled)
+        }
     }
 
     fun isFragmentShaderPrecisionCompatEnabled(context: Context): Boolean {

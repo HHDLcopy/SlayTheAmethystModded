@@ -23,13 +23,9 @@ internal object AtlasFilterPatchModule : ImportPatchModule {
     override val summaryResId = R.string.mod_import_patch_atlas_filter_summary
     override val category = ImportPatchCategory.Texture
     override val defaultEnabled = true
-    override val userConfigurable = false
+    override val userConfigurable = true
     override val order = 300
     override val failurePolicy = ImportPatchFailurePolicy.BlockImport
-
-    override fun isAvailable(context: Context): Boolean {
-        return CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(context)
-    }
 
     override fun plan(context: Context, item: ModImportItemPlan): ImportPatchPlan? {
         return basePlan(applicable = true)
@@ -75,6 +71,7 @@ internal object AtlasOfflineDownscalePatchModule : ImportPatchModule {
     override val category = ImportPatchCategory.Texture
     override val defaultEnabled = false
     override val userConfigurable = true
+    override val supportsDeferredInspection = true
     override val order = 400
     override val failurePolicy = ImportPatchFailurePolicy.SkipPatchContinueImport
 

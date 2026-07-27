@@ -4,7 +4,6 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.util.zip.ZipFile
 import java.util.zip.ZipInputStream
-import io.stamethyst.backend.mods.importing.ModImportExecutor
 import io.stamethyst.backend.mods.importing.ModImportPlanner
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry
 import org.apache.commons.compress.archivers.zip.ZipArchiveOutputStream
@@ -35,12 +34,12 @@ class DuplicateZipEntryNormalizerTest {
     }
 
     @Test
-    fun normalizeWorkingJarForImport_acceptsDuplicateRootManifestBeforeLaunchValidation() {
+    fun normalizeInPlaceIfNeeded_acceptsDuplicateRootManifestBeforeLaunchValidation() {
         val tempDir = Files.createTempDirectory("duplicate-zip-normalizer-working")
         val jarFile = tempDir.resolve("MapMarker.jar").toFile()
         writeJarWithDuplicateRootManifests(jarFile)
 
-        ModImportExecutor.normalizeWorkingJarForImport(jarFile)
+        DuplicateZipEntryNormalizer.normalizeInPlaceIfNeeded(jarFile)
 
         assertEquals(
             listOf("ModTheSpire.json", "mapmarker/MapMarkerMod.class"),

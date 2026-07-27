@@ -93,6 +93,8 @@ internal const val STS_PATCH_LWJGL_NATIVES_CLASS =
     "com/badlogic/gdx/backends/lwjgl/LwjglNativesLoader.class"
 internal const val STS_PATCH_SHARED_LOADER_CLASS =
     "com/badlogic/gdx/utils/SharedLibraryLoader.class"
+internal const val STS_PATCH_FIRST_PERSON_GYRO_BRIDGE_CLASS =
+    "io/stamethyst/bridge/FirstPersonGyroBridge.class"
 internal const val STS_PATCH_STEAM_UTILS_CLASS =
     "com/codedisaster/steamworks/SteamUtils.class"
 internal const val STS_PATCH_STEAM_UTILS_ENUM_CLASS =
@@ -179,6 +181,7 @@ internal val REQUIRED_STS_PATCH_CLASSES: Set<String> = HashSet(
         STS_PATCH_LWJGL_INPUT_CLASS,
         STS_PATCH_LWJGL_NATIVES_CLASS,
         STS_PATCH_SHARED_LOADER_CLASS,
+        STS_PATCH_FIRST_PERSON_GYRO_BRIDGE_CLASS,
         STS_PATCH_STEAM_UTILS_CLASS,
         STS_PATCH_STEAM_UTILS_ENUM_CLASS,
         STS_PATCH_STEAM_INPUT_HELPER_CLASS,

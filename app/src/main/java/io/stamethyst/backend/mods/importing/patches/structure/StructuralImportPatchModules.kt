@@ -2,7 +2,6 @@ package io.stamethyst.backend.mods.importing.patches.structure
 
 import android.content.Context
 import io.stamethyst.R
-import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.mods.DuplicateZipEntryNormalizer
 import io.stamethyst.backend.mods.ModManifestRootCompatPatcher
 import io.stamethyst.backend.mods.importing.ImportPatchCategory
@@ -22,7 +21,7 @@ internal object DuplicateZipEntryPatchModule : ImportPatchModule {
     override val summaryResId = R.string.mod_import_patch_zip_entry_summary
     override val category = ImportPatchCategory.Structural
     override val defaultEnabled = true
-    override val userConfigurable = false
+    override val userConfigurable = true
     override val order = 100
     override val failurePolicy = ImportPatchFailurePolicy.BlockImport
 
@@ -71,13 +70,9 @@ internal object ManifestRootPatchModule : ImportPatchModule {
     override val summaryResId = R.string.mod_import_patch_manifest_root_summary
     override val category = ImportPatchCategory.Structural
     override val defaultEnabled = true
-    override val userConfigurable = false
+    override val userConfigurable = true
     override val order = 200
     override val failurePolicy = ImportPatchFailurePolicy.BlockImport
-
-    override fun isAvailable(context: Context): Boolean {
-        return CompatibilitySettings.isModManifestRootCompatEnabled(context)
-    }
 
     override fun plan(context: Context, item: ModImportItemPlan): ImportPatchPlan? {
         val details = item.patchPlans.firstOrNull { it.moduleId == id }?.details.orEmpty()

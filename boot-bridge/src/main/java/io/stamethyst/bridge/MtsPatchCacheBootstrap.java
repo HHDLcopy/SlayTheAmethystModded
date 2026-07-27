@@ -132,6 +132,7 @@ public final class MtsPatchCacheBootstrap {
         applyGameWorkingDirectory();
 
         Class<?> mtsLoader = Class.forName(MTS_LOADER, false, loader);
+        initializeWorkshopInfos(mtsLoader);
         Object modInfos = mtsLoader.getField("MODINFOS").get(null);
         if (modInfos == null || !modInfos.getClass().isArray()) {
             log("Skipping cached MTS annotation DB preparation: no mod infos");
@@ -141,6 +142,21 @@ public final class MtsPatchCacheBootstrap {
         prepareAnnotationDatabase(loader, modInfos);
         log("Prepared cached MTS launch state: mods=" + Array.getLength(modInfos));
         logElapsed("Prepared cached MTS prepackaged launch", startedAtNs);
+    }
+
+    private static void initializeWorkshopInfos(Class<?> mtsLoader) throws IllegalAccessException {
+        Field workshopInfos;
+        try {
+            workshopInfos = mtsLoader.getDeclaredField("WORKSHOP_INFOS");
+        } catch (NoSuchFieldException ignored) {
+            return;
+        }
+        workshopInfos.setAccessible(true);
+        if (workshopInfos.get(null) == null) {
+            // Loader.main normally creates this list, but cached launches bypass that path.
+            workshopInfos.set(null, new ArrayList<Object>());
+            log("Initialized cached MTS workshop infos: items=0");
+        }
     }
 
     public static boolean bustPrepackagedEnumsFromCache() throws Throwable {
@@ -493,7 +509,8 @@ public final class MtsPatchCacheBootstrap {
                     name.startsWith("com.badlogic.gdx.") ||
                     name.startsWith("org.lwjgl.") ||
                     name.startsWith("org.apache.logging.log4j.") ||
-                    name.startsWith("io.stamethyst.bridge.");
+                    (name.startsWith("io.stamethyst.bridge.") &&
+                            !"io.stamethyst.bridge.FirstPersonGyroBridge".equals(name));
         }
     }
 }

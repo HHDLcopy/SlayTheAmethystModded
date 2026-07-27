@@ -4,6 +4,10 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
@@ -35,8 +39,9 @@ import io.stamethyst.config.RuntimePaths
 import io.stamethyst.input.GameInputHandler
 import java.io.FileOutputStream
 import java.util.UUID
+import org.lwjgl.glfw.CallbackBridge
 
-class StsGameActivity : AppCompatActivity() {
+class StsGameActivity : AppCompatActivity(), SensorEventListener {
     companion object {
         const val EXTRA_LAUNCH_MODE = "io.stamethyst.launch_mode"
         const val EXTRA_BACK_BEHAVIOR = "io.stamethyst.back_behavior"
@@ -111,6 +116,9 @@ class StsGameActivity : AppCompatActivity() {
     private val launchGuardLock = Any()
     private var launchGuardAcquired = false
     private var pendingFilePickerRequestId: String? = null
+    private var gyroscopeSensorManager: SensorManager? = null
+    private var gyroscopeSensor: Sensor? = null
+    private var gyroscopeRegistered = false
 
     private val filePickerLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -163,6 +171,7 @@ class StsGameActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        unregisterGyroscope()
         MemoryDiagnosticsLogger.logEvent(
             this,
             "game_activity_destroyed",
@@ -191,6 +200,7 @@ class StsGameActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        registerGyroscope()
         StartupTraceEvents.append(
             this,
             "game_activity_on_resume",
@@ -222,6 +232,7 @@ class StsGameActivity : AppCompatActivity() {
     }
 
     override fun onPause() {
+        unregisterGyroscope()
         MemoryDiagnosticsLogger.logEvent(
             this,
             "game_activity_paused",
@@ -237,6 +248,53 @@ class StsGameActivity : AppCompatActivity() {
         keepScreenOnHandler.removeCallbacks(keepScreenOnIdleRunnable)
         updateKeepScreenOnFlag()
         super.onPause()
+    }
+
+    override fun onSensorChanged(event: SensorEvent) {
+        if (event.sensor.type != Sensor.TYPE_GYROSCOPE || event.values.size < 3) {
+            return
+        }
+        forwardGyroscope(event.values[0], event.values[1], event.values[2])
+    }
+
+    override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) {
+        // Gyroscope accuracy does not change how raw angular velocity is forwarded.
+    }
+
+    private fun registerGyroscope() {
+        if (gyroscopeRegistered) {
+            return
+        }
+        val manager = gyroscopeSensorManager ?:
+            (getSystemService(Context.SENSOR_SERVICE) as? SensorManager)?.also {
+                gyroscopeSensorManager = it
+            } ?: return
+        val sensor = gyroscopeSensor ?: manager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)?.also {
+            gyroscopeSensor = it
+        } ?: return
+        forwardGyroscope(0f, 0f, 0f)
+        gyroscopeRegistered = runCatching {
+            manager.registerListener(
+                this,
+                sensor,
+                SensorManager.SENSOR_DELAY_GAME
+            )
+        }.getOrDefault(false)
+    }
+
+    private fun unregisterGyroscope() {
+        runCatching {
+            gyroscopeSensorManager?.unregisterListener(this)
+        }
+        gyroscopeRegistered = false
+        forwardGyroscope(0f, 0f, 0f)
+    }
+
+    private fun forwardGyroscope(x: Float, y: Float, z: Float) {
+        // Sensor delivery must not take down the Activity when an older native bridge is loaded.
+        runCatching {
+            CallbackBridge.nativeSetGyroscope(x, y, z)
+        }
     }
 
     override fun onStop() {

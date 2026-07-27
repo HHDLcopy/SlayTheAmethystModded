@@ -2,7 +2,6 @@ package io.stamethyst.backend.mods.importing.patches.mods.downfall
 
 import android.content.Context
 import io.stamethyst.R
-import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.mods.importing.ImportPatchCategory
 import io.stamethyst.backend.mods.importing.ImportPatchFailurePolicy
 import io.stamethyst.backend.mods.importing.ImportPatchPlan
@@ -16,18 +15,14 @@ import java.io.File
 internal object DownfallImportPatchModule : ImportPatchModule {
     private const val TARGET_MOD_ID = "downfall"
     override val id = "mod.downfall.mobile_layout"
-    override val version = 2
+    override val version = 1
     override val displayNameResId = R.string.mod_import_patch_downfall_title
     override val summaryResId = R.string.mod_import_patch_downfall_summary
     override val category = ImportPatchCategory.ModSpecific
     override val defaultEnabled = true
-    override val userConfigurable = false
+    override val userConfigurable = true
     override val order = 620
     override val failurePolicy = ImportPatchFailurePolicy.SkipPatchContinueImport
-
-    override fun isAvailable(context: Context): Boolean {
-        return CompatibilitySettings.isDownfallImportCompatEnabled(context)
-    }
 
     override fun plan(context: Context, item: ModImportItemPlan): ImportPatchPlan? {
         if (item.normalizedModId != TARGET_MOD_ID) return null

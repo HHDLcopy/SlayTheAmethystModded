@@ -1,4 +1,4 @@
-package io.stamethyst.backend.mods.importing.patches.mods.ori
+package io.stamethyst.backend.mods.importing.patches.mods.firstperson
 
 import android.content.Context
 import io.stamethyst.R
@@ -12,16 +12,17 @@ import io.stamethyst.backend.mods.importing.importString
 import io.stamethyst.backend.mods.importing.patches.ImportPatchModule
 import java.io.File
 
-internal object OriImportPatchModule : ImportPatchModule {
-    private const val TARGET_MOD_ID = "another ori mod"
-    override val id = "mod.ori.fast_blur"
+internal object FirstPersonViewImportPatchModule : ImportPatchModule {
+    private const val TARGET_MOD_ID = "firstperson"
+
+    override val id = "mod.firstperson.gyro_camera"
     override val version = 1
-    override val displayNameResId = R.string.mod_import_patch_ori_title
-    override val summaryResId = R.string.mod_import_patch_ori_summary
-    override val category = ImportPatchCategory.Shader
+    override val displayNameResId = R.string.mod_import_patch_firstperson_title
+    override val summaryResId = R.string.mod_import_patch_firstperson_summary
+    override val category = ImportPatchCategory.ModSpecific
     override val defaultEnabled = true
     override val userConfigurable = true
-    override val order = 640
+    override val order = 625
     override val failurePolicy = ImportPatchFailurePolicy.SkipPatchContinueImport
 
     override fun plan(context: Context, item: ModImportItemPlan): ImportPatchPlan? {
@@ -36,7 +37,7 @@ internal object OriImportPatchModule : ImportPatchModule {
         plan: ImportPatchPlan,
         decisions: ModImportDecisions
     ): ImportPatchResult {
-        val result = OriImportCompatPatcher.patchInPlace(workingJar)
+        val result = FirstPersonViewImportCompatPatcher.patchInPlace(workingJar)
         return ImportPatchResult(
             moduleId = id,
             moduleVersion = version,
@@ -45,26 +46,28 @@ internal object OriImportPatchModule : ImportPatchModule {
             displayName = context.importString(displayNameResId),
             applied = result.hasAnyPatch,
             summary = if (result.hasAnyPatch) {
-                context.importString(R.string.mod_import_patch_ori_applied)
+                context.importString(R.string.mod_import_patch_firstperson_applied)
             } else {
-                context.importString(R.string.mod_import_patch_ori_noop)
+                context.importString(R.string.mod_import_patch_firstperson_noop)
             },
             details = listOf(
-                context.importString(R.string.mod_import_patch_ori_detail_shader_files, result.patchedShaderEntries),
-                context.importString(R.string.mod_import_patch_ori_detail_gaussian, result.patchedGaussianBlurShaderEntries),
-                context.importString(R.string.mod_import_patch_ori_detail_box, result.patchedBoxBlurShaderEntries),
                 context.importString(
-                    R.string.mod_import_patch_ori_detail_samples,
-                    result.estimatedTextureSamplesBefore,
-                    result.estimatedTextureSamplesAfter
+                    R.string.mod_import_patch_firstperson_detail_classes,
+                    result.patchedClassEntries
+                ),
+                context.importString(
+                    R.string.mod_import_patch_firstperson_detail_yaw,
+                    result.patchedYawInputCalls
+                ),
+                context.importString(
+                    R.string.mod_import_patch_firstperson_detail_pitch,
+                    result.patchedPitchInputCalls
                 )
             ),
             metrics = mapOf(
-                "patchedShaderEntries" to result.patchedShaderEntries,
-                "patchedGaussianBlurShaderEntries" to result.patchedGaussianBlurShaderEntries,
-                "patchedBoxBlurShaderEntries" to result.patchedBoxBlurShaderEntries,
-                "estimatedTextureSamplesBefore" to result.estimatedTextureSamplesBefore,
-                "estimatedTextureSamplesAfter" to result.estimatedTextureSamplesAfter
+                "patchedClassEntries" to result.patchedClassEntries,
+                "patchedYawInputCalls" to result.patchedYawInputCalls,
+                "patchedPitchInputCalls" to result.patchedPitchInputCalls
             )
         )
     }

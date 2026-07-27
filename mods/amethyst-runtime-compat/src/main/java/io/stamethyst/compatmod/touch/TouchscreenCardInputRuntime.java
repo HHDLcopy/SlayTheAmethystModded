@@ -51,6 +51,7 @@ public final class TouchscreenCardInputRuntime {
     private static boolean tapInspectLogged;
     private static boolean tapPlayLogged;
     private static boolean targetAssistHoverLogged;
+    private static boolean firstPersonViewFallbackLogged;
     private static boolean reflectionFailureLogged;
     private static File cardHoldStateFile;
     private static boolean cardHoldStateFileResolved;
@@ -76,8 +77,16 @@ public final class TouchscreenCardInputRuntime {
     }
 
     public static boolean isNativeTouchscreenCardPlayOptimizationActive() {
-        return isNativeTouchscreenCardInputActive()
-            && CompatRuntimeState.isTouchscreenCardPlayOptimizationEnabled();
+        if (!isNativeTouchscreenCardInputActive() ||
+            !CompatRuntimeState.isTouchscreenCardPlayOptimizationEnabled()
+        ) {
+            return false;
+        }
+        if (!CompatRuntimeState.isFirstPersonViewEnabled()) {
+            return true;
+        }
+        logFirstPersonViewFallbackOnce();
+        return false;
     }
 
     public static boolean isTargetedCard(AbstractCard card) {
@@ -480,32 +489,32 @@ public final class TouchscreenCardInputRuntime {
     }
 
     private static boolean isCardGestureTrackingActive() {
-        return isNativeTouchscreenCardInputActive()
+        return isNativeTouchscreenCardPlayOptimizationActive()
             && CompatRuntimeState.isTouchscreenCardGestureEnabled();
     }
 
     private static boolean isCardTapInspectActive() {
-        return isNativeTouchscreenCardInputActive()
+        return isNativeTouchscreenCardPlayOptimizationActive()
             && CompatRuntimeState.isTouchscreenCardTapInspectEnabled();
     }
 
     private static boolean isCardTapPlayActive() {
-        return isNativeTouchscreenCardInputActive()
+        return isNativeTouchscreenCardPlayOptimizationActive()
             && CompatRuntimeState.isTouchscreenCardTapPlayEnabled();
     }
 
     private static boolean isTargetAssistActive() {
-        return isNativeTouchscreenCardInputActive()
+        return isNativeTouchscreenCardPlayOptimizationActive()
             && CompatRuntimeState.isTouchscreenTargetAssistEnabled();
     }
 
     private static boolean shouldSuppressCombatCursorWarp() {
-        return isNativeTouchscreenCardInputActive()
+        return isNativeTouchscreenCardPlayOptimizationActive()
             && CompatRuntimeState.isTouchscreenCursorWarpCleanupEnabled();
     }
 
     private static boolean shouldSuppressIdleCardHover() {
-        return isNativeTouchscreenCardInputActive()
+        return isNativeTouchscreenCardPlayOptimizationActive()
             && CompatRuntimeState.isTouchscreenIdleCardHoverCleanupEnabled()
             && !isAnyTouchMouseButtonInteractionActive();
     }
@@ -1162,6 +1171,17 @@ public final class TouchscreenCardInputRuntime {
         System.out.println(
             "[amethyst-runtime-compat] touchscreen target assist mapped near tap to "
                 + describeMonster(monster)
+        );
+    }
+
+    private static void logFirstPersonViewFallbackOnce() {
+        if (firstPersonViewFallbackLogged) {
+            return;
+        }
+        firstPersonViewFallbackLogged = true;
+        System.out.println(
+            "[amethyst-runtime-compat] FirstPersonView detected: touchscreen card-play " +
+                "optimization disabled to preserve vanilla target selection"
         );
     }
 

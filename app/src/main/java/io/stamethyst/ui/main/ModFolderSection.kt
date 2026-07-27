@@ -1166,6 +1166,9 @@ internal fun ModFolderSection(
                                     onRetryWorkshopDownload = { latestCallbacks.value.onRetryWorkshopDownload(it) },
                                     onUpdateWorkshopMod = { latestCallbacks.value.onUpdateWorkshopMod(it) },
                                     onOpenWorkshopDetails = { latestCallbacks.value.onOpenWorkshopDetails(it) },
+                                    onSetImportPatchEnabled = { item, moduleId, enabled ->
+                                        latestCallbacks.value.onSetImportPatchEnabled(item, moduleId, enabled)
+                                    },
                                     onDragStart = { dragInfo ->
                                         val currentMod = latestMod.value
                                         dragCoordinator.startModDrag(

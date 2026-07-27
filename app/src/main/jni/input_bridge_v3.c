@@ -102,6 +102,9 @@ static atomic_int pojav_audio_recovery_requested_generation = 0;
 static atomic_int pojav_audio_recovery_completed_generation = 0;
 static atomic_int pojav_audio_recovery_reported_generation = 0;
 static atomic_bool pojav_audio_recovery_last_result = false;
+static _Atomic(float) pojav_gyroscope_x = 0.0f;
+static _Atomic(float) pojav_gyroscope_y = 0.0f;
+static _Atomic(float) pojav_gyroscope_z = 0.0f;
 
 static void resolveOpenalSymbolsFromHandle(void* handle) {
     if (handle == NULL) {
@@ -691,6 +694,27 @@ JNIEXPORT jfloat JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeGetCursorY(
     return (jfloat)pojav_environ->cursorY;
 }
 
+JNIEXPORT jfloat JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeGetGyroscopeX(
+        __attribute__((unused)) JNIEnv* env,
+        __attribute__((unused)) jclass clazz
+) {
+    return atomic_load_explicit(&pojav_gyroscope_x, memory_order_relaxed);
+}
+
+JNIEXPORT jfloat JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeGetGyroscopeY(
+        __attribute__((unused)) JNIEnv* env,
+        __attribute__((unused)) jclass clazz
+) {
+    return atomic_load_explicit(&pojav_gyroscope_y, memory_order_relaxed);
+}
+
+JNIEXPORT jfloat JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeGetGyroscopeZ(
+        __attribute__((unused)) JNIEnv* env,
+        __attribute__((unused)) jclass clazz
+) {
+    return atomic_load_explicit(&pojav_gyroscope_z, memory_order_relaxed);
+}
+
 JNIEXPORT jboolean JNICALL JavaCritical_org_lwjgl_glfw_CallbackBridge_nativeSetInputReady(jboolean inputReady) {
 #ifdef DEBUG
     ;
@@ -894,6 +918,22 @@ void noncritical_set_mouse_button_state(__attribute__((unused)) JNIEnv* env, __a
     critical_set_mouse_button_state(button, down);
 }
 
+void critical_set_gyroscope(jfloat x, jfloat y, jfloat z) {
+    atomic_store_explicit(&pojav_gyroscope_x, x, memory_order_relaxed);
+    atomic_store_explicit(&pojav_gyroscope_y, y, memory_order_relaxed);
+    atomic_store_explicit(&pojav_gyroscope_z, z, memory_order_relaxed);
+}
+
+void noncritical_set_gyroscope(
+        __attribute__((unused)) JNIEnv* env,
+        __attribute__((unused)) jclass clazz,
+        jfloat x,
+        jfloat y,
+        jfloat z
+) {
+    critical_set_gyroscope(x, y, z);
+}
+
 void critical_send_screen_size(jint width, jint height) {
     if (!isValidScreenSize(width, height)) {
         ;
@@ -1069,6 +1109,7 @@ const static JNINativeMethod critical_fcns[] = {
         {"nativeSendCursorPos", "(FF)V", critical_send_cursor_pos},
         {"nativeSendMouseButton", "(III)V", critical_send_mouse_button},
         {"nativeSetMouseButtonState", "(IZ)V", critical_set_mouse_button_state},
+        {"nativeSetGyroscope", "(FFF)V", critical_set_gyroscope},
         {"nativeSendScroll", "(DD)V", critical_send_scroll},
         {"nativeSendScreenSize", "(II)V", critical_send_screen_size}
 };
@@ -1081,6 +1122,7 @@ const static JNINativeMethod noncritical_fcns[] = {
         {"nativeSendCursorPos", "(FF)V", noncritical_send_cursor_pos},
         {"nativeSendMouseButton", "(III)V", noncritical_send_mouse_button},
         {"nativeSetMouseButtonState", "(IZ)V", noncritical_set_mouse_button_state},
+        {"nativeSetGyroscope", "(FFF)V", noncritical_set_gyroscope},
         {"nativeSendScroll", "(DD)V", noncritical_send_scroll},
         {"nativeSendScreenSize", "(II)V", noncritical_send_screen_size}
 };

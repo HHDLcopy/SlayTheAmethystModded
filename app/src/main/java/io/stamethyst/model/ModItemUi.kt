@@ -18,10 +18,24 @@ data class ModItemUi(
     val explicitPriority: Int?,
     val effectivePriority: Int?,
     val importPatchDetails: String? = null,
+    val importPatches: List<ModImportPatchUi> = emptyList(),
+    val hasOutdatedImportPatches: Boolean = false,
     val newlyImported: Boolean = false,
     val favorite: Boolean = false,
     val workshop: WorkshopModUi? = null,
     val alias: String = ""
+)
+
+@Stable
+data class ModImportPatchUi(
+    val moduleId: String,
+    val name: String,
+    val summary: String,
+    val appliedVersion: Int?,
+    val currentVersion: Int,
+    val userConfigurable: Boolean,
+    val enabled: Boolean,
+    val isOutdated: Boolean = false
 )
 
 @Stable

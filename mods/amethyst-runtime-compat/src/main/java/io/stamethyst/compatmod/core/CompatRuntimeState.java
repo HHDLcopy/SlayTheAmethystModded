@@ -1,6 +1,8 @@
 package io.stamethyst.compatmod.core;
 
 import com.badlogic.gdx.Gdx;
+import com.evacipated.cardcrawl.modthespire.Loader;
+import com.evacipated.cardcrawl.modthespire.ModInfo;
 import com.megacrit.cardcrawl.blights.AbstractBlight;
 import com.megacrit.cardcrawl.cards.AbstractCard;
 import com.megacrit.cardcrawl.dungeons.AbstractDungeon;
@@ -14,6 +16,7 @@ import java.util.Map;
 import java.util.WeakHashMap;
 
 public final class CompatRuntimeState {
+    private static final String FIRST_PERSON_VIEW_MOD_ID = "FirstPerson";
     private static final String RUNTIME_COMPAT_DEBUG_PROP =
         "amethyst.runtime_compat.debug";
     private static final String FONT_SCALE_PROP = "amethyst.font_scale";
@@ -287,6 +290,18 @@ public final class CompatRuntimeState {
 
     public static boolean isTouchscreenCardPlayOptimizationEnabled() {
         return TOUCHSCREEN_CARD_PLAY_OPTIMIZATION_ENABLED;
+    }
+
+    public static boolean isFirstPersonViewEnabled() {
+        if (Loader.MODINFOS == null) {
+            return false;
+        }
+        for (ModInfo modInfo : Loader.MODINFOS) {
+            if (modInfo != null && FIRST_PERSON_VIEW_MOD_ID.equalsIgnoreCase(modInfo.ID)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public static boolean isTouchscreenCardGestureEnabled() {

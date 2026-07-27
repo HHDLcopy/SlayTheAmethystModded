@@ -8,6 +8,7 @@ import android.content.res.Resources
 import io.stamethyst.backend.mods.ImportedModPatchRegistry
 import io.stamethyst.backend.mods.importing.ModImportPlanner
 import io.stamethyst.backend.mods.importing.ModImportPlanningOptions
+import io.stamethyst.backend.mods.importing.patches.ImportPatchRegistry
 import io.stamethyst.backend.mods.importing.patches.mods.downfall.DownfallImportPatchModule
 import io.stamethyst.backend.mods.importing.patches.texture.AtlasFilterPatchModule
 import io.stamethyst.backend.mods.importing.patches.texture.AtlasOfflineDownscalePatchModule
@@ -80,6 +81,13 @@ class WorkshopAutoImporterTest {
             val completed = events.filterIsInstance<WorkshopDownloadEvent.Completed>().single()
             val downloadedJar = File(outputDir, completed.files.single().relativePath)
             assertTrue(downloadedJar.isFile)
+            // The patch manager defaults Atlas downscaling to disabled. This test exercises the
+            // deferred inspection path, so opt into that module explicitly.
+            ImportPatchRegistry.setEnabled(
+                roots.context,
+                AtlasOfflineDownscalePatchModule.id,
+                true
+            )
             val plan = ModImportPlanner.planLocalFiles(
                 context = roots.context,
                 files = listOf(downloadedJar),

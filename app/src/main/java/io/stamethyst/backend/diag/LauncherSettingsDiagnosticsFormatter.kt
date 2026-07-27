@@ -2,6 +2,8 @@ package io.stamethyst.backend.diag
 
 import android.content.Context
 import io.stamethyst.backend.mods.CompatibilitySettings
+import io.stamethyst.backend.mods.importing.patches.ImportPatchRegistry
+import io.stamethyst.backend.mods.importing.patches.texture.AtlasFilterPatchModule
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.LauncherThemeMode
@@ -224,7 +226,7 @@ internal object LauncherSettingsDiagnosticsFormatter {
                     title = "Compatibility",
                     entries = listOf(
                         "globalAtlasFilterCompat" to formatBoolean(
-                            CompatibilitySettings.isGlobalAtlasFilterCompatEnabled(context)
+                            ImportPatchRegistry.isEnabled(context, AtlasFilterPatchModule.id)
                         ),
                         "modManifestRootCompat" to formatBoolean(
                             CompatibilitySettings.isModManifestRootCompatEnabled(context)

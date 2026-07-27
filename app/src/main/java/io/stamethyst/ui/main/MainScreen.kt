@@ -6095,6 +6095,7 @@ private fun ColumnScope.MainContentSwitcher(
                         onRetryWorkshopDownload = actions.onRetryWorkshopDownload,
                         onUpdateWorkshopMod = actions.onUpdateWorkshopMod,
                         onOpenWorkshopDetails = actions.onOpenWorkshopDetails,
+                        onSetImportPatchEnabled = actions.onSetImportPatchEnabled,
                         onAssociateMods = actions.onAssociateMods,
                         onRemoveModAssociation = actions.onRemoveModAssociation,
                         onClearModAssociationGroup = actions.onClearModAssociationGroup,

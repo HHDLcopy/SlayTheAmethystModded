@@ -68,6 +68,7 @@ import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.backend.mods.ModSuggestionService
+import io.stamethyst.backend.mods.importing.patches.ImportPatchRegistry
 import io.stamethyst.backend.steam.SteamAccountLogoutCoordinator
 import io.stamethyst.backend.steamcloud.SteamAuthenticationCircuitBreaker
 import io.stamethyst.backend.steamcloud.SteamCloudAuthStore
@@ -1590,6 +1591,19 @@ class MainScreenViewModel : ViewModel() {
         }
     }
 
+    fun onSetImportPatchEnabled(
+        host: Activity,
+        mod: ModItemUi,
+        moduleId: String,
+        enabled: Boolean
+    ) {
+        if (!ImportPatchRegistry.setEnabled(host, moduleId, enabled)) {
+            _effects.tryEmit(Effect.ShowSnackbar(UiText.DynamicString("找不到导入修补：$moduleId")))
+            return
+        }
+        refresh(host)
+    }
+
     fun associateMods(host: Activity, source: ModItemUi, target: ModItemUi) {
         modManagementController.associateMods(host, source, target)
     }
@@ -2636,10 +2650,6 @@ class MainScreenViewModel : ViewModel() {
 
     fun revealFolderToken(host: Activity, folderTokenId: String) {
         modManagementController.revealFolderToken(host, folderTokenId)
-    }
-
-    fun onModJarsPicked(host: Activity, uris: List<android.net.Uri>?) {
-        modManagementController.onModJarsPicked(host, uris)
     }
 
     fun handleIncomingIntent(host: Activity, intent: Intent?): Boolean {

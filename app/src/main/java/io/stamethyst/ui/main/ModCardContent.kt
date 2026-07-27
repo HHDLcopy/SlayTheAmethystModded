@@ -316,7 +316,7 @@ private fun ModCardBadges(
     onWorkshopBadgeClick: () -> Unit,
 ) {
     val showSuggestion = !modSuggestionText.isNullOrBlank()
-    val showImportPatch = !mod.importPatchDetails.isNullOrBlank()
+    val showImportPatch = !mod.importPatchDetails.isNullOrBlank() || mod.importPatches.isNotEmpty()
     val showUpdate = mod.workshop?.state == WorkshopModState.UpdateAvailable
     val workshopBadgeState = mod.workshop?.state?.takeIf {
         it != WorkshopModState.ImportedUnpatched &&
@@ -347,6 +347,7 @@ private fun ModCardBadges(
         }
         if (showImportPatch) {
             ModImportPatchBadge(
+                outdated = mod.hasOutdatedImportPatches,
                 enabled = importPatchBadgeEnabled,
                 onClick = onImportPatchClick
             )
@@ -431,6 +432,7 @@ private fun WorkshopUpdateBadge(
 
 @Composable
 private fun ModImportPatchBadge(
+    outdated: Boolean,
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
@@ -438,7 +440,19 @@ private fun ModImportPatchBadge(
         iconResId = R.drawable.ic_build,
         contentDescription = stringResource(R.string.main_mod_patch_badge_content_description),
         enabled = enabled,
-        onClick = onClick
+        onClick = onClick,
+        containerColor = if (outdated) {
+            MaterialTheme.colorScheme.errorContainer
+        } else {
+            MaterialTheme.colorScheme.secondaryContainer
+        },
+        contentColor = if (outdated) {
+            MaterialTheme.colorScheme.onErrorContainer
+        } else if (enabled) {
+            MaterialTheme.colorScheme.onSecondaryContainer
+        } else {
+            MaterialTheme.colorScheme.outline
+        }
     )
 }
 
@@ -495,8 +509,19 @@ private fun ModCardIconBadge(
     contentDescription: String?,
     enabled: Boolean = true,
     onClick: (() -> Unit)? = null,
+    containerColor: Color = MaterialTheme.colorScheme.secondaryContainer,
+    contentColor: Color = if (enabled) {
+        MaterialTheme.colorScheme.onSecondaryContainer
+    } else {
+        MaterialTheme.colorScheme.outline
+    },
 ) {
-    ModCardBadgeSurface(enabled = enabled, onClick = onClick) {
+    ModCardBadgeSurface(
+        enabled = enabled,
+        onClick = onClick,
+        containerColor = containerColor,
+        contentColor = contentColor
+    ) {
         Icon(
             painter = painterResource(iconResId),
             contentDescription = contentDescription,

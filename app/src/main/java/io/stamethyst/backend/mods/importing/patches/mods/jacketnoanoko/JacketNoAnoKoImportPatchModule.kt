@@ -2,7 +2,6 @@ package io.stamethyst.backend.mods.importing.patches.mods.jacketnoanoko
 
 import android.content.Context
 import io.stamethyst.R
-import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.mods.importing.ImportPatchCategory
 import io.stamethyst.backend.mods.importing.ImportPatchFailurePolicy
 import io.stamethyst.backend.mods.importing.ImportPatchPlan
@@ -21,13 +20,9 @@ internal object JacketNoAnoKoImportPatchModule : ImportPatchModule {
     override val summaryResId = R.string.mod_import_patch_jacketnoanoko_summary
     override val category = ImportPatchCategory.Shader
     override val defaultEnabled = true
-    override val userConfigurable = false
+    override val userConfigurable = true
     override val order = 520
     override val failurePolicy = ImportPatchFailurePolicy.SkipPatchContinueImport
-
-    override fun isAvailable(context: Context): Boolean {
-        return CompatibilitySettings.isJacketNoAnoKoModCompatEnabled(context)
-    }
 
     override fun plan(context: Context, item: ModImportItemPlan): ImportPatchPlan? {
         if (item.normalizedModId != TARGET_MOD_ID) return null

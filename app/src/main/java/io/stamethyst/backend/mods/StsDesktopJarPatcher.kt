@@ -281,6 +281,7 @@ internal object StsDesktopJarPatcher {
             STS_PATCH_PIXEL_SCALE_CLASS == entryName ||
             STS_PATCH_LWJGL_NATIVES_CLASS == entryName ||
             STS_PATCH_SHARED_LOADER_CLASS == entryName ||
+            STS_PATCH_FIRST_PERSON_GYRO_BRIDGE_CLASS == entryName ||
             STS_PATCH_STEAM_UTILS_CLASS == entryName ||
             STS_PATCH_STEAM_UTILS_ENUM_CLASS == entryName ||
             STS_PATCH_STEAM_INPUT_HELPER_CLASS == entryName ||

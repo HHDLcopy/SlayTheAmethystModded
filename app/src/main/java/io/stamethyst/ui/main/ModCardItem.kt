@@ -108,6 +108,7 @@ internal data class ModCardCallbacks(
     val onRetryWorkshopDownload: (ModItemUi) -> Unit = {},
     val onUpdateWorkshopMod: (ModItemUi) -> Unit = {},
     val onOpenWorkshopDetails: (ModItemUi) -> Unit = {},
+    val onSetImportPatchEnabled: (ModItemUi, String, Boolean) -> Unit = { _, _, _ -> },
     val onDragStart: (ModCardDragStartInfo) -> Unit = {},
     val onDragCancel: () -> Unit = {},
     val onMoveFolderPickerRequest: (ModItemUi) -> Unit = {},
@@ -149,7 +150,7 @@ internal fun ModCard(
     var showPriorityDialog by remember(mod.storagePath) { mutableStateOf(false) }
     var showRenameDialog by remember(mod.storagePath) { mutableStateOf(false) }
     var showSuggestionDialog by remember(mod.storagePath, suggestionText) { mutableStateOf(false) }
-    var showImportPatchDialog by remember(mod.storagePath, mod.importPatchDetails) { mutableStateOf(false) }
+    var showImportPatchDialog by remember(mod.storagePath) { mutableStateOf(false) }
     var showWorkshopUpdateConfirmDialog by remember(mod.storagePath) { mutableStateOf(false) }
     var updateChangeNotesReloadToken by remember(mod.storagePath) { mutableStateOf(0) }
     var updateChangeNotesState by remember(mod.storagePath) {
@@ -543,22 +544,14 @@ internal fun ModCard(
         )
     }
 
-    if (showImportPatchDialog && !mod.importPatchDetails.isNullOrBlank()) {
-        AlertDialog(
-            onDismissRequest = { showImportPatchDialog = false },
-            title = {
-                Text(
-                    text = stringResource(
-                        R.string.main_mod_patch_dialog_title_format,
-                        resolveModDisplayName(mod, showModFileName = false)
-                    )
-                )
-            },
-            text = { Text(text = mod.importPatchDetails.orEmpty()) },
-            confirmButton = {
-                TextButton(onClick = { showImportPatchDialog = false }) {
-                    Text(text = stringResource(R.string.common_action_confirm))
-                }
+    if (showImportPatchDialog &&
+        (!mod.importPatchDetails.isNullOrBlank() || mod.importPatches.isNotEmpty())
+    ) {
+        ModImportPatchDialog(
+            mod = mod,
+            onDismiss = { showImportPatchDialog = false },
+            onSetPatchEnabled = { moduleId, enabled ->
+                callbacks.onSetImportPatchEnabled(mod, moduleId, enabled)
             }
         )
     }

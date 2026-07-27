@@ -121,15 +121,15 @@ final public class LwjglInput implements Input {
 	}
 	
 	public float getGyroscopeX () {
-		return 0;
+		return CallbackBridge.nativeGetGyroscopeX();
 	}
 
 	public float getGyroscopeY () {
-		return 0;
+		return CallbackBridge.nativeGetGyroscopeY();
 	}
 
 	public float getGyroscopeZ () {
-		return 0;
+		return CallbackBridge.nativeGetGyroscopeZ();
 	}
 
 	public void getTextInput (final TextInputListener listener, final String title, final String text, final String hint) {

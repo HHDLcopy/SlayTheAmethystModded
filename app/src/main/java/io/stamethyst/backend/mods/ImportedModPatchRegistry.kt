@@ -7,13 +7,14 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.util.LinkedHashMap
+import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
 
 internal object ImportedModPatchRegistry {
     private const val JSON_KEY_ENTRIES = "entries"
     private const val JSON_KEY_VERSION = "version"
-    private const val JSON_VERSION = 1
+    private const val JSON_VERSION = 2
     private const val JSON_KEY_MOD_ID = "modId"
     private const val JSON_KEY_MOD_NAME = "modName"
     private const val JSON_KEY_PATCHED_ATLAS_ENTRIES = "patchedAtlasEntries"
@@ -52,6 +53,9 @@ internal object ImportedModPatchRegistry {
         "patchedOriTextureSamplesBefore"
     private const val JSON_KEY_PATCHED_ORI_TEXTURE_SAMPLES_AFTER =
         "patchedOriTextureSamplesAfter"
+    private const val JSON_KEY_APPLIED_PATCHES = "appliedPatches"
+    private const val JSON_KEY_PATCH_MODULE_ID = "moduleId"
+    private const val JSON_KEY_PATCH_VERSION = "version"
 
     fun readAll(context: Context): Map<String, ImportedModPatchInfo> {
         val root = readRoot(storageFile(context)) ?: return emptyMap()
@@ -174,7 +178,7 @@ internal object ImportedModPatchRegistry {
     }
 
     private fun JSONObject.toImportedModPatchInfo(): ImportedModPatchInfo {
-        return ImportedModPatchInfo(
+        val parsed = ImportedModPatchInfo(
             modId = optString(JSON_KEY_MOD_ID).trim(),
             modName = optString(JSON_KEY_MOD_NAME).trim(),
             patchedAtlasEntries = optInt(JSON_KEY_PATCHED_ATLAS_ENTRIES),
@@ -215,8 +219,15 @@ internal object ImportedModPatchRegistry {
             patchedOriTextureSamplesBefore =
                 optInt(JSON_KEY_PATCHED_ORI_TEXTURE_SAMPLES_BEFORE),
             patchedOriTextureSamplesAfter =
-                optInt(JSON_KEY_PATCHED_ORI_TEXTURE_SAMPLES_AFTER)
+                optInt(JSON_KEY_PATCHED_ORI_TEXTURE_SAMPLES_AFTER),
+            appliedPatches = optJSONArray(JSON_KEY_APPLIED_PATCHES)?.toPatchRecords().orEmpty()
         )
+        // A missing record array means this was written by the pre-versioned metadata format.
+        return if (has(JSON_KEY_APPLIED_PATCHES)) {
+            parsed
+        } else {
+            parsed.copy(appliedPatches = parsed.inferLegacyAppliedPatches())
+        }
     }
 
     private fun ImportedModPatchInfo.toJson(): JSONObject {
@@ -281,7 +292,35 @@ internal object ImportedModPatchRegistry {
             )
             put(JSON_KEY_PATCHED_ORI_TEXTURE_SAMPLES_BEFORE, patchedOriTextureSamplesBefore)
             put(JSON_KEY_PATCHED_ORI_TEXTURE_SAMPLES_AFTER, patchedOriTextureSamplesAfter)
+            put(
+                JSON_KEY_APPLIED_PATCHES,
+                JSONArray().apply {
+                    appliedPatches.forEach { record ->
+                        put(
+                            JSONObject().apply {
+                                put(JSON_KEY_PATCH_MODULE_ID, record.moduleId)
+                                put(JSON_KEY_PATCH_VERSION, record.version)
+                            }
+                        )
+                    }
+                }
+            )
         }
+    }
+
+    private fun JSONArray.toPatchRecords(): List<ImportedModPatchRecord> {
+        val records = LinkedHashMap<String, ImportedModPatchRecord>()
+        for (index in 0 until length()) {
+            val recordJson = optJSONObject(index) ?: continue
+            val moduleId = recordJson.optString(JSON_KEY_PATCH_MODULE_ID).trim()
+            if (moduleId.isEmpty()) continue
+            val version = recordJson.optInt(JSON_KEY_PATCH_VERSION).coerceAtLeast(0)
+            val existing = records[moduleId]
+            if (existing == null || version > existing.version) {
+                records[moduleId] = ImportedModPatchRecord(moduleId = moduleId, version = version)
+            }
+        }
+        return records.values.toList()
     }
 
     private fun normalizeStoragePath(context: Context, rawStoragePath: String?): String? {

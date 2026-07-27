@@ -399,7 +399,7 @@ object LauncherUpdateService {
 
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException("HTTP ${response.code}")
+                throw response.toGithubMirrorHttpException()
             }
             return response.body.bytes().toString(StandardCharsets.UTF_8)
         }

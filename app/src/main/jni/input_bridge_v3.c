@@ -102,10 +102,6 @@ static atomic_int pojav_audio_recovery_requested_generation = 0;
 static atomic_int pojav_audio_recovery_completed_generation = 0;
 static atomic_int pojav_audio_recovery_reported_generation = 0;
 static atomic_bool pojav_audio_recovery_last_result = false;
-static _Atomic(float) pojav_gyroscope_x = 0.0f;
-static _Atomic(float) pojav_gyroscope_y = 0.0f;
-static _Atomic(float) pojav_gyroscope_z = 0.0f;
-
 static void resolveOpenalSymbolsFromHandle(void* handle) {
     if (handle == NULL) {
         return;
@@ -698,21 +694,30 @@ JNIEXPORT jfloat JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeGetGyroscopeX(
         __attribute__((unused)) JNIEnv* env,
         __attribute__((unused)) jclass clazz
 ) {
-    return atomic_load_explicit(&pojav_gyroscope_x, memory_order_relaxed);
+    if (pojav_environ == NULL) {
+        return 0.0f;
+    }
+    return atomic_load_explicit(&pojav_environ->gyroscopeX, memory_order_relaxed);
 }
 
 JNIEXPORT jfloat JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeGetGyroscopeY(
         __attribute__((unused)) JNIEnv* env,
         __attribute__((unused)) jclass clazz
 ) {
-    return atomic_load_explicit(&pojav_gyroscope_y, memory_order_relaxed);
+    if (pojav_environ == NULL) {
+        return 0.0f;
+    }
+    return atomic_load_explicit(&pojav_environ->gyroscopeY, memory_order_relaxed);
 }
 
 JNIEXPORT jfloat JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeGetGyroscopeZ(
         __attribute__((unused)) JNIEnv* env,
         __attribute__((unused)) jclass clazz
 ) {
-    return atomic_load_explicit(&pojav_gyroscope_z, memory_order_relaxed);
+    if (pojav_environ == NULL) {
+        return 0.0f;
+    }
+    return atomic_load_explicit(&pojav_environ->gyroscopeZ, memory_order_relaxed);
 }
 
 JNIEXPORT jboolean JNICALL JavaCritical_org_lwjgl_glfw_CallbackBridge_nativeSetInputReady(jboolean inputReady) {
@@ -919,9 +924,12 @@ void noncritical_set_mouse_button_state(__attribute__((unused)) JNIEnv* env, __a
 }
 
 void critical_set_gyroscope(jfloat x, jfloat y, jfloat z) {
-    atomic_store_explicit(&pojav_gyroscope_x, x, memory_order_relaxed);
-    atomic_store_explicit(&pojav_gyroscope_y, y, memory_order_relaxed);
-    atomic_store_explicit(&pojav_gyroscope_z, z, memory_order_relaxed);
+    if (pojav_environ == NULL) {
+        return;
+    }
+    atomic_store_explicit(&pojav_environ->gyroscopeX, x, memory_order_relaxed);
+    atomic_store_explicit(&pojav_environ->gyroscopeY, y, memory_order_relaxed);
+    atomic_store_explicit(&pojav_environ->gyroscopeZ, z, memory_order_relaxed);
 }
 
 void noncritical_set_gyroscope(

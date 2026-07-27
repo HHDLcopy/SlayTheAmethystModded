@@ -3,14 +3,10 @@ package io.stamethyst.backend.steamcloud
 import android.content.Context
 import io.stamethyst.backend.github.ExperimentalGithubDirectAccessRuntime
 import io.stamethyst.backend.github.ExperimentalGithubDirectAccessInterceptor
-import io.stamethyst.backend.github.FileBackedWattToolkitGithubRouteStore
-import io.stamethyst.backend.github.GithubDirectHostnameVerifier
 import io.stamethyst.backend.github.WATT_PROXY_TYPE_DIRECT
 import io.stamethyst.backend.github.WATT_PROXY_TYPE_REVERSE_PROXY
-import io.stamethyst.backend.github.WattToolkitGithubRouteResolver
 import io.stamethyst.backend.github.WattToolkitRouteProfile
-import io.stamethyst.backend.github.WattToolkitForwardDns
-import io.stamethyst.backend.github.trustWattToolkitForwardCertificates
+import io.stamethyst.backend.github.createWattToolkitRuntime
 import io.stamethyst.backend.network.NetworkAccelerationPolicy
 import io.stamethyst.config.LauncherConfig
 import java.io.File
@@ -18,7 +14,6 @@ import javax.net.ssl.HttpsURLConnection
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import okhttp3.OkHttpClient
-import okhttp3.Protocol
 
 internal val SteamCommunityWattToolkitRouteProfile = WattToolkitRouteProfile(
     name = "steam-community",
@@ -175,38 +170,13 @@ object SteamCloudAcceleratedHttp {
 internal fun createSteamCloudWattToolkitRuntime(
     filesDir: File,
     routeProfiles: List<WattToolkitRouteProfile> = defaultSteamCloudWattToolkitRouteProfiles,
-): ExperimentalGithubDirectAccessRuntime {
-    val forwardDns = WattToolkitForwardDns()
-    val resolvers = routeProfiles.map { routeProfile ->
-        WattToolkitGithubRouteResolver(
-            routeProfile = routeProfile,
-            routeStore = FileBackedWattToolkitGithubRouteStore(
-                file = File(filesDir, "steam-cloud/network/${routeProfile.cacheFileName}"),
-                fallbackLogicalHosts = routeProfile.supportedHosts,
-            ),
-        )
-    }
-    val hostnameVerifier = GithubDirectHostnameVerifier { host ->
-        resolvers.any { resolver -> resolver.allowsUnsafeHostnameBypass(host) }
-    }
-    val directHttpClient = OkHttpClient.Builder()
-        .connectTimeout(STEAM_CLOUD_DIRECT_ACCESS_CONNECT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-        .readTimeout(STEAM_CLOUD_DIRECT_ACCESS_READ_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-        .writeTimeout(STEAM_CLOUD_DIRECT_ACCESS_READ_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-        .hostnameVerifier(hostnameVerifier)
-        .dns(forwardDns)
-        .trustWattToolkitForwardCertificates()
-        .followRedirects(false)
-        .followSslRedirects(false)
-        .protocols(listOf(Protocol.HTTP_1_1))
-        .build()
-    return ExperimentalGithubDirectAccessRuntime(
-        resolvers = resolvers,
-        hostnameVerifier = hostnameVerifier,
-        directHttpClient = directHttpClient,
-        forwardDns = forwardDns,
-    )
-}
+): ExperimentalGithubDirectAccessRuntime = createWattToolkitRuntime(
+    filesDir = filesDir,
+    cacheSubDirectory = "steam-cloud/network",
+    routeProfiles = routeProfiles,
+    connectTimeoutMs = STEAM_CLOUD_DIRECT_ACCESS_CONNECT_TIMEOUT_MS,
+    readTimeoutMs = STEAM_CLOUD_DIRECT_ACCESS_READ_TIMEOUT_MS,
+)
 
 private const val STEAM_CLOUD_DIRECT_ACCESS_CONNECT_TIMEOUT_MS = 8_000L
 private const val STEAM_CLOUD_DIRECT_ACCESS_READ_TIMEOUT_MS = 60_000L

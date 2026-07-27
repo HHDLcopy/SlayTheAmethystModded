@@ -17,27 +17,64 @@ internal data class SteamCdnServerPool(
 internal class SteamCdnTransport(
     private val client: OkHttpClient,
 ) {
+    /**
+     * Builds the ordered download pool for a depot request.
+     *
+     * @param preferSteamChinaServers keeps Steam-China-only edges at the head of
+     * the pool. Steam returns a globally weighted list, so without this a
+     * mainland client is pushed onto overseas edges that it can barely reach.
+     */
     fun buildServerPool(
         appId: UInt,
         contentServers: List<CdnServer>,
+        preferSteamChinaServers: Boolean = false,
     ): SteamCdnServerPool {
         val proxyServer = contentServers.firstOrNull(CdnServer::useAsProxy)
-        val downloadServers = buildList {
-            contentServers
-                .asSequence()
-                .filter { it.allowedAppIds.isEmpty() || appId in it.allowedAppIds }
-                .filter { it.type == "SteamCache" || it.type == "CDN" }
-                .sortedBy(CdnServer::weightedLoad)
-                .forEach { server ->
-                    repeat(server.numEntriesInClientList.coerceAtLeast(0)) {
-                        add(server)
-                    }
-                }
-        }
+        val eligibleServers = contentServers
+            .asSequence()
+            .filter { it.allowedAppIds.isEmpty() || appId in it.allowedAppIds }
+            .filter { it.type == "SteamCache" || it.type == "CDN" }
+            .sortedWith(
+                if (preferSteamChinaServers) {
+                    compareByDescending<CdnServer> { it.steamChinaOnly }
+                        .thenBy(CdnServer::weightedLoad)
+                } else {
+                    compareBy(CdnServer::weightedLoad)
+                },
+            )
+            .toList()
         return SteamCdnServerPool(
             proxyServer = proxyServer,
-            downloadServers = downloadServers,
+            downloadServers = spreadByClientListWeight(eligibleServers),
         )
+    }
+
+    /**
+     * Expands client-list weights round-robin instead of in consecutive runs.
+     *
+     * Concurrent chunk workers all start from the head of this pool, so
+     * consecutive duplicates made every worker hammer the same edge and made a
+     * single dead host absorb as many retries as its weight.
+     */
+    private fun spreadByClientListWeight(servers: List<CdnServer>): List<CdnServer> {
+        if (servers.isEmpty()) {
+            return emptyList()
+        }
+        val remaining = servers.map { it.numEntriesInClientList.coerceAtLeast(0) }.toIntArray()
+        val total = remaining.sum()
+        if (total <= 0) {
+            return servers
+        }
+        val ordered = ArrayList<CdnServer>(total)
+        while (ordered.size < total) {
+            servers.forEachIndexed { index, server ->
+                if (remaining[index] > 0) {
+                    ordered += server
+                    remaining[index]--
+                }
+            }
+        }
+        return ordered
     }
 
     suspend fun requestBytes(

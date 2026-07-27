@@ -19,6 +19,7 @@ class UpdateSourceOrderingTest {
                 UpdateSource.GH_PROXY_VIP,
                 UpdateSource.GH_LLKK,
                 UpdateSource.GH_PROXY_NET,
+                UpdateSource.ACCELERATED_DIRECT,
                 UpdateSource.OFFICIAL
             ),
             UpdateSource.metadataCandidates(UpdateSource.GH_PROXY_COM)
@@ -59,6 +60,7 @@ class UpdateSourceOrderingTest {
                 UpdateSource.GH_PROXY_COM,
                 UpdateSource.GH_LLKK,
                 UpdateSource.GH_PROXY_NET,
+                UpdateSource.ACCELERATED_DIRECT,
                 UpdateSource.OFFICIAL
             ),
             UpdateSource.metadataCandidates(UpdateSource.GH_PROXY_VIP)
@@ -73,6 +75,7 @@ class UpdateSourceOrderingTest {
                 UpdateSource.GH_PROXY_COM,
                 UpdateSource.GH_PROXY_VIP,
                 UpdateSource.GH_PROXY_NET,
+                UpdateSource.ACCELERATED_DIRECT,
                 UpdateSource.OFFICIAL
             ),
             UpdateSource.metadataCandidates(UpdateSource.GH_LLKK)
@@ -109,6 +112,7 @@ class UpdateSourceOrderingTest {
                 UpdateSource.GH_PROXY_VIP,
                 UpdateSource.GH_LLKK,
                 UpdateSource.GH_PROXY_NET,
+                UpdateSource.ACCELERATED_DIRECT,
                 UpdateSource.OFFICIAL
             ),
             UpdateSource.downloadCandidates(

@@ -545,6 +545,9 @@
     <string name="main_mod_patch_badge_content_description">檢視匯入修補詳情</string>
     <string name="main_mod_patch_dialog_title_format">匯入修補</string>
     <string name="main_mod_patch_dialog_upgrade_message">一個或多個匯入修補已有新版本。請重新匯入此模組以套用升級。</string>
+    <string name="main_mod_patch_dialog_upgrade_from_market">從市場升級</string>
+    <string name="main_mod_patch_upgrade_confirm_title">升級匯入修補</string>
+    <string name="main_mod_patch_upgrade_confirm_message">將從市場下載 %1$s 的最新版本，取代目前模組並套用最新匯入修補。升級過程中請不要啟動遊戲。</string>
     <string name="main_mod_patch_dialog_version_format">已套用 v%1$d / 目前 v%2$d</string>
     <string name="main_mod_patch_dialog_current_version_format">目前 v%1$d</string>
     <string name="main_mod_patch_dialog_future_imports">設定會套用於後續匯入。變更設定後請重新匯入此模組。</string>

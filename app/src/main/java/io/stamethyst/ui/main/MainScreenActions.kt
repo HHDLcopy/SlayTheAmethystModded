@@ -28,6 +28,7 @@ internal data class MainScreenActions(
     val onPatchWorkshopMod: (ModItemUi) -> Unit = {},
     val onRetryWorkshopDownload: (ModItemUi) -> Unit = {},
     val onUpdateWorkshopMod: (ModItemUi) -> Unit = {},
+    val onUpgradeWorkshopImportPatches: (ModItemUi) -> Unit = {},
     val onOpenWorkshopDetails: (ModItemUi) -> Unit = {},
     val onSetImportPatchEnabled: (ModItemUi, String, Boolean) -> Unit = { _, _, _ -> },
     val onToggleMod: (ModItemUi, Boolean) -> Unit = { _, _ -> },
@@ -127,6 +128,9 @@ internal fun rememberMainScreenActions(
                 onPatchWorkshopMod = { mod -> viewModel.onPatchWorkshopMod(activity, mod) },
                 onRetryWorkshopDownload = { mod -> viewModel.onRetryWorkshopDownload(activity, mod) },
                 onUpdateWorkshopMod = { mod -> viewModel.onUpdateWorkshopMod(activity, mod) },
+                onUpgradeWorkshopImportPatches = { mod ->
+                    viewModel.onUpgradeWorkshopImportPatches(activity, mod)
+                },
                 onOpenWorkshopDetails = onOpenWorkshopDetails,
                 onSetImportPatchEnabled = { mod, moduleId, enabled ->
                     viewModel.onSetImportPatchEnabled(activity, mod, moduleId, enabled)

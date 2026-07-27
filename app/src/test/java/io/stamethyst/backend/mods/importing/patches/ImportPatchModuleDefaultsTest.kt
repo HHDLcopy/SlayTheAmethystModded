@@ -29,11 +29,12 @@ class ImportPatchModuleDefaultsTest {
     }
 
     @Test
-    fun everyImportPatchModule_isUserConfigurableAndUsesV1() {
+    fun everyImportPatchModule_isUserConfigurableAndUsesDeclaredVersion() {
         val modules = allModules()
 
         assertTrue(modules.all { it.userConfigurable })
-        assertEquals(setOf(1), modules.map { it.version }.toSet())
+        assertTrue(modules.all { it.version >= 1 })
+        assertEquals(2, FirstPersonViewImportPatchModule.version)
     }
 
     @Test

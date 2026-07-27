@@ -3273,12 +3273,15 @@ internal fun LauncherMainRoute(
 
     LaunchedEffect(hostActivity) {
         if (hostActivity != null) {
-            viewModel.refresh(hostActivity)
-            viewModel.syncModSuggestionsIfNeeded(hostActivity)
-            viewModel.syncSteamCloudIndicatorIfNeeded(hostActivity, force = true)
+            // Load persisted task state before enumerating local mods. Otherwise an import that
+            // finishes between these two operations can remove its temporary card without a
+            // subsequent full refresh to add the newly imported jar.
             if (pollWorkshopDownloads && !viewModel.uiState.launchInFlight) {
                 viewModel.refreshWorkshopDownloadCards(hostActivity)
             }
+            viewModel.refresh(hostActivity)
+            viewModel.syncModSuggestionsIfNeeded(hostActivity)
+            viewModel.syncSteamCloudIndicatorIfNeeded(hostActivity, force = true)
         }
     }
 
@@ -6094,6 +6097,7 @@ private fun ColumnScope.MainContentSwitcher(
                         onPatchWorkshopMod = actions.onPatchWorkshopMod,
                         onRetryWorkshopDownload = actions.onRetryWorkshopDownload,
                         onUpdateWorkshopMod = actions.onUpdateWorkshopMod,
+                        onUpgradeWorkshopImportPatches = actions.onUpgradeWorkshopImportPatches,
                         onOpenWorkshopDetails = actions.onOpenWorkshopDetails,
                         onSetImportPatchEnabled = actions.onSetImportPatchEnabled,
                         onAssociateMods = actions.onAssociateMods,

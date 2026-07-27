@@ -16,7 +16,7 @@ internal object FirstPersonViewImportPatchModule : ImportPatchModule {
     private const val TARGET_MOD_ID = "firstperson"
 
     override val id = "mod.firstperson.gyro_camera"
-    override val version = 1
+    override val version = 2
     override val displayNameResId = R.string.mod_import_patch_firstperson_title
     override val summaryResId = R.string.mod_import_patch_firstperson_summary
     override val category = ImportPatchCategory.ModSpecific

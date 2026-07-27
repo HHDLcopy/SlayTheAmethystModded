@@ -14,6 +14,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.WindowManager
@@ -43,6 +44,7 @@ import org.lwjgl.glfw.CallbackBridge
 
 class StsGameActivity : AppCompatActivity(), SensorEventListener {
     companion object {
+        private const val GYROSCOPE_LOG_TAG = "STS-Gyroscope"
         const val EXTRA_LAUNCH_MODE = "io.stamethyst.launch_mode"
         const val EXTRA_BACK_BEHAVIOR = "io.stamethyst.back_behavior"
         const val EXTRA_BACK_IMMEDIATE_EXIT = "io.stamethyst.back_immediate_exit"
@@ -119,6 +121,12 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
     private var gyroscopeSensorManager: SensorManager? = null
     private var gyroscopeSensor: Sensor? = null
     private var gyroscopeRegistered = false
+    private var gyroscopeSensorEventCount = 0L
+    private var gyroscopeForwardCount = 0L
+    private var gyroscopeRegistrationLogged = false
+    private var gyroscopeSensorMissingLogged = false
+    private var gyroscopeForwardFailureLogged = false
+    private var gyroscopeFirstForwardLogged = false
 
     private val filePickerLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -254,6 +262,13 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
         if (event.sensor.type != Sensor.TYPE_GYROSCOPE || event.values.size < 3) {
             return
         }
+        gyroscopeSensorEventCount += 1L
+        if (gyroscopeSensorEventCount == 1L || gyroscopeSensorEventCount % 120L == 0L) {
+            Log.i(
+                GYROSCOPE_LOG_TAG,
+                "sensor_event count=$gyroscopeSensorEventCount x=${event.values[0]} y=${event.values[1]} z=${event.values[2]}"
+            )
+        }
         forwardGyroscope(event.values[0], event.values[1], event.values[2])
     }
 
@@ -268,18 +283,44 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
         val manager = gyroscopeSensorManager ?:
             (getSystemService(Context.SENSOR_SERVICE) as? SensorManager)?.also {
                 gyroscopeSensorManager = it
-            } ?: return
+            } ?: run {
+                if (!gyroscopeSensorMissingLogged) {
+                    Log.w(GYROSCOPE_LOG_TAG, "sensor_manager_unavailable")
+                    gyroscopeSensorMissingLogged = true
+                }
+                return
+            }
         val sensor = gyroscopeSensor ?: manager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)?.also {
             gyroscopeSensor = it
-        } ?: return
+        } ?: run {
+            if (!gyroscopeSensorMissingLogged) {
+                Log.w(GYROSCOPE_LOG_TAG, "gyroscope_sensor_unavailable")
+                gyroscopeSensorMissingLogged = true
+            }
+            return
+        }
         forwardGyroscope(0f, 0f, 0f)
-        gyroscopeRegistered = runCatching {
+        gyroscopeRegistered = try {
             manager.registerListener(
                 this,
                 sensor,
                 SensorManager.SENSOR_DELAY_GAME
-            )
-        }.getOrDefault(false)
+            ).also { registered ->
+                if (!gyroscopeRegistrationLogged) {
+                    Log.i(
+                        GYROSCOPE_LOG_TAG,
+                        "register_listener result=$registered name=${sensor.name} vendor=${sensor.vendor}"
+                    )
+                    gyroscopeRegistrationLogged = true
+                }
+            }
+        } catch (error: Throwable) {
+            if (!gyroscopeRegistrationLogged) {
+                Log.w(GYROSCOPE_LOG_TAG, "register_listener_failed", error)
+                gyroscopeRegistrationLogged = true
+            }
+            false
+        }
     }
 
     private fun unregisterGyroscope() {
@@ -292,8 +333,21 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
 
     private fun forwardGyroscope(x: Float, y: Float, z: Float) {
         // Sensor delivery must not take down the Activity when an older native bridge is loaded.
-        runCatching {
+        try {
             CallbackBridge.nativeSetGyroscope(x, y, z)
+            gyroscopeForwardCount += 1L
+            if (!gyroscopeFirstForwardLogged) {
+                Log.i(
+                    GYROSCOPE_LOG_TAG,
+                    "native_forward_ok count=$gyroscopeForwardCount x=$x y=$y z=$z"
+                )
+                gyroscopeFirstForwardLogged = true
+            }
+        } catch (error: Throwable) {
+            if (!gyroscopeForwardFailureLogged) {
+                Log.w(GYROSCOPE_LOG_TAG, "native_forward_failed count=$gyroscopeForwardCount", error)
+                gyroscopeForwardFailureLogged = true
+            }
         }
     }
 

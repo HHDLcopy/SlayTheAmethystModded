@@ -1165,6 +1165,9 @@ internal fun ModFolderSection(
                                     onPatchWorkshopMod = { latestCallbacks.value.onPatchWorkshopMod(it) },
                                     onRetryWorkshopDownload = { latestCallbacks.value.onRetryWorkshopDownload(it) },
                                     onUpdateWorkshopMod = { latestCallbacks.value.onUpdateWorkshopMod(it) },
+                                    onUpgradeWorkshopImportPatches = {
+                                        latestCallbacks.value.onUpgradeWorkshopImportPatches(it)
+                                    },
                                     onOpenWorkshopDetails = { latestCallbacks.value.onOpenWorkshopDetails(it) },
                                     onSetImportPatchEnabled = { item, moduleId, enabled ->
                                         latestCallbacks.value.onSetImportPatchEnabled(item, moduleId, enabled)

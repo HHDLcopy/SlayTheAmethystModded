@@ -14,6 +14,9 @@ public final class FirstPersonGyroBridge {
     private static float offsetX;
     private static float offsetY;
     private static boolean cursorXUpdated;
+    private static long integrationCount;
+    private static boolean sampleLogged;
+    private static boolean getterFailureLogged;
 
     private FirstPersonGyroBridge() {
     }
@@ -27,7 +30,8 @@ public final class FirstPersonGyroBridge {
             advance(width, height);
             cursorXUpdated = true;
             return toCoordinate(width, offsetX);
-        } catch (LinkageError | RuntimeException ignored) {
+        } catch (LinkageError | RuntimeException error) {
+            logGetterFailure(error);
             resetOffsets();
             cursorXUpdated = false;
             return centerCoordinate(width);
@@ -47,7 +51,8 @@ public final class FirstPersonGyroBridge {
             }
             cursorXUpdated = false;
             return toCoordinate(height, offsetY);
-        } catch (LinkageError | RuntimeException ignored) {
+        } catch (LinkageError | RuntimeException error) {
+            logGetterFailure(error);
             resetOffsets();
             cursorXUpdated = false;
             return centerCoordinate(height);
@@ -74,12 +79,41 @@ public final class FirstPersonGyroBridge {
         // Avoid a large jump after a pause or a debugger break.
         deltaSeconds = Math.min(deltaSeconds, 0.1f);
 
-        // Android reports angular velocity in radians per second. Yaw is the
-        // device Y axis and pitch is the device X axis in the game view.
-        offsetX += -CallbackBridge.nativeGetGyroscopeY() * deltaSeconds * PIXELS_PER_RADIAN;
-        offsetY += CallbackBridge.nativeGetGyroscopeX() * deltaSeconds * PIXELS_PER_RADIAN;
+        // Android reports angular velocity in radians per second. FirstPersonView
+        // applies its horizontal and vertical cursor offsets to opposite camera
+        // axes, so the device X and Y axes must be exchanged here.
+        float gyroY = CallbackBridge.nativeGetGyroscopeY();
+        float gyroX = CallbackBridge.nativeGetGyroscopeX();
+        integrationCount += 1L;
+        if (!sampleLogged || integrationCount % 120L == 0L) {
+            System.err.println(
+                    "[amethyst-firstperson-gyro] sample count=" + integrationCount
+                            + " x=" + gyroX + " y=" + gyroY
+                            + " z=" + CallbackBridge.nativeGetGyroscopeZ()
+                            + " offsetX=" + offsetX + " offsetY=" + offsetY);
+            sampleLogged = true;
+        }
+        offsetX += horizontalCursorDelta(gyroX, deltaSeconds);
+        offsetY += verticalCursorDelta(gyroY, deltaSeconds);
         offsetX = clampOffset(offsetX, width);
         offsetY = clampOffset(offsetY, height);
+    }
+
+    static float horizontalCursorDelta(float gyroscopeX, float deltaSeconds) {
+        return gyroscopeX * deltaSeconds * PIXELS_PER_RADIAN;
+    }
+
+    static float verticalCursorDelta(float gyroscopeY, float deltaSeconds) {
+        return -gyroscopeY * deltaSeconds * PIXELS_PER_RADIAN;
+    }
+
+    private static void logGetterFailure(Throwable error) {
+        if (getterFailureLogged) {
+            return;
+        }
+        getterFailureLogged = true;
+        System.err.println("[amethyst-firstperson-gyro] getter_failed " + error);
+        error.printStackTrace(System.err);
     }
 
     private static float clampOffset(float offset, int dimension) {

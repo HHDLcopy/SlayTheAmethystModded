@@ -1,6 +1,7 @@
 package io.stamethyst.backend.workshop
 
 import androidx.test.core.app.ApplicationProvider
+import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -14,7 +15,7 @@ class WorkshopDownloadTaskStoreInstrumentedTest {
         try {
             val completed = task(10uL, WorkshopDownloadTaskStatus.Completed)
             val cancelled = task(11uL, WorkshopDownloadTaskStatus.Cancelled)
-            val failed = task(12uL, WorkshopDownloadTaskStatus.Failed)
+            val failed = task(12uL, WorkshopDownloadTaskStatus.Failed).copy(forceAutoImport = true)
             val downloading = task(13uL, WorkshopDownloadTaskStatus.Downloading)
             store.save(listOf(completed, cancelled, failed, downloading))
 
@@ -36,6 +37,16 @@ class WorkshopDownloadTaskStoreInstrumentedTest {
             assertEquals(
                 LARGE_DOWNLOAD_LOG,
                 fullTasks.first { it.publishedFileId == 10uL }.downloadLog
+            )
+            assertTrue(
+                "Explicit patch upgrades must retain their forced auto-import instruction",
+                fullTasks.first { it.publishedFileId == 12uL }.forceAutoImport
+            )
+            assertTrue(
+                "Forced auto-import must be written so a queued upgrade survives process restart",
+                File(context.filesDir, "workshop/download_tasks.json")
+                    .readText()
+                    .contains("\"forceAutoImport\": true")
             )
         } finally {
             store.save(originalTasks)

@@ -14,6 +14,7 @@ internal data class ModFolderSectionCallbacks(
     val onPatchWorkshopMod: (ModItemUi) -> Unit = {},
     val onRetryWorkshopDownload: (ModItemUi) -> Unit = {},
     val onUpdateWorkshopMod: (ModItemUi) -> Unit = {},
+    val onUpgradeWorkshopImportPatches: (ModItemUi) -> Unit = {},
     val onOpenWorkshopDetails: (ModItemUi) -> Unit = {},
     val onSetImportPatchEnabled: (ModItemUi, String, Boolean) -> Unit = { _, _, _ -> },
     val onAssociateMods: (ModItemUi, ModItemUi) -> Unit = { _, _ -> },

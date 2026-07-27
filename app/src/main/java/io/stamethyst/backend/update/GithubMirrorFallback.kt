@@ -36,18 +36,29 @@ object GithubMirrorFallback {
         )
     }
 
+    /**
+     * Walks the candidate mirrors in health order and returns the first success.
+     *
+     * Ordering is delegated to [GithubMirrorHealthStore] so a mirror that failed
+     * moments ago is retried last instead of costing every later call another
+     * full connect timeout. Outcomes are reported back so the next call learns
+     * from this one.
+     */
     inline fun <T> run(
         sources: List<UpdateSource>,
         block: (UpdateSource) -> T
     ): GithubMirrorFallbackSuccess<T> {
         val failures = ArrayList<GithubMirrorFallbackFailure>()
-        sources.forEach { source ->
+        GithubMirrorHealthStore.orderByHealth(sources).forEach { source ->
             try {
+                val value = block(source)
+                GithubMirrorHealthStore.recordSuccess(source)
                 return GithubMirrorFallbackSuccess(
                     source = source,
-                    value = block(source)
+                    value = value
                 )
             } catch (error: Throwable) {
+                GithubMirrorHealthStore.recordFailure(source, error)
                 failures += GithubMirrorFallbackFailure(
                     source = source,
                     error = error

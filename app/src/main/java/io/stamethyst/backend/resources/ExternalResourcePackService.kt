@@ -11,6 +11,7 @@ import io.stamethyst.backend.launch.progressText
 import io.stamethyst.backend.network.NetworkAccelerationPolicy
 import io.stamethyst.backend.update.UpdateMirrorManager
 import io.stamethyst.backend.update.UpdateSource
+import io.stamethyst.backend.update.toGithubMirrorHttpException
 import io.stamethyst.config.RuntimePaths
 import java.io.File
 import java.io.FileInputStream
@@ -142,6 +143,8 @@ object ExternalResourcePackService {
         "libjnidispatch.so",
         "liblinkerhook.so",
         "libmobileglues.so",
+        "libeasytier_android_jni.so",
+        "libeasytier_ffi.so",
         "libspirv-cross-c-shared.so",
         "libvulkan_freedreno.so",
         "libzink_dri.so"
@@ -242,7 +245,12 @@ object ExternalResourcePackService {
                     )
                 }
             }
-        }.distinctBy(ConfiguredResourcePackDownloadCandidate::requestUrl)
+        }.distinctBy { candidate ->
+            // Watt direct access and the bare origin resolve to the same URL, so
+            // keying only on the URL dropped the unaccelerated origin attempt.
+            // They are different transports and both must stay in the chain.
+            candidate.requestUrl to candidate.usesGithubAcceleration
+        }
     }
 
     @JvmStatic
@@ -651,7 +659,7 @@ object ExternalResourcePackService {
             call.execute().use { response ->
                 mirrorSwitchContext?.throwIfSwitchRequested()
                 if (!response.isSuccessful) {
-                    throw IOException("HTTP ${response.code}")
+                    throw response.toGithubMirrorHttpException()
                 }
                 val parent = targetFile.parentFile
                     ?: throw IOException("Resource pack target has no parent: ${targetFile.absolutePath}")

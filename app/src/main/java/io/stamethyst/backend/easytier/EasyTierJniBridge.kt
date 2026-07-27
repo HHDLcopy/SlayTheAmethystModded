@@ -1,42 +1,43 @@
 package io.stamethyst.backend.easytier
 
+import android.content.Context
 import com.easytier.jni.EasyTierJNI
 
 internal object EasyTierJniBridge {
     private const val NATIVE_LIBRARY_NOT_BUNDLED =
-        "EasyTier native runtime library is not bundled in this build yet."
+        "EasyTier native runtime is missing from the installed resource pack."
     private const val NATIVE_LIBRARY_LOAD_FAILED =
         "EasyTier native runtime failed to load."
 
-    fun parseConfig(config: String): Result<Unit> = callNative {
+    fun parseConfig(context: Context, config: String): Result<Unit> = callNative(context) {
         val result = EasyTierJNI.parseConfig(config)
         if (result != 0) {
             throw IllegalStateException(lastError("EasyTier config parse failed."))
         }
     }
 
-    fun runNetworkInstance(config: String): Result<Unit> = callNative {
+    fun runNetworkInstance(context: Context, config: String): Result<Unit> = callNative(context) {
         val result = EasyTierJNI.runNetworkInstance(config)
         if (result != 0) {
             throw IllegalStateException(lastError("EasyTier network instance failed to start."))
         }
     }
 
-    fun setTunFd(instanceName: String, fd: Int): Result<Unit> = callNative {
+    fun setTunFd(context: Context, instanceName: String, fd: Int): Result<Unit> = callNative(context) {
         val result = EasyTierJNI.setTunFd(instanceName, fd)
         if (result != 0) {
             throw IllegalStateException(lastError("EasyTier rejected the Android TUN file descriptor."))
         }
     }
 
-    fun stopAllInstances(): Result<Unit> = callNative {
+    fun stopAllInstances(context: Context): Result<Unit> = callNative(context) {
         val result = EasyTierJNI.stopAllInstances()
         if (result != 0) {
             throw IllegalStateException(lastError("EasyTier failed to stop running instances."))
         }
     }
 
-    fun collectNetworkInfo(instanceName: String): Result<EasyTierRuntimeInfo?> = callNative {
+    fun collectNetworkInfo(context: Context, instanceName: String): Result<EasyTierRuntimeInfo?> = callNative(context) {
         EasyTierRuntimeInfoParser.parse(
             rawJson = EasyTierJNI.collectNetworkInfos(10),
             instanceName = instanceName,
@@ -69,8 +70,9 @@ internal object EasyTierJniBridge {
         }
     }
 
-    private fun <T> callNative(block: () -> T): Result<T> {
+    private fun <T> callNative(context: Context, block: () -> T): Result<T> {
         return try {
+            EasyTierNativeLibraryLoader.ensureLoaded(context)
             Result.success(block())
         } catch (error: Throwable) {
             Result.failure(error)
@@ -100,6 +102,7 @@ internal object EasyTierJniBridge {
             .orEmpty()
         return message.contains("couldn't find") ||
             message.contains("could not find") ||
+            message.contains("missing from the installed resource pack") ||
             (
                 message.contains("not found") &&
                     message.contains("libeasytier") &&
@@ -122,6 +125,7 @@ internal sealed class EasyTierRuntimeStartResult {
 
 internal object EasyTierRuntimeBridge {
     fun startNetworkInstance(
+        context: Context,
         sessionConfig: EasyTierRoomSessionConfig,
         playerId: String,
     ): EasyTierRuntimeStartResult {
@@ -141,10 +145,10 @@ internal object EasyTierRuntimeBridge {
             )
         }
 
-        EasyTierJniBridge.parseConfig(runtimeConfig.toml).exceptionOrNull()?.let { error ->
+        EasyTierJniBridge.parseConfig(context, runtimeConfig.toml).exceptionOrNull()?.let { error ->
             return error.toStartFailure()
         }
-        EasyTierJniBridge.runNetworkInstance(runtimeConfig.toml).exceptionOrNull()?.let { error ->
+        EasyTierJniBridge.runNetworkInstance(context, runtimeConfig.toml).exceptionOrNull()?.let { error ->
             return error.toStartFailure()
         }
 

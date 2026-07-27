@@ -53,6 +53,12 @@ private val externalizedAssetPatterns = listOf(
     "ui/**"
 ) + externalizedModAssetPatterns
 
+// This was temporarily bundled while the callback bridge migration was in flight.
+// Exclude stale generated outputs so incremental builds cannot retain the duplicate JAR.
+private val obsoleteCommonAssetPatterns = listOf(
+    "components/embedded_lwjgl_bridge/**"
+)
+
 private val externalizedNativeLibraries = listOf(
     "libEGL_mesa.so",
     "libOSMesa.so",
@@ -66,6 +72,8 @@ private val externalizedNativeLibraries = listOf(
     "libjnidispatch.so",
     "liblinkerhook.so",
     "libmobileglues.so",
+    "libeasytier_android_jni.so",
+    "libeasytier_ffi.so",
     "libspirv-cross-c-shared.so",
     "libvulkan_freedreno.so",
     "libzink_dri.so"
@@ -205,10 +213,10 @@ private fun Project.registerPackagedRuntimeAssetTasks(
         dependsOn(generatedAssetTasks)
         duplicatesStrategy = DuplicatesStrategy.INCLUDE
         from(sourceAssetsDir) {
-            exclude(externalizedAssetPatterns)
+            exclude(externalizedAssetPatterns + obsoleteCommonAssetPatterns)
         }
         from(generatedRuntimeAssetsDir) {
-            exclude(externalizedAssetPatterns)
+            exclude(externalizedAssetPatterns + obsoleteCommonAssetPatterns)
         }
         into(packagedCommonAssetsDir)
     }

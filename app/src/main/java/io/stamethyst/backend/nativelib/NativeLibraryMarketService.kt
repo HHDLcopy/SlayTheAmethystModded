@@ -7,6 +7,7 @@ import io.stamethyst.backend.github.GithubAcceleratedHttp
 import io.stamethyst.backend.network.NetworkAccelerationPolicy
 import io.stamethyst.backend.update.GithubMirrorFallback
 import io.stamethyst.backend.update.UpdateSource
+import io.stamethyst.backend.update.toGithubMirrorHttpException
 import io.stamethyst.config.RuntimePaths
 import java.io.File
 import java.io.FileInputStream
@@ -649,7 +650,7 @@ object NativeLibraryMarketService {
             .build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException("HTTP ${response.code}")
+                throw response.toGithubMirrorHttpException()
             }
             return response.body.bytes().toString(StandardCharsets.UTF_8)
         }
@@ -672,7 +673,7 @@ object NativeLibraryMarketService {
             .build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException("HTTP ${response.code}")
+                throw response.toGithubMirrorHttpException()
             }
             val totalBytes = response.body.contentLength().takeIf { it > 0L }
             val parent = targetFile.parentFile

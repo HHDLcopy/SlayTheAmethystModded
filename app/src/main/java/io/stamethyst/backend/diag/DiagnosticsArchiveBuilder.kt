@@ -92,9 +92,13 @@ internal object DiagnosticsArchiveBuilder {
         output: OutputStream,
         crashContext: CrashArchiveContext?
     ): Int {
-        val stsRoot = RuntimePaths.stsRoot(context)
         var exportedCount = 0
         ZipOutputStream(output).use { zipOutput ->
+            writeTextEntry(
+                zipOutput,
+                "sts/readme.txt",
+                buildArchiveReadme()
+            )
             writeTextEntry(
                 zipOutput,
                 "sts/info/device_info.txt",
@@ -249,17 +253,32 @@ internal object DiagnosticsArchiveBuilder {
                 )
             }
 
-            if (exportedCount <= 0) {
-                val message = buildString {
-                    append("No diagnostic logs found.\n")
-                    append("Expected files under:\n")
-                    append("- ").append(stsRoot.absolutePath).append('\n')
-                }
-                writeTextEntry(zipOutput, "sts/README.txt", message)
-            }
         }
         return exportedCount
     }
+
+    private fun buildArchiveReadme(): String = """
+        Slay the Amethyst 诊断日志包
+
+        目录说明：
+        - easytier/：EasyTier 配置、当前状态，以及最近 5 条失败连接记录。
+        - feedback/：反馈提交所需的 issue 内容、请求信息和日志摘要；该目录保持反馈包原结构。
+        - info/：设备信息和启动器设置。
+        - logs/：JVM 日志及启动桥接、GC、堆快照、信号转储等启动器日志，JVM 日志最多保留 5 槽位。
+        - memory_diagnostics/：内存压力和内存诊断日志，最多保留 5 槽位。
+        - logcat/app/：应用进程 logcat，最多 5 槽位。
+        - logcat/system/：系统进程 logcat，最多 5 槽位。
+        - launcher_crash_reports/：启动器崩溃报告，最多 5 槽位。
+        - steam_login/：Steam credentials 登录失败记录，最多 5 槽位。
+        - steam_cloud/：Steam Cloud 操作、失败历史和协议诊断信息。
+        - workshop/market_failed/：Workshop 市场查询失败日志，最多 5 槽位。
+        - workshop/download_tasks/：最近 10 条 Workshop 下载任务日志。
+        - workshop/auto_import_patch_logs/：自动导入补丁日志，最多 10 槽位。
+        - crash/：本次崩溃归档的摘要（仅崩溃报告包包含）。
+
+        已从导出包移除：jvm_histograms/、performance_launch_audit.log、process_exit_info.txt。
+        某些目录或文件在没有对应事件时不会生成。
+    """.trimIndent() + "\n"
 
     private fun buildCrashSummary(
         context: Context,

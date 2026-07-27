@@ -21,7 +21,11 @@ import javax.net.ssl.HostnameVerifier
 import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSession
+import javax.net.ssl.SSLEngine
+import javax.net.ssl.SSLSocket
 import javax.net.ssl.TrustManager
+import javax.net.ssl.TrustManagerFactory
+import javax.net.ssl.X509ExtendedTrustManager
 import javax.net.ssl.X509TrustManager
 import okhttp3.ConnectionPool
 import okhttp3.Dns
@@ -46,6 +50,15 @@ internal data class WattToolkitRouteProfile(
     val bootstrapForwardTargets: List<String>,
     val supportedProxyTypes: Set<Int> = setOf(WATT_PROXY_TYPE_DIRECT),
     val allowUncheckedRoutes: Boolean = false,
+    /**
+     * Subdomain suffixes (".example.com") accelerated by the same upstream rule.
+     *
+     * Watt publishes one forwarding rule per logical domain family, so every
+     * subdomain of that family can reuse the resolved hop. Enumerating hosts
+     * exactly used to leave siblings such as avatars.githubusercontent.com
+     * unaccelerated even though a working route already existed.
+     */
+    val supportedHostSuffixes: Set<String> = emptySet(),
 )
 
 internal val GithubApiWattToolkitRouteProfile = WattToolkitRouteProfile(
@@ -75,6 +88,9 @@ internal val GithubUserContentWattToolkitRouteProfile = WattToolkitRouteProfile(
         "release-assets.githubusercontent.com",
     ),
     bootstrapForwardTargets = emptyList(),
+    // Upstream publishes one githubusercontent.com rule; avatars/user-images and
+    // other siblings previously fell through to an unaccelerated direct request.
+    supportedHostSuffixes = setOf(".githubusercontent.com"),
 )
 
 private val defaultExperimentalGithubDirectAccessProfiles = listOf(
@@ -186,27 +202,50 @@ internal fun createPlainClient(
 internal fun createExperimentalGithubDirectAccessRuntime(
     filesDir: File,
     routeProfiles: List<WattToolkitRouteProfile> = defaultExperimentalGithubDirectAccessProfiles,
+): ExperimentalGithubDirectAccessRuntime = createWattToolkitRuntime(
+    filesDir = filesDir,
+    cacheSubDirectory = "github/network",
+    routeProfiles = routeProfiles,
+    connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS,
+    readTimeoutMs = DEFAULT_READ_TIMEOUT_MS,
+)
+
+/**
+ * Single builder for every Watt forwarding runtime.
+ *
+ * GitHub and Steam previously kept near-identical copies of this wiring, which
+ * is how the certificate-validation fix could be applied to one and missed by
+ * the other. Both now share this code path.
+ */
+internal fun createWattToolkitRuntime(
+    filesDir: File,
+    cacheSubDirectory: String,
+    routeProfiles: List<WattToolkitRouteProfile>,
+    connectTimeoutMs: Long,
+    readTimeoutMs: Long,
 ): ExperimentalGithubDirectAccessRuntime {
     val forwardDns = WattToolkitForwardDns()
     val resolvers = routeProfiles.map { routeProfile ->
         WattToolkitGithubRouteResolver(
             routeProfile = routeProfile,
             routeStore = FileBackedWattToolkitGithubRouteStore(
-                file = File(filesDir, "github/network/${routeProfile.cacheFileName}"),
+                file = File(filesDir, "$cacheSubDirectory/${routeProfile.cacheFileName}"),
                 fallbackLogicalHosts = routeProfile.supportedHosts,
+                fallbackLogicalHostSuffixes = routeProfile.supportedHostSuffixes,
             ),
         )
     }
-    val hostnameVerifier = GithubDirectHostnameVerifier { host ->
+    val unsafeHostProvider: (String) -> Boolean = { host ->
         resolvers.any { resolver -> resolver.allowsUnsafeHostnameBypass(host) }
     }
+    val hostnameVerifier = GithubDirectHostnameVerifier(unsafeHostBypassProvider = unsafeHostProvider)
     val directHttpClient = OkHttpClient.Builder()
-        .connectTimeout(DEFAULT_CONNECT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-        .readTimeout(DEFAULT_READ_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-        .writeTimeout(DEFAULT_READ_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        .connectTimeout(connectTimeoutMs, TimeUnit.MILLISECONDS)
+        .readTimeout(readTimeoutMs, TimeUnit.MILLISECONDS)
+        .writeTimeout(readTimeoutMs, TimeUnit.MILLISECONDS)
         .hostnameVerifier(hostnameVerifier)
         .dns(forwardDns)
-        .trustWattToolkitForwardCertificates()
+        .trustWattToolkitForwardCertificates(unsafeHostProvider)
         .followRedirects(false)
         .followSslRedirects(false)
         .protocols(listOf(Protocol.HTTP_1_1))
@@ -233,13 +272,35 @@ internal fun OkHttpClient.Builder.addExperimentalGithubDirectAccess(
     )
 }
 
-internal fun OkHttpClient.Builder.trustWattToolkitForwardCertificates(): OkHttpClient.Builder = apply {
-    val trustManager = WattToolkitForwardTrustManager
+/**
+ * Installs a trust manager that only relaxes chain validation for hops whose
+ * upstream rule explicitly sets IgnoreSSLCertVerification.
+ *
+ * Previously every accelerated request accepted any certificate, so a mirror
+ * operator or on-path attacker could read traffic including Steam session
+ * cookies. Most published routes (Steam store/community, for example) declare
+ * IgnoreSSLCertVerification=false and rely on SNI cloaking instead, so they
+ * still validate normally through the platform trust manager.
+ */
+internal fun OkHttpClient.Builder.trustWattToolkitForwardCertificates(
+    unsafeHostProvider: (String) -> Boolean = { false },
+): OkHttpClient.Builder = apply {
+    val platformTrustManager = platformX509TrustManager() ?: return@apply
+    val trustManager = WattToolkitForwardTrustManager(
+        delegate = platformTrustManager,
+        unsafeHostProvider = unsafeHostProvider,
+    )
     val sslContext = SSLContext.getInstance("TLS").apply {
         init(null, arrayOf<TrustManager>(trustManager), null)
     }
     sslSocketFactory(sslContext.socketFactory, trustManager)
 }
+
+private fun platformX509TrustManager(): X509TrustManager? = runCatching {
+    val factory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
+    factory.init(null as java.security.KeyStore?)
+    factory.trustManagers.filterIsInstance<X509TrustManager>().firstOrNull()
+}.getOrNull()
 
 internal class ExperimentalGithubDirectAccessInterceptor(
     private val routeResolvers: List<WattToolkitGithubRouteResolver>,
@@ -475,6 +536,10 @@ internal class WattToolkitGithubRouteResolver(
 ) {
     private val lock = Any()
     private val normalizedSupportedHosts = routeProfile.supportedHosts.map { it.lowercase(Locale.ROOT) }.toSet()
+    private val normalizedSupportedHostSuffixes = routeProfile.supportedHostSuffixes
+        .map { it.lowercase(Locale.ROOT) }
+        .map { if (it.startsWith(".")) it else ".$it" }
+        .toSet()
     private val backgroundRefreshInFlight = AtomicBoolean(false)
     private val recentlyFailedForwardTargets = LinkedHashMap<String, Long>()
 
@@ -496,14 +561,29 @@ internal class WattToolkitGithubRouteResolver(
     @Volatile
     private var persistedRouteLoaded: Boolean = false
 
-    fun supports(host: String): Boolean = host.lowercase(Locale.ROOT) in normalizedSupportedHosts
+    fun supports(host: String): Boolean = isProfileHost(host)
+
+    /**
+     * Exact host match, or a subdomain of a declared suffix family.
+     *
+     * Watt forwards a whole domain family through one rule, so restricting the
+     * resolver to a hand-written host list silently dropped siblings that the
+     * upstream rule already covers.
+     */
+    private fun isProfileHost(host: String): Boolean {
+        val normalizedHost = host.lowercase(Locale.ROOT)
+        if (normalizedHost in normalizedSupportedHosts) {
+            return true
+        }
+        return normalizedSupportedHostSuffixes.any { suffix -> normalizedHost.endsWith(suffix) }
+    }
 
     fun allowsUnsafeHostnameBypass(host: String): Boolean =
         cachedRoute?.shouldBypassHostnameVerification(host) == true
 
     fun resolveRouteForHost(host: String): WattToolkitGithubRoute? {
         val normalizedHost = host.lowercase(Locale.ROOT)
-        if (normalizedHost !in normalizedSupportedHosts) {
+        if (!isProfileHost(normalizedHost)) {
             return null
         }
         val now = nowProvider()
@@ -548,7 +628,7 @@ internal class WattToolkitGithubRouteResolver(
         excludedForwardTargets: Collection<String> = emptyList(),
     ): WattToolkitGithubRoute? {
         val normalizedHost = host.lowercase(Locale.ROOT)
-        if (normalizedHost !in normalizedSupportedHosts) {
+        if (!isProfileHost(normalizedHost)) {
             return null
         }
         val excluded = excludedForwardTargets.map { it.trim() }.filter { it.isNotEmpty() }.toSet()
@@ -573,7 +653,7 @@ internal class WattToolkitGithubRouteResolver(
     fun confirmSuccessfulForwardTarget(host: String, successfulTarget: String) {
         val normalizedHost = host.lowercase(Locale.ROOT)
         val normalizedTarget = successfulTarget.trim()
-        if (normalizedHost !in normalizedSupportedHosts || normalizedTarget.isEmpty()) {
+        if (!isProfileHost(normalizedHost) || normalizedTarget.isEmpty()) {
             return
         }
         synchronized(lock) {
@@ -591,7 +671,7 @@ internal class WattToolkitGithubRouteResolver(
 
     fun scheduleBackgroundBestPathSearch(host: String, force: Boolean = false) {
         val normalizedHost = host.lowercase(Locale.ROOT)
-        if (normalizedHost !in normalizedSupportedHosts) {
+        if (!isProfileHost(normalizedHost)) {
             return
         }
         val now = nowProvider()
@@ -893,6 +973,7 @@ internal class WattToolkitGithubRouteResolver(
                 forwardTargets = rankForwardTargets(matchedProject.forwardTargets),
                 ignoreSslCertVerification = matchedProject.ignoreSslCertVerification,
                 fakeServerName = matchedProject.fakeServerName,
+                logicalHostSuffixes = normalizedSupportedHostSuffixes,
             )
         }
     }
@@ -1006,6 +1087,14 @@ internal data class WattToolkitGithubRoute(
     val forwardTargets: List<String>,
     val ignoreSslCertVerification: Boolean = false,
     val fakeServerName: String = "",
+    /**
+     * Subdomain suffixes covered by the same upstream rule as [logicalHosts].
+     *
+     * Without this a resolved route would reject sibling hosts (for example
+     * avatars.githubusercontent.com) even though the rule that produced the
+     * route already forwards the entire domain family.
+     */
+    val logicalHostSuffixes: Set<String> = emptySet(),
 ) {
     val forwardHosts: Set<String> = forwardTargets.mapNotNull(::extractForwardHost).toSet()
     val networkHosts: Set<String> = buildSet {
@@ -1048,7 +1137,13 @@ internal data class WattToolkitGithubRoute(
             .build()
     }
 
-    fun matchesLogicalHost(host: String): Boolean = host.lowercase(Locale.ROOT) in logicalHosts
+    fun matchesLogicalHost(host: String): Boolean {
+        val normalizedHost = host.lowercase(Locale.ROOT)
+        if (normalizedHost in logicalHosts) {
+            return true
+        }
+        return logicalHostSuffixes.any { suffix -> normalizedHost.endsWith(suffix) }
+    }
 
     fun shouldBypassHostnameVerification(host: String): Boolean =
         ignoreSslCertVerification && host.lowercase(Locale.ROOT) in networkHosts
@@ -1124,6 +1219,7 @@ internal object NoOpWattToolkitGithubRouteStore : WattToolkitGithubRouteStore {
 internal class FileBackedWattToolkitGithubRouteStore(
     private val file: File,
     private val fallbackLogicalHosts: Set<String> = emptySet(),
+    private val fallbackLogicalHostSuffixes: Set<String> = emptySet(),
 ) : WattToolkitGithubRouteStore {
     override fun load(): PersistedWattToolkitGithubRoute? {
         return runCatching {
@@ -1133,6 +1229,10 @@ internal class FileBackedWattToolkitGithubRouteStore(
             val snapshot = JSONObject(file.readText())
             val logicalHosts = buildStringList(snapshot.optJSONArray("logicalHosts"))
                 .ifEmpty { fallbackLogicalHosts.toList() }
+                .map { it.lowercase(Locale.ROOT) }
+                .toSet()
+            val logicalHostSuffixes = buildStringList(snapshot.optJSONArray("logicalHostSuffixes"))
+                .ifEmpty { fallbackLogicalHostSuffixes.toList() }
                 .map { it.lowercase(Locale.ROOT) }
                 .toSet()
             val forwardTargets = buildStringList(snapshot.optJSONArray("forwardTargets"))
@@ -1145,6 +1245,7 @@ internal class FileBackedWattToolkitGithubRouteStore(
                     forwardTargets = forwardTargets,
                     ignoreSslCertVerification = snapshot.optBoolean("ignoreSslCertVerification"),
                     fakeServerName = snapshot.optString("fakeServerName").trim(),
+                    logicalHostSuffixes = logicalHostSuffixes,
                 ),
                 cachedAtMs = snapshot.optLong("cachedAtMs"),
             )
@@ -1160,6 +1261,7 @@ internal class FileBackedWattToolkitGithubRouteStore(
                 put("forwardTargets", JSONArray(route.route.forwardTargets))
                 put("ignoreSslCertVerification", route.route.ignoreSslCertVerification)
                 put("fakeServerName", route.route.fakeServerName)
+                put("logicalHostSuffixes", JSONArray(route.route.logicalHostSuffixes.sorted()))
             }
             val parentDir = file.parentFile ?: file.absoluteFile.parentFile
             val tempFile = File.createTempFile(file.name, ".tmp", parentDir)
@@ -1358,10 +1460,53 @@ private const val HTTP_PERM_REDIRECT = 308
 private val REDIRECT_RESPONSE_CODES = setOf(300, 301, 302, 303, HTTP_TEMP_REDIRECT, HTTP_PERM_REDIRECT)
 private val STALE_ROUTE_RESPONSE_CODES = setOf(400, 404)
 
-private object WattToolkitForwardTrustManager : X509TrustManager {
+/**
+ * Validates certificates through the platform trust manager, relaxing the check
+ * only for forward hosts whose upstream rule opted out of chain verification.
+ *
+ * Extends [X509ExtendedTrustManager] because the peer host is required to make
+ * that decision, and the two-argument [X509TrustManager] callbacks do not carry
+ * it. The two-argument overloads therefore always validate strictly.
+ */
+private class WattToolkitForwardTrustManager(
+    private val delegate: X509TrustManager,
+    private val unsafeHostProvider: (String) -> Boolean,
+) : X509ExtendedTrustManager() {
+    private val extendedDelegate = delegate as? X509ExtendedTrustManager
+
     override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) = Unit
 
-    override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) = Unit
+    override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?, socket: Socket?) = Unit
 
-    override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
+    override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?, engine: SSLEngine?) = Unit
+
+    override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {
+        delegate.checkServerTrusted(chain, authType)
+    }
+
+    override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?, socket: Socket?) {
+        val peerHost = (socket as? SSLSocket)?.let { sslSocket ->
+            runCatching { sslSocket.handshakeSession?.peerHost }.getOrNull()
+        } ?: socket?.inetAddress?.hostName
+        if (isUnsafeAllowed(peerHost)) {
+            return
+        }
+        extendedDelegate?.checkServerTrusted(chain, authType, socket)
+            ?: delegate.checkServerTrusted(chain, authType)
+    }
+
+    override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?, engine: SSLEngine?) {
+        if (isUnsafeAllowed(engine?.peerHost)) {
+            return
+        }
+        extendedDelegate?.checkServerTrusted(chain, authType, engine)
+            ?: delegate.checkServerTrusted(chain, authType)
+    }
+
+    private fun isUnsafeAllowed(peerHost: String?): Boolean {
+        val host = peerHost?.trim()?.takeIf(String::isNotEmpty) ?: return false
+        return unsafeHostProvider(host)
+    }
+
+    override fun getAcceptedIssuers(): Array<X509Certificate> = delegate.acceptedIssuers
 }

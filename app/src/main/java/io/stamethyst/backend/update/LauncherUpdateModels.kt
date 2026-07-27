@@ -129,6 +129,11 @@ enum class UpdateSource(
                     ordered += source
                 }
             }
+            // Watt direct access used to be reachable only when it was the user's
+            // preference, so choosing any proxy mirror permanently gave up a
+            // working path. Keep it as the last accelerated attempt before the
+            // bare origin.
+            ordered += ACCELERATED_DIRECT
             if (preferred != OFFICIAL) {
                 ordered += OFFICIAL
             }

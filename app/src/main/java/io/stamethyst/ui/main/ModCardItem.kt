@@ -107,6 +107,7 @@ internal data class ModCardCallbacks(
     val onPatchWorkshopMod: (ModItemUi) -> Unit = {},
     val onRetryWorkshopDownload: (ModItemUi) -> Unit = {},
     val onUpdateWorkshopMod: (ModItemUi) -> Unit = {},
+    val onUpgradeWorkshopImportPatches: (ModItemUi) -> Unit = {},
     val onOpenWorkshopDetails: (ModItemUi) -> Unit = {},
     val onSetImportPatchEnabled: (ModItemUi, String, Boolean) -> Unit = { _, _, _ -> },
     val onDragStart: (ModCardDragStartInfo) -> Unit = {},
@@ -552,7 +553,8 @@ internal fun ModCard(
             onDismiss = { showImportPatchDialog = false },
             onSetPatchEnabled = { moduleId, enabled ->
                 callbacks.onSetImportPatchEnabled(mod, moduleId, enabled)
-            }
+            },
+            onUpgradeFromWorkshop = { callbacks.onUpgradeWorkshopImportPatches(mod) },
         )
     }
 

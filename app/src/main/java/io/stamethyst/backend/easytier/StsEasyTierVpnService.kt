@@ -89,7 +89,7 @@ class StsEasyTierVpnService : VpnService() {
     }
 
     override fun onRevoke() {
-        EasyTierJniBridge.stopAllInstances()
+        EasyTierJniBridge.stopAllInstances(applicationContext)
         closeTunnel()
         stopForegroundSession()
         val snapshot = EasyTierSessionController.persistSnapshot(
@@ -169,7 +169,7 @@ class StsEasyTierVpnService : VpnService() {
                 ?: throw IllegalStateException("Android returned null while establishing EasyTier VPN.")
             tunnelInterface = established
             val fd = established.fd
-            EasyTierJniBridge.setTunFd(instanceName, fd).exceptionOrNull()?.let { error ->
+            EasyTierJniBridge.setTunFd(applicationContext, instanceName, fd).exceptionOrNull()?.let { error ->
                 throw error
             }
             reportConnected(

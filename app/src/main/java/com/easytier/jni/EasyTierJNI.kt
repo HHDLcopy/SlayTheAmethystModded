@@ -1,10 +1,6 @@
 package com.easytier.jni
 
 object EasyTierJNI {
-    init {
-        System.loadLibrary("easytier_android_jni")
-    }
-
     @JvmStatic
     external fun setTunFd(instanceName: String, fd: Int): Int
 

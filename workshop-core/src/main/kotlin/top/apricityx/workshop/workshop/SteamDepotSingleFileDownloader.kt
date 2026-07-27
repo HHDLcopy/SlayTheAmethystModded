@@ -59,6 +59,11 @@ class SteamDepotSingleFileDownloader(
     private val sessionFactory: () -> SteamCmSession,
     private val sessionConnector: suspend (SteamCmSession, List<CmServer>) -> SessionContext,
     private val maxConcurrentChunks: Int = DEFAULT_MAX_CONCURRENT_CHUNKS,
+    /**
+     * Keeps Steam-China-only edges at the head of the CDN pool. Steam returns a
+     * globally weighted list, so mainland clients otherwise get overseas edges.
+     */
+    private val preferSteamChinaCdn: Boolean = false,
 ) {
     suspend fun download(
         request: SteamDepotFileDownloadRequest,
@@ -90,7 +95,11 @@ class SteamDepotSingleFileDownloader(
             val contentServers = runCatching { contentClient.getServersForSteamPipe() }
                 .getOrElse { directoryClient.loadContentServers() }
             require(contentServers.isNotEmpty()) { "No CDN servers available for SteamPipe" }
-            val serverPool = cdnTransport.buildServerPool(request.appId, contentServers)
+            val serverPool = cdnTransport.buildServerPool(
+                appId = request.appId,
+                contentServers = contentServers,
+                preferSteamChinaServers = preferSteamChinaCdn,
+            )
             require(serverPool.downloadServers.isNotEmpty()) { "No CDN download servers available for app=${request.appId}" }
             val cdnAuthTokenCache = ConcurrentHashMap<String, String>()
 
@@ -161,6 +170,11 @@ class SteamDepotSingleFileDownloader(
                 )
                 return DepotManifestParser.parse(unzipSingleEntry(bytes))
             } catch (error: Throwable) {
+                // Cancellation must abort the walk; without this an aborted
+                // download kept trying every remaining CDN host.
+                if (error is CancellationException || error is InterruptedException) {
+                    throw error
+                }
                 lastError = error
             }
         }
@@ -265,6 +279,7 @@ class SteamDepotSingleFileDownloader(
                         cdnAuthTokenCache = cdnAuthTokenCache,
                         chunk = chunk,
                         waitIfPaused = waitIfPaused,
+                        serverStartOffset = index,
                     )
                     writeAtomically(chunkStageFile(stageDir, index, chunk), processed)
                     val downloaded = writtenBytes.addAndGet(processed.size.toLong())
@@ -322,10 +337,11 @@ class SteamDepotSingleFileDownloader(
         cdnAuthTokenCache: ConcurrentHashMap<String, String>,
         chunk: ManifestChunk,
         waitIfPaused: suspend () -> Unit,
+        serverStartOffset: Int = 0,
     ): ByteArray {
         var lastError: Throwable? = null
         for (attempt in 1..MAX_CHUNK_DOWNLOAD_ATTEMPTS) {
-            for (server in rotateServers(contentServers, attempt - 1)) {
+            for (server in rotateServers(contentServers, serverStartOffset + attempt - 1)) {
                 try {
                     waitIfPaused()
                     val raw = requestBytes(

@@ -45,6 +45,8 @@ data class WorkshopDownloadTaskRecord(
     val errorStackTrace: String = "",
     val downloadLog: String = "",
     val preservePartialDownload: Boolean = false,
+    /** Explicit patch upgrades always import the downloaded jar, regardless of the global preference. */
+    val forceAutoImport: Boolean = false,
 )
 
 class WorkshopDownloadTaskStore(context: Context) {
@@ -446,6 +448,7 @@ private fun WorkshopDownloadTaskRecord.toJson(): JSONObject = JSONObject()
     .put("errorStackTrace", errorStackTrace)
     .put("downloadLog", downloadLog)
     .put("preservePartialDownload", preservePartialDownload)
+    .put("forceAutoImport", forceAutoImport)
     .put("appId", details.summary.appId.toString())
     .put("updatedAtMillisRemote", details.summary.updatedAtMillis)
     .put("downloadCount", details.summary.downloadCount)
@@ -503,6 +506,7 @@ private fun JSONObject.toTask(
         errorStackTrace = optString("errorStackTrace"),
         downloadLog = optString("downloadLog"),
         preservePartialDownload = optBoolean("preservePartialDownload", false),
+        forceAutoImport = optBoolean("forceAutoImport", false),
     )
 }
 

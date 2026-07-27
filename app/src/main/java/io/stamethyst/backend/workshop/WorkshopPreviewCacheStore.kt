@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
+import io.stamethyst.backend.steamcloud.SteamCloudAcceleratedHttp
 import java.io.File
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -12,11 +13,24 @@ internal object WorkshopPreviewCacheStore {
     private const val DIRECTORY_NAME = "workshop-preview-cache"
     private const val TARGET_SIZE_PX = 320
     private const val CACHE_SIZE_BYTES = 24 * 1024 * 1024
+    private const val CONNECT_TIMEOUT_MS = 8_000L
+    private const val READ_TIMEOUT_MS = 20_000L
 
     private val memoryCache = object : LruCache<String, Bitmap>(CACHE_SIZE_BYTES) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
     }
-    private val client = OkHttpClient()
+    /**
+     * Preview images live on Steam CDN hosts, so they must use the shared
+     * accelerated client. A bare [OkHttpClient] here also meant no timeouts,
+     * letting a stalled CDN hang the image load indefinitely.
+     */
+    private fun createClient(context: Context): OkHttpClient =
+        SteamCloudAcceleratedHttp.createClient(
+            context = context,
+            connectTimeoutMs = CONNECT_TIMEOUT_MS,
+            readTimeoutMs = READ_TIMEOUT_MS,
+            callTimeoutMs = CONNECT_TIMEOUT_MS + READ_TIMEOUT_MS,
+        )
 
     fun load(context: Context, publishedFileId: ULong, previewUrl: String): Bitmap? {
         val cacheKey = publishedFileId.toString()
@@ -54,7 +68,7 @@ internal object WorkshopPreviewCacheStore {
             val directory = cacheDirectory(context).apply { mkdirs() }
             val outputFile = File(directory, "${publishedFileId}.${sanitizePreviewExtension(previewUrl)}")
             val tempFile = File(directory, "${publishedFileId}.tmp")
-            client.newCall(Request.Builder().url(previewUrl).build()).execute().use { response ->
+            createClient(context).newCall(Request.Builder().url(previewUrl).build()).execute().use { response ->
                 if (!response.isSuccessful) return@runCatching null
                 response.body.byteStream().use { input ->
                     tempFile.outputStream().use { output -> input.copyTo(output) }

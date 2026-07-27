@@ -2167,6 +2167,24 @@ class MainScreenViewModel : ViewModel() {
     }
 
     fun onUpdateWorkshopMod(host: Activity, mod: ModItemUi) {
+        queueWorkshopUpdate(host, mod, forceAutoImport = false)
+    }
+
+    fun onUpgradeWorkshopImportPatches(host: Activity, mod: ModItemUi) {
+        if (
+            (!mod.hasOutdatedImportPatches && mod.importPatches.none { it.isOutdated }) ||
+            mod.workshop == null
+        ) {
+            return
+        }
+        queueWorkshopUpdate(host, mod, forceAutoImport = true)
+    }
+
+    private fun queueWorkshopUpdate(
+        host: Activity,
+        mod: ModItemUi,
+        forceAutoImport: Boolean,
+    ) {
         val workshop = mod.workshop ?: return
         workshopUpdateExecutor.execute {
             val store = WorkshopMetadataStore(host)
@@ -2181,8 +2199,13 @@ class MainScreenViewModel : ViewModel() {
                 return@execute
             }
             val existingTask = taskStore.find(record.publishedFileId)
+            val preparingMessage = if (forceAutoImport) "正在准备修补升级" else "正在准备更新"
+            val waitingMessage = if (forceAutoImport) "等待下载并自动修补" else "等待更新"
             taskStore.upsert(
-                record.toWorkshopUpdatePlaceholderTaskRecord(message = "正在准备更新")
+                record.toWorkshopUpdatePlaceholderTaskRecord(
+                    message = preparingMessage,
+                    forceAutoImport = forceAutoImport,
+                )
             )
             host.runOnUiThread { refresh(host) }
             try {
@@ -2195,17 +2218,24 @@ class MainScreenViewModel : ViewModel() {
                             includeDependencyData = false,
                         )
                 }
-                val task = details.toWorkshopDownloadTaskRecord(message = "等待更新")
+                val task = details.toWorkshopDownloadTaskRecord(message = waitingMessage).copy(
+                    forceAutoImport = forceAutoImport,
+                )
                 taskStore.upsert(task)
                 store.updateState(
                     appId = record.appId,
                     publishedFileId = record.publishedFileId,
                     state = WorkshopModCardState.Downloading,
-                    statusText = "等待更新",
+                    statusText = waitingMessage,
                 )
                 WorkshopDownloadProcessService.startNextQueued(host.applicationContext)
                 host.runOnUiThread {
-                    _effects.tryEmit(Effect.ShowSnackbar(UiText.DynamicString("已加入更新队列：${record.title}")))
+                    val queuedMessage = if (forceAutoImport) {
+                        "已加入修补升级队列：${record.title}"
+                    } else {
+                        "已加入更新队列：${record.title}"
+                    }
+                    _effects.tryEmit(Effect.ShowSnackbar(UiText.DynamicString(queuedMessage)))
                     refresh(host)
                 }
             } catch (error: Throwable) {
@@ -2253,7 +2283,10 @@ class MainScreenViewModel : ViewModel() {
         )
     }
 
-    private fun WorkshopInstalledModRecord.toWorkshopUpdatePlaceholderTaskRecord(message: String): WorkshopDownloadTaskRecord {
+    private fun WorkshopInstalledModRecord.toWorkshopUpdatePlaceholderTaskRecord(
+        message: String,
+        forceAutoImport: Boolean,
+    ): WorkshopDownloadTaskRecord {
         val summary = WorkshopItemSummary(
             appId = appId,
             publishedFileId = publishedFileId,
@@ -2271,6 +2304,7 @@ class MainScreenViewModel : ViewModel() {
             previewUrl = previewUrl,
             description = description,
             fileSizeBytes = 0L,
+            forceAutoImport = forceAutoImport,
         )
     }
 

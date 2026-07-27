@@ -638,10 +638,15 @@ class SteamCloudAcceleratedHttpTest {
         }
         val resolver = WattToolkitGithubRouteResolver(
             routeProfile = SteamCommunityWattToolkitRouteProfile,
-            client = OkHttpClient.Builder().build(),
+            // Short call timeout so the blocked MockWebServer (empty queue) aborts fast
+            // instead of waiting for the default 10-second read timeout × 5 retry attempts.
+            client = OkHttpClient.Builder()
+                .callTimeout(200, TimeUnit.MILLISECONDS)
+                .build(),
             projectGroupsUrl = apiServer.url("/accelerator/projectgroups"),
             routeStore = routeStore,
             nowProvider = { 2_000L },
+            sleepProvider = {},
             backgroundExecutor = Executor { /* no background work in this unit test */ },
         )
 

@@ -16,6 +16,9 @@ __attribute__((constructor)) void env_init() {
         assert(pojav_environ);
         memset(pojav_environ, 0 , sizeof(struct pojav_environ_s));
         atomic_init(&pojav_environ->runtimeForeground, true);
+        atomic_init(&pojav_environ->gyroscopeX, 0.0f);
+        atomic_init(&pojav_environ->gyroscopeY, 0.0f);
+        atomic_init(&pojav_environ->gyroscopeZ, 0.0f);
         if(asprintf(&strptr_env, "%p", pojav_environ) == -1) abort();
         setenv("POJAV_ENVIRON", strptr_env, 1);
         free(strptr_env);

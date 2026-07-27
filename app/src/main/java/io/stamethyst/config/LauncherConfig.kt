@@ -211,6 +211,8 @@ object LauncherConfig {
     private const val PREF_KEY_WORKSHOP_DOWNLOAD_THREADS = "workshop_download_threads"
     private const val PREF_KEY_WORKSHOP_WATT_ACCELERATION_ENABLED =
         "workshop_watt_acceleration_enabled"
+    // Unified switch replacing the two legacy per-feature keys above.
+    private const val PREF_KEY_WATT_ACCELERATION_ENABLED = "watt_acceleration_enabled"
     private const val PREF_KEY_WORKSHOP_STEAM_LANGUAGE = "workshop_steam_language"
     private const val PREF_KEY_WORKSHOP_AUTO_IMPORT_ENABLED = "workshop_auto_import_enabled"
     private const val PREF_KEY_WORKSHOP_AUTO_IMPORT_ATLAS_DOWNSCALE_ENABLED =
@@ -316,7 +318,8 @@ object LauncherConfig {
     const val DEFAULT_TOGETHER_IN_SPIRE_ROUTE_LOCK_ENABLED = true
     const val DEFAULT_TOGETHER_IN_SPIRE_EASYTIER_AUTOFILL_ENABLED = true
     const val DEFAULT_AUTO_CHECK_UPDATES_ENABLED = true
-    const val DEFAULT_STEAM_CLOUD_WATT_ACCELERATION_ENABLED = true
+    const val DEFAULT_WATT_ACCELERATION_ENABLED = true
+    const val DEFAULT_STEAM_CLOUD_WATT_ACCELERATION_ENABLED = DEFAULT_WATT_ACCELERATION_ENABLED
     const val DEFAULT_STEAM_CLOUD_AUTO_LAUNCH_AFTER_SYNC_ENABLED = false
     const val DEFAULT_WORKSHOP_MAX_CONCURRENT_DOWNLOADS = 1
     const val MIN_WORKSHOP_MAX_CONCURRENT_DOWNLOADS = 1
@@ -324,7 +327,7 @@ object LauncherConfig {
     const val DEFAULT_WORKSHOP_DOWNLOAD_THREADS = 4
     const val MIN_WORKSHOP_DOWNLOAD_THREADS = 1
     const val MAX_WORKSHOP_DOWNLOAD_THREADS = 8
-    const val DEFAULT_WORKSHOP_WATT_ACCELERATION_ENABLED = true
+    const val DEFAULT_WORKSHOP_WATT_ACCELERATION_ENABLED = DEFAULT_WATT_ACCELERATION_ENABLED
     const val DEFAULT_WORKSHOP_STEAM_LANGUAGE = "schinese"
     const val DEFAULT_WORKSHOP_AUTO_IMPORT_ENABLED = true
     const val DEFAULT_WORKSHOP_AUTO_IMPORT_ATLAS_DOWNSCALE_ENABLED = false
@@ -1940,17 +1943,52 @@ object LauncherConfig {
         }
     }
 
-    fun isSteamCloudWattAccelerationEnabled(context: Context): Boolean {
-        return prefs(context).getBoolean(
-            PREF_KEY_STEAM_CLOUD_WATT_ACCELERATION_ENABLED,
-            DEFAULT_STEAM_CLOUD_WATT_ACCELERATION_ENABLED
-        )
-    }
+    fun isSteamCloudWattAccelerationEnabled(context: Context): Boolean =
+        isWattAccelerationEnabled(context)
 
     fun setSteamCloudWattAccelerationEnabled(context: Context, enabled: Boolean) {
-        prefs(context).edit {
-            putBoolean(PREF_KEY_STEAM_CLOUD_WATT_ACCELERATION_ENABLED, enabled)
+        setWattAccelerationEnabled(context, enabled)
+    }
+
+    /**
+     * Single source of truth for the Watt acceleration switch.
+     *
+     * Steam Cloud and workshop acceleration used to be two independent flags in
+     * two different preference modes, so turning one off left other traffic
+     * (workshop preview images, avatars, profile lookups) still accelerated.
+     * They are one user-facing feature, so they now share one cross-process key.
+     */
+    fun isWattAccelerationEnabled(context: Context): Boolean {
+        val preferences = prefs(context, crossProcess = true)
+        preferences.getString(PREF_KEY_WATT_ACCELERATION_ENABLED, null)?.let { stored ->
+            return stored.toBooleanStrictOrNull() ?: DEFAULT_WATT_ACCELERATION_ENABLED
         }
+        // Migrate whichever legacy flag exists; an explicit opt-out must survive.
+        val legacyEnabled = legacyWattAccelerationEnabled(preferences)
+        setWattAccelerationEnabled(context, legacyEnabled)
+        return legacyEnabled
+    }
+
+    fun setWattAccelerationEnabled(context: Context, enabled: Boolean) {
+        prefs(context, crossProcess = true).edit(commit = true) {
+            putString(PREF_KEY_WATT_ACCELERATION_ENABLED, enabled.toString())
+        }
+    }
+
+    /**
+     * Treats acceleration as disabled when either legacy flag was turned off, so
+     * migration never silently re-enables a path the user had opted out of.
+     */
+    private fun legacyWattAccelerationEnabled(preferences: SharedPreferences): Boolean {
+        val legacySteamCloud = preferences.getBoolean(
+            PREF_KEY_STEAM_CLOUD_WATT_ACCELERATION_ENABLED,
+            DEFAULT_WATT_ACCELERATION_ENABLED,
+        )
+        val legacyWorkshop = preferences.getBoolean(
+            PREF_KEY_WORKSHOP_WATT_ACCELERATION_ENABLED,
+            DEFAULT_WATT_ACCELERATION_ENABLED,
+        )
+        return legacySteamCloud && legacyWorkshop
     }
 
     fun isSteamCloudAutoLaunchAfterSyncEnabled(context: Context): Boolean {
@@ -2001,17 +2039,11 @@ object LauncherConfig {
         }
     }
 
-    fun isWorkshopWattAccelerationEnabled(context: Context): Boolean {
-        return prefs(context, crossProcess = true).getBoolean(
-            PREF_KEY_WORKSHOP_WATT_ACCELERATION_ENABLED,
-            DEFAULT_WORKSHOP_WATT_ACCELERATION_ENABLED
-        )
-    }
+    fun isWorkshopWattAccelerationEnabled(context: Context): Boolean =
+        isWattAccelerationEnabled(context)
 
     fun setWorkshopWattAccelerationEnabled(context: Context, enabled: Boolean) {
-        prefs(context, crossProcess = true).edit(commit = true) {
-            putBoolean(PREF_KEY_WORKSHOP_WATT_ACCELERATION_ENABLED, enabled)
-        }
+        setWattAccelerationEnabled(context, enabled)
     }
 
     fun readWorkshopSteamLanguage(context: Context): String {

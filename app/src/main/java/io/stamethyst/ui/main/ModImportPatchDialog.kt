@@ -16,6 +16,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -32,6 +33,7 @@ internal fun ModImportPatchDialog(
     mod: ModItemUi,
     onDismiss: () -> Unit,
     onSetPatchEnabled: (String, Boolean) -> Unit,
+    onUpgradeFromWorkshop: () -> Unit,
 ) {
     val enabledByModuleId = remember(mod.storagePath, mod.importPatches) {
         mutableStateMapOf<String, Boolean>().apply {
@@ -39,6 +41,8 @@ internal fun ModImportPatchDialog(
         }
     }
     val hasOutdatedPatches = mod.hasOutdatedImportPatches || mod.importPatches.any { it.isOutdated }
+    val canUpgradeFromWorkshop = hasOutdatedPatches && mod.workshop != null
+    var showWorkshopUpgradeConfirmation by remember(mod.storagePath) { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -90,11 +94,49 @@ internal fun ModImportPatchDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(text = stringResource(R.string.common_action_confirm))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (canUpgradeFromWorkshop) {
+                    TextButton(onClick = { showWorkshopUpgradeConfirmation = true }) {
+                        Text(text = stringResource(R.string.main_mod_patch_dialog_upgrade_from_market))
+                    }
+                }
+                TextButton(onClick = onDismiss) {
+                    Text(text = stringResource(R.string.common_action_confirm))
+                }
             }
         }
     )
+
+    if (showWorkshopUpgradeConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showWorkshopUpgradeConfirmation = false },
+            title = { Text(text = stringResource(R.string.main_mod_patch_upgrade_confirm_title)) },
+            text = {
+                Text(
+                    text = stringResource(
+                        R.string.main_mod_patch_upgrade_confirm_message,
+                        resolveModDisplayName(mod, showModFileName = false)
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showWorkshopUpgradeConfirmation = false
+                        onDismiss()
+                        onUpgradeFromWorkshop()
+                    }
+                ) {
+                    Text(text = stringResource(R.string.main_mod_patch_dialog_upgrade_from_market))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showWorkshopUpgradeConfirmation = false }) {
+                    Text(text = stringResource(R.string.main_folder_dialog_cancel))
+                }
+            }
+        )
+    }
 }
 
 @Composable

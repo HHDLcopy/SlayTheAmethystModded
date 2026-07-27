@@ -85,7 +85,10 @@ internal class SteamStsJarDownloadService(
         onProgress(SteamStsJarDownloadProgress(phase = SteamStsJarDownloadPhase.CONNECTING, progressPercent = 0))
         val identity = WorkshopSteamClientIdentity(context)
         val account = if (authenticated) readSteamAccountSession(identity) else null
-        val directoryClient = SteamDirectoryClient(protocolClient)
+        // Directory lookups are plain HTTPS to api.steampowered.com and gate every
+        // download, so they use the accelerated client. Only the CM websocket
+        // handshake below needs the bare protocol client.
+        val directoryClient = SteamDirectoryClient(client)
         val outputFile = prepareOutputFile()
 
         identity.createSession(protocolClient).use { session ->

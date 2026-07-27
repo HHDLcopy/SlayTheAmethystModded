@@ -544,6 +544,9 @@
     <string name="main_mod_patch_badge_content_description">查看导入修补详情</string>
     <string name="main_mod_patch_dialog_title_format">导入修补</string>
     <string name="main_mod_patch_dialog_upgrade_message">一个或多个导入修补已有新版本。请重新导入此模组以应用升级。</string>
+    <string name="main_mod_patch_dialog_upgrade_from_market">从市场升级</string>
+    <string name="main_mod_patch_upgrade_confirm_title">升级导入修补</string>
+    <string name="main_mod_patch_upgrade_confirm_message">将从市场下载 %1$s 的最新版本，替换当前模组并应用最新导入修补。升级过程中请不要启动游戏。</string>
     <string name="main_mod_patch_dialog_version_format">已应用 v%1$d / 当前 v%2$d</string>
     <string name="main_mod_patch_dialog_current_version_format">当前 v%1$d</string>
     <string name="main_mod_patch_dialog_future_imports">设置会应用于后续导入。更改设置后请重新导入此模组。</string>

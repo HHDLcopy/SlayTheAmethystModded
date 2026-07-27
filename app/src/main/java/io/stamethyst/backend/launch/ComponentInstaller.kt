@@ -24,6 +24,7 @@ object ComponentInstaller {
     private const val LONG_OPERATION_HEARTBEAT_INTERVAL_MS = 5_000L
     private const val DEFAULT_PREFS_ASSET_DIR = "components/default_saves/preferences"
     private const val BUNDLED_RUNTIME_NATIVE_ASSET_DIR = "components/bundled_runtime_natives"
+    private const val LWJGL_BRIDGE_ASSET_DIR = "components/lwjgl3"
     private const val LEGACY_HINA_VIDEO_PATCH_JAR = "hina-video-compat.jar"
     private const val PREF_FILE_PLAYER = "STSPlayer"
     private const val PREF_FILE_PLAYER_BACKUP = "STSPlayer.backUp"
@@ -740,9 +741,7 @@ object ComponentInstaller {
         resources: RuntimeResourceProvider
     ): List<String> {
         val missing = ArrayList<String>()
-        if (!File(RuntimePaths.lwjglDir(context), "version").isFile ||
-            !RuntimePaths.lwjglJar(context).isFile
-        ) {
+        if (!isLwjglBridgeCurrent(context, resources)) {
             missing += "lwjgl3"
         }
         if (!RuntimePaths.bootBridgeJar(context).isFile) {
@@ -770,6 +769,44 @@ object ComponentInstaller {
             }
         }
         return missing
+    }
+
+    @Throws(IOException::class)
+    /**
+     * The LWJGL bridge is supplied by the versioned resource pack. Compare the
+     * generated version file before reusing the persistent component directory
+     * so a changed callback contract is installed after a resource-pack update.
+     */
+    private fun isLwjglBridgeCurrent(
+        context: Context,
+        resources: RuntimeResourceProvider
+    ): Boolean {
+        val installedVersionFile = File(RuntimePaths.lwjglDir(context), "version")
+        val installedJar = RuntimePaths.lwjglJar(context)
+        val expectedVersion = runCatching {
+            resources.open("$LWJGL_BRIDGE_ASSET_DIR/version")
+                .bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
+                .trim()
+        }.getOrNull()
+        return isLwjglBridgeVersionCurrent(expectedVersion, installedVersionFile, installedJar)
+    }
+
+    internal fun isLwjglBridgeVersionCurrent(
+        expectedVersion: String?,
+        installedVersionFile: File,
+        installedJar: File
+    ): Boolean {
+        if (expectedVersion.isNullOrEmpty() ||
+            !installedVersionFile.isFile ||
+            !installedJar.isFile ||
+            installedJar.length() <= 0L
+        ) {
+            return false
+        }
+        val installedVersion = runCatching {
+            installedVersionFile.readText(StandardCharsets.UTF_8).trim()
+        }.getOrNull()
+        return installedVersion == expectedVersion
     }
 
     private fun resolvePackagedComponentsMarker(context: Context): String {

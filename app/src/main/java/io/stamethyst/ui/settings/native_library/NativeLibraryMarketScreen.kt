@@ -111,7 +111,11 @@ fun LauncherNativeLibraryMarketScreen(
                 }
             }
 
-            if (!uiState.nativeLibraryMarketLoading && uiState.nativeLibraryMarketPackages.isEmpty()) {
+            if (
+                !uiState.nativeLibraryMarketLoading &&
+                uiState.nativeLibraryMarketErrorText == null &&
+                uiState.nativeLibraryMarketPackages.isEmpty()
+            ) {
                 item {
                     SettingsSectionCard(
                         title = stringResource(R.string.settings_native_library_market_dialog_title)

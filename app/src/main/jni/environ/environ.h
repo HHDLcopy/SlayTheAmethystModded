@@ -84,6 +84,10 @@ struct pojav_environ_s {
     ADD_CALLBACK_WWIN(Scroll);
 
 #undef ADD_CALLBACK_WWIN
+    /* Appended to preserve the offsets of the original shared environment ABI. */
+    _Atomic(float) gyroscopeX;
+    _Atomic(float) gyroscopeY;
+    _Atomic(float) gyroscopeZ;
 };
 extern struct pojav_environ_s *pojav_environ;
 

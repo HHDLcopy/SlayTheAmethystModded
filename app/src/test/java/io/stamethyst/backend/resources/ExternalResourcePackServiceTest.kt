@@ -47,7 +47,15 @@ class ExternalResourcePackServiceTest {
         )
 
         assertEquals(
-            listOf("ghproxy.vip", "gh-proxy.com", "gh.llkk.cc", "ghproxy.net", "GitHub", "Gitee"),
+            listOf(
+                "ghproxy.vip",
+                "gh-proxy.com",
+                "gh.llkk.cc",
+                "ghproxy.net",
+                UpdateSource.ACCELERATED_DIRECT.displayName,
+                "GitHub",
+                "Gitee",
+            ),
             candidates.map { it.displayName }
         )
         assertEquals(giteeUrl, candidates.last().requestUrl)

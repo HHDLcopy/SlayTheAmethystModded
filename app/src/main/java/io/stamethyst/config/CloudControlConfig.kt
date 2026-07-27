@@ -8,6 +8,7 @@ import io.stamethyst.backend.network.NetworkAccelerationPolicy
 import io.stamethyst.backend.update.GithubMirrorFallback
 import io.stamethyst.backend.update.UpdateMirrorManager
 import io.stamethyst.backend.update.UpdateSource
+import io.stamethyst.backend.update.toGithubMirrorHttpException
 import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
@@ -703,7 +704,7 @@ object CloudControlConfig {
 
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException("HTTP ${response.code}")
+                throw response.toGithubMirrorHttpException()
             }
             return response.body.bytes().toString(StandardCharsets.UTF_8)
         }

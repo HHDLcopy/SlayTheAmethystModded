@@ -13,12 +13,24 @@ class EasyTierJniBridgeTest {
         )
 
         assertEquals(
-            "EasyTier native runtime library is not bundled in this build yet.",
+            "EasyTier native runtime is missing from the installed resource pack.",
             EasyTierJniBridge.failureSummary(error)
         )
         assertEquals(
             EasyTierFailureCategory.RuntimeBridgeUnavailable,
             EasyTierJniBridge.failureCategory(error)
+        )
+    }
+
+    @Test
+    fun failureSummary_forMissingResourcePackReportsRuntimeUnavailable() {
+        val error = UnsatisfiedLinkError(
+            "EasyTier native runtime is missing from the installed resource pack: /data/user/0/test/libeasytier_ffi.so"
+        )
+
+        assertEquals(
+            "EasyTier native runtime is missing from the installed resource pack.",
+            EasyTierJniBridge.failureSummary(error)
         )
     }
 

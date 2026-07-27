@@ -8,6 +8,7 @@ import io.stamethyst.backend.network.NetworkAccelerationPolicy
 import io.stamethyst.backend.update.GithubMirrorFallback
 import io.stamethyst.backend.update.UpdateMirrorManager
 import io.stamethyst.backend.update.UpdateSource
+import io.stamethyst.backend.update.toGithubMirrorHttpException
 import io.stamethyst.ui.preferences.LauncherPreferences
 import java.io.IOException
 import java.nio.charset.StandardCharsets
@@ -721,7 +722,10 @@ object FeedbackIssueSyncService {
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
                 val errorText = response.body.bytes().toString(StandardCharsets.UTF_8)
-                throw IOException("HTTP ${response.code} ${errorText.trim()}".trim())
+                // Unauthenticated api.github.com calls are the most rate-limited
+                // path in the app, so the status code has to survive for the
+                // health store to apply a longer cooldown.
+                throw response.toGithubMirrorHttpException(errorText.trim())
             }
             return response.body.bytes().toString(StandardCharsets.UTF_8)
         }

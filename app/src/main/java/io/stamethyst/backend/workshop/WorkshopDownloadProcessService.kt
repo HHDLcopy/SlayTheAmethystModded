@@ -572,7 +572,8 @@ class WorkshopDownloadProcessService : Service() {
                                 } else {
                                     "下载完成"
                                 }
-                                val autoImportEnabled = LauncherPreferences.isWorkshopAutoImportEnabled(applicationContext)
+                                val autoImportEnabled = initialTask?.forceAutoImport == true ||
+                                    LauncherPreferences.isWorkshopAutoImportEnabled(applicationContext)
                                 val hasMultipleJarCandidates = jarArtifacts.size > 1
                                 val canAutoImportDownloadedJars = autoImportEnabled && !hasMultipleJarCandidates
                                 val preserveExistingUntilAutoImportFinishes =

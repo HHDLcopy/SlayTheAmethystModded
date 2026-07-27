@@ -280,7 +280,7 @@ class EasyTierProcessService : Service() {
         stopStatusPolling()
         statusPollThread.quitSafely()
         StsEasyTierVpnService.stopSession(applicationContext)
-        EasyTierJniBridge.stopAllInstances()
+        EasyTierJniBridge.stopAllInstances(applicationContext)
         if (previous?.isConnectionActive == true) {
             EasyTierSessionController.persistSnapshot(
                 context = applicationContext,
@@ -457,6 +457,7 @@ class EasyTierProcessService : Service() {
                 expiresAtEpochSeconds = sessionReadySnapshot.expiresAtEpochSeconds,
             )
             val runtimeStart = EasyTierRuntimeBridge.startNetworkInstance(
+                context = applicationContext,
                 sessionConfig = runtimeSessionConfig,
                 playerId = currentPlayerId,
             )
@@ -547,7 +548,7 @@ class EasyTierProcessService : Service() {
                 ?.statusCode,
         )
         StsEasyTierVpnService.stopSession(applicationContext)
-        EasyTierJniBridge.stopAllInstances().exceptionOrNull()?.let { error ->
+        EasyTierJniBridge.stopAllInstances(applicationContext).exceptionOrNull()?.let { error ->
             Log.w(TAG, "Failed to stop EasyTier runtime instances", error)
         }
         val snapshot = EasyTierSessionController.persistSnapshot(
@@ -800,7 +801,7 @@ class EasyTierProcessService : Service() {
         running = false
         stopStatusPolling(clearRuntimeState = false)
         StsEasyTierVpnService.stopSession(applicationContext)
-        EasyTierJniBridge.stopAllInstances().exceptionOrNull()?.let { error ->
+        EasyTierJniBridge.stopAllInstances(applicationContext).exceptionOrNull()?.let { error ->
             Log.w(TAG, "Failed to stop EasyTier runtime instances after terminal session state", error)
         }
         if (current.roomId.isNotBlank() && current.currentPlayerId.isNotBlank()) {
@@ -841,7 +842,7 @@ class EasyTierProcessService : Service() {
         if (instanceName.isBlank()) {
             return
         }
-        val runtimeResult = EasyTierJniBridge.collectNetworkInfo(instanceName)
+        val runtimeResult = EasyTierJniBridge.collectNetworkInfo(applicationContext, instanceName)
         runtimeResult.exceptionOrNull()?.let { error ->
             val summary = EasyTierJniBridge.failureSummary(error)
             val failedSnapshot = EasyTierSessionController.persistSnapshot(
@@ -1032,7 +1033,7 @@ class EasyTierProcessService : Service() {
                 ?.statusCode,
         )
         StsEasyTierVpnService.stopSession(applicationContext)
-        EasyTierJniBridge.stopAllInstances()
+        EasyTierJniBridge.stopAllInstances(applicationContext)
         if (clearSessionCredential &&
             current.roomId.isNotBlank() &&
             current.currentPlayerId.isNotBlank()

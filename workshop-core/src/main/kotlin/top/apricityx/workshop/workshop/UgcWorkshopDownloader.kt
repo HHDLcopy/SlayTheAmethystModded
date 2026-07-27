@@ -34,6 +34,11 @@ class UgcWorkshopDownloader(
     private val sessionConnector: suspend (SteamCmSession, List<top.apricityx.workshop.steam.protocol.CmServer>) -> top.apricityx.workshop.steam.protocol.SessionContext =
         { session, servers -> session.connectAnonymous(servers) },
     private val allowPublicCdnFallbackOnSessionFailure: Boolean = true,
+    /**
+     * Keeps Steam-China-only edges at the head of the CDN pool. Steam returns a
+     * globally weighted list, so mainland clients otherwise get overseas edges.
+     */
+    private val preferSteamChinaCdn: Boolean = false,
 ) {
     suspend fun download(
         request: WorkshopDownloadRequest,
@@ -82,7 +87,11 @@ class UgcWorkshopDownloader(
 
             require(contentServers.isNotEmpty()) { "No CDN servers available for SteamPipe" }
             log("Loaded ${contentServers.size} SteamPipe content servers")
-            val serverPool = cdnTransport.buildServerPool(request.appId, contentServers)
+            val serverPool = cdnTransport.buildServerPool(
+                appId = request.appId,
+                contentServers = contentServers,
+                preferSteamChinaServers = preferSteamChinaCdn,
+            )
             require(serverPool.downloadServers.isNotEmpty()) { "No CDN download servers available for app=${request.appId}" }
             log(
                 "Selected ${serverPool.downloadServers.size} weighted CDN entries " +
@@ -256,7 +265,7 @@ class UgcWorkshopDownloader(
         val completedChunks = AtomicInteger(0)
         val totalChunks = chunks.size
 
-        chunks.map { chunk ->
+        chunks.mapIndexed { chunkIndex, chunk ->
             async(Dispatchers.IO) {
                 semaphore.withPermit {
                     currentCoroutineContext().ensureActive()
@@ -275,6 +284,7 @@ class UgcWorkshopDownloader(
                         cdnAuthTokenCache = cdnAuthTokenCache,
                         chunk = chunk,
                         depotKey = depotKey,
+                        serverStartOffset = chunkIndex,
                         log = log,
                     )
                     writeAtomically(stageFile, processed)
@@ -335,12 +345,15 @@ class UgcWorkshopDownloader(
         cdnAuthTokenCache: ConcurrentHashMap<String, String>,
         chunk: ManifestChunk,
         depotKey: ByteArray?,
+        serverStartOffset: Int = 0,
         log: suspend (String) -> Unit,
     ): ByteArray {
         var lastError: Throwable? = null
 
         for (attempt in 1..MAX_CHUNK_DOWNLOAD_ATTEMPTS) {
-            for (server in rotateServers(contentServers, attempt - 1)) {
+            // Offset per chunk so parallel workers spread across the pool instead
+            // of all opening connections against the single lowest-load edge.
+            for (server in rotateServers(contentServers, serverStartOffset + attempt - 1)) {
                 try {
                     currentCoroutineContext().ensureActive()
                     val path = "depot/$depotId/chunk/${chunk.idHex}"
@@ -540,8 +553,9 @@ class UgcWorkshopDownloader(
         if (servers.isEmpty()) {
             return emptyList()
         }
+        val normalizedOffset = ((offset % servers.size) + servers.size) % servers.size
         return List(servers.size) { index ->
-            servers[(index + offset) % servers.size]
+            servers[(index + normalizedOffset) % servers.size]
         }
     }
 

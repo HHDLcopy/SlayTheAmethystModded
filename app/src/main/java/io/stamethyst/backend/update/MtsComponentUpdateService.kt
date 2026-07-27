@@ -113,7 +113,7 @@ object MtsComponentUpdateService {
             .build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException("HTTP ${response.code}")
+                throw response.toGithubMirrorHttpException()
             }
             val body = response.body
             val totalBytes = body.contentLength().takeIf { it > 0L }

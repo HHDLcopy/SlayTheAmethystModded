@@ -545,6 +545,9 @@ Do you still want to continue?</string>
     <string name="main_mod_patch_badge_content_description">Open import patch details</string>
     <string name="main_mod_patch_dialog_title_format">Import patches</string>
     <string name="main_mod_patch_dialog_upgrade_message">One or more import patches have a newer version. Re-import this mod to apply the upgrade.</string>
+    <string name="main_mod_patch_dialog_upgrade_from_market">Upgrade from market</string>
+    <string name="main_mod_patch_upgrade_confirm_title">Upgrade import patches</string>
+    <string name="main_mod_patch_upgrade_confirm_message">Download the latest market version of %1$s, replace the current mod, and apply the latest import patches? Do not start the game while upgrading.</string>
     <string name="main_mod_patch_dialog_version_format">Applied v%1$d / current v%2$d</string>
     <string name="main_mod_patch_dialog_current_version_format">Current v%1$d</string>
     <string name="main_mod_patch_dialog_future_imports">Settings apply to future imports. Re-import this mod after changing a setting.</string>

@@ -5,7 +5,6 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.SystemClock
-import android.util.LruCache
 import android.widget.Toast
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -57,6 +56,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -69,14 +69,14 @@ import io.stamethyst.backend.workshop.WorkshopDownloadTaskStatus
 import io.stamethyst.backend.workshop.isActiveDownload
 import io.stamethyst.ui.Icons
 import io.stamethyst.ui.LoadingSkeletonBlock
+import io.stamethyst.ui.RemoteBitmapCacheStore
 import io.stamethyst.ui.icon.ArrowBack
 import io.stamethyst.ui.rememberLoadingSkeletonStyle
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
-import okhttp3.Request
+
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -504,11 +504,16 @@ private fun DetailRow(label: String, value: String) {
 
 @Composable
 private fun WorkshopDownloadPreviewImage(url: String, contentDescription: String) {
+    val context = LocalContext.current
     val imageState by produceState<DownloadPreviewImageState>(initialValue = DownloadPreviewImageState.Loading, key1 = url) {
         value = when {
             url.isBlank() -> DownloadPreviewImageState.Failed
             else -> withContext(Dispatchers.IO) {
-                WorkshopDownloadPreviewImageLoader.load(url)?.let(DownloadPreviewImageState::Loaded) ?: DownloadPreviewImageState.Failed
+                // Shared store keeps Steam preview hosts on the accelerated client;
+                // the old private loader used a bare OkHttpClient with no timeouts.
+                RemoteBitmapCacheStore.load(context.applicationContext, url)
+                    ?.let(DownloadPreviewImageState::Loaded)
+                    ?: DownloadPreviewImageState.Failed
             }
         }
     }
@@ -554,27 +559,6 @@ private sealed interface DownloadPreviewImageState {
     data object Loading : DownloadPreviewImageState
     data object Failed : DownloadPreviewImageState
     data class Loaded(val bitmap: Bitmap) : DownloadPreviewImageState
-}
-
-private object WorkshopDownloadPreviewImageLoader {
-    private val cache = object : LruCache<String, Bitmap>(CACHE_SIZE_BYTES) {
-        override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
-    }
-    private val client = OkHttpClient()
-
-    fun load(url: String): Bitmap? {
-        cache.get(url)?.let { return it }
-        return runCatching {
-            client.newCall(Request.Builder().url(url).build()).execute().use { response ->
-                if (!response.isSuccessful) return@runCatching null
-                BitmapFactory.decodeStream(response.body.byteStream())?.also { bitmap ->
-                    cache.put(url, bitmap)
-                }
-            }
-        }.getOrNull()
-    }
-
-    private const val CACHE_SIZE_BYTES = 16 * 1024 * 1024
 }
 
 @Composable

@@ -105,7 +105,7 @@ internal object EasyTierJniBridge {
             message.contains("missing from the installed resource pack") ||
             (
                 message.contains("not found") &&
-                    message.contains("libeasytier") &&
+                    message.contains("library \"libeasytier_") &&
                     !message.contains("cannot locate symbol")
                 )
     }

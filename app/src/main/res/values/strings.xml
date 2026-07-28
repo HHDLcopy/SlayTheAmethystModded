@@ -328,7 +328,7 @@
     <string name="startup_progress_external_resources_available">External runtime resources available</string>
     <string name="startup_progress_checking_external_resource_links">Checking resource download mirrors... %1$d / %2$d (%3$s)</string>
     <string name="startup_progress_selected_external_resource_link">Using resource download mirror: %1$s</string>
-    <string name="startup_progress_downloading_external_resources">Downloading external runtime resources... %1$s / %2$s</string>
+    <string name="startup_progress_downloading_external_resources">Downloading external runtime resources... %1$s / %2$s%3$s</string>
     <string name="startup_progress_extracting_external_resources">Preparing external runtime resources... %1$d%%</string>
     <string name="startup_progress_external_resources_ready">External runtime resources ready</string>
     <string name="resource_gate_title">Preparing runtime resources</string>

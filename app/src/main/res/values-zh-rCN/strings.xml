@@ -327,7 +327,7 @@
     <string name="startup_progress_external_resources_available">外置运行资源已就绪</string>
     <string name="startup_progress_checking_external_resource_links">正在检查资源下载链路… %1$d / %2$d（%3$s）</string>
     <string name="startup_progress_selected_external_resource_link">正在使用资源下载链路：%1$s</string>
-    <string name="startup_progress_downloading_external_resources">正在下载外置运行资源… %1$s / %2$s</string>
+    <string name="startup_progress_downloading_external_resources">正在下载外置运行资源… %1$s / %2$s%3$s</string>
     <string name="startup_progress_extracting_external_resources">正在准备外置运行资源… %1$d%%</string>
     <string name="startup_progress_external_resources_ready">外置运行资源已准备完成</string>
     <string name="resource_gate_title">正在准备运行资源</string>

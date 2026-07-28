@@ -22,9 +22,12 @@ import java.nio.charset.StandardCharsets
 import java.util.ArrayDeque
 import java.util.Locale
 import java.util.concurrent.CopyOnWriteArraySet
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
-import java.util.concurrent.atomic.AtomicReference
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 import okhttp3.Call
@@ -39,7 +42,7 @@ data class ResourcePackSlowDownloadMirrorSwitch(
 
 class ResourcePackDownloadMirrorSwitchController {
     private val switchRequests = AtomicLong(0L)
-    private val currentCall = AtomicReference<Call?>()
+    private val currentCalls = CopyOnWriteArraySet<Call>()
     private val listeners =
         CopyOnWriteArraySet<(ResourcePackSlowDownloadMirrorSwitch?) -> Unit>()
 
@@ -62,7 +65,7 @@ class ResourcePackDownloadMirrorSwitchController {
     fun requestSwitchToNextMirror(): Boolean {
         switchRequests.incrementAndGet()
         publishSlowDownloadPrompt(null)
-        currentCall.get()?.cancel()
+        currentCalls.forEach { it.cancel() }
         return true
     }
 
@@ -82,11 +85,11 @@ class ResourcePackDownloadMirrorSwitchController {
     }
 
     internal fun trackCall(call: Call) {
-        currentCall.set(call)
+        currentCalls.add(call)
     }
 
     internal fun clearCall(call: Call) {
-        currentCall.compareAndSet(call, null)
+        currentCalls.remove(call)
     }
 }
 
@@ -95,10 +98,13 @@ object ExternalResourcePackService {
     private const val READ_TIMEOUT_MS = 30_000
     private const val PROBE_CONNECT_TIMEOUT_MS = 4_000
     private const val PROBE_READ_TIMEOUT_MS = 6_000
+    private const val MAX_PROBE_PARALLELISM = 8
     private const val USER_AGENT = "SlayTheAmethyst-ResourcePack"
     private const val DOWNLOAD_PROGRESS_REPORT_STEP_BYTES = 256L * 1024L
     private const val SLOW_DOWNLOAD_WINDOW_NANOS = 10_000_000_000L
     private const val SLOW_DOWNLOAD_THRESHOLD_BYTES_PER_SECOND = 512L * 1024L
+    private const val DEFAULT_CHUNK_COUNT = 4
+    private const val MIN_CHUNKED_DOWNLOAD_THRESHOLD_BYTES = 4L * 1024L * 1024L
 
     private val externalizedAssetRootPaths = listOf(
         "components/jre",
@@ -523,25 +529,65 @@ object ExternalResourcePackService {
         progressCallback: StartupProgressCallback?,
         context: Context
     ): List<ResourcePackDownloadCandidate> {
-        val results = ArrayList<ResourcePackLinkProbeResult>()
-        candidates.forEachIndexed { index, candidate ->
-            throwIfInterrupted()
-            reportProgress(
-                progressCallback,
-                6 + ((index * 4) / candidates.size.coerceAtLeast(1)),
-                context.progressText(
-                    R.string.startup_progress_checking_external_resource_links,
-                    index + 1,
-                    candidates.size,
-                    candidate.displayName
+        throwIfInterrupted()
+        val total = candidates.size
+        val completedCount = AtomicInteger(0)
+        reportProgress(
+            progressCallback,
+            6,
+            context.progressText(
+                R.string.startup_progress_checking_external_resource_links,
+                0,
+                total,
+                ""
+            )
+        )
+
+        // Launch all probes in parallel so the total wait is bounded by the
+        // slowest single candidate, not the sum of all candidates.
+        val threadCount = total.coerceAtMost(MAX_PROBE_PARALLELISM).coerceAtLeast(1)
+        val executor = Executors.newFixedThreadPool(threadCount)
+        val futures: List<Future<ResourcePackLinkProbeResult>> = candidates.mapIndexed { index, candidate ->
+            executor.submit<ResourcePackLinkProbeResult> {
+                val result = probeResourcePackLink(
+                    client = clients.pick(candidate.usesGithubAcceleration),
+                    candidate = candidate,
+                    candidateIndex = index
                 )
-            )
-            results += probeResourcePackLink(
-                client = clients.pick(candidate.usesGithubAcceleration),
-                candidate = candidate,
-                candidateIndex = index
-            )
+                val done = completedCount.incrementAndGet()
+                reportProgress(
+                    progressCallback,
+                    6 + ((done * 4) / total.coerceAtLeast(1)),
+                    context.progressText(
+                        R.string.startup_progress_checking_external_resource_links,
+                        done,
+                        total,
+                        candidate.displayName
+                    )
+                )
+                result
+            }
         }
+
+        val results: List<ResourcePackLinkProbeResult> = try {
+            futures.map { future ->
+                try {
+                    future.get()
+                } catch (e: ExecutionException) {
+                    // probeResourcePackLink wraps all errors via runCatching, so
+                    // ExecutionException here means an unexpected runtime failure.
+                    throw e.cause ?: e
+                }
+            }
+        } catch (e: InterruptedException) {
+            // Parent thread was cancelled — cancel in-flight probes and propagate.
+            futures.forEach { it.cancel(true) }
+            Thread.currentThread().interrupt()
+            throw IOException("External resource preparation cancelled", e)
+        } finally {
+            executor.shutdownNow()
+        }
+
         return orderResourcePackDownloadCandidates(results)
             .ifEmpty {
                 throw ResourcePackDownloadFallbackException(
@@ -635,8 +681,241 @@ object ExternalResourcePackService {
         }
     }
 
+    /**
+     * Dispatches to chunked parallel download when the server supports Range requests and the
+     * file is large enough to benefit from it; otherwise falls back to a single-stream download.
+     */
     @Throws(IOException::class)
     private fun downloadFile(
+        client: OkHttpClient,
+        requestUrl: String,
+        targetFile: File,
+        progressCallback: StartupProgressCallback?,
+        context: Context,
+        mirrorSwitchContext: ResourcePackDownloadMirrorSwitchContext?
+    ) {
+        val contentLength = fetchRangeSupportedContentLength(client, requestUrl)
+        if (contentLength != null && contentLength >= MIN_CHUNKED_DOWNLOAD_THRESHOLD_BYTES) {
+            downloadFileChunked(
+                client = client,
+                requestUrl = requestUrl,
+                targetFile = targetFile,
+                contentLength = contentLength,
+                progressCallback = progressCallback,
+                context = context,
+                mirrorSwitchContext = mirrorSwitchContext
+            )
+            return
+        }
+        downloadFileSingleStream(
+            client = client,
+            requestUrl = requestUrl,
+            targetFile = targetFile,
+            progressCallback = progressCallback,
+            context = context,
+            mirrorSwitchContext = mirrorSwitchContext
+        )
+    }
+
+    /**
+     * Returns the content length of [requestUrl] if the server advertises Range support,
+     * or null if Range is unsupported or the length is unknown.
+     */
+    private fun fetchRangeSupportedContentLength(client: OkHttpClient, requestUrl: String): Long? {
+        val request = Request.Builder()
+            .url(requestUrl)
+            .head()
+            .header("User-Agent", USER_AGENT)
+            .build()
+        return try {
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return null
+                val acceptRanges = response.header("Accept-Ranges")
+                if (acceptRanges?.lowercase(Locale.ROOT) != "bytes") return null
+                response.header("Content-Length")?.toLongOrNull()?.takeIf { it > 0L }
+            }
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    /**
+     * Downloads [requestUrl] into [targetFile] by issuing [DEFAULT_CHUNK_COUNT] concurrent
+     * Range requests and writing each chunk directly to its byte offset in a pre-allocated
+     * temp file, then atomically renaming it into place.
+     */
+    @Throws(IOException::class)
+    private fun downloadFileChunked(
+        client: OkHttpClient,
+        requestUrl: String,
+        targetFile: File,
+        contentLength: Long,
+        progressCallback: StartupProgressCallback?,
+        context: Context,
+        mirrorSwitchContext: ResourcePackDownloadMirrorSwitchContext?
+    ) {
+        throwIfInterrupted()
+        mirrorSwitchContext?.throwIfSwitchRequested()
+        mirrorSwitchContext?.markDownloadStarted()
+        val slowDownloadTicker = mirrorSwitchContext?.startSlowDownloadTicker()
+
+        val parent = targetFile.parentFile
+            ?: throw IOException("Resource pack target has no parent: ${targetFile.absolutePath}")
+        if (!parent.exists() && !parent.mkdirs()) {
+            throw IOException("Failed to create directory: ${parent.absolutePath}")
+        }
+        val tempFile = File(parent, "${targetFile.name}.part")
+        // Pre-allocate the full file so random-access writes from each chunk are safe.
+        java.io.RandomAccessFile(tempFile, "rw").use { raf -> raf.setLength(contentLength) }
+
+        val chunkCount = DEFAULT_CHUNK_COUNT
+        val chunkSize = (contentLength + chunkCount - 1) / chunkCount
+        val totalBytesWritten = AtomicLong(0L)
+        // Start below -step so the first 256 KB triggers a report.
+        val lastReportedBytes = AtomicLong(-DOWNLOAD_PROGRESS_REPORT_STEP_BYTES)
+        val downloadStartNanos = System.nanoTime()
+
+        val executor = Executors.newFixedThreadPool(chunkCount)
+        val futures: List<Future<Unit>> = (0 until chunkCount).map { chunkIndex ->
+            val rangeStart = chunkIndex * chunkSize
+            val rangeEnd = minOf(rangeStart + chunkSize - 1, contentLength - 1)
+            @Suppress("UNCHECKED_CAST")
+            executor.submit<Unit> {
+                downloadChunk(
+                    client = client,
+                    requestUrl = requestUrl,
+                    tempFile = tempFile,
+                    rangeStart = rangeStart,
+                    rangeEnd = rangeEnd,
+                    totalBytesWritten = totalBytesWritten,
+                    lastReportedBytes = lastReportedBytes,
+                    contentLength = contentLength,
+                    downloadStartNanos = downloadStartNanos,
+                    progressCallback = progressCallback,
+                    context = context,
+                    mirrorSwitchContext = mirrorSwitchContext
+                )
+            } as Future<Unit>
+        }
+
+        try {
+            for (future in futures) {
+                try {
+                    future.get()
+                } catch (e: ExecutionException) {
+                    // Cancel all remaining in-flight chunk requests immediately.
+                    executor.shutdownNow()
+                    futures.forEach { it.cancel(true) }
+                    throw e.cause ?: e
+                }
+            }
+        } catch (e: InterruptedException) {
+            executor.shutdownNow()
+            futures.forEach { it.cancel(true) }
+            Thread.currentThread().interrupt()
+            throw IOException("External resource preparation cancelled", e)
+        } finally {
+            slowDownloadTicker?.close()
+            executor.shutdownNow()
+        }
+
+        if (targetFile.exists() && !targetFile.delete()) {
+            tempFile.delete()
+            throw IOException("Failed to replace file: ${targetFile.absolutePath}")
+        }
+        if (!tempFile.renameTo(targetFile)) {
+            copyFile(tempFile, targetFile)
+            tempFile.delete()
+        }
+    }
+
+    /** Downloads a single byte-range chunk of [requestUrl] and writes it to [tempFile]. */
+    @Throws(IOException::class)
+    private fun downloadChunk(
+        client: OkHttpClient,
+        requestUrl: String,
+        tempFile: File,
+        rangeStart: Long,
+        rangeEnd: Long,
+        totalBytesWritten: AtomicLong,
+        lastReportedBytes: AtomicLong,
+        contentLength: Long,
+        downloadStartNanos: Long,
+        progressCallback: StartupProgressCallback?,
+        context: Context,
+        mirrorSwitchContext: ResourcePackDownloadMirrorSwitchContext?
+    ) {
+        throwIfInterrupted()
+        mirrorSwitchContext?.throwIfSwitchRequested()
+        val request = Request.Builder()
+            .url(requestUrl)
+            .get()
+            .header("User-Agent", USER_AGENT)
+            .header("Range", "bytes=$rangeStart-$rangeEnd")
+            .build()
+        val call = client.newCall(request)
+        mirrorSwitchContext?.controller?.trackCall(call)
+        try {
+            call.execute().use { response ->
+                mirrorSwitchContext?.throwIfSwitchRequested()
+                if (response.code != 206) {
+                    throw IOException(
+                        "Expected HTTP 206 for Range request, got ${response.code}"
+                    )
+                }
+                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                response.body.byteStream().use { input ->
+                    java.io.RandomAccessFile(tempFile, "rw").use { raf ->
+                        raf.seek(rangeStart)
+                        while (true) {
+                            throwIfInterrupted()
+                            mirrorSwitchContext?.throwIfSwitchRequested()
+                            val read = input.read(buffer)
+                            if (read < 0) break
+                            if (read == 0) continue
+                            raf.write(buffer, 0, read)
+                            val total = totalBytesWritten.addAndGet(read.toLong())
+                            mirrorSwitchContext?.recordDownloadProgress(total)
+                            val prev = lastReportedBytes.get()
+                            val shouldReport =
+                                total - prev >= DOWNLOAD_PROGRESS_REPORT_STEP_BYTES ||
+                                    total >= contentLength
+                            if (shouldReport && lastReportedBytes.compareAndSet(prev, total)) {
+                                val elapsedNanos = System.nanoTime() - downloadStartNanos
+                                val speedText = if (elapsedNanos >= 500_000_000L) {
+                                    " · " + formatBytes(
+                                        total * 1_000_000_000L / elapsedNanos
+                                    ) + "/s"
+                                } else {
+                                    ""
+                                }
+                                reportProgress(
+                                    progressCallback,
+                                    mapDownloadPercent(total, contentLength),
+                                    context.progressText(
+                                        R.string.startup_progress_downloading_external_resources,
+                                        formatBytes(total),
+                                        formatBytes(contentLength),
+                                        speedText
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (error: Throwable) {
+            if (mirrorSwitchContext?.isSwitchRequested() == true) {
+                throw ResourcePackMirrorSwitchRequestedException()
+            }
+            throw error
+        } finally {
+            mirrorSwitchContext?.controller?.clearCall(call)
+        }
+    }
+
+    @Throws(IOException::class)
+    private fun downloadFileSingleStream(
         client: OkHttpClient,
         requestUrl: String,
         targetFile: File,
@@ -673,6 +952,7 @@ object ExternalResourcePackService {
                         val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
                         var downloadedBytes = 0L
                         var lastReportBytes = 0L
+                        var downloadStartNanos = -1L
                         while (true) {
                             throwIfInterrupted()
                             mirrorSwitchContext?.throwIfSwitchRequested()
@@ -683,6 +963,9 @@ object ExternalResourcePackService {
                             if (read == 0) {
                                 continue
                             }
+                            if (downloadStartNanos < 0L) {
+                                downloadStartNanos = System.nanoTime()
+                            }
                             output.write(buffer, 0, read)
                             downloadedBytes += read
                             mirrorSwitchContext?.recordDownloadProgress(downloadedBytes)
@@ -690,13 +973,20 @@ object ExternalResourcePackService {
                                 DOWNLOAD_PROGRESS_REPORT_STEP_BYTES ||
                                 totalBytes?.let { downloadedBytes >= it } == true
                             if (shouldReport) {
+                                val elapsedNanos = System.nanoTime() - downloadStartNanos
+                                val speedText = if (elapsedNanos >= 500_000_000L) {
+                                    " · " + formatBytes(downloadedBytes * 1_000_000_000L / elapsedNanos) + "/s"
+                                } else {
+                                    ""
+                                }
                                 reportProgress(
                                     progressCallback,
                                     mapDownloadPercent(downloadedBytes, totalBytes),
                                     context.progressText(
                                         R.string.startup_progress_downloading_external_resources,
                                         formatBytes(downloadedBytes),
-                                        totalBytes?.let(::formatBytes).orEmpty()
+                                        totalBytes?.let(::formatBytes).orEmpty(),
+                                        speedText
                                     )
                                 )
                                 lastReportBytes = downloadedBytes

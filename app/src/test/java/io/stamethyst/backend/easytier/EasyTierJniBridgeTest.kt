@@ -52,4 +52,17 @@ class EasyTierJniBridgeTest {
             EasyTierJniBridge.failureCategory(error)
         )
     }
+
+    @Test
+    fun failureSummary_forMissingNonEasyTierDependencyKeepsLinkerCause() {
+        val error = UnsatisfiedLinkError(
+            "dlopen failed: library \"libc++_shared.so\" not found: needed by \"libeasytier_ffi.so\""
+        )
+
+        val summary = EasyTierJniBridge.failureSummary(error)
+
+        assertTrue(summary.contains("EasyTier native runtime failed to load."))
+        assertTrue(summary.contains("libc++_shared.so"))
+        assertFalse(summary.contains("missing from the installed resource pack"))
+    }
 }

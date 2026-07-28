@@ -9,10 +9,15 @@ import io.stamethyst.backend.github.WattToolkitForwardTargetProbe
 import io.stamethyst.backend.github.WattToolkitGithubRoute
 import io.stamethyst.backend.github.WattToolkitGithubRouteResolver
 import io.stamethyst.backend.github.WattToolkitGithubRouteStore
+import io.stamethyst.backend.github.addExperimentalGithubDirectAccess
+import io.stamethyst.backend.github.withAcceleratedCookieJar
 import java.net.InetAddress
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
+import okhttp3.Cookie
+import okhttp3.CookieJar
 import okhttp3.Dns
+import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -638,8 +643,6 @@ class SteamCloudAcceleratedHttpTest {
         }
         val resolver = WattToolkitGithubRouteResolver(
             routeProfile = SteamCommunityWattToolkitRouteProfile,
-            // Short call timeout so the blocked MockWebServer (empty queue) aborts fast
-            // instead of waiting for the default 10-second read timeout × 5 retry attempts.
             client = OkHttpClient.Builder()
                 .callTimeout(200, TimeUnit.MILLISECONDS)
                 .build(),
@@ -647,6 +650,8 @@ class SteamCloudAcceleratedHttpTest {
             routeStore = routeStore,
             nowProvider = { 2_000L },
             sleepProvider = {},
+            // Inject a no-op probe so bootstrap fallback target ranking never opens a real socket.
+            forwardTargetProbe = { WattToolkitForwardTargetProbe(successes = 1, attempts = 1, latencyMs = 0L) },
             backgroundExecutor = Executor { /* no background work in this unit test */ },
         )
 
@@ -1051,5 +1056,181 @@ class SteamCloudAcceleratedHttpTest {
             forwardedRequest.url.encodedPath,
         )
         assertEquals("st.dl.eccdnx.com", forwardedRequest.headers["Host"])
+    }
+
+    /**
+     * The acceleration interceptor answers routed requests on its own call factory instead of
+     * [okhttp3.Interceptor.Chain.proceed], so OkHttp's BridgeInterceptor — which normally applies
+     * the cookie jar — never runs. Without an explicit bridge the Steam session cookie is dropped
+     * and Steam serves the logged-out view, which made login-gated workshop searches return nothing.
+     */
+    @Test
+    fun interceptor_sendsCookieJarCookiesOnAcceleratedRequest() {
+        enqueueSteamStoreRoute()
+        steamStoreForwardServer.enqueue(MockResponse.Builder().code(200).body("ok").build())
+
+        val jar = RecordingCookieJar()
+        jar.seed(
+            "https://api.steampowered.com/".toHttpUrl(),
+            Cookie.Builder()
+                .name("steamLoginSecure")
+                .value("76561198000000000%7C%7Ctoken")
+                .domain("steampowered.com")
+                .path("/")
+                .build(),
+        )
+
+        acceleratedClientWithCookieJar(jar).newCall(
+            Request.Builder()
+                .url("https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/")
+                .build(),
+        ).execute().use { response -> assertEquals(200, response.code) }
+
+        apiServer.takeRequest()
+        val forwarded = steamStoreForwardServer.takeRequest()
+        assertEquals(
+            "steamLoginSecure=76561198000000000%7C%7Ctoken",
+            forwarded.headers["Cookie"],
+        )
+        // The jar must be consulted for the logical host, never the forward target's hostname.
+        assertEquals(listOf("api.steampowered.com"), jar.loadedHosts)
+    }
+
+    /** `Set-Cookie` from an accelerated hop must be stored against the logical host. */
+    @Test
+    fun interceptor_persistsResponseCookiesAgainstLogicalHost() {
+        enqueueSteamStoreRoute()
+        steamStoreForwardServer.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .addHeader("Set-Cookie", "sessionid=abc123; Path=/")
+                .body("ok")
+                .build(),
+        )
+
+        val jar = RecordingCookieJar()
+
+        acceleratedClientWithCookieJar(jar).newCall(
+            Request.Builder()
+                .url("https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/")
+                .build(),
+        ).execute().use { response -> assertEquals(200, response.code) }
+
+        apiServer.takeRequest()
+        steamStoreForwardServer.takeRequest()
+        assertEquals(listOf("api.steampowered.com"), jar.savedHosts)
+        assertEquals(
+            listOf("sessionid=abc123"),
+            jar.saved.map { cookie -> "${cookie.name}=${cookie.value}" },
+        )
+    }
+
+    /** A client without a cookie jar must keep working and must not send a Cookie header. */
+    @Test
+    fun interceptor_omitsCookieHeaderWhenNoCookieJarIsConfigured() {
+        enqueueSteamStoreRoute()
+        steamStoreForwardServer.enqueue(MockResponse.Builder().code(200).body("ok").build())
+
+        val dns = Dns { listOf(InetAddress.getByName("127.0.0.1")) }
+        val resolver = WattToolkitGithubRouteResolver(
+            routeProfile = SteamStoreWattToolkitRouteProfile,
+            client = OkHttpClient.Builder().dns(dns).build(),
+            projectGroupsUrl = apiServer.url("/accelerator/projectgroups"),
+        )
+        val client = OkHttpClient.Builder()
+            .dns(dns)
+            .addInterceptor(
+                ExperimentalGithubDirectAccessInterceptor(
+                    routeResolvers = listOf(resolver),
+                    directCallFactory = OkHttpClient.Builder()
+                        .dns(dns)
+                        .followRedirects(false)
+                        .build(),
+                ),
+            )
+            .build()
+
+        client.newCall(
+            Request.Builder()
+                .url("https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/")
+                .build(),
+        ).execute().use { response -> assertEquals(200, response.code) }
+
+        apiServer.takeRequest()
+        assertNull(steamStoreForwardServer.takeRequest().headers["Cookie"])
+    }
+
+    private fun enqueueSteamStoreRoute() {
+        apiServer.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    {
+                      "🦓": [
+                        {
+                          "Items": [
+                            {
+                              "MatchDomainNames": "store.steampowered.com;api.steampowered.com",
+                              "ListenDomainNames": "store.steampowered.com;api.steampowered.com",
+                              "ForwardDomainNames": "http://steamstore.rmbgame.net:${steamStoreForwardServer.port}",
+                              "ProxyType": 0,
+                              "IgnoreSSLCertVerification": true
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+    }
+
+    private fun acceleratedClientWithCookieJar(jar: CookieJar): OkHttpClient {
+        val dns = Dns { listOf(InetAddress.getByName("127.0.0.1")) }
+        val resolver = WattToolkitGithubRouteResolver(
+            routeProfile = SteamStoreWattToolkitRouteProfile,
+            client = OkHttpClient.Builder().dns(dns).build(),
+            projectGroupsUrl = apiServer.url("/accelerator/projectgroups"),
+        )
+        val runtime = ExperimentalGithubDirectAccessRuntime(
+            resolvers = listOf(resolver),
+            hostnameVerifier = GithubDirectHostnameVerifier { host ->
+                resolver.allowsUnsafeHostnameBypass(host)
+            },
+            directHttpClient = OkHttpClient.Builder()
+                .dns(dns)
+                .followRedirects(false)
+                .followSslRedirects(false)
+                .build(),
+        )
+        return OkHttpClient.Builder()
+            .dns(dns)
+            .addExperimentalGithubDirectAccess(runtime)
+            .withAcceleratedCookieJar(jar)
+            .build()
+    }
+
+    private class RecordingCookieJar : CookieJar {
+        private val stored = mutableListOf<Pair<HttpUrl, Cookie>>()
+        val loadedHosts = mutableListOf<String>()
+        val savedHosts = mutableListOf<String>()
+        val saved = mutableListOf<Cookie>()
+
+        fun seed(url: HttpUrl, cookie: Cookie) {
+            stored += url to cookie
+        }
+
+        override fun loadForRequest(url: HttpUrl): List<Cookie> {
+            loadedHosts += url.host
+            return stored.filter { (storedUrl, _) -> storedUrl.host == url.host }
+                .map { (_, cookie) -> cookie }
+        }
+
+        override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
+            savedHosts += url.host
+            saved += cookies
+        }
     }
 }

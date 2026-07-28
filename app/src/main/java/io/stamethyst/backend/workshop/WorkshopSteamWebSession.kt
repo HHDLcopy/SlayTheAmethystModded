@@ -7,6 +7,8 @@ import io.stamethyst.backend.steamcloud.SteamCloudAuthStore
 import java.security.SecureRandom
 import java.util.Base64
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -66,12 +68,25 @@ internal class WorkshopSteamWebSession(
     )
 
     private val lock = Any()
+
+    /**
+     * Serializes the priming body. Without this, two concurrent callers (for example a background
+     * warm-up and a browse request) both pass the [primedScope] fast-path check while priming is
+     * still in flight, each generate their own `sessionid`, and the last writer's context wins.
+     * The `sessionid` cookie then no longer matches the session Steam established during
+     * [primeUrl], so Steam answers with the logged-out view.
+     */
+    private val primeMutex = Mutex()
     private var currentScope: String? = null
     private var primedScope: String? = null
     private var webLoginContext: SteamWebLoginContext? = null
 
     fun currentSessionId(): String? = synchronized(lock) {
         webLoginContext?.sessionId
+    }
+
+    private fun isPrimedFor(scope: String, nowMs: Long): Boolean = synchronized(lock) {
+        primedScope == scope && webLoginContext?.isUsableAt(nowMs) == true
     }
 
     suspend fun ensurePrimed(
@@ -90,17 +105,35 @@ internal class WorkshopSteamWebSession(
             return
         }
         val scope = "${account.steamId}:${account.refreshToken.hashCode()}"
-        val nowMs = System.currentTimeMillis()
-        synchronized(lock) {
-            if (
-                primedScope == scope &&
-                webLoginContext?.isUsableAt(nowMs) == true
-            ) {
-                Log.i(PERF_TAG, "ensurePrimed skip alreadyPrimed elapsedMs=${SystemClock.elapsedRealtime() - primeStartedAtMs}")
-                return
-            }
+        if (isPrimedFor(scope, System.currentTimeMillis())) {
+            Log.i(PERF_TAG, "ensurePrimed skip alreadyPrimed elapsedMs=${SystemClock.elapsedRealtime() - primeStartedAtMs}")
+            return
         }
 
+        primeMutex.withLock {
+            // Re-check inside the critical section: a concurrent caller may have completed
+            // priming for this scope while we were waiting for the mutex.
+            if (isPrimedFor(scope, System.currentTimeMillis())) {
+                Log.i(PERF_TAG, "ensurePrimed skip alreadyPrimedAfterWait elapsedMs=${SystemClock.elapsedRealtime() - primeStartedAtMs}")
+                return
+            }
+            primeLocked(
+                account = account,
+                scope = scope,
+                client = client,
+                languagePreference = languagePreference,
+                primeStartedAtMs = primeStartedAtMs,
+            )
+        }
+    }
+
+    private suspend fun primeLocked(
+        account: SteamAccountSession,
+        scope: String,
+        client: OkHttpClient,
+        languagePreference: SteamLanguagePreference,
+        primeStartedAtMs: Long,
+    ) {
         val tokenStartedAtMs = SystemClock.elapsedRealtime()
         val cachedToken = SteamCloudAuthStore.readCachedWebAccessToken(
             context = appContext,
@@ -154,6 +187,9 @@ internal class WorkshopSteamWebSession(
             "https://store.steampowered.com/account/preferences/",
             "https://steamcommunity.com/login/home/?goto=workshop%2F",
         )
+        // Keep these sequential. The steamcommunity login request depends on the cookies that the
+        // store request stores in the shared cookie jar; running them concurrently makes the second
+        // request miss those cookies and Steam then answers later browses with the logged-out view.
         withContext(Dispatchers.IO) {
             urls.forEach { url ->
                 val urlStartedAtMs = SystemClock.elapsedRealtime()

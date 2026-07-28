@@ -4,6 +4,7 @@ import java.io.File
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -36,6 +37,29 @@ class EasyTierNativeLibraryLoaderTest {
 
             assertTrue(error is UnsatisfiedLinkError)
             assertTrue(error?.message.orEmpty().contains("libeasytier_ffi.so"))
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun isCachedLibraryCurrent_requiresMatchingLengthAndTimestamp() {
+        val root = Files.createTempDirectory("easytier-library-cache-").toFile()
+        try {
+            val source = File(root, "source.so").apply {
+                writeText("native", StandardCharsets.UTF_8)
+                setLastModified(1_700_000_000_000L)
+            }
+            val cached = File(root, "cached.so").apply {
+                writeText("native", StandardCharsets.UTF_8)
+                setLastModified(source.lastModified())
+            }
+
+            assertTrue(EasyTierNativeLibraryLoader.isCachedLibraryCurrent(source, cached))
+
+            cached.setLastModified(source.lastModified() + 1L)
+
+            assertFalse(EasyTierNativeLibraryLoader.isCachedLibraryCurrent(source, cached))
         } finally {
             root.deleteRecursively()
         }

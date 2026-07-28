@@ -3,6 +3,7 @@ package io.stamethyst.backend.workshop
 import android.content.Context
 import android.os.SystemClock
 import android.util.Log
+import io.stamethyst.backend.github.withAcceleratedCookieJar
 import io.stamethyst.backend.steamcloud.SteamCloudAcceleratedHttp
 import io.stamethyst.backend.steamcloud.SteamAuthenticationCircuitBreaker
 import io.stamethyst.backend.steamcloud.SteamCloudAuthStore
@@ -83,8 +84,12 @@ internal class WorkshopService(
     private val steamLanguagePreference: SteamLanguagePreference
         get() = runCatching { LauncherPreferences.readWorkshopSteamLanguage(context) }
             .getOrDefault(SteamLanguagePreference.SimplifiedChinese)
+    // The cookie jar must be bound through withAcceleratedCookieJar: a plain cookieJar(...) call is
+    // invisible to the acceleration interceptor, which re-issues routed requests on its own call
+    // factory and so bypasses OkHttp's cookie bridge entirely. That left every accelerated Steam
+    // workshop browse without steamLoginSecure, and Steam answered with the logged-out view.
     private val workshopClient = client.newBuilder()
-        .cookieJar(steamWebSession.cookieJar)
+        .withAcceleratedCookieJar(steamWebSession.cookieJar)
         .addInterceptor(SteamLanguageInterceptor(::steamLanguagePreference))
         .build()
     private val browseDetailClient = client.newBuilder()

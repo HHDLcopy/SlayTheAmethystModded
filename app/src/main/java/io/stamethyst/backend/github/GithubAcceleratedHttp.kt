@@ -28,6 +28,8 @@ import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509ExtendedTrustManager
 import javax.net.ssl.X509TrustManager
 import okhttp3.ConnectionPool
+import okhttp3.Cookie
+import okhttp3.CookieJar
 import okhttp3.Dns
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -273,6 +275,29 @@ internal fun OkHttpClient.Builder.addExperimentalGithubDirectAccess(
 }
 
 /**
+ * Binds [cookieJar] to both OkHttp and the acceleration interceptor.
+ *
+ * `cookieJar(...)` alone only covers the unaccelerated path, because
+ * [ExperimentalGithubDirectAccessInterceptor] answers routed requests on its own call factory and
+ * never reaches OkHttp's cookie bridge. Callers that need cookies on accelerated hosts (Steam
+ * workshop browsing, for example) must go through this helper.
+ */
+internal fun OkHttpClient.Builder.withAcceleratedCookieJar(
+    cookieJar: CookieJar,
+): OkHttpClient.Builder = apply {
+    cookieJar(cookieJar)
+    val existing = interceptors().toList()
+    interceptors().clear()
+    existing.forEach { interceptor ->
+        if (interceptor is ExperimentalGithubDirectAccessInterceptor) {
+            addInterceptor(interceptor.withCookieJar(cookieJar))
+        } else {
+            addInterceptor(interceptor)
+        }
+    }
+}
+
+/**
  * Installs a trust manager that only relaxes chain validation for hops whose
  * upstream rule explicitly sets IgnoreSSLCertVerification.
  *
@@ -302,13 +327,43 @@ private fun platformX509TrustManager(): X509TrustManager? = runCatching {
     factory.trustManagers.filterIsInstance<X509TrustManager>().firstOrNull()
 }.getOrNull()
 
+/**
+ * Routes matching requests through a Watt forward target.
+ *
+ * This is an *application* interceptor that deliberately does not call
+ * `chain.proceed()` on the accelerated path: it re-issues the request on
+ * [directCallFactory] instead. OkHttp's own `BridgeInterceptor` — the component
+ * that reads and writes cookies — sits after all application interceptors, so
+ * it never runs for accelerated calls. Any cookie jar configured on the calling
+ * client is therefore invisible here and must be bridged explicitly through
+ * [cookieJar]; see [applyCookieHeader] and [persistResponseCookies].
+ */
 internal class ExperimentalGithubDirectAccessInterceptor(
     private val routeResolvers: List<WattToolkitGithubRouteResolver>,
     private val directCallFactory: okhttp3.Call.Factory,
     private val maxRedirects: Int = MAX_FOLLOW_UPS,
     private val enabledProvider: () -> Boolean = { true },
     private val forwardDns: WattToolkitForwardDns? = null,
+    private val cookieJar: CookieJar = CookieJar.NO_COOKIES,
 ) : Interceptor {
+    /**
+     * Returns a copy bound to [cookieJar].
+     *
+     * Derived clients built with `newBuilder()` reuse the very same interceptor instance, so a
+     * cookie jar cannot simply be set on the builder: it would either be ignored (the accelerated
+     * path never reaches OkHttp's bridge) or leak one client's Steam session into every sibling
+     * client. Rebinding produces a per-client interceptor instead.
+     */
+    fun withCookieJar(cookieJar: CookieJar): ExperimentalGithubDirectAccessInterceptor =
+        ExperimentalGithubDirectAccessInterceptor(
+            routeResolvers = routeResolvers,
+            directCallFactory = directCallFactory,
+            maxRedirects = maxRedirects,
+            enabledProvider = enabledProvider,
+            forwardDns = forwardDns,
+            cookieJar = cookieJar,
+        )
+
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
         if (!enabledProvider()) {
@@ -336,9 +391,13 @@ internal class ExperimentalGithubDirectAccessInterceptor(
             val route = resolver?.resolveRouteForHost(logicalRequest.url.host)
             var effectiveRoute = route
             var usedForwardTarget: String? = null
+            // Cookies are keyed on the logical URL so they are never handed to the
+            // forward target's own hostname.
+            val logicalUrl = logicalRequest.url
+            val cookieRequest = applyCookieHeader(logicalRequest, logicalUrl)
             val response = try {
                 val executed = executeWithForwardTargetFallback(
-                    logicalRequest = logicalRequest,
+                    logicalRequest = cookieRequest,
                     route = route,
                     failedForwardTargets = failedForwardTargets,
                 )
@@ -352,7 +411,7 @@ internal class ExperimentalGithubDirectAccessInterceptor(
                 effectiveRoute = refreshedRoute
                 try {
                     val executed = executeWithForwardTargetFallback(
-                        logicalRequest = logicalRequest,
+                        logicalRequest = cookieRequest,
                         route = refreshedRoute,
                         failedForwardTargets = failedForwardTargets,
                     )
@@ -363,6 +422,7 @@ internal class ExperimentalGithubDirectAccessInterceptor(
                     throw refreshedError
                 }
             }
+            persistResponseCookies(logicalUrl, response)
             if (
                 resolver != null &&
                 effectiveRoute != null &&
@@ -410,6 +470,35 @@ internal class ExperimentalGithubDirectAccessInterceptor(
             logicalRequest = nextLogicalRequest
             followUpCount++
         }
+    }
+
+    /**
+     * Attaches the jar's cookies for [logicalUrl] to the outgoing request.
+     *
+     * OkHttp's own cookie handling lives in BridgeInterceptor, which runs after every
+     * application interceptor. Because this interceptor answers routed requests through a
+     * separate call factory instead of [Interceptor.Chain.proceed], that bridge never runs and
+     * any cookie jar configured on the calling client is silently ignored. Steam workshop
+     * browsing then loses its `steamLoginSecure` cookie and Steam serves the logged-out view.
+     */
+    private fun applyCookieHeader(request: Request, logicalUrl: HttpUrl): Request {
+        if (cookieJar == CookieJar.NO_COOKIES) return request
+        val cookies = runCatching { cookieJar.loadForRequest(logicalUrl) }.getOrDefault(emptyList())
+        if (cookies.isEmpty()) return request
+        val header = cookies.joinToString("; ") { cookie -> "${cookie.name}=${cookie.value}" }
+        return request.newBuilder()
+            .header("Cookie", header)
+            .build()
+    }
+
+    /** Writes back `Set-Cookie` values against the logical URL, never the forward target. */
+    private fun persistResponseCookies(logicalUrl: HttpUrl, response: Response) {
+        if (cookieJar == CookieJar.NO_COOKIES) return
+        val setCookieHeaders = response.headers.values("Set-Cookie")
+        if (setCookieHeaders.isEmpty()) return
+        val cookies = setCookieHeaders.mapNotNull { value -> Cookie.parse(logicalUrl, value) }
+        if (cookies.isEmpty()) return
+        runCatching { cookieJar.saveFromResponse(logicalUrl, cookies) }
     }
 
     private data class ForwardedExecution(

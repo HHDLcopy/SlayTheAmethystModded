@@ -202,6 +202,13 @@ android {
         prefab = true
         buildConfig = true
     }
+
+    @Suppress("UnstableApiUsage")
+    testOptions {
+        unitTests.all {
+            it.maxParallelForks = (Runtime.getRuntime().availableProcessors() / 2).coerceAtLeast(1)
+        }
+    }
 }
 
 kotlin {

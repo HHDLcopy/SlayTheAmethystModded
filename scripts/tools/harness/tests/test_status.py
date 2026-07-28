@@ -79,6 +79,22 @@ class FindHarnessLogcatCrashTest(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result["marker"], "FATAL EXCEPTION")
 
+    def test_ignores_foreground_process_lifecycle_logs(self):
+        text = "\n".join(
+            [
+                "07-28 08:43:10.068 D ForegroundUtils: handleForegroundActivitiesChanged process: com.example.app uid: 10079 pid: 9142 FG:false",
+                "07-28 08:43:13.002 I ActivityManager: Force stopping com.example.app appid=10079 user=0: from pid 9579",
+                "07-28 08:43:13.499 D ForegroundUtils: handleForegroundActivitiesChanged process: com.example.app uid: 10079 pid: 9592 FG:true",
+            ]
+        )
+        self.assertIsNone(find_harness_logcat_crash(text, "com.example.app"))
+
+    def test_detects_force_finishing_with_package(self):
+        text = "I ActivityManager: Force finishing activity com.example.app/.LauncherActivity"
+        result = find_harness_logcat_crash(text, "com.example.app")
+        self.assertIsNotNone(result)
+        self.assertIn("Force finishing", result["marker"])
+
     def test_no_crash_returns_none(self):
         self.assertIsNone(find_harness_logcat_crash("all good", "com.example.app"))
 

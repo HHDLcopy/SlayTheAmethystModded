@@ -80,6 +80,43 @@ def find_single_room_result(text: str | None) -> dict[str, Any] | None:
     }
 
 
+def _harness_process_names(package_name: str) -> tuple[str, ...]:
+    if not package_name.strip():
+        return ()
+    return tuple(
+        name
+        for name in (
+            package_name,
+            f"{package_name}:game",
+            f"{package_name}:steamcloud",
+            f"{package_name}:diag",
+            f"{package_name}:logcat",
+        )
+        if name
+    )
+
+
+def _line_has_strong_process_identity(line: str, process_names: tuple[str, ...]) -> str | None:
+    # Case-sensitive: must not match vendor lifecycle logs like
+    # "handleForegroundActivitiesChanged process: io.stamethyst".
+    for name in process_names:
+        for needle in (
+            f"Process: {name}",
+            f"Cmdline: {name}",
+            f"Cmd line: {name}",
+            f">>> {name}",
+        ):
+            if needle in line:
+                return needle
+        if "Force finishing" in line and name in line:
+            return f"Force finishing:{name}"
+    return None
+
+
+def _window_has_strong_process_identity(window_text: str, process_names: tuple[str, ...]) -> bool:
+    return any(_line_has_strong_process_identity(line, process_names) for line in re.split(r"\r?\n", window_text))
+
+
 def find_harness_logcat_crash(text: str | None, package_name: str) -> dict[str, Any] | None:
     if not text or not text.strip():
         return None
@@ -94,13 +131,19 @@ def find_harness_logcat_crash(text: str | None, package_name: str) -> dict[str, 
         'Exception in thread "LWJGL Application"',
         "java.lang.OutOfMemoryError",
     )
-    package_needles = (
-        package_name,
-        f"{package_name}:game",
-        f"{package_name}:diag",
-        f"Process: {package_name}",
-        f">>> {package_name}",
+    generic_crash_markers = (
+        "FATAL EXCEPTION",
+        "Fatal signal",
+        "AndroidRuntime",
+        "java.lang.OutOfMemoryError",
     )
+    runtime_log_markers = (
+        "Game crashed.",
+        "Game body patch failed before launch",
+        "Exception occurred in CardCrawlGame render method!",
+        'Exception in thread "LWJGL Application"',
+    )
+    process_names = _harness_process_names(package_name)
     for index, line in enumerate(lines):
         marker_matched = None
         for marker in markers:
@@ -108,34 +151,25 @@ def find_harness_logcat_crash(text: str | None, package_name: str) -> dict[str, 
                 marker_matched = marker
                 break
         if marker_matched is None:
-            for needle in package_needles:
-                if text_contains(line, needle):
-                    if (
-                        text_contains(line, f"Process: {package_name}")
-                        or text_contains(line, f">>> {package_name}")
-                        or text_contains(line, f"Cmdline: {package_name}")
-                        or text_contains(line, "Force finishing")
-                    ):
-                        marker_matched = needle
-                    break
+            strong_identity = _line_has_strong_process_identity(line, process_names)
+            if strong_identity is not None:
+                marker_matched = strong_identity
         if marker_matched is None:
             continue
         start = max(0, index - 12)
         end = min(len(lines) - 1, index + 90)
         window_text = "\n".join(lines[start : end + 1])
-        package_matched = any(text_contains(window_text, needle) for needle in package_needles)
-        runtime_log_marker = marker_matched in (
-            "Game crashed.",
-            "Game body patch failed before launch",
-            "Exception occurred in CardCrawlGame render method!",
-            'Exception in thread "LWJGL Application"',
-        )
-        if not package_matched and not runtime_log_marker:
+        package_matched = any(text_contains(window_text, name) for name in process_names)
+        strong_package_matched = _window_has_strong_process_identity(window_text, process_names)
+        runtime_log_marker = marker_matched in runtime_log_markers
+        if marker_matched in generic_crash_markers and not strong_package_matched:
+            continue
+        if not package_matched and not runtime_log_marker and not strong_package_matched:
             continue
         return {
             "marker": marker_matched,
             "line": line.strip(),
-            "packageMatched": package_matched,
+            "packageMatched": package_matched or strong_package_matched,
             "excerpt": limit_text(window_text, 5000),
         }
     return None

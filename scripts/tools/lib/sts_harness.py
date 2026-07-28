@@ -1213,86 +1213,9 @@ rm -rf files/sts/package files/sts/mts_patch_cache
 
     @staticmethod
     def find_harness_logcat_crash(text: str | None, package_name: str) -> dict[str, Any] | None:
-        if not text or not text.strip():
-            return None
-        lines = re.split(r"\r?\n", text)
-        markers = (
-            "FATAL EXCEPTION",
-            "Fatal signal",
-            "AndroidRuntime",
-            "Game crashed.",
-            "Game body patch failed before launch",
-            "Exception occurred in CardCrawlGame render method!",
-            'Exception in thread "LWJGL Application"',
-            "java.lang.OutOfMemoryError",
-        )
-        process_names = tuple(
-            name
-            for name in (
-                package_name,
-                f"{package_name}:game" if package_name else "",
-                f"{package_name}:steamcloud" if package_name else "",
-                f"{package_name}:diag" if package_name else "",
-                f"{package_name}:logcat" if package_name else "",
-            )
-            if name
-        )
-        package_needles = process_names + tuple(f"Process: {name}" for name in process_names) + tuple(
-            f">>> {name}" for name in process_names
-        )
-        strong_package_needles = (
-            tuple(f"Process: {name}" for name in process_names)
-            + tuple(f"Cmdline: {name}" for name in process_names)
-            + tuple(f"Cmd line: {name}" for name in process_names)
-            + tuple(f">>> {name}" for name in process_names)
-        )
-        generic_crash_markers = (
-            "FATAL EXCEPTION",
-            "Fatal signal",
-            "AndroidRuntime",
-            "java.lang.OutOfMemoryError",
-        )
-        for index, line in enumerate(lines):
-            marker_matched = None
-            for marker in markers:
-                if text_contains(line, marker):
-                    marker_matched = marker
-                    break
-            if marker_matched is None:
-                for needle in package_needles:
-                    if text_contains(line, needle):
-                        if (
-                            text_contains(line, f"Process: {package_name}")
-                            or text_contains(line, f">>> {package_name}")
-                            or text_contains(line, f"Cmdline: {package_name}")
-                            or text_contains(line, "Force finishing")
-                        ):
-                            marker_matched = needle
-                        break
-            if marker_matched is None:
-                continue
-            start = max(0, index - 12)
-            end = min(len(lines) - 1, index + 90)
-            window_text = "\n".join(lines[start : end + 1])
-            package_matched = any(text_contains(window_text, needle) for needle in package_needles)
-            strong_package_matched = any(text_contains(window_text, needle) for needle in strong_package_needles)
-            runtime_log_marker = marker_matched in (
-                "Game crashed.",
-                "Game body patch failed before launch",
-                "Exception occurred in CardCrawlGame render method!",
-                'Exception in thread "LWJGL Application"',
-            )
-            if marker_matched in generic_crash_markers and not strong_package_matched:
-                continue
-            if not package_matched and not runtime_log_marker:
-                continue
-            return {
-                "marker": marker_matched,
-                "line": line.strip(),
-                "packageMatched": package_matched or strong_package_matched,
-                "excerpt": limit_text(window_text, 5000),
-            }
-        return None
+        from scripts.tools.harness._status import find_harness_logcat_crash as impl
+
+        return impl(text, package_name)
 
     @staticmethod
     def last_non_blank_line(text: str | None) -> str | None:

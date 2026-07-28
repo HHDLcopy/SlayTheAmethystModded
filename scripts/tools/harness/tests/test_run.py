@@ -18,6 +18,7 @@ class HarnessRunTest(unittest.TestCase):
                 autoplay=False,
                 autoplay_save_mode="fresh",
                 autoplay_mode="normal",
+                single_room_device_spec="",
                 disable_card_obtain_effect_ownership_compat=False,
             ),
             repo_root=Path("."),
@@ -40,6 +41,23 @@ class HarnessRunTest(unittest.TestCase):
         args = gradle.call_args.args[1]
         self.assertIn("-PdeviceSerial=localhost:15555", args)
         self.assertNotIn("-PandroidDeviceSerial=localhost:15555", args)
+
+    @patch("scripts.tools.harness.run.ensure_single_room_device_spec")
+    @patch("scripts.tools.harness.run.gradle")
+    def test_single_room_start_passes_spec_to_autoplay_task(self, gradle, ensure_spec):
+        ctx = self._ctx()
+        ctx.options.autoplay = True
+        ctx.options.autoplay_mode = "single_room"
+        ensure_spec.return_value = "files/sts/config/autoplay-single-room.properties"
+
+        run_start(ctx, Path("debug-artifacts/harness/test"))
+
+        self.assertEqual(gradle.call_args.args[1][0], ":app:stsStartAutoplay")
+        self.assertIn(
+            "-PautoplaySingleRoomSpec=files/sts/config/autoplay-single-room.properties",
+            gradle.call_args.args[1],
+        )
+        ensure_spec.assert_called_once_with(ctx, Path("debug-artifacts/harness/test"))
 
 
 if __name__ == "__main__":

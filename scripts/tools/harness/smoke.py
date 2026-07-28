@@ -36,7 +36,7 @@ def run_smoke(ctx: HarnessContext, resolved_out_dir: Path) -> int:
             logcat_capture = start_logcat_capture(ctx, resolved_out_dir, logcat_since)
         except Exception as exc:
             ctx.result.setdefault("artifacts", {})["harnessLogcatError"] = str(exc)
-        run_start(ctx)
+        run_start(ctx, resolved_out_dir)
         start_requested = True
         status = wait_harness_status(
             ctx, logcat_capture,

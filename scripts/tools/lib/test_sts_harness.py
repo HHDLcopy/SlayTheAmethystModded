@@ -543,6 +543,17 @@ class HarnessLogcatCrashDetectionTest(unittest.TestCase):
 
         self.assertIsNone(crash)
 
+    def test_ignores_foreground_utils_process_lifecycle_logs(self):
+        text = "\n".join(
+            [
+                "07-28 08:43:10.068  1328  1936 D ForegroundUtils: handleForegroundActivitiesChanged process: io.test uid: 10079 pid: 9142 FG:false, pi.foreground = false",
+                "07-28 08:43:13.002   445   889 I ActivityManager: Force stopping io.test appid=10079 user=0: from pid 9579",
+                "07-28 08:43:13.499  1328  1936 D ForegroundUtils: handleForegroundActivitiesChanged process: io.test uid: 10079 pid: 9592 FG:true, pi.foreground = true",
+            ]
+        )
+
+        self.assertIsNone(Harness.find_harness_logcat_crash(text, "io.test"))
+
     def test_detects_steamcloud_native_crash(self):
         text = "\n".join(
             [

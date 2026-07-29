@@ -342,6 +342,11 @@ class MainScreenViewModel : ViewModel() {
             val onForceDisable: () -> Unit,
             val onDisableDependents: () -> Unit,
         ) : Effect
+        data class ShowBatchBlockedModDisableDialog(
+            val title: UiText,
+            val message: UiText,
+            val onDisableDependents: () -> Unit,
+        ) : Effect
         data class ShowModNameMigrationFailureDialog(
             val failedMods: List<FailedModNameMigrationUi>
         ) : Effect

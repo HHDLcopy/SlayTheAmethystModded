@@ -3167,6 +3167,7 @@ fun LauncherCrashRecoveryScreen(
                     )
                 is MainScreenViewModel.Effect.ShowDialog -> effectDialog = effect
                 is MainScreenViewModel.Effect.ShowBlockedModDisableDialog -> Unit
+                is MainScreenViewModel.Effect.ShowBatchBlockedModDisableDialog -> Unit
                 is MainScreenViewModel.Effect.ShowModNameMigrationFailureDialog -> Unit
                 is MainScreenViewModel.Effect.OpenExportModPicker -> Unit
                 is MainScreenViewModel.Effect.LaunchIntent -> hostActivity?.startActivity(effect.intent)
@@ -3233,6 +3234,9 @@ internal fun LauncherMainRoute(
     var effectDialog by remember { mutableStateOf<MainScreenViewModel.Effect.ShowDialog?>(null) }
     var blockedModDisableDialog by remember {
         mutableStateOf<MainScreenViewModel.Effect.ShowBlockedModDisableDialog?>(null)
+    }
+    var batchBlockedModDisableDialog by remember {
+        mutableStateOf<MainScreenViewModel.Effect.ShowBatchBlockedModDisableDialog?>(null)
     }
     var modNameMigrationFailureDialog by remember {
         mutableStateOf<MainScreenViewModel.Effect.ShowModNameMigrationFailureDialog?>(null)
@@ -3332,6 +3336,9 @@ internal fun LauncherMainRoute(
                     )
                 is MainScreenViewModel.Effect.ShowDialog -> effectDialog = effect
                 is MainScreenViewModel.Effect.ShowBlockedModDisableDialog -> blockedModDisableDialog = effect
+                is MainScreenViewModel.Effect.ShowBatchBlockedModDisableDialog -> {
+                    batchBlockedModDisableDialog = effect
+                }
                 is MainScreenViewModel.Effect.ShowModNameMigrationFailureDialog -> {
                     modNameMigrationFailureDialog = effect
                 }
@@ -3366,8 +3373,16 @@ internal fun LauncherMainRoute(
             title = { Text(dialog.title.resolve()) },
             text = { Text(dialog.message.resolve()) },
             confirmButton = {
-                Column(horizontalAlignment = Alignment.End) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         Button(
                             onClick = {
                                 blockedModDisableDialog = null
@@ -3384,9 +3399,49 @@ internal fun LauncherMainRoute(
                             Text(stringResource(R.string.common_action_confirm))
                         }
                     }
-                    TextButton(
+                    OutlinedButton(
                         onClick = {
                             blockedModDisableDialog = null
+                            dialog.onDisableDependents()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(stringResource(R.string.main_mod_disable_all_dependents))
+                    }
+                }
+            },
+        )
+    }
+
+    batchBlockedModDisableDialog?.let { dialog ->
+        AlertDialog(
+            onDismissRequest = { batchBlockedModDisableDialog = null },
+            title = { Text(dialog.title.resolve()) },
+            text = {
+                Text(
+                    text = dialog.message.resolve(),
+                    modifier = Modifier
+                        .heightIn(max = 280.dp)
+                        .verticalScroll(rememberScrollState()),
+                )
+            },
+            confirmButton = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                    ) {
+                        TextButton(onClick = { batchBlockedModDisableDialog = null }) {
+                            Text(stringResource(R.string.common_action_confirm))
+                        }
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            batchBlockedModDisableDialog = null
                             dialog.onDisableDependents()
                         },
                         modifier = Modifier.fillMaxWidth(),

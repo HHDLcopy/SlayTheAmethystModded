@@ -1335,18 +1335,35 @@ internal class MainModManagementController(
             )
         }
         if (blocked.isNotEmpty()) {
-            val detail = blocked.entries.joinToString("；") { entry ->
+            val detail = blocked.entries.joinToString("\n") { entry ->
                 host.getString(
                     R.string.main_batch_disable_blocked_item,
                     entry.key,
                     entry.value.joinToString(", ")
                 )
             }
-            emitDialog(
+            emitBatchBlockedModDisableDialog(
+                host = host,
+                targetMods = targetMods,
                 title = host.getString(R.string.main_batch_disable_blocked_title),
                 message = detail
             )
         }
+    }
+
+    private fun emitBatchBlockedModDisableDialog(
+        host: Activity,
+        targetMods: List<ModItemUi>,
+        title: String,
+        message: String,
+    ) {
+        hostCallbacks.emitEffect(
+            MainScreenViewModel.Effect.ShowBatchBlockedModDisableDialog(
+                title = UiText.DynamicString(title),
+                message = UiText.DynamicString(message),
+                onDisableDependents = { disableModsAndDependents(host, targetMods) },
+            )
+        )
     }
 
     private fun enableModWithDependencies(
@@ -1539,9 +1556,21 @@ internal class MainModManagementController(
     }
 
     private fun disableModAndDependents(host: Activity, rootMod: ModItemUi) {
+        disableModsAndDependents(host, listOf(rootMod))
+    }
+
+    private fun disableModsAndDependents(host: Activity, rootMods: List<ModItemUi>) {
         val optionalMods = resolveOptionalModsWithPendingSelection()
-        val targets = collectModDisableClosure(rootMod, optionalMods)
-        disableModsIgnoringDependents(host, targets, optionalMods)
+        val targets = LinkedHashMap<String, ModItemUi>()
+        rootMods.forEach { rootMod ->
+            collectModDisableClosure(rootMod, optionalMods).forEach { mod ->
+                val key = resolveModEnableVisitKey(mod)
+                if (key.isNotEmpty()) {
+                    targets.putIfAbsent(key, mod)
+                }
+            }
+        }
+        disableModsIgnoringDependents(host, ArrayList(targets.values), optionalMods)
     }
 
     private fun disableModsIgnoringDependents(

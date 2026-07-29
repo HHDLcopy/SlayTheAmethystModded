@@ -13,6 +13,13 @@ internal object EasyTierNativeLibraryLoader {
         "libeasytier_ffi.so",
         "libeasytier_android_jni.so"
     )
+
+    /**
+     * Libraries the staged objects depend on by plain soname. They are staged
+     * side by side, so a `DT_RUNPATH` of `$ORIGIN` is enough for bionic to find
+     * them; see [EasyTierNativeElfPatcher] for why the prebuilts need that.
+     */
+    private val siblingLibraryNames = libraryFileNames.toSet()
     private val loadLock = Any()
 
     @Volatile
@@ -55,11 +62,28 @@ internal object EasyTierNativeLibraryLoader {
         return sourceLibraryFiles.map { source ->
             val target = File(targetDir, source.name)
             if (isCachedLibraryCurrent(source, target)) {
-                target
+                repairCachedLibrary(source, target)
             } else {
-                copyLibraryAtomically(source, target)
+                stageLibraryAtomically(source, target)
             }
         }
+    }
+
+    /**
+     * Repairs a copy staged by an earlier launcher build. The repair changes
+     * neither size nor timestamp, so [isCachedLibraryCurrent] cannot tell a
+     * repaired copy from an unrepaired one and the check has to run every time.
+     */
+    private fun repairCachedLibrary(source: File, target: File): File {
+        val repaired = EasyTierNativeElfPatcher.ensureSiblingDependencyLookup(
+            target,
+            siblingLibraryNames
+        )
+        if (repaired && source.lastModified() > 0L) {
+            // Writing bumped the timestamp; realign it so the copy stays cached.
+            target.setLastModified(source.lastModified())
+        }
+        return target
     }
 
     internal fun isCachedLibraryCurrent(source: File, target: File): Boolean =
@@ -68,12 +92,16 @@ internal object EasyTierNativeLibraryLoader {
             target.lastModified() == source.lastModified()
 
     @Throws(IOException::class)
-    private fun copyLibraryAtomically(source: File, target: File): File {
+    private fun stageLibraryAtomically(source: File, target: File): File {
         val temporary = File(target.parentFile, "${target.name}.${System.nanoTime()}.tmp")
         try {
             FileInputStream(source).use { input ->
                 FileOutputStream(temporary, false).use { output -> input.copyTo(output) }
             }
+            // Must run before the timestamp is aligned with the source, otherwise
+            // the repair would be redone on every launch. The edit keeps the file
+            // size unchanged, so it cannot invalidate the staleness check either.
+            EasyTierNativeElfPatcher.ensureSiblingDependencyLookup(temporary, siblingLibraryNames)
             if (!temporary.setExecutable(true, false)) {
                 throw IOException("Failed to mark EasyTier native library executable: ${temporary.absolutePath}")
             }

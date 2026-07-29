@@ -100,9 +100,18 @@ internal object EasyTierJniBridge {
             ?.trim()
             ?.lowercase()
             .orEmpty()
+        if (message.contains("missing from the installed resource pack")) {
+            return true
+        }
+        // "needed by" means the linker did locate the library we asked for and
+        // failed on one of its dependencies. The resource pack is intact in that
+        // case, so reporting it as missing would send users to redownload it for
+        // nothing.
+        if (message.contains("needed by")) {
+            return false
+        }
         return message.contains("couldn't find") ||
             message.contains("could not find") ||
-            message.contains("missing from the installed resource pack") ||
             (
                 message.contains("not found") &&
                     message.contains("library \"libeasytier_") &&

@@ -93,6 +93,7 @@ public class LwjglApplication implements Application {
 	private static final String GPU_RESOURCE_DIAG_ENABLED_PROP = "amethyst.gdx.gpu_resource_diag";
 	private static final String GPU_RESOURCE_SUMMARY_ENABLED_PROP = "amethyst.gdx.gpu_resource_summary";
 	private static final String ANDROID_FRAME_PACER_PROP = "amethyst.lwjgl.android_frame_pacer";
+	private static final String ACTIVE_REFRESH_RATE_PROP = "amethyst.gdx.active_refresh_rate";
 	private static final String HOT_LOOP_NOOP_TRIM_PROP = "amethyst.lwjgl.hot_loop_noop_trim";
 	private static final String POST_RENDER_CLEAR_PROP = "amethyst.lwjgl.diag.post_render_clear";
 	private static final String FRAME_PROFILER_ENABLED_PROP = "amethyst.gdx.frame_profiler";
@@ -109,6 +110,10 @@ public class LwjglApplication implements Application {
 		readBooleanSystemProperty(FRAME_PROFILER_STACK_PROP, false);
 	private static final boolean ANDROID_FRAME_PACER_ENABLED =
 		readBooleanSystemProperty(ANDROID_FRAME_PACER_PROP, false);
+	// The LWJGL shim cannot discover the panel refresh rate (its DisplayMode frequency is 0 and
+	// getDesktopDisplayMode() is hardcoded to 60Hz), so the launcher publishes the real value.
+	private static final int LAUNCHER_ACTIVE_REFRESH_RATE =
+		readIntSystemProperty(ACTIVE_REFRESH_RATE_PROP, 0, 0, 1000);
 	private static final boolean HOT_LOOP_NOOP_TRIM_ENABLED =
 		readBooleanSystemProperty(HOT_LOOP_NOOP_TRIM_PROP, false);
 	private static final boolean DEFAULT_FBO_FAST_REBIND_ENABLED =
@@ -765,6 +770,10 @@ public class LwjglApplication implements Application {
 	}
 
 	private int resolveActiveRefreshRate () {
+		if (LAUNCHER_ACTIVE_REFRESH_RATE > 0) {
+			return LAUNCHER_ACTIVE_REFRESH_RATE;
+		}
+
 		try {
 			org.lwjgl.opengl.DisplayMode currentMode = Display.getDisplayMode();
 			if (currentMode != null && currentMode.getFrequency() > 0) {
@@ -2000,6 +2009,9 @@ public class LwjglApplication implements Application {
 		if (HOT_LOOP_NOOP_TRIM_ENABLED) {
 			System.out.println("[gdx-patch] Hot-loop no-op trim enabled");
 		}
+		System.out.println("[gdx-patch] Frame pacing: targetFps=" + graphics.config.foregroundFPS + ", activeRefreshRate="
+			+ resolveActiveRefreshRate() + " (launcherReported=" + LAUNCHER_ACTIVE_REFRESH_RATE + "), vsync="
+			+ graphics.vsync + ", androidFramePacer=" + ANDROID_FRAME_PACER_ENABLED);
 		int configuredVirtualWidth = resolveConfiguredVirtualWidth();
 		int configuredVirtualHeight = resolveConfiguredVirtualHeight();
 		if (configuredVirtualWidth > 0) graphics.config.width = configuredVirtualWidth;

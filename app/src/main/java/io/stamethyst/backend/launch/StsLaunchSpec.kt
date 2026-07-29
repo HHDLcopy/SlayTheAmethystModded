@@ -12,6 +12,8 @@ import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.backend.mods.importing.patches.ImportPatchRegistry
 import io.stamethyst.backend.mods.importing.patches.texture.AtlasFilterPatchModule
+import io.stamethyst.backend.render.AndroidGameModeSupport
+import io.stamethyst.backend.render.DisplayRefreshRateController
 import io.stamethyst.backend.render.RendererBackendResolver
 import io.stamethyst.backend.render.RendererDecision
 import io.stamethyst.backend.render.RendererBackend
@@ -421,6 +423,19 @@ object StsLaunchSpec {
         val virtualWidth = virtualResolution.width
         val virtualHeight = virtualResolution.height
         args.add("-Damethyst.gdx.render_scale=$renderScale")
+        val effectiveTargetFps = AndroidGameModeSupport.resolveTargetFps(
+            LauncherConfig.readTargetFps(context),
+            AndroidGameModeSupport.readCurrentMode(context)
+        )
+        // The in-JVM LWJGL shim cannot read the real panel refresh rate, so publish the value the
+        // launcher itself requested. Without this the game assumes 60Hz and mis-paces every frame.
+        val expectedRefreshRateHz = DisplayRefreshRateController.resolveExpectedActiveRefreshRateHz(
+            context,
+            effectiveTargetFps
+        )
+        if (expectedRefreshRateHz > 0f) {
+            args.add("-Damethyst.gdx.active_refresh_rate=${Math.round(expectedRefreshRateHz)}")
+        }
         args.add(
             "-Damethyst.gdx.native_dir=" +
                 NativeLibraryPathResolver.buildAmethystGdxNativeDirValue(context)
@@ -432,7 +447,9 @@ object StsLaunchSpec {
                 "effectiveScale=${virtualResolution.effectiveScale}, " +
                 "virtual=${virtualWidth}x${virtualHeight}, " +
                 "glfwstub=${physicalWidth}x${physicalHeight}, " +
-                "physical=${physicalWidth}x${physicalHeight}"
+                "physical=${physicalWidth}x${physicalHeight}, " +
+                "targetFps=$effectiveTargetFps, " +
+                "activeRefreshRate=$expectedRefreshRateHz"
         )
         args.add("-Dglfwstub.windowWidth=$physicalWidth")
         args.add("-Dglfwstub.windowHeight=$physicalHeight")

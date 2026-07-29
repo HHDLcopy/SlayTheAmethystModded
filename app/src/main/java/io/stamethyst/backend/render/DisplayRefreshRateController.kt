@@ -1,6 +1,8 @@
 package io.stamethyst.backend.render
 
 import android.app.Activity
+import android.content.Context
+import android.hardware.display.DisplayManager
 import android.os.Build
 import android.view.Surface
 import kotlin.math.abs
@@ -155,6 +157,85 @@ internal class DisplayRefreshRateController(
     companion object {
         private const val BASE_HIGH_REFRESH_RATE_HZ = 60f
         private const val REFRESH_RATE_EPSILON = 0.01f
+
+        /**
+         * Best estimate of the refresh rate the panel will actually run at for [targetFpsLimit].
+         *
+         * The in-JVM LWJGL shim cannot discover this on its own: its `DisplayMode` frequency is 0
+         * and `getDesktopDisplayMode()` reports a hardcoded 60Hz. The launcher owns the real value
+         * because it is the side that requests the mode, so it resolves it here and hands it to the
+         * game through a system property.
+         */
+        @Suppress("DEPRECATION")
+        fun resolveExpectedActiveRefreshRateHz(context: Context, targetFpsLimit: Int): Float {
+            val display = try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    context.display
+                } else {
+                    val displayManager =
+                        context.getSystemService(Context.DISPLAY_SERVICE) as? DisplayManager
+                    displayManager?.getDisplay(android.view.Display.DEFAULT_DISPLAY)
+                }
+            } catch (t: Throwable) {
+                null
+            } ?: return 0f
+
+            val supportedModes =
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    display.supportedModes
+                        ?.map { mode ->
+                            DisplayModeCandidate(
+                                modeId = mode.modeId,
+                                width = mode.physicalWidth,
+                                height = mode.physicalHeight,
+                                refreshRateHz = mode.refreshRate
+                            )
+                        }
+                        .orEmpty()
+                } else {
+                    emptyList()
+                }
+            val currentModeId =
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    display.mode?.modeId
+                } else {
+                    null
+                }
+            return resolveExpectedRefreshRateHz(
+                targetFpsLimit = targetFpsLimit,
+                currentDisplayRefreshRateHz = display.refreshRate,
+                currentDisplayModeId = currentModeId,
+                supportedModes = supportedModes
+            )
+        }
+
+        /**
+         * Pure resolution of the expected refresh rate.
+         *
+         * Only rates the display actually reported are ever returned. [resolveWindowRefreshPreference]
+         * falls back to the raw target when the mode list is unknown, and trusting that would let the
+         * game believe a 60Hz-only panel runs at 90Hz, which in turn disables its software frame
+         * limiter. Returns 0 when nothing trustworthy is known.
+         */
+        internal fun resolveExpectedRefreshRateHz(
+            targetFpsLimit: Int,
+            currentDisplayRefreshRateHz: Float,
+            currentDisplayModeId: Int?,
+            supportedModes: List<DisplayModeCandidate>
+        ): Float {
+            val currentRate = currentDisplayRefreshRateHz.takeIf { it > 0f && !it.isNaN() } ?: 0f
+            if (supportedModes.isEmpty()) {
+                return currentRate
+            }
+            val preferred = resolveWindowRefreshPreference(
+                targetFpsLimit = targetFpsLimit,
+                currentDisplayModeId = currentDisplayModeId,
+                supportedModes = supportedModes
+            )?.preferredRefreshRateHz ?: return currentRate
+            // Accept the preference only if the panel really advertises that rate.
+            val advertised = supportedModes.any { sameRefreshRate(it.refreshRateHz, preferred) }
+            return if (advertised && preferred > 0f) preferred else currentRate
+        }
 
         internal fun shouldRequestExplicitRefreshRate(targetFpsLimit: Int): Boolean {
             return resolveRequestedRefreshRateHz(targetFpsLimit) != null

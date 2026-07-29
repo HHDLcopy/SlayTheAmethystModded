@@ -370,12 +370,17 @@ object LauncherConfig {
     val DEFAULT_GPU_RESOURCE_GUARDIAN_MODE: GpuResourceGuardianMode = GpuResourceGuardianMode.OFF
     const val DEFAULT_GPU_RESOURCE_GUARDIAN_PRESSURE_DOWNSCALE_ENABLED = false
     const val DEFAULT_HINA_CHARACTER_RENDER_COMPAT_ENABLED = true
-    // Keep the pacing experiments opt-in and off by default. Device AB runs
-    // showed no significant thermal/performance gain from Android/LWJGL frame
-    // pacing, libpojavexec native pre-swap pacing, or EGL swap interval pacing,
-    // so they should not be enabled by defaults or automatic compatibility
+    // Android/LWJGL frame pacing waits for the next frame deadline with Thread.sleep plus
+    // LockSupport.parkNanos, replacing LWJGL's Sync.preciseSync, which burns the remainder of
+    // every frame in a Thread.yield() spin loop. Paired on-device A/B at a 90 FPS target on a
+    // 90Hz panel measured ~13% less process CPU (0.58 -> 0.51 cores busy) and ~14% less render
+    // thread CPU with identical presented FPS (89.9 vs 89.8) and no jitter regression, so it is
+    // on by default. It is refresh-rate independent, unlike the swap-interval route.
+    const val DEFAULT_ANDROID_LWJGL_FRAME_PACING_COMPAT_ENABLED = true
+    // Keep the remaining pacing experiments opt-in and off by default. Device AB runs showed no
+    // significant thermal/performance gain from libpojavexec native pre-swap pacing or EGL swap
+    // interval pacing, so they should not be enabled by defaults or automatic compatibility
     // policies.
-    const val DEFAULT_ANDROID_LWJGL_FRAME_PACING_COMPAT_ENABLED = false
     const val DEFAULT_LWJGL_HOT_LOOP_NOOP_TRIM_COMPAT_ENABLED = false
     const val DEFAULT_FRAMEBUFFER_FAST_REBIND_COMPAT_ENABLED = false
     const val DEFAULT_NATIVE_PRE_SWAP_PACING_COMPAT_ENABLED = false

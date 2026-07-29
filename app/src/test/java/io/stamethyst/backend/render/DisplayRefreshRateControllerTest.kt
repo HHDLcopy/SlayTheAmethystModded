@@ -165,6 +165,73 @@ class DisplayRefreshRateControllerTest {
         )
     }
 
+    @Test
+    fun resolveExpectedRefreshRateHz_reportsHighRefreshModeThePanelAdvertises() {
+        val refreshRate = DisplayRefreshRateController.resolveExpectedRefreshRateHz(
+            targetFpsLimit = 90,
+            currentDisplayRefreshRateHz = 60f,
+            currentDisplayModeId = 1,
+            supportedModes = listOf(
+                mode(modeId = 1, width = 2400, height = 1080, refreshRateHz = 60f),
+                mode(modeId = 2, width = 2400, height = 1080, refreshRateHz = 90f)
+            )
+        )
+
+        assertEquals(90f, refreshRate, 0.001f)
+    }
+
+    @Test
+    fun resolveExpectedRefreshRateHz_neverReportsRateThePanelCannotDo() {
+        val refreshRate = DisplayRefreshRateController.resolveExpectedRefreshRateHz(
+            targetFpsLimit = 90,
+            currentDisplayRefreshRateHz = 60f,
+            currentDisplayModeId = 1,
+            supportedModes = listOf(
+                mode(modeId = 1, width = 2400, height = 1080, refreshRateHz = 60f)
+            )
+        )
+
+        assertEquals(60f, refreshRate, 0.001f)
+    }
+
+    @Test
+    fun resolveExpectedRefreshRateHz_fallsBackToCurrentRateWhenModesAreUnknown() {
+        val refreshRate = DisplayRefreshRateController.resolveExpectedRefreshRateHz(
+            targetFpsLimit = 90,
+            currentDisplayRefreshRateHz = 60f,
+            currentDisplayModeId = null,
+            supportedModes = emptyList()
+        )
+
+        assertEquals(60f, refreshRate, 0.001f)
+    }
+
+    @Test
+    fun resolveExpectedRefreshRateHz_returnsZeroWhenNothingIsKnown() {
+        val refreshRate = DisplayRefreshRateController.resolveExpectedRefreshRateHz(
+            targetFpsLimit = 90,
+            currentDisplayRefreshRateHz = 0f,
+            currentDisplayModeId = null,
+            supportedModes = emptyList()
+        )
+
+        assertEquals(0f, refreshRate, 0.001f)
+    }
+
+    @Test
+    fun resolveExpectedRefreshRateHz_reportsUncappedTargetAsCurrentRate() {
+        val refreshRate = DisplayRefreshRateController.resolveExpectedRefreshRateHz(
+            targetFpsLimit = 0,
+            currentDisplayRefreshRateHz = 120f,
+            currentDisplayModeId = 1,
+            supportedModes = listOf(
+                mode(modeId = 1, width = 2400, height = 1080, refreshRateHz = 120f)
+            )
+        )
+
+        assertEquals(120f, refreshRate, 0.001f)
+    }
+
     private fun mode(
         modeId: Int,
         width: Int,

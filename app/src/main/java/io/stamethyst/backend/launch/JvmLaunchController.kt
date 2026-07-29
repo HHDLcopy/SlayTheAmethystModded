@@ -73,6 +73,7 @@ class JvmLaunchController(
             "amethyst.lwjgl.hot_loop_noop_trim",
             "amethyst.lwjgl.default_fbo_fast_rebind",
             "amethyst.lwjgl.egl_swap_interval_pacing",
+            "amethyst.gdx.active_refresh_rate",
             "amethyst.gdx.frame_profiler",
             "amethyst.gdx.gpu_resource_summary",
             "amethyst.gdx.gpu_resource_diag",

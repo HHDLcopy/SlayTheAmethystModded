@@ -12,6 +12,11 @@ class LauncherLogcatCaptureService : Service() {
         const val ACTION_STOP_AND_CLEAR_CAPTURE =
             "io.stamethyst.action.STOP_AND_CLEAR_LAUNCHER_LOGCAT_CAPTURE"
         private const val STOP_AFTER_NO_TRACKED_PROCESSES_MS = 2_000L
+
+        // The launcher capture tracks exactly one long-lived process (the launcher main process),
+        // so it does not need the fast child-PID discovery cadence the game capture relies on.
+        // Every refresh is a full getRunningAppProcesses() binder enumeration.
+        private const val TRACKED_PROCESS_REFRESH_INTERVAL_MS = 2_000L
     }
 
     private var captureWorker: PackageLogcatCaptureWorker? = null
@@ -62,7 +67,8 @@ class LauncherLogcatCaptureService : Service() {
                     processName == packageName
                 },
                 clearCaptureFilesOnStart = false,
-                stopWhenNoTrackedProcessesIdleMs = STOP_AFTER_NO_TRACKED_PROCESSES_MS
+                stopWhenNoTrackedProcessesIdleMs = STOP_AFTER_NO_TRACKED_PROCESSES_MS,
+                trackedProcessRefreshIntervalMs = TRACKED_PROCESS_REFRESH_INTERVAL_MS
             ),
             onCaptureFinished = { stopSelf() }
         ).also { worker ->

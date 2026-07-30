@@ -20,9 +20,15 @@ internal data class PackageLogcatCaptureConfig(
     val trackedProcessMatcher: (processName: String, packageName: String) -> Boolean,
     val clearCaptureFilesOnStart: Boolean,
     val stopWhenNoTrackedProcessesIdleMs: Long? = null,
+    // Each refresh runs a full ActivityManager.getRunningAppProcesses() binder enumeration, so the
+    // interval is a direct wakeup/binder cost multiplier for as long as the capture is alive.
+    // Only captures that must notice short-lived child PIDs need the fast default.
+    val trackedProcessRefreshIntervalMs: Long = DEFAULT_TRACKED_PROCESS_REFRESH_INTERVAL_MS,
     val maxBytesPerFile: Long = 768L * 1024L,
     val maxFiles: Int = 5
 )
+
+internal const val DEFAULT_TRACKED_PROCESS_REFRESH_INTERVAL_MS = 250L
 
 internal class PackageLogcatCaptureWorker(
     private val applicationContext: Context,
@@ -30,7 +36,6 @@ internal class PackageLogcatCaptureWorker(
     private val onCaptureFinished: () -> Unit
 ) {
     companion object {
-        private const val TRACKED_PROCESS_REFRESH_INTERVAL_MS = 250L
         private const val STALE_PID_GRACE_MS = 750L
         private const val FAILED_SESSION_RESTART_COOLDOWN_MS = 5_000L
 
@@ -168,7 +173,7 @@ internal class PackageLogcatCaptureWorker(
                         }
                     }
                 }
-                Thread.sleep(TRACKED_PROCESS_REFRESH_INTERVAL_MS)
+                Thread.sleep(config.trackedProcessRefreshIntervalMs)
             }
         } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()

@@ -49,15 +49,28 @@
 ### 1. 屏幕永不变暗（默认） `[待办]`
 `KEEP_SCREEN_ON_TIMEOUT_ALWAYS_MINUTES = 0`、`DEFAULT_KEEP_SCREEN_ON_TIMEOUT_MINUTES = KEEP_SCREEN_ON_TIMEOUT_ALWAYS_MINUTES`（`LauncherConfig.kt:240-241`），`0` 在 `keepScreenOnTimeoutMs()`（`:1105-1107`）映射为 `null`；`null` 时 `StsGameActivity.kt:537` 的 `if (timeoutMs != null && !bootOverlayKeepScreenOn)` 不成立，空闲 runnable 从不投递，`updateKeepScreenOnFlag()`（`:543-549`）因 `keepScreenOnActive` 恒为 true 而全程 `addFlags(FLAG_KEEP_SCREEN_ON)`。手机上屏幕通常是最大耗电项，也是面板/PMIC 发热主源。
 顺带一个小问题：`resetKeepScreenOnIdleTimer()` 在 `onTouchEvent`、`dispatchTouchEvent`、`onGenericMotionEvent`、`dispatchKeyEvent` 四处都被调用（`StsGameActivity.kt:607`、`:612`、`:617`、`:622`），而 `dispatchTouchEvent` 与 `onTouchEvent` 对同一手势都会触发，所以每个 `ACTION_MOVE` 会执行两次 `removeCallbacks` + `postDelayed`。当前默认（always）下 `postDelayed` 不会发生，只有重复的 `removeCallbacks`；一旦用户选了有限超时，双次投递就实际发生。
-### 2. 启动器 logcat 抓取默认开启，且整局游戏都在跑 `[待办]`
+### 2. 启动器 logcat 抓取默认开启，且整局游戏都在跑 `[已修复]`
 > 路径更正：这些文件在 `io/stamethyst/backend/diag/`（不是 `backend/diagnostics/`）。
 
-`DEFAULT_LAUNCHER_LOGCAT_CAPTURE_ENABLED = true`（`LauncherConfig.kt:303`），在 `onResume` 经 `syncLauncherLogcatCapture()` 启动（`LauncherActivity.kt:213` → `:410-415`）。游戏启动路径（`:284-287`）只操作另一个 `LogcatCaptureProcessClient`（游戏进程抓取），没有任何地方在开局时停掉启动器抓取。
-worker 循环每 **250 ms**（`PackageLogcatCaptureWorker.kt:33` 的 `TRACKED_PROCESS_REFRESH_INTERVAL_MS`，睡眠点 `:171`）做一次 `ActivityManager.getRunningAppProcesses()` 全量枚举，并常驻一个 `logcat` 子进程持续写滚动文件。空闲停止守卫失效：`trackedProcessMatcher` 的匹配条件是 `processName == packageName`（`LauncherLogcatCaptureService.kt:61-62`），而启动器主进程一直存活，所以 `stopWhenNoTrackedProcessesIdleMs`（`:65`）的计数永不归零。
-即 **每秒 4 次 binder 全进程枚举 + 常驻 logcat 管道 + 持续闪存写入，整局有效**。这是唯一一条既昂贵又默认开启的项。
-### 3. 隐藏的 EasyTier 浮层每秒一次 binder + 磁盘 `[待办]`
-`InGameEasyTierOverlayController.kt:143-148` 的 1 秒轮询 `LaunchedEffect` 位于可见性提前返回（`:179-181` 的 `if (!visible || kickDialog != null) return`）**之前**。`ComposeView` 从创建起就以 `visibility = View.GONE` 挂在窗口上（`:52-53`），GONE 但 attached 的 `ComposeView` 仍会组合，所以这个循环整局运行。每次 `viewModel.syncEasyTierUi(activity)`（`:145`）会读 EasyTier 状态文件，并在本地未标记运行时调用 `ActivityManager.getRunningServices(Int.MAX_VALUE)`。
-**为一个隐藏对话框每秒做一次全量服务枚举**，相对其价值这是最浪费的一项。旁边 5 秒的房间刷新（`:192-201`）反而正确地放在了可见性判断之后。
+原始问题：`DEFAULT_LAUNCHER_LOGCAT_CAPTURE_ENABLED = true`（`LauncherConfig.kt:303`），在 `onResume` 经 `syncLauncherLogcatCapture()` 启动，游戏启动路径只操作另一个 `LogcatCaptureProcessClient`（游戏进程抓取），没有任何地方在开局时停掉启动器抓取。worker 循环每 250 ms 做一次 `ActivityManager.getRunningAppProcesses()` 全量枚举，并常驻一个 `logcat` 子进程持续写滚动文件。空闲停止守卫失效：`trackedProcessMatcher` 的匹配条件是 `processName == packageName`，而启动器主进程一直存活，所以 `stopWhenNoTrackedProcessesIdleMs` 的计数永不归零。净效果是每秒 4 次 binder 全进程枚举 + 常驻 logcat 管道 + 持续闪存写入，整局有效。
+
+**当前状态**：两处独立修复。
+
+其一，开局停止。新增 `LauncherActivity.stopLauncherLogcatCaptureForGameLaunch()`（`LauncherActivity.kt:418-438`），两条启动路径都调用：`MainScreenViewModel.kt:3539-3544`（常规启动）与 `LauncherActivity.kt:294`（直连调试启动）。用 `stopCapture` 而非 `stopAndClear`，已落盘的启动器日志保留给反馈包。游戏会话自己的 `LogcatCaptureProcessClient` 用 `isTrackedPackageProcessName`（匹配 `pkg` 与 `pkg:*`），整局仍然覆盖启动器进程，没有采集空档。另加 `restoreLauncherLogcatCaptureAfterFailedGameLaunch()`（`:440-446`）用于启动失败路径——那种情况下启动器从未被 pause，`onResume` 不会触发。
+
+其二，轮询降频。`TRACKED_PROCESS_REFRESH_INTERVAL_MS` 从 `PackageLogcatCaptureWorker` 的 companion 常量下移为 `PackageLogcatCaptureConfig` 字段（`PackageLogcatCaptureWorker.kt:22-32`），默认值仍为 250 ms 以保持游戏抓取行为不变；`LauncherLogcatCaptureService.kt:14-20` 覆盖为 2 s。启动器抓取只跟踪一个长生命周期进程，快速子 PID 发现对它没有价值。
+
+两项合计：从整局每秒 4 次 binder 枚举，降到仅启动器前台时每秒 0.5 次。
+
+`processName == packageName` 匹配条件**保持原样**——放宽它会让启动器抓取与游戏抓取范围重叠，停止抓取是更直接的修法。
+### 3. 隐藏的 EasyTier 浮层每秒一次 binder + 磁盘 `[已修复]`
+原始问题：`InGameEasyTierOverlayController.kt` 的 1 秒轮询 `LaunchedEffect` 位于可见性提前返回（`if (!visible || kickDialog != null) return`）**之前**。`ComposeView` 从创建起就以 `visibility = View.GONE` 挂在窗口上，GONE 但 attached 的 `ComposeView` 仍会组合，所以这个循环整局运行。每次 `viewModel.syncEasyTierUi(activity)` 会读 EasyTier 状态文件，并在本地未标记运行时调用 `ActivityManager.getRunningServices(Int.MAX_VALUE)`。
+
+**当前状态**：没有按原建议"移到可见性判断之后"，而是**整个轮询循环删除**（`InGameEasyTierOverlayController.kt:143-151`），只留一次 `syncEasyTierUi` 调用；`EASY_TIER_KICK_STATE_POLL_INTERVAL_MS` 常量一并删除。
+
+理由是数据流复核显示轮询根本不必要：`EasyTierProcessService.broadcastSnapshot`（`:152-168`）已经把每次状态变化作为 `ACTION_CONNECTION_EVENT` 广播推出，踢出路径也在内（`handleTerminalSessionState` `:789-835` → `deliverSnapshot` `:195-209`）。ViewModel 侧 `ensureEasyTierProcessEventReceiverRegistered` 注册了接收器，`handleEasyTierProcessEvent` → `publishEasyTierIndicator` → `maybeQueueEasyTierKickDialog` 负责弹窗。保留的那一次调用同时承担两件事：注册接收器，以及覆盖"踢出发生在浮层尚未组合时"的冷启动场景。
+
+净效果：整局每秒一次状态文件读取加一次 `getRunningServices(Int.MAX_VALUE)` binder 调用被完全消除。旁边 5 秒的房间刷新（`:192-201` 附近）原本就正确地放在可见性判断之后，未改动。
 ### 4. `:game` 进程主线程每秒约 38 次文件系统调用 `[待办]`
 从 `onRuntimeReady` 启动（`GameSessionCoordinator.kt:195-198`），仅在 `onDestroy` 停止（`:243-246`）；`onPause` 不停，后台也跑：
 
@@ -130,18 +143,24 @@ worker 循环每 **250 ms**（`PackageLogcatCaptureWorker.kt:33` 的 `TRACKED_PR
 - `GameSessionCoordinator.foregroundAudioRestoreRunnables`（`:92`）移除路径**完整**：`scheduleForegroundAudioRestoreRetries()`（`:892-904`）第一行就调 `cancelForegroundAudioRestoreRetries()`，后者（`:906-914`）遍历 `removeCallbacks` 后 `clear()`；另有 6 处调用点（`:250`、`:281`、`:289`、`:872`、`:893`、`:1186`）覆盖失焦、后台、销毁路径。不是泄漏。
 ---
 ## 建议的处理顺序
-按预期收益排序（已按本轮复核结果重排，删掉已完成项）：
-1. **重新实现主循环属性提升**（第一部分第 2 条）。原先的 `lwjgl_hot_loop_noop_trim` 开关已被删除，需要直接把属性解析结果缓存为静态字段，注意 `shouldForceDefaultFramebuffer()` 必须保留 `isGLESContextActive()` 的运行时查询。无行为风险。
-2. **游戏启动时停掉启动器 logcat 抓取**，或修正 `LauncherLogcatCaptureService.kt:61-62` 的匹配条件让空闲守卫能生效。这是唯一一条既昂贵（每秒 4 次全进程 binder 枚举 + 常驻 logcat 管道 + 闪存写入）又默认开启的项，收益最高。
-3. **把 EasyTier 浮层的 1 秒轮询移到可见性判断之后**（`InGameEasyTierOverlayController.kt:143-148` 移到 `:181` 之后）。单行改动，消除每秒一次 `getRunningServices(Int.MAX_VALUE)`。
-4. **给 `GLTexture.notifyBeforeTextureAccess` 里的 `nanoTime()` 加门控**（`GLTexture.java:930`），仅在 `TEXTURE_RESIDENCY_MANAGER_ENABLED` 时才需要 `lastAccessTimeNanos`；同时给 `SpriteBatch` 的 `FRAME_FLUSHES` / `FRAME_TEXTURE_SWITCHES` 自增加同样门控（其唯一读取点在帧分析器分支内）。这是每帧数千次的量级。
-5. **`-XX:+DisableExplicitGC` 改为条件化**：`StsLaunchSpec.kt:169` 加 `if (!ramSaverEnabled)`。`ramSaverEnabled` 已在 `:126` 算好，且 ram-saver 默认开启，所以默认配置下这个冲突现在就在发生。
-6. **让 `STS-RuntimeHeap` 只在性能浮层开启时启动**（`JvmLaunchController.kt:254` 加条件，与 `StsLaunchSpec.kt:707-708` 的写入条件对齐），`STS-LatestLogcat` 同理按 `mirrorJvmLogsToLogcat` 门控（`:252`）。
-7. **`-Xmx` 按设备内存缩放**，在 `LauncherConfig.kt:1157` 的 `readJvmHeapMaxMb` 无存储值时读一次 `MemoryInfo.totalMem`，clamp 在现有 256–2048 区间内。可以顺手复用 `resolveDefaultGpuResourceGuardianMode(totalMemoryBytes)`（`:1586`）那个已存在但被废弃的签名形状。
-8. **摊销 `Hitbox.registeredHitboxes` 的 O(n) 扫描**。注意这一条已从"内存泄漏"改判为"输入延迟"：默认配置下修剪是开启的，问题是每次点击都要 O(n) 扫描。可在 `beginPreClickHoverRefreshFrame()`（`Hitbox.java:69-72`）里按帧计数分摊压缩，把点击路径的扫描降为增量。
-9. **缓存 `textureDataUseMipMaps` 的反射**（`LwjglApplication.java:1636`、`:1274`），或改为 `SpriteBatch.java:271-279` 那样的直接类型化调用。
-10. 复核 `-XX:TieredStopAtLevel=2`（`StsLaunchSpec.kt:43`）与 `-XX:ActiveProcessorCount=3`（`:42`）是否仍有必要，若是稳定性妥协请在代码里注明原因。
-11. 屏幕常亮默认值（第二部分第 1 条）属于产品决策而非 bug，若要改需要产品侧同意；顺手可以把 `dispatchTouchEvent`/`onTouchEvent` 的重复 `resetKeepScreenOnIdleTimer()` 去掉一处。
+按预期收益排序。已完成项移到下方"已完成"小节，保留供对照。
+
+1. **给纹理绑定路径的无条件计时加门控**（第一部分第 3 条）。`GLTexture.notifyBeforeTextureAccess` 里的 `nanoTime()`（`GLTexture.java:930`）仅在 `TEXTURE_RESIDENCY_MANAGER_ENABLED` 时才需要 `lastAccessTimeNanos`；同时给 `SpriteBatch` 的 `FRAME_FLUSHES`（`SpriteBatch.java:1141`）/ `FRAME_TEXTURE_SWITCHES`（`:1238`）自增加同样门控，其唯一读取点在帧分析器分支内。**这是剩余项里量级最大的一条**——每帧数千次，全部服务于默认关闭的功能。
+2. **重新实现主循环属性提升**（第一部分第 2 条）。原先的 `lwjgl_hot_loop_noop_trim` 开关已被删除，需要直接把属性解析结果缓存为静态字段。注意 `shouldForceDefaultFramebuffer()` 必须保留 `isGLESContextActive()` 的运行时查询，不能整体提为 `static final`。每帧 9 次 `Hashtable` synchronized 查表，无行为风险。
+3. **`-XX:+DisableExplicitGC` 改为条件化**：`StsLaunchSpec.kt:169` 加 `if (!ramSaverEnabled)`。`ramSaverEnabled` 已在 `:126` 算好，且 ram-saver 默认开启（`LauncherConfig.kt:296`），所以默认配置下这个冲突现在就在发生——ram-saver 的原生纹理释放路径被拖慢。改动面小、收益明确。
+4. **让 `STS-RuntimeHeap` 只在性能浮层开启时启动**（`JvmLaunchController.kt:254` 加条件，与 `StsLaunchSpec.kt:707-708` 的写入条件对齐），`STS-LatestLogcat` 同理按 `mirrorJvmLogsToLogcat` 门控（`:252`）。前者默认配置下是纯空转唤醒，1 次/秒读一个永远不存在的文件。
+5. **`-Xmx` 按设备内存缩放**，在 `LauncherConfig.kt:1157` 的 `readJvmHeapMaxMb` 无存储值时读一次 `MemoryInfo.totalMem`，clamp 在现有 256–2048 区间内。可以顺手复用 `resolveDefaultGpuResourceGuardianMode(totalMemoryBytes)`（`:1586`）那个已存在但被废弃的签名形状。
+6. **摊销 `Hitbox.registeredHitboxes` 的 O(n) 扫描**。注意这一条已从"内存泄漏"改判为"输入延迟"：默认配置下修剪是开启的，问题是每次点击都要 O(n) 扫描。可在 `beginPreClickHoverRefreshFrame()`（`Hitbox.java:69-72`）里按帧计数分摊压缩，把点击路径的扫描降为增量。
+7. **缓存 `textureDataUseMipMaps` 的反射**（`LwjglApplication.java:1636`、`:1274`），或改为 `SpriteBatch.java:271-279` 那样的直接类型化调用。非每帧路径，收益有限。
+8. 复核 `-XX:TieredStopAtLevel=2`（`StsLaunchSpec.kt:43`）与 `-XX:ActiveProcessorCount=3`（`:42`）是否仍有必要，若是稳定性妥协请在代码里注明原因。**这条需要设备实测才能定，不适合纯代码改动。**
+9. `:game` 进程主线程的 5 个高频文件轮询（第二部分第 4 条，合计约 38 次/秒）。可以考虑合并为单个 tick 或改为文件观察者，但这是接口重构而非局部修复，改动面明显大于前面各项。
+10. 屏幕常亮默认值（第二部分第 1 条）属于产品决策而非 bug，若要改需要产品侧同意；顺手可以把 `dispatchTouchEvent`/`onTouchEvent` 的重复 `resetKeepScreenOnIdleTimer()` 去掉一处。
+11. 陀螺仪注册（第二部分第 6 条）与 Presence 心跳缺少 stop 路径（第二部分第 7 条）。前者需要先确认是否真有功能消费数据，后者需要确认长连接是产品意图还是遗漏。两条都需要先定性再动手。
+
+### 已完成
+- 帧同步：删除开关、保留 sleep/park 最优路径（第一部分第 1 条）
+- 启动器 logcat 抓取：开局停止 + 轮询 250 ms → 2 s（第二部分第 2 条）
+- EasyTier 隐藏浮层：删除 1 秒轮询，改用已有广播（第二部分第 3 条）
 ---
 两点说明：以上全部来自源码阅读，我没有在设备上运行过，所以没有实测的 mA 或核温数据；排序依据是唤醒频率、系统调用/binder 成本与屏幕/射频行为。唯一有实测数据的是第一部分第 1 条（已修复），数据来自代码注释里记录的对比。
 

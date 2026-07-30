@@ -140,11 +140,14 @@ private fun InGameEasyTierDialogHost(
         )
     }
 
+    // Kick/disconnect events arrive as ACTION_CONNECTION_EVENT broadcasts from the :easytier
+    // process, so this only needs to register the receiver once instead of polling. The overlay
+    // stays attached with visibility=GONE for the whole session, and a GONE-but-attached
+    // ComposeView still composes, so a loop here would run for the entire session and read the
+    // EasyTier state file (plus a getRunningServices binder call while a session is active)
+    // every second for a dialog that is almost never shown.
     LaunchedEffect(viewModel, activity) {
-        while (true) {
-            viewModel.syncEasyTierUi(activity)
-            delay(EASY_TIER_KICK_STATE_POLL_INTERVAL_MS)
-        }
+        viewModel.syncEasyTierUi(activity)
     }
 
     val uiState = viewModel.uiState
@@ -262,4 +265,3 @@ private fun InGameEasyTierDialogHost(
 }
 
 private const val EASY_TIER_ROOM_AUTO_REFRESH_INTERVAL_MS = 5_000L
-private const val EASY_TIER_KICK_STATE_POLL_INTERVAL_MS = 1_000L

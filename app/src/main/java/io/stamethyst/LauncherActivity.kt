@@ -291,6 +291,7 @@ class LauncherActivity : AppCompatActivity() {
                         return@runOnUiThread
                     }
                     markBackgroundForGameLaunch()
+                    stopLauncherLogcatCaptureForGameLaunch()
                     StartupTraceEvents.append(
                         this,
                         "direct_debug_launch_game_activity",
@@ -413,6 +414,30 @@ class LauncherActivity : AppCompatActivity() {
         } else {
             LauncherLogcatCaptureProcessClient.stopAndClearCapture(this)
         }
+    }
+
+    /**
+     * The launcher capture's idle-stop guard tracks the launcher main process, which stays alive for
+     * the whole game session, so the guard can never fire on its own. Left running it costs a
+     * resident `logcat` child process plus a periodic `getRunningAppProcesses()` binder enumeration
+     * for the entire time the player is in game. The game session starts its own capture
+     * ([LogcatCaptureProcessClient]) that already covers every app process including the launcher,
+     * so keeping the launcher capture alive during a session is redundant.
+     *
+     * Uses stop (not stop-and-clear) so launcher logs already on disk stay available for feedback
+     * bundles. [syncLauncherLogcatCapture] restarts it from `onResume` when the launcher returns to
+     * the foreground.
+     */
+    fun stopLauncherLogcatCaptureForGameLaunch() {
+        LauncherLogcatCaptureProcessClient.stopCapture(this)
+    }
+
+    /**
+     * Restores the launcher capture when a launch attempt aborts before the launcher is backgrounded.
+     * `onResume` never fires in that case because the launcher was never paused.
+     */
+    fun restoreLauncherLogcatCaptureAfterFailedGameLaunch() {
+        syncLauncherLogcatCapture()
     }
 
     private fun maybeScheduleGameReturnAnalysis() {

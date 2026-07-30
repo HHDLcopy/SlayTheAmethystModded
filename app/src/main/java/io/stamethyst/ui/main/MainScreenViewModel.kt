@@ -3536,7 +3536,12 @@ class MainScreenViewModel : ViewModel() {
         pendingAutoplayChoiceDelayMs = 0L
         pendingCardObtainEffectOwnershipCompatEnabled = true
         try {
-            (host as? LauncherActivity)?.markBackgroundForGameLaunch()
+            (host as? LauncherActivity)?.let { launcher ->
+                launcher.markBackgroundForGameLaunch()
+                // The game session capture below already covers every app process, and the launcher
+                // capture's idle guard can never fire while the launcher process is alive.
+                launcher.stopLauncherLogcatCaptureForGameLaunch()
+            }
             StsGameActivity.launch(
                 host,
                 launchMode,
@@ -3553,7 +3558,10 @@ class MainScreenViewModel : ViewModel() {
             )
             clearNewlyImportedHighlights(host)
         } catch (error: Throwable) {
-            (host as? LauncherActivity)?.clearBackgroundForGameLaunch()
+            (host as? LauncherActivity)?.let { launcher ->
+                launcher.clearBackgroundForGameLaunch()
+                launcher.restoreLauncherLogcatCaptureAfterFailedGameLaunch()
+            }
             LogcatCaptureProcessClient.stopCapture(host)
             GameLaunchReturnTracker.clearPendingGameLaunch(host)
             _effects.tryEmit(

@@ -107,10 +107,14 @@
 
 而且 `resolveJvmHeapStartMb` 把起始堆 clamp 到 `DEFAULT_JVM_HEAP_MAX_MB`（`:1152-1155`），所以**默认设置下 `Xms == Xmx == 512M`**，`StsLaunchSpec.kt:160-162` 那段"保守起始堆"注释仅在用户手动调高滑块时才成立。
 启动器自己知道 512 不够：`JvmLaunchController.kt:857-871` 的 `buildHeapPressureNotice()` 在峰值占用超过 `HEAP_PRESSURE_WARNING_RATIO` 后建议 +`JVM_HEAP_STEP_MB`。那是事后提示，不是自适应。
-### 2. `-XX:+DisableExplicitGC` 让 ram-saver 模组的 GC 策略完全失效 `[待办]`
-`StsLaunchSpec.kt:169` 无条件添加 `-XX:+DisableExplicitGC`。
-而 `mods/ram-saver` 的 `AggressiveGC.java:51` 在 BaseMod 生命周期钩子里调 `System.gc()` — 全部变成 no-op。ram-saver 整个设计基于弱引用 + `ReferenceQueue`，它的释放路径只在收集器真正清除并入队弱引用后才运行，抑制显式 GC 会延迟清除，进而延迟释放**原生**纹理内存。
-`ramSaverEnabled` 在 `StsLaunchSpec.kt:126` 已经算出来了（`isMtsLaunchMode(launchMode) && ModManager.isRamSaverEnabled(context)`），并且已经用于其他多处决策（`:540`、`:557`、`:586`、`:624`，以及 `:806-824` 三个 resolver）。这里应该把 `DisableExplicitGC` 改为条件添加。注意 `DEFAULT_RAM_SAVER_ENABLED = true`（`LauncherConfig.kt:296` 附近），即默认冲突就存在。
+### 2. `-XX:+DisableExplicitGC` 让 ram-saver 模组的 GC 策略完全失效 `[已修复]`
+原始问题：`StsLaunchSpec.kt:169` 无条件添加 `-XX:+DisableExplicitGC`，而 `mods/ram-saver` 的 `AggressiveGC.java:51` 在 BaseMod / FontHelper 生命周期钩子里调 `System.gc()` — 全部变成 no-op。ram-saver 整个设计基于弱引用 + `ReferenceQueue`（`RamSaver.java:225` 的队列，`:132-146` 的 `update` 排空并 `dispose`），它的释放路径只在收集器真正清除并入队弱引用后才运行，抑制显式 GC 会延迟清除，进而延迟释放**原生**纹理内存。而 `DEFAULT_RAM_SAVER_ENABLED = true`（`LauncherConfig.kt:296`），即默认冲突就存在。
+
+**当前状态**：改为条件添加。新增 `resolveDisableExplicitGcEnabled(ramSaverEnabled)`（`StsLaunchSpec.kt:812-827`，返回 `!ramSaverEnabled`），调用点 `:169-171`。与相邻三个 ram-saver 相关 resolver（`resolveTexturePressureDownscaleEnabled`、`resolveGpuResourceGuardianModeForLaunch`、`resolveFboPressureDownscaleEnabled`）同一形状，便于集中审阅这类互斥策略。
+
+保留非 ram-saver 场景的抑制是有意的：全仓库 grep 确认 `System.gc()` 只有 `AggressiveGC.java:51` 一处，所以 ram-saver 关闭时该标志仍可防止第三方模组在帧中强制 full GC。
+
+`mods/ram-saver/README.md` 第 7 条已按仓库规则补充说明该 patch 对启动器侧标志的依赖。
 ### 3. 内存预算不自洽，且回收机制默认全关 `[待办]`
 - Java 堆 512 MB
 - 纹理常驻软预算 768 MB，硬下限 512 MB（`GLTexture.java:177-181`：`Math.max(512MB, readLongSystemProperty(..., 768MB, ...))`）
@@ -152,21 +156,21 @@
 按预期收益排序。已完成项移到下方"已完成"小节，保留供对照。
 
 1. **重新实现主循环属性提升**（第一部分第 2 条）。原先的 `lwjgl_hot_loop_noop_trim` 开关已被删除，需要直接把属性解析结果缓存为静态字段。注意 `shouldForceDefaultFramebuffer()` 必须保留 `isGLESContextActive()` 的运行时查询，不能整体提为 `static final`。每帧 9 次 `Hashtable` synchronized 查表，无行为风险。
-2. **`-XX:+DisableExplicitGC` 改为条件化**：`StsLaunchSpec.kt:169` 加 `if (!ramSaverEnabled)`。`ramSaverEnabled` 已在 `:126` 算好，且 ram-saver 默认开启（`LauncherConfig.kt:296`），所以默认配置下这个冲突现在就在发生——ram-saver 的原生纹理释放路径被拖慢。改动面小、收益明确。
-3. **让 `STS-RuntimeHeap` 只在性能浮层开启时启动**（`JvmLaunchController.kt:254` 加条件，与 `StsLaunchSpec.kt:707-708` 的写入条件对齐），`STS-LatestLogcat` 同理按 `mirrorJvmLogsToLogcat` 门控（`:252`）。前者默认配置下是纯空转唤醒，1 次/秒读一个永远不存在的文件。
-4. **`-Xmx` 按设备内存缩放**，在 `LauncherConfig.kt:1157` 的 `readJvmHeapMaxMb` 无存储值时读一次 `MemoryInfo.totalMem`，clamp 在现有 256–2048 区间内。可以顺手复用 `resolveDefaultGpuResourceGuardianMode(totalMemoryBytes)`（`:1586`）那个已存在但被废弃的签名形状。
-5. **摊销 `Hitbox.registeredHitboxes` 的 O(n) 扫描**。注意这一条已从"内存泄漏"改判为"输入延迟"：默认配置下修剪是开启的，问题是每次点击都要 O(n) 扫描。可在 `beginPreClickHoverRefreshFrame()`（`Hitbox.java:69-72`）里按帧计数分摊压缩，把点击路径的扫描降为增量。
-6. **缓存 `textureDataUseMipMaps` 的反射**（`LwjglApplication.java:1636`、`:1274`），或改为 `SpriteBatch.java:271-279` 那样的直接类型化调用。非每帧路径，收益有限。
-7. 复核 `-XX:TieredStopAtLevel=2`（`StsLaunchSpec.kt:43`）与 `-XX:ActiveProcessorCount=3`（`:42`）是否仍有必要，若是稳定性妥协请在代码里注明原因。**这条需要设备实测才能定，不适合纯代码改动。**
-8. `:game` 进程主线程的 5 个高频文件轮询（第二部分第 4 条，合计约 38 次/秒）。可以考虑合并为单个 tick 或改为文件观察者，但这是接口重构而非局部修复，改动面明显大于前面各项。
-9. 屏幕常亮默认值（第二部分第 1 条）属于产品决策而非 bug，若要改需要产品侧同意；顺手可以把 `dispatchTouchEvent`/`onTouchEvent` 的重复 `resetKeepScreenOnIdleTimer()` 去掉一处。
-10. 陀螺仪注册（第二部分第 6 条）与 Presence 心跳缺少 stop 路径（第二部分第 7 条）。前者需要先确认是否真有功能消费数据，后者需要确认长连接是产品意图还是遗漏。两条都需要先定性再动手。
+2. **让 `STS-RuntimeHeap` 只在性能浮层开启时启动**（`JvmLaunchController.kt:254` 加条件，与 `StsLaunchSpec.kt:707-708` 的写入条件对齐），`STS-LatestLogcat` 同理按 `mirrorJvmLogsToLogcat` 门控（`:252`）。前者默认配置下是纯空转唤醒，1 次/秒读一个永远不存在的文件。
+3. **`-Xmx` 按设备内存缩放**，在 `LauncherConfig.kt:1157` 的 `readJvmHeapMaxMb` 无存储值时读一次 `MemoryInfo.totalMem`，clamp 在现有 256–2048 区间内。可以顺手复用 `resolveDefaultGpuResourceGuardianMode(totalMemoryBytes)`（`:1586`）那个已存在但被废弃的签名形状。
+4. **摊销 `Hitbox.registeredHitboxes` 的 O(n) 扫描**。注意这一条已从"内存泄漏"改判为"输入延迟"：默认配置下修剪是开启的，问题是每次点击都要 O(n) 扫描。可在 `beginPreClickHoverRefreshFrame()`（`Hitbox.java:69-72`）里按帧计数分摊压缩，把点击路径的扫描降为增量。
+5. **缓存 `textureDataUseMipMaps` 的反射**（`LwjglApplication.java:1636`、`:1274`），或改为 `SpriteBatch.java:271-279` 那样的直接类型化调用。非每帧路径，收益有限。
+6. 复核 `-XX:TieredStopAtLevel=2`（`StsLaunchSpec.kt:43`）与 `-XX:ActiveProcessorCount=3`（`:42`）是否仍有必要，若是稳定性妥协请在代码里注明原因。**这条需要设备实测才能定，不适合纯代码改动。**
+7. `:game` 进程主线程的 5 个高频文件轮询（第二部分第 4 条，合计约 38 次/秒）。可以考虑合并为单个 tick 或改为文件观察者，但这是接口重构而非局部修复，改动面明显大于前面各项。
+8. 屏幕常亮默认值（第二部分第 1 条）属于产品决策而非 bug，若要改需要产品侧同意；顺手可以把 `dispatchTouchEvent`/`onTouchEvent` 的重复 `resetKeepScreenOnIdleTimer()` 去掉一处。
+9. 陀螺仪注册（第二部分第 6 条）与 Presence 心跳缺少 stop 路径（第二部分第 7 条）。前者需要先确认是否真有功能消费数据，后者需要确认长连接是产品意图还是遗漏。两条都需要先定性再动手。
 
 ### 已完成
 - 帧同步：删除开关、保留 sleep/park 最优路径（第一部分第 1 条）
 - 纹理绑定路径无条件计时：`GLTexture` 与 `SpriteBatch` 两侧各加 `static final` 门控（第一部分第 3 条）
 - 启动器 logcat 抓取：开局停止 + 轮询 250 ms → 2 s（第二部分第 2 条）
 - EasyTier 隐藏浮层：删除 1 秒轮询，改用已有广播（第二部分第 3 条）
+- `-XX:+DisableExplicitGC`：ram-saver 启用时不再添加（第三部分第 2 条）
 ---
 两点说明：以上全部来自源码阅读，我没有在设备上运行过，所以没有实测的 mA 或核温数据；排序依据是唤醒频率、系统调用/binder 成本与屏幕/射频行为。唯一有实测数据的是第一部分第 1 条（已修复），数据来自代码注释里记录的对比。
 

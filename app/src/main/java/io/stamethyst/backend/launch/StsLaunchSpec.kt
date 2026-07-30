@@ -166,7 +166,9 @@ object StsLaunchSpec {
         args.add(
             "-XX:ActiveProcessorCount=$DEFAULT_ACTIVE_PROCESSOR_COUNT"
         )
-        args.add("-XX:+DisableExplicitGC")
+        if (resolveDisableExplicitGcEnabled(ramSaverEnabled = ramSaverEnabled)) {
+            args.add("-XX:+DisableExplicitGC")
+        }
         if (is64BitRuntime) {
             // Reduce periodic frame hitching from stop-the-world pauses.
             args.add("-XX:+UseG1GC")
@@ -807,6 +809,22 @@ object StsLaunchSpec {
         configuredEnabled: Boolean
     ): Boolean {
         return !ramSaverEnabled && configuredEnabled
+    }
+
+    /**
+     * Ram Saver's release path depends on the collector actually clearing and enqueuing its weak
+     * references: `RamSaver.update` drains a [java.lang.ref.ReferenceQueue] and only disposes the
+     * backing texture for entries it finds there. Its `AggressiveGC` patch calls `System.gc()` from
+     * BaseMod/FontHelper lifecycle points to make that happen promptly after startup work has made
+     * a batch of assets collectible. `-XX:+DisableExplicitGC` turns those calls into no-ops, which
+     * delays reference clearing and therefore delays freeing native texture memory — the opposite of
+     * what Ram Saver is installed to do.
+     *
+     * Without Ram Saver nothing in the app calls `System.gc()`, so suppressing explicit GC still
+     * protects against third-party mods forcing full collections mid-frame.
+     */
+    internal fun resolveDisableExplicitGcEnabled(ramSaverEnabled: Boolean): Boolean {
+        return !ramSaverEnabled
     }
 
     internal fun resolveGpuResourceGuardianModeForLaunch(

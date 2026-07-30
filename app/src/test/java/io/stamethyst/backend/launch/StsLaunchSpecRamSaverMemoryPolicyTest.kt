@@ -35,6 +35,22 @@ class StsLaunchSpecRamSaverMemoryPolicyTest {
     }
 
     @Test
+    fun resolveDisableExplicitGcEnabled_allowsExplicitGcWhenRamSaverEnabled() {
+        // Ram Saver's AggressiveGC patch needs System.gc() to clear weak references so the
+        // ReferenceQueue drain in RamSaver.update can dispose the backing native textures.
+        assertFalse(
+            StsLaunchSpec.resolveDisableExplicitGcEnabled(ramSaverEnabled = true)
+        )
+    }
+
+    @Test
+    fun resolveDisableExplicitGcEnabled_suppressesExplicitGcWithoutRamSaver() {
+        assertTrue(
+            StsLaunchSpec.resolveDisableExplicitGcEnabled(ramSaverEnabled = false)
+        )
+    }
+
+    @Test
     fun resolveGpuResourceGuardianModeForLaunch_disablesWhenRamSaverEnabled() {
         assertEquals(
             GpuResourceGuardianMode.OFF,

@@ -168,6 +168,14 @@ public abstract class GLTexture implements Disposable {
 		"amethyst.gdx.texture_residency_manager";
 	private static final boolean TEXTURE_RESIDENCY_MANAGER_ENABLED =
 		readBooleanSystemProperty(TEXTURE_RESIDENCY_MANAGER_PROP, false);
+	private static final String GPU_RESOURCE_GUARDIAN_MODE_PROP = "amethyst.gdx.gpu_resource_guardian";
+	// Per-access idle tracking (lastAccessFrame/lastAccessTimeNanos/lastUseReason) is only ever read by
+	// reclaim eligibility checks: resolveTextureReusableProtectReason via getIdleDurationNanos, and
+	// compareResidencyCandidates. Both reclaim owners can be disabled, and bind() is a per-sprite hot
+	// path, so writing a System.nanoTime() sample on every bind costs thousands of calls per frame for
+	// data nothing reads. Resolve once at class init instead of branching on a property read per bind.
+	private static final boolean TEXTURE_IDLE_TRACKING_ENABLED =
+		TEXTURE_RESIDENCY_MANAGER_ENABLED || isGpuResourceGuardianEnabled();
 	private static final String TEXTURE_RESIDENCY_SKIP_FOR_RAM_SAVER_PROP =
 		"amethyst.gdx.texture_residency_skip_for_ramsaver";
 	private static final boolean TEXTURE_RESIDENCY_SKIP_FOR_RAM_SAVER =
@@ -926,6 +934,8 @@ public abstract class GLTexture implements Disposable {
 		if (frameBufferOwner != null) {
 			frameBufferOwner.onExternalColorTextureAccess(reason);
 		}
+		// Skipped entirely when no reclaim owner is active; see TEXTURE_IDLE_TRACKING_ENABLED.
+		if (!TEXTURE_IDLE_TRACKING_ENABLED) return;
 		lastAccessFrame = currentFrameId >= 0L ? currentFrameId : lastAccessFrame;
 		lastAccessTimeNanos = nowMonotonicNanos();
 		lastUseReason = reason == null || reason.length() == 0 ? "unknown" : reason;
@@ -2891,6 +2901,15 @@ public abstract class GLTexture implements Disposable {
 			return 1L;
 		}
 		return 4L;
+	}
+
+	/** Mirrors GpuResourceGuardian.Mode.fromProperty: any value other than an explicit "off" enables a
+	 * reclaim mode, and an unset or unrecognized value falls back to "safe" (enabled). Read directly
+	 * instead of calling into GpuResourceGuardian so class init order stays independent. */
+	private static boolean isGpuResourceGuardianEnabled () {
+		String configured = System.getProperty(GPU_RESOURCE_GUARDIAN_MODE_PROP);
+		if (configured == null) return true;
+		return !"off".equals(configured.trim().toLowerCase());
 	}
 
 	private static boolean readBooleanSystemProperty (String key, boolean defaultValue) {

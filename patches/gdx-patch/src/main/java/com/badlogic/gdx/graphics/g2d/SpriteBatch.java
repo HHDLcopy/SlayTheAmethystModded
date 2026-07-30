@@ -48,6 +48,12 @@ public class SpriteBatch implements Batch {
 		readBooleanProperty(GLOBAL_ATLAS_FILTER_COMPAT_PROP, true);
 	private static final boolean GLOBAL_TEXTURE_COMPAT_VERBOSE_ENABLED =
 		readBooleanProperty(GLOBAL_TEXTURE_COMPAT_VERBOSE_PROP, false);
+	private static final String FRAME_PROFILER_ENABLED_PROP = "amethyst.gdx.frame_profiler";
+	// consumeFrameDiagnostics() is only called from LwjglApplication's frame profiler branch, so with
+	// the profiler off these counters are written and never read. switchTexture/flush run thousands of
+	// times per frame in StS, making the atomic increments pure overhead in the default configuration.
+	private static final boolean FRAME_DIAGNOSTICS_ENABLED =
+		readBooleanProperty(FRAME_PROFILER_ENABLED_PROP, false);
 	private static final AtomicInteger FRAME_FLUSHES = new AtomicInteger();
 	private static final AtomicInteger FRAME_TEXTURE_SWITCHES = new AtomicInteger();
 	private static final AtomicInteger FRAME_MAX_SPRITES_IN_BATCH = new AtomicInteger();
@@ -84,6 +90,9 @@ public class SpriteBatch implements Batch {
 	private int compatSkippedTotal;
 
 	public static String consumeFrameDiagnostics () {
+		if (!FRAME_DIAGNOSTICS_ENABLED) {
+			return "spriteFlushes=disabled textureSwitches=disabled maxSpritesInBatch=disabled";
+		}
 		return "spriteFlushes=" + FRAME_FLUSHES.getAndSet(0)
 			+ " textureSwitches=" + FRAME_TEXTURE_SWITCHES.getAndSet(0)
 			+ " maxSpritesInBatch=" + FRAME_MAX_SPRITES_IN_BATCH.getAndSet(0);
@@ -1138,8 +1147,10 @@ public class SpriteBatch implements Batch {
 		totalRenderCalls++;
 		int spritesInBatch = idx / 20;
 		if (spritesInBatch > maxSpritesInBatch) maxSpritesInBatch = spritesInBatch;
-		FRAME_FLUSHES.incrementAndGet();
-		updateFrameMaxSpritesInBatch(spritesInBatch);
+		if (FRAME_DIAGNOSTICS_ENABLED) {
+			FRAME_FLUSHES.incrementAndGet();
+			updateFrameMaxSpritesInBatch(spritesInBatch);
+		}
 		int count = spritesInBatch * 6;
 
 		lastTexture.bind();
@@ -1235,7 +1246,7 @@ public class SpriteBatch implements Batch {
 	}
 
 	protected void switchTexture (Texture texture) {
-		FRAME_TEXTURE_SWITCHES.incrementAndGet();
+		if (FRAME_DIAGNOSTICS_ENABLED) FRAME_TEXTURE_SWITCHES.incrementAndGet();
 		flush();
 		lastTexture = texture;
 		applyGlobalAtlasCompatIfNeeded(texture);

@@ -282,21 +282,6 @@ internal object LauncherSettingsDiagnosticsFormatter {
                         "nonRenderableFboFormatCompat" to formatBoolean(
                             CompatibilitySettings.isNonRenderableFboFormatCompatEnabled(context)
                         ),
-                        "androidLwjglFramePacingCompat" to formatBoolean(
-                            CompatibilitySettings.isAndroidLwjglFramePacingCompatEnabled(context)
-                        ),
-                        "lwjglHotLoopNoopTrimCompat" to formatBoolean(
-                            CompatibilitySettings.isLwjglHotLoopNoopTrimCompatEnabled(context)
-                        ),
-                        "defaultFramebufferFastRebindCompat" to formatBoolean(
-                            CompatibilitySettings.isDefaultFramebufferFastRebindCompatEnabled(context)
-                        ),
-                        "nativePreSwapPacingCompat" to formatBoolean(
-                            CompatibilitySettings.isNativePreSwapPacingCompatEnabled(context)
-                        ),
-                        "eglSwapIntervalPacingCompat" to formatBoolean(
-                            CompatibilitySettings.isEglSwapIntervalPacingCompatEnabled(context)
-                        ),
                         "fboManagerCompat" to formatBoolean(
                             CompatibilitySettings.isFboManagerCompatEnabled(context)
                         ),

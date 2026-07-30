@@ -94,21 +94,24 @@ class StsLaunchSpecRamSaverMemoryPolicyTest {
 
     @Test
     fun appendDebugJvmPropertiesForLaunch_doesNotOverrideManagedCompatibilityProperty() {
-        val args = mutableListOf("-Damethyst.lwjgl.default_fbo_fast_rebind=false")
+        val args = mutableListOf("-Damethyst.gdx.gpu_guardian_soft_budget_bytes=1024")
 
         val result = StsLaunchSpec.appendDebugJvmPropertiesForLaunch(
             args,
-            mapOf("amethyst.lwjgl.default_fbo_fast_rebind" to "true")
+            mapOf("amethyst.gdx.gpu_guardian_soft_budget_bytes" to "2048")
         )
 
-        assertEquals(listOf("amethyst.lwjgl.default_fbo_fast_rebind"), result.skippedManagedKeys)
+        assertEquals(
+            listOf("amethyst.gdx.gpu_guardian_soft_budget_bytes"),
+            result.skippedManagedKeys
+        )
         assertTrue(result.appendedKeys.isEmpty())
-        assertEquals(listOf("-Damethyst.lwjgl.default_fbo_fast_rebind=false"), args)
+        assertEquals(listOf("-Damethyst.gdx.gpu_guardian_soft_budget_bytes=1024"), args)
     }
 
     @Test
     fun appendDebugJvmPropertiesForLaunch_keepsUnmanagedDebugProperty() {
-        val args = mutableListOf("-Damethyst.lwjgl.default_fbo_fast_rebind=false")
+        val args = mutableListOf("-Damethyst.gdx.gpu_guardian_soft_budget_bytes=1024")
 
         val result = StsLaunchSpec.appendDebugJvmPropertiesForLaunch(
             args,

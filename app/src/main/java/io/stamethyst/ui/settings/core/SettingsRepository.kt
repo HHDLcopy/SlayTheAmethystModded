@@ -150,11 +150,6 @@ internal object SettingsRepository {
         val nativeTouchscreenAllowlistCompatEnabled: Boolean,
         val texturePressureDownscaleDivisor: Int,
         val forceLinearMipmapFilterEnabled: Boolean,
-        val androidLwjglFramePacingCompatEnabled: Boolean,
-        val lwjglHotLoopNoopTrimCompatEnabled: Boolean,
-        val defaultFramebufferFastRebindCompatEnabled: Boolean,
-        val nativePreSwapPacingCompatEnabled: Boolean,
-        val eglSwapIntervalPacingCompatEnabled: Boolean,
         val runtimeDownscaleMaterialPolicy: RuntimeDownscaleMaterialPolicy,
         val importDownscaleMaterialPolicy: ImportDownscaleMaterialPolicy
     )
@@ -309,16 +304,6 @@ internal object SettingsRepository {
                     CompatibilitySettings.readTexturePressureDownscaleDivisor(context),
                 forceLinearMipmapFilterEnabled =
                     CompatibilitySettings.isForceLinearMipmapFilterEnabled(context),
-                androidLwjglFramePacingCompatEnabled =
-                    CompatibilitySettings.isAndroidLwjglFramePacingCompatEnabled(context),
-                lwjglHotLoopNoopTrimCompatEnabled =
-                    CompatibilitySettings.isLwjglHotLoopNoopTrimCompatEnabled(context),
-                defaultFramebufferFastRebindCompatEnabled =
-                    CompatibilitySettings.isDefaultFramebufferFastRebindCompatEnabled(context),
-                nativePreSwapPacingCompatEnabled =
-                    CompatibilitySettings.isNativePreSwapPacingCompatEnabled(context),
-                eglSwapIntervalPacingCompatEnabled =
-                    CompatibilitySettings.isEglSwapIntervalPacingCompatEnabled(context),
                 runtimeDownscaleMaterialPolicy =
                     CompatibilitySettings.readRuntimeDownscaleMaterialPolicy(context),
                 importDownscaleMaterialPolicy =

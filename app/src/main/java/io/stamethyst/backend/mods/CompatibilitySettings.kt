@@ -93,26 +93,6 @@ object CompatibilitySettings {
             LauncherConfig.DEFAULT_HINA_CHARACTER_RENDER_COMPAT_ENABLED
         )
         setNonRenderableFboFormatCompatEnabled(context, true)
-        setAndroidLwjglFramePacingCompatEnabled(
-            context,
-            LauncherConfig.DEFAULT_ANDROID_LWJGL_FRAME_PACING_COMPAT_ENABLED
-        )
-        setLwjglHotLoopNoopTrimCompatEnabled(
-            context,
-            LauncherConfig.DEFAULT_LWJGL_HOT_LOOP_NOOP_TRIM_COMPAT_ENABLED
-        )
-        setDefaultFramebufferFastRebindCompatEnabled(
-            context,
-            LauncherConfig.DEFAULT_FRAMEBUFFER_FAST_REBIND_COMPAT_ENABLED
-        )
-        setNativePreSwapPacingCompatEnabled(
-            context,
-            LauncherConfig.DEFAULT_NATIVE_PRE_SWAP_PACING_COMPAT_ENABLED
-        )
-        setEglSwapIntervalPacingCompatEnabled(
-            context,
-            LauncherConfig.DEFAULT_EGL_SWAP_INTERVAL_PACING_COMPAT_ENABLED
-        )
         setFboManagerCompatEnabled(context, LauncherConfig.DEFAULT_FBO_MANAGER_COMPAT_ENABLED)
         setFboIdleReclaimCompatEnabled(context, LauncherConfig.DEFAULT_FBO_IDLE_RECLAIM_COMPAT_ENABLED)
         setFboPressureDownscaleCompatEnabled(
@@ -443,56 +423,6 @@ object CompatibilitySettings {
     @JvmStatic
     fun setNonRenderableFboFormatCompatEnabled(context: Context, enabled: Boolean) {
         LauncherConfig.setNonRenderableFboFormatCompatEnabled(context, enabled)
-    }
-
-    @JvmStatic
-    fun isAndroidLwjglFramePacingCompatEnabled(context: Context): Boolean {
-        return LauncherConfig.isAndroidLwjglFramePacingCompatEnabled(context)
-    }
-
-    @JvmStatic
-    fun setAndroidLwjglFramePacingCompatEnabled(context: Context, enabled: Boolean) {
-        LauncherConfig.setAndroidLwjglFramePacingCompatEnabled(context, enabled)
-    }
-
-    @JvmStatic
-    fun isLwjglHotLoopNoopTrimCompatEnabled(context: Context): Boolean {
-        return LauncherConfig.isLwjglHotLoopNoopTrimCompatEnabled(context)
-    }
-
-    @JvmStatic
-    fun setLwjglHotLoopNoopTrimCompatEnabled(context: Context, enabled: Boolean) {
-        LauncherConfig.setLwjglHotLoopNoopTrimCompatEnabled(context, enabled)
-    }
-
-    @JvmStatic
-    fun isDefaultFramebufferFastRebindCompatEnabled(context: Context): Boolean {
-        return LauncherConfig.isDefaultFramebufferFastRebindCompatEnabled(context)
-    }
-
-    @JvmStatic
-    fun setDefaultFramebufferFastRebindCompatEnabled(context: Context, enabled: Boolean) {
-        LauncherConfig.setDefaultFramebufferFastRebindCompatEnabled(context, enabled)
-    }
-
-    @JvmStatic
-    fun isNativePreSwapPacingCompatEnabled(context: Context): Boolean {
-        return LauncherConfig.isNativePreSwapPacingCompatEnabled(context)
-    }
-
-    @JvmStatic
-    fun setNativePreSwapPacingCompatEnabled(context: Context, enabled: Boolean) {
-        LauncherConfig.setNativePreSwapPacingCompatEnabled(context, enabled)
-    }
-
-    @JvmStatic
-    fun isEglSwapIntervalPacingCompatEnabled(context: Context): Boolean {
-        return LauncherConfig.isEglSwapIntervalPacingCompatEnabled(context)
-    }
-
-    @JvmStatic
-    fun setEglSwapIntervalPacingCompatEnabled(context: Context, enabled: Boolean) {
-        LauncherConfig.setEglSwapIntervalPacingCompatEnabled(context, enabled)
     }
 
     @JvmStatic

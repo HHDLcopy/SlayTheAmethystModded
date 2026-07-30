@@ -163,16 +163,6 @@ object LauncherConfig {
         "compat_hina_character_render"
     private const val PREF_KEY_NON_RENDERABLE_FBO_FORMAT_COMPAT =
         "compat_non_renderable_fbo_format_compat"
-    private const val PREF_KEY_ANDROID_LWJGL_FRAME_PACING_COMPAT =
-        "compat_android_lwjgl_frame_pacing"
-    private const val PREF_KEY_LWJGL_HOT_LOOP_NOOP_TRIM_COMPAT =
-        "compat_lwjgl_hot_loop_noop_trim"
-    private const val PREF_KEY_DEFAULT_FRAMEBUFFER_FAST_REBIND_COMPAT =
-        "compat_default_framebuffer_fast_rebind"
-    private const val PREF_KEY_NATIVE_PRE_SWAP_PACING_COMPAT =
-        "compat_native_pre_swap_pacing"
-    private const val PREF_KEY_EGL_SWAP_INTERVAL_PACING_COMPAT =
-        "compat_egl_swap_interval_pacing"
     private const val PREF_KEY_FBO_MANAGER_COMPAT = "compat_fbo_manager"
     private const val PREF_KEY_FBO_IDLE_RECLAIM_COMPAT = "compat_fbo_idle_reclaim"
     private const val PREF_KEY_FBO_PRESSURE_DOWNSCALE_COMPAT =
@@ -370,21 +360,6 @@ object LauncherConfig {
     val DEFAULT_GPU_RESOURCE_GUARDIAN_MODE: GpuResourceGuardianMode = GpuResourceGuardianMode.OFF
     const val DEFAULT_GPU_RESOURCE_GUARDIAN_PRESSURE_DOWNSCALE_ENABLED = false
     const val DEFAULT_HINA_CHARACTER_RENDER_COMPAT_ENABLED = true
-    // Android/LWJGL frame pacing waits for the next frame deadline with Thread.sleep plus
-    // LockSupport.parkNanos, replacing LWJGL's Sync.preciseSync, which burns the remainder of
-    // every frame in a Thread.yield() spin loop. Paired on-device A/B at a 90 FPS target on a
-    // 90Hz panel measured ~13% less process CPU (0.58 -> 0.51 cores busy) and ~14% less render
-    // thread CPU with identical presented FPS (89.9 vs 89.8) and no jitter regression, so it is
-    // on by default. It is refresh-rate independent, unlike the swap-interval route.
-    const val DEFAULT_ANDROID_LWJGL_FRAME_PACING_COMPAT_ENABLED = true
-    // Keep the remaining pacing experiments opt-in and off by default. Device AB runs showed no
-    // significant thermal/performance gain from libpojavexec native pre-swap pacing or EGL swap
-    // interval pacing, so they should not be enabled by defaults or automatic compatibility
-    // policies.
-    const val DEFAULT_LWJGL_HOT_LOOP_NOOP_TRIM_COMPAT_ENABLED = false
-    const val DEFAULT_FRAMEBUFFER_FAST_REBIND_COMPAT_ENABLED = false
-    const val DEFAULT_NATIVE_PRE_SWAP_PACING_COMPAT_ENABLED = false
-    const val DEFAULT_EGL_SWAP_INTERVAL_PACING_COMPAT_ENABLED = false
     const val DEFAULT_FBO_MANAGER_COMPAT_ENABLED = false
     const val DEFAULT_FBO_IDLE_RECLAIM_COMPAT_ENABLED = false
     const val DEFAULT_FBO_PRESSURE_DOWNSCALE_COMPAT_ENABLED = false
@@ -1642,71 +1617,6 @@ object LauncherConfig {
     fun setNonRenderableFboFormatCompatEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_NON_RENDERABLE_FBO_FORMAT_COMPAT, enabled)
-        }
-    }
-
-    fun isAndroidLwjglFramePacingCompatEnabled(context: Context): Boolean {
-        return prefs(context).getBoolean(
-            PREF_KEY_ANDROID_LWJGL_FRAME_PACING_COMPAT,
-            DEFAULT_ANDROID_LWJGL_FRAME_PACING_COMPAT_ENABLED
-        )
-    }
-
-    fun setAndroidLwjglFramePacingCompatEnabled(context: Context, enabled: Boolean) {
-        prefs(context).edit {
-            putBoolean(PREF_KEY_ANDROID_LWJGL_FRAME_PACING_COMPAT, enabled)
-        }
-    }
-
-    fun isLwjglHotLoopNoopTrimCompatEnabled(context: Context): Boolean {
-        return prefs(context).getBoolean(
-            PREF_KEY_LWJGL_HOT_LOOP_NOOP_TRIM_COMPAT,
-            DEFAULT_LWJGL_HOT_LOOP_NOOP_TRIM_COMPAT_ENABLED
-        )
-    }
-
-    fun setLwjglHotLoopNoopTrimCompatEnabled(context: Context, enabled: Boolean) {
-        prefs(context).edit {
-            putBoolean(PREF_KEY_LWJGL_HOT_LOOP_NOOP_TRIM_COMPAT, enabled)
-        }
-    }
-
-    fun isDefaultFramebufferFastRebindCompatEnabled(context: Context): Boolean {
-        return prefs(context).getBoolean(
-            PREF_KEY_DEFAULT_FRAMEBUFFER_FAST_REBIND_COMPAT,
-            DEFAULT_FRAMEBUFFER_FAST_REBIND_COMPAT_ENABLED
-        )
-    }
-
-    fun setDefaultFramebufferFastRebindCompatEnabled(context: Context, enabled: Boolean) {
-        prefs(context).edit {
-            putBoolean(PREF_KEY_DEFAULT_FRAMEBUFFER_FAST_REBIND_COMPAT, enabled)
-        }
-    }
-
-    fun isNativePreSwapPacingCompatEnabled(context: Context): Boolean {
-        return prefs(context).getBoolean(
-            PREF_KEY_NATIVE_PRE_SWAP_PACING_COMPAT,
-            DEFAULT_NATIVE_PRE_SWAP_PACING_COMPAT_ENABLED
-        )
-    }
-
-    fun setNativePreSwapPacingCompatEnabled(context: Context, enabled: Boolean) {
-        prefs(context).edit {
-            putBoolean(PREF_KEY_NATIVE_PRE_SWAP_PACING_COMPAT, enabled)
-        }
-    }
-
-    fun isEglSwapIntervalPacingCompatEnabled(context: Context): Boolean {
-        return prefs(context).getBoolean(
-            PREF_KEY_EGL_SWAP_INTERVAL_PACING_COMPAT,
-            DEFAULT_EGL_SWAP_INTERVAL_PACING_COMPAT_ENABLED
-        )
-    }
-
-    fun setEglSwapIntervalPacingCompatEnabled(context: Context, enabled: Boolean) {
-        prefs(context).edit {
-            putBoolean(PREF_KEY_EGL_SWAP_INTERVAL_PACING_COMPAT, enabled)
         }
     }
 

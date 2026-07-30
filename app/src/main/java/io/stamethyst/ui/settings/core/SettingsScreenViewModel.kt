@@ -4599,26 +4599,6 @@ class SettingsScreenViewModel : ViewModel() {
             toggleStateText(host, compatibility.forceLinearMipmapFilterEnabled)
         )
         lines += host.getString(
-            R.string.settings_status_android_lwjgl_frame_pacing,
-            toggleStateText(host, compatibility.androidLwjglFramePacingCompatEnabled)
-        )
-        lines += host.getString(
-            R.string.settings_status_lwjgl_hot_loop_noop_trim,
-            toggleStateText(host, compatibility.lwjglHotLoopNoopTrimCompatEnabled)
-        )
-        lines += host.getString(
-            R.string.settings_status_default_framebuffer_fast_rebind,
-            toggleStateText(host, compatibility.defaultFramebufferFastRebindCompatEnabled)
-        )
-        lines += host.getString(
-            R.string.settings_status_native_pre_swap_pacing,
-            toggleStateText(host, compatibility.nativePreSwapPacingCompatEnabled)
-        )
-        lines += host.getString(
-            R.string.settings_status_egl_swap_interval_pacing,
-            toggleStateText(host, compatibility.eglSwapIntervalPacingCompatEnabled)
-        )
-        lines += host.getString(
             R.string.settings_status_bundled_jre_path,
             "app/src/main/assets/components/jre"
         )

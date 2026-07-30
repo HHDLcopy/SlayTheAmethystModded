@@ -135,6 +135,92 @@ public class MtsPatchCacheStoreTest {
     }
 
     @Test
+    public void packageJarFastPath_keepsSharedPackageDirectoryEntriesInEveryModPackageJar() throws Exception {
+        File root = Files.createTempDirectory("mts-patch-cache-shared-dirs-").toFile();
+        try {
+            setCacheProperties(root);
+            resetStubTracking();
+            File baseJar = new File(root, "base.jar");
+            File rpcJar = new File(root, "rpc-mod.jar");
+            File metricsJar = new File(root, "metrics.jar");
+            writeJar(baseJar, "base/Base.class", "base");
+            writeJarEntries(
+                    rpcJar,
+                    "com/github/",
+                    "com/github/paopaoyue/",
+                    "com/github/paopaoyue/rpcmod/",
+                    "com/github/paopaoyue/rpcmod/RpcApp.class"
+            );
+            writeJarEntries(
+                    metricsJar,
+                    "com/github/",
+                    "com/github/paopaoyue/",
+                    "com/github/paopaoyue/metrics/",
+                    "com/github/paopaoyue/metrics/MetricsCaller.class"
+            );
+            Loader.STS_JAR = baseJar.getAbsolutePath();
+            Loader.MODINFOS = new ModInfo[] {
+                    new ModInfo("ypp-rpc", rpcJar.toURI().toURL()),
+                    new ModInfo("sts-metrics", metricsJar.toURI().toURL())
+            };
+
+            // Mirrors MTS PackageJar.Entries: paths are deduplicated globally on a first-wins
+            // basis, so the shared `com/github/` directories end up owned by ypp-rpc alone.
+            PackageJar.Entries entries = new PackageJar.Entries();
+            entries.add(new PackageJar.Entry(
+                    "com/evacipated/cardcrawl/modthespire/PackageJar$PrepackagedLauncher.class",
+                    "launcher".getBytes("UTF-8"),
+                    null
+            ));
+            entries.add(new PackageJar.Entry("base/Base.class", PackageJar.Type.BASEGAME));
+            entries.add(new PackageJar.Entry("com/github/", "ypp-rpc"));
+            entries.add(new PackageJar.Entry("com/github/paopaoyue/", "ypp-rpc"));
+            entries.add(new PackageJar.Entry("com/github/paopaoyue/rpcmod/", "ypp-rpc"));
+            entries.add(new PackageJar.Entry("com/github/paopaoyue/rpcmod/RpcApp.class", "ypp-rpc"));
+            assertFalse(entries.add(new PackageJar.Entry("com/github/", "sts-metrics")));
+            assertFalse(entries.add(new PackageJar.Entry("com/github/paopaoyue/", "sts-metrics")));
+            entries.add(new PackageJar.Entry("com/github/paopaoyue/metrics/", "sts-metrics"));
+            entries.add(new PackageJar.Entry("com/github/paopaoyue/metrics/MetricsCaller.class", "sts-metrics"));
+
+            JarOutputStream openOutput = new JarOutputStream(
+                    new FileOutputStream(new File(root, "desktop-1.0-modded.jar"))
+            );
+
+            assertTrue(MtsPatchCacheStore.packageJarFastPath(
+                    new MTSClassPool(),
+                    entries,
+                    openOutput,
+                    new File(root, "desktop-1.0-modded.jar").getAbsolutePath()
+            ));
+
+            File rpcPackageJar = new File(root, "package/rpc-mod-modded.jar");
+            File metricsPackageJar = new File(root, "package/metrics-modded.jar");
+            assertTrue(rpcPackageJar.isFile());
+            assertTrue(metricsPackageJar.isFile());
+
+            // Spring resolves `classpath*:com/github/**` by enumerating getResources("com/github/"),
+            // which only matches jars physically containing that directory entry. Both package jars
+            // must therefore keep the shared prefixes even though MTS assigned them to one mod.
+            assertTrue(hasJarEntry(rpcPackageJar, "com/github/"));
+            assertTrue(hasJarEntry(rpcPackageJar, "com/github/paopaoyue/"));
+            assertTrue(hasJarEntry(rpcPackageJar, "com/github/paopaoyue/rpcmod/"));
+            assertTrue(hasJarEntry(metricsPackageJar, "com/github/"));
+            assertTrue(hasJarEntry(metricsPackageJar, "com/github/paopaoyue/"));
+            assertTrue(hasJarEntry(metricsPackageJar, "com/github/paopaoyue/metrics/"));
+
+            // Class ownership must still be respected: no mod may leak another mod's classes.
+            assertTrue(hasJarEntry(rpcPackageJar, "com/github/paopaoyue/rpcmod/RpcApp.class"));
+            assertFalse(hasJarEntry(rpcPackageJar, "com/github/paopaoyue/metrics/MetricsCaller.class"));
+            assertTrue(hasJarEntry(metricsPackageJar, "com/github/paopaoyue/metrics/MetricsCaller.class"));
+            assertFalse(hasJarEntry(metricsPackageJar, "com/github/paopaoyue/rpcmod/RpcApp.class"));
+        } finally {
+            clearCacheProperties();
+            resetStubTracking();
+            deleteRecursively(root);
+        }
+    }
+
+    @Test
     public void store_rejectsCacheWhenPackageJarsAreMissing() throws Exception {
         File root = Files.createTempDirectory("mts-patch-cache-store-missing-package-").toFile();
         try {
@@ -335,6 +421,21 @@ public class MtsPatchCacheStoreTest {
             output.putNextEntry(new JarEntry(entryName));
             output.write(content.getBytes("UTF-8"));
             output.closeEntry();
+        } finally {
+            output.close();
+        }
+    }
+
+    private static void writeJarEntries(File jar, String... entryNames) throws Exception {
+        JarOutputStream output = new JarOutputStream(new FileOutputStream(jar, false));
+        try {
+            for (String entryName : entryNames) {
+                output.putNextEntry(new JarEntry(entryName));
+                if (!entryName.endsWith("/")) {
+                    output.write(entryName.getBytes("UTF-8"));
+                }
+                output.closeEntry();
+            }
         } finally {
             output.close();
         }

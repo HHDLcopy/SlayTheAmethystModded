@@ -538,9 +538,22 @@ public final class MtsPatchCacheStore {
                 while ((jarEntry = jarInput.getNextJarEntry()) != null) {
                     String name = jarEntry.getName();
                     EntrySnapshot expected = entriesByPath.get(name);
-                    if (expected == null ||
-                            !type.equals(expected.type) ||
-                            !Objects.equals(modId, expected.modId)) {
+                    if (expected == null) {
+                        continue;
+                    }
+                    // Directory entries carry no bytes and legitimately belong to every jar that
+                    // has content under them, but MTS deduplicates entries globally by path, so
+                    // the first mod to declare `com/github/` becomes its sole owner. Applying the
+                    // ownership filter to directories would therefore strip them from every other
+                    // mod's package jar. That silently breaks classpath scanning: Spring resolves
+                    // `classpath*:com/github/**` by enumerating getResources("com/github/"), which
+                    // only matches jars that physically contain that directory entry. Classes stay
+                    // loadable, so the jar just disappears from component scanning.
+                    if (jarEntry.isDirectory()) {
+                        writeDirectoryEntry(output, written, name);
+                        continue;
+                    }
+                    if (!type.equals(expected.type) || !Objects.equals(modId, expected.modId)) {
                         continue;
                     }
                     writeStreamEntry(output, written, name, jarInput, buffer);
@@ -582,6 +595,18 @@ public final class MtsPatchCacheStore {
         while ((count = input.read(buffer)) != -1) {
             output.write(buffer, 0, count);
         }
+        output.closeEntry();
+    }
+
+    private static void writeDirectoryEntry(
+            JarOutputStream output,
+            Set<String> written,
+            String name
+    ) throws Exception {
+        if (!written.add(name)) {
+            return;
+        }
+        output.putNextEntry(new JarEntry(name));
         output.closeEntry();
     }
 

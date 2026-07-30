@@ -29,11 +29,7 @@ static bool g_swap_heartbeat_logging_enabled = false;
 static bool g_swap_profiler_initialized = false;
 static bool g_swap_profiler_enabled = false;
 static int64_t g_swap_profiler_slow_ns = 16000000LL;
-static bool g_native_pre_swap_pacer_initialized = false;
-static bool g_native_pre_swap_pacer_enabled = false;
-static int g_native_pre_swap_pacer_target_fps = 0;
-static int64_t g_native_pre_swap_pacer_interval_ns = 0;
-static int64_t g_native_pre_swap_pacer_next_ns = 0;
+
 
 #define GL_RESTORE_SURFACE_POLL_INTERVAL_SWAPS 30
 
@@ -95,80 +91,11 @@ static int64_t gl_env_int_ns(const char* name, int64_t default_ms) {
     return ((int64_t)parsed) * 1000000LL;
 }
 
-static int gl_env_int_clamped(const char* name, int default_value, int min_value, int max_value) {
-    const char* value = getenv(name);
-    if (value == NULL || value[0] == '\0') return default_value;
-    char* end = NULL;
-    long parsed = strtol(value, &end, 10);
-    if (end == value) return default_value;
-    if (parsed < min_value) return min_value;
-    if (parsed > max_value) return max_value;
-    return (int)parsed;
-}
-
-static void gl_sleep_relative_ns(int64_t sleep_ns) {
-    if (sleep_ns <= 0) return;
-    struct timespec requested;
-    struct timespec remaining;
-    requested.tv_sec = (time_t)(sleep_ns / 1000000000LL);
-    requested.tv_nsec = (long)(sleep_ns % 1000000000LL);
-    while (nanosleep(&requested, &remaining) != 0) {
-        if (errno != EINTR) return;
-        requested = remaining;
-    }
-}
-
 static void gl_init_swap_profiler_if_needed() {
     if (g_swap_profiler_initialized) return;
     g_swap_profiler_initialized = true;
     g_swap_profiler_enabled = gl_env_flag_enabled("AMETHYST_GDX_SWAP_PROFILER");
     g_swap_profiler_slow_ns = gl_env_int_ns("AMETHYST_GDX_SWAP_PROFILER_SLOW_MS", 16);
-}
-
-static void gl_init_native_pre_swap_pacer_if_needed() {
-    if (g_native_pre_swap_pacer_initialized) return;
-    g_native_pre_swap_pacer_initialized = true;
-    g_native_pre_swap_pacer_enabled = gl_env_flag_enabled("AMETHYST_NATIVE_PRE_SWAP_PACING");
-    g_native_pre_swap_pacer_target_fps =
-        gl_env_int_clamped("AMETHYST_NATIVE_PRE_SWAP_TARGET_FPS", 0, 1, 1000);
-    if (!g_native_pre_swap_pacer_enabled || g_native_pre_swap_pacer_target_fps <= 0) {
-        g_native_pre_swap_pacer_enabled = false;
-        return;
-    }
-    g_native_pre_swap_pacer_interval_ns =
-        1000000000LL / (int64_t)g_native_pre_swap_pacer_target_fps;
-    if (g_native_pre_swap_pacer_interval_ns <= 0) {
-        g_native_pre_swap_pacer_enabled = false;
-        return;
-    }
-    printf(
-        "GLBridgePerf: native pre-swap pacing enabled targetFps=%d intervalNs=%lld\n",
-        g_native_pre_swap_pacer_target_fps,
-        (long long)g_native_pre_swap_pacer_interval_ns
-    );
-}
-
-static void gl_native_pre_swap_pace() {
-    gl_init_native_pre_swap_pacer_if_needed();
-    if (!g_native_pre_swap_pacer_enabled) return;
-    int64_t now = gl_now_monotonic_ns();
-    if (now <= 0) return;
-    if (g_native_pre_swap_pacer_next_ns <= 0 ||
-        now - g_native_pre_swap_pacer_next_ns > g_native_pre_swap_pacer_interval_ns * 2LL ||
-        g_native_pre_swap_pacer_next_ns - now > g_native_pre_swap_pacer_interval_ns * 4LL) {
-        g_native_pre_swap_pacer_next_ns = now + g_native_pre_swap_pacer_interval_ns;
-    }
-    int64_t remaining_ns = g_native_pre_swap_pacer_next_ns - now;
-    if (remaining_ns > 0 && remaining_ns < 500000000LL) {
-        gl_sleep_relative_ns(remaining_ns);
-    }
-    int64_t after_wait_ns = gl_now_monotonic_ns();
-    g_native_pre_swap_pacer_next_ns += g_native_pre_swap_pacer_interval_ns;
-    if (after_wait_ns - g_native_pre_swap_pacer_next_ns >
-        g_native_pre_swap_pacer_interval_ns * 2LL) {
-        g_native_pre_swap_pacer_next_ns =
-            after_wait_ns + g_native_pre_swap_pacer_interval_ns;
-    }
 }
 
 static void gl_advance_context_generation(const char* reason) {
@@ -695,7 +622,6 @@ void gl_swap_buffers() {
     }
 
     if(currentBundle->surface != NULL && currentBundle->surface != EGL_NO_SURFACE) {
-        gl_native_pre_swap_pace();
         if(!eglSwapBuffers_p(g_EglDisplay, currentBundle->surface)) {
             EGLint swapErr = eglGetError_p();
             if (swapErr == EGL_BAD_SURFACE || swapErr == EGL_BAD_NATIVE_WINDOW) {

@@ -43,10 +43,6 @@ object StsLaunchSpec {
     private const val DEFAULT_TIERED_STOP_AT_LEVEL = 2
     private const val DEBUG_GPU_GUARDIAN_TEST_PREFS = "sts_debug_gpu_guardian_test"
     private val EFFECTIVE_PERFORMANCE_PROPERTY_KEYS = listOf(
-        "amethyst.lwjgl.android_frame_pacer",
-        "amethyst.lwjgl.hot_loop_noop_trim",
-        "amethyst.lwjgl.default_fbo_fast_rebind",
-        "amethyst.lwjgl.egl_swap_interval_pacing",
         "amethyst.gdx.frame_profiler",
         "amethyst.gdx.gpu_resource_summary",
         "amethyst.gdx.gpu_resource_diag"
@@ -66,13 +62,7 @@ object StsLaunchSpec {
         "amethyst.gdx.gpu_guardian_texture_min_bytes",
         "amethyst.gdx.gpu_guardian_texture_max_checks_per_sweep",
         "amethyst.gdx.gpu_guardian_texture_max_reclaims_per_sweep",
-        "amethyst.gdx.gpu_guardian_texture_max_bytes_per_sweep",
-        // Legacy debug keys kept for old scripts. They must not override the
-        // launcher-managed compatibility switches already present in args.
-        "amethyst.lwjgl.android_frame_pacer",
-        "amethyst.lwjgl.hot_loop_noop_trim",
-        "amethyst.lwjgl.default_fbo_fast_rebind",
-        "amethyst.lwjgl.egl_swap_interval_pacing"
+        "amethyst.gdx.gpu_guardian_texture_max_bytes_per_sweep"
     )
 
     internal data class DebugJvmPropertyAppendResult(
@@ -619,38 +609,6 @@ object StsLaunchSpec {
         args.add(
             "-Damethyst.gdx.non_renderable_fbo_format_compat=" +
                 if (CompatibilitySettings.isNonRenderableFboFormatCompatEnabled(context)) "true" else "false"
-        )
-        args.add(
-            "-Damethyst.lwjgl.android_frame_pacer=" +
-                if (CompatibilitySettings.isAndroidLwjglFramePacingCompatEnabled(context)) {
-                    "true"
-                } else {
-                    "false"
-                }
-        )
-        args.add(
-            "-Damethyst.lwjgl.hot_loop_noop_trim=" +
-                if (CompatibilitySettings.isLwjglHotLoopNoopTrimCompatEnabled(context)) {
-                    "true"
-                } else {
-                    "false"
-                }
-        )
-        args.add(
-            "-Damethyst.lwjgl.default_fbo_fast_rebind=" +
-                if (CompatibilitySettings.isDefaultFramebufferFastRebindCompatEnabled(context)) {
-                    "true"
-                } else {
-                    "false"
-                }
-        )
-        args.add(
-            "-Damethyst.lwjgl.egl_swap_interval_pacing=" +
-                if (CompatibilitySettings.isEglSwapIntervalPacingCompatEnabled(context)) {
-                    "true"
-                } else {
-                    "false"
-                }
         )
         args.add(
             "-Damethyst.gdx.fbo_manager=" +

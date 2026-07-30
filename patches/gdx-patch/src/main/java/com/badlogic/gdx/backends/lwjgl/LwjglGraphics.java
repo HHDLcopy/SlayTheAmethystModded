@@ -50,9 +50,7 @@ public class LwjglGraphics implements Graphics {
 	private static final String RENDER_SCALE_PROP = "amethyst.gdx.render_scale";
 	private static final String VIRTUAL_WIDTH_PROP = "amethyst.gdx.virtual_width";
 	private static final String VIRTUAL_HEIGHT_PROP = "amethyst.gdx.virtual_height";
-	private static final String EGL_SWAP_INTERVAL_PACING_PROP = "amethyst.lwjgl.egl_swap_interval_pacing";
-	private static final boolean EGL_SWAP_INTERVAL_PACING_ENABLED =
-		Boolean.parseBoolean(System.getProperty(EGL_SWAP_INTERVAL_PACING_PROP, "false"));
+
 
 	/** The suppored OpenGL extensions */
 	static Array<String> extensions;
@@ -938,12 +936,8 @@ public class LwjglGraphics implements Graphics {
 
 	@Override
 	public void setVSync (boolean vsync) {
-		if (EGL_SWAP_INTERVAL_PACING_ENABLED) {
-			this.vsync = true;
-			Display.setVSyncEnabled(true);
-			return;
-		}
-		// The default Android bridge build keeps swap-interval pacing disabled and relies on explicit FPS pacing instead.
+		// The Android bridge never uses swap-interval pacing; the LWJGL main loop paces frames
+		// explicitly against the target FPS instead. See LwjglApplication#syncSoftwareFrame.
 		this.vsync = false;
 		Display.setVSyncEnabled(false);
 	}

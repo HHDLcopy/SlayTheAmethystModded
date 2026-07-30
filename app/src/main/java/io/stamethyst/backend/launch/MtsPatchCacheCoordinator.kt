@@ -150,7 +150,7 @@ internal object MtsPatchCacheCoordinator {
         modFileList: File
     ): String {
         val rawMarker = buildString {
-            append("schema|5").append('\n')
+            append("schema|6").append('\n')
             append(fileFingerprint("desktop", desktopJar)).append('\n')
             append(fileFingerprint("modthespire", mtsJar)).append('\n')
             append(fileFingerprint("basemod", baseModJar)).append('\n')

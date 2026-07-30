@@ -8,7 +8,6 @@ import io.stamethyst.R
 import io.stamethyst.StsGameActivity
 import io.stamethyst.backend.crash.LatestLogCrashDetector
 import io.stamethyst.backend.diag.MemoryDiagnosticsLogger
-import io.stamethyst.backend.mods.CompatibilitySettings
 import io.stamethyst.backend.mods.ModJarSupport
 import io.stamethyst.backend.render.MobileGluesConfigFile
 import io.stamethyst.backend.render.RendererBackend
@@ -69,10 +68,6 @@ class JvmLaunchController(
         private const val HEAP_PRESSURE_WARNING_RATIO = 0.90
         private const val LOGCAT_TAG = "STS-JVM"
         private val PERFORMANCE_AUDIT_JVM_PROPERTIES = listOf(
-            "amethyst.lwjgl.android_frame_pacer",
-            "amethyst.lwjgl.hot_loop_noop_trim",
-            "amethyst.lwjgl.default_fbo_fast_rebind",
-            "amethyst.lwjgl.egl_swap_interval_pacing",
             "amethyst.gdx.active_refresh_rate",
             "amethyst.gdx.frame_profiler",
             "amethyst.gdx.gpu_resource_summary",
@@ -1034,10 +1029,6 @@ class JvmLaunchController(
         extras["showPerformanceOverlay"] = showPerformanceOverlay.toString()
         extras["performanceDeepDiagnostics"] = performanceDeepDiagnostics.toString()
         extras["javaEnvSwapProfilerExpected"] = performanceDeepDiagnostics.toString()
-        extras["javaEnvEglSwapIntervalPacingExpected"] =
-            CompatibilitySettings.isEglSwapIntervalPacingCompatEnabled(activity).toString()
-        extras["javaEnvNativePreSwapPacingExpected"] =
-            CompatibilitySettings.isNativePreSwapPacingCompatEnabled(activity).toString()
         startupStepTimings.forEach { (label, tookMs) ->
             extras["jvmStartup.$label"] = tookMs.toString()
         }

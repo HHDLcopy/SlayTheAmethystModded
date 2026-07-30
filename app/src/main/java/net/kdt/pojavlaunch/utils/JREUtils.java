@@ -14,7 +14,6 @@ import android.system.ErrnoException;
 import android.system.Os;
 import android.util.Log;
 
-import io.stamethyst.backend.mods.CompatibilitySettings;
 import io.stamethyst.backend.render.RendererDecision;
 import io.stamethyst.config.LauncherConfig;
 import io.stamethyst.config.RuntimePaths;
@@ -132,22 +131,10 @@ public final class JREUtils {
         env.put("TMPDIR", context.getCacheDir().getAbsolutePath());
         env.put("LD_LIBRARY_PATH", LD_LIBRARY_PATH);
         env.put("PATH", javaHome + "/bin:" + safeGetEnv("PATH"));
-        boolean eglSwapIntervalPacing =
-                CompatibilitySettings.isEglSwapIntervalPacingCompatEnabled(context);
-        env.put("FORCE_VSYNC", eglSwapIntervalPacing ? "true" : "false");
-        env.put("LIBGL_VSYNC", eglSwapIntervalPacing ? "1" : "0");
-        env.put("AMETHYST_EGL_SWAP_INTERVAL_PACING", eglSwapIntervalPacing ? "1" : "0");
+        env.put("FORCE_VSYNC", "false");
+        env.put("LIBGL_VSYNC", "0");
         env.put("LIBGL_SHADERNOGLES", "1");
         env.put("LIBGL_NOHIGHP", "1");
-        boolean nativePreSwapPacing =
-                CompatibilitySettings.isNativePreSwapPacingCompatEnabled(context);
-        env.put("AMETHYST_NATIVE_PRE_SWAP_PACING", nativePreSwapPacing ? "1" : "0");
-        if (nativePreSwapPacing) {
-            env.put(
-                    "AMETHYST_NATIVE_PRE_SWAP_TARGET_FPS",
-                    Integer.toString(LauncherConfig.INSTANCE.readTargetFps(context))
-            );
-        }
         boolean performanceDeepDiagnostics =
                 LauncherConfig.INSTANCE.isGamePerformanceDeepDiagnosticsEnabled(context);
         if (performanceDeepDiagnostics) {
@@ -159,9 +146,7 @@ public final class JREUtils {
                 "Java env performance gates " +
                         "overlay=" + LauncherConfig.INSTANCE.isGamePerformanceOverlayEnabled(context) +
                         ", deepDiagnostics=" + performanceDeepDiagnostics +
-                        ", swapProfiler=" + (performanceDeepDiagnostics ? "1" : "0") +
-                        ", eglSwapIntervalPacing=" + (eglSwapIntervalPacing ? "1" : "0") +
-                        ", nativePreSwapPacing=" + (nativePreSwapPacing ? "1" : "0")
+                        ", swapProfiler=" + (performanceDeepDiagnostics ? "1" : "0")
         );
         env.put("AWTSTUB_WIDTH", Integer.toString(Math.max(1, windowWidth)));
         env.put("AWTSTUB_HEIGHT", Integer.toString(Math.max(1, windowHeight)));

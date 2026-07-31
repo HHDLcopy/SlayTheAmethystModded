@@ -280,6 +280,14 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
         if (gyroscopeRegistered) {
             return
         }
+        // Only register gyroscope if FirstPersonView mod is enabled
+        if (!isFirstPersonViewModEnabled()) {
+            if (!gyroscopeSensorMissingLogged) {
+                Log.i(GYROSCOPE_LOG_TAG, "gyroscope_disabled_firstperson_mod_not_enabled")
+                gyroscopeSensorMissingLogged = true
+            }
+            return
+        }
         val manager = gyroscopeSensorManager ?:
             (getSystemService(Context.SENSOR_SERVICE) as? SensorManager)?.also {
                 gyroscopeSensorManager = it
@@ -319,6 +327,16 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
                 Log.w(GYROSCOPE_LOG_TAG, "register_listener_failed", error)
                 gyroscopeRegistrationLogged = true
             }
+            false
+        }
+    }
+
+    private fun isFirstPersonViewModEnabled(): Boolean {
+        return try {
+            val enabledModIds = io.stamethyst.backend.mods.ModManager.listEnabledOptionalModIds(this)
+            enabledModIds.contains("firstperson")
+        } catch (error: Throwable) {
+            Log.w(GYROSCOPE_LOG_TAG, "failed_to_check_firstperson_mod", error)
             false
         }
     }

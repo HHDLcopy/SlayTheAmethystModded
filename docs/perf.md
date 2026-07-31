@@ -15,26 +15,37 @@
 - `shouldUseSoftwareSync()` 在 `!graphics.vsync` 时直接返回 `true`，所以每一帧结尾都会走软件限帧。
 - 软件限帧走 `Display.sync(frameRate)`，尾段 busy-spin；更好的 `syncAndroidFramePacer` 藏在默认 `false` 的开关后面。
 
-**当前状态**：已按"删除开关、保留最优路径"处理。`syncSoftwareFrame()`（`LwjglApplication.java:665-683`）无条件走 sleep/park 到帧截止时间，`sleepUntilFrameDeadline()`（`:685-706`）分 sleep / `parkNanos` / 直接返回三段，唯一调用点在主循环尾部（`:2183`）。`Display.sync()`、`shouldUseSoftwareSync()`、vsync margin 逻辑均已删除。`LwjglGraphics.setVSync()` 硬编码 false，`JREUtils` 里 `FORCE_VSYNC=false`/`LIBGL_VSYNC=0`。代码注释记录了实测：90Hz 面板 90 FPS 目标下进程 CPU -13%、渲染线程 CPU -14%，呈现帧率与抖动不变。
+**当前状态**：已按"删除开关、保留最优路径"处理。`syncSoftwareFrame()`（`LwjglApplication.java:637-655`）无条件走 sleep/park 到帧截止时间，`sleepUntilFrameDeadline()`（`:657-678`）分 sleep / `parkNanos` / 直接返回三段，唯一调用点在主循环尾部（`:2138`）。`Display.sync()`、`shouldUseSoftwareSync()`、vsync margin 逻辑均已删除。`LwjglGraphics.setVSync()` 硬编码 false，`JREUtils` 里 `FORCE_VSYNC=false`/`LIBGL_VSYNC=0`。代码注释记录了实测：90Hz 面板 90 FPS 目标下进程 CPU -13%、渲染线程 CPU -14%，呈现帧率与抖动不变。
 
 同时删除的四个开关（`egl_swap_interval_pacing`、`hot_loop_noop_trim`、`default_fbo_fast_rebind`、`native_pre_swap_pacing`）一律按 OFF 语义固化，涉及 `LauncherConfig`、`CompatibilitySettings`、`StsLaunchSpec` 的 `-D` 参数与托管键列表、`JvmLaunchController` 审计键、兼容性/设置两处 UI 与 ViewModel、三个语言的 `strings.xml`，以及 `gl_bridge.c` 里约 76 行原生 pre-swap pacer。
-### 2. 每帧约 9 次 `System.getProperty` `[待办]`
-> 注意：原文说"打开 `lwjgl_hot_loop_noop_trim` 即可"已不适用。该开关连同它的 `*_AT_START` 静态镜像在上一轮被**删除**，所有调用点回到直接读属性。也就是说这一条不但没修，可选的现成修法也没了，需要重新实现属性提升。
+### 2. 每帧约 9 次 `System.getProperty` `[已修复]`
+> 注意：原文说"打开 `lwjgl_hot_loop_noop_trim` 即可"已不适用。该开关连同它的 `*_AT_START` 静态镜像在上一轮被**删除**，所以本轮是重新实现属性提升，而不是恢复旧开关。
 
-主循环每帧实际执行的属性读取：
+原始问题：主循环每帧实际执行的属性读取：
 
-| 调用 | 位置 | 每帧次数 | 读取方式 |
-|---|---|---|---|
-| `shouldLogGpuResourceSummary()` | `:2063` → `:2203-2206` | 1（内含 2 次读取） | `readBooleanSystemProperty` ×2 |
-| `runGlobalTextureCompatOnManagedGrowth()` → `shouldEnableGlobalTextureCompat()` | `:2074`、`:2102` → `:1694`/`:1726` → `:1310-1313` | 2 | `readBooleanSystemProperty` |
-| `shouldRunGlobalTextureCompatScan()` | `:2075` → `:1569-1577` | 1 | `readBooleanSystemProperty` |
-| `resolvePhysicalDisplayWidth/Height()` | `:2082-2083` → `:531-541` | 2 | `readPositiveIntProperty`（`:555`） |
-| `shouldForceDefaultFramebuffer()` | `:2148` → `:1156-1167` | 1 | `System.getProperty` |
-| `shouldPostRenderClear()` | `:2149` → `:1169-1171` | 1 | `Boolean.getBoolean` |
+| 调用 | 每帧次数 | 读取方式 |
+|---|---|---|
+| `shouldLogGpuResourceSummary()` | 1（内含 2 次读取） | `readBooleanSystemProperty` ×2 |
+| `runGlobalTextureCompatOnManagedGrowth()` → `shouldEnableGlobalTextureCompat()` | 2 | `readBooleanSystemProperty` |
+| `shouldRunGlobalTextureCompatScan()` | 1 | `readBooleanSystemProperty` |
+| `resolvePhysicalDisplayWidth/Height()` | 2 | `readPositiveIntProperty` |
+| `shouldForceDefaultFramebuffer()` | 1 | `System.getProperty` |
+| `shouldPostRenderClear()` | 1 | `Boolean.getBoolean` |
 
-每次都是 `Properties`（`Hashtable`）的 synchronized 查表。单次不贵，乘以 90 FPS 是纯浪费。原文列的"FBO rebind 缓存开关（`:1168`）"已随 `default_fbo_fast_rebind` 一起删除，不再计入。
+每次都是 `Properties`（`Hashtable`）的 synchronized 查表。单次不贵，乘以 90 FPS 是纯浪费。原文列的"FBO rebind 缓存开关"已随 `default_fbo_fast_rebind` 一起删除，不再计入（`amethyst.lwjgl.default_framebuffer_rebind_cache` 是另一个键，仍存在但不在每帧路径上）。
 
-一个实现约束：`shouldForceDefaultFramebuffer()` 在属性缺省时回落到 `LwjglGraphics.isGLESContextActive()`（运行时状态），不能整体提为 `static final`；只能缓存属性解析结果，保留上下文查询。
+**当前状态**：新增 `LwjglHotLoopConfig`（`patches/gdx-patch/.../lwjgl/LwjglHotLoopConfig.java`），把这些键在类初始化时解析一次存入 `static final` 字段，热路径只读字段。所有键都由启动器在类加载前以 `-D` 形式发布，运行时无 `System.setProperty` 写入（全仓库 grep 确认），所以快照语义与原来逐帧读取等价。
+
+改造后的调用点：`shouldLogGpuResourceSummary()`（`LwjglApplication.java:2158-2160`）返回 `GPU_RESOURCE_SUMMARY_LOG_ENABLED`；`shouldPostRenderClear()`（`:1135-1137`）返回 `POST_RENDER_CLEAR_ENABLED`；`shouldRunGlobalTextureCompatScan()`（`:1525-1533`）与 `shouldEnableGlobalTextureCompat()`（`:1276-1279`）改为先判静态布尔再走原逻辑；`resolvePhysicalDisplayWidth/Height()`（`:517-527`）与 `resolveConfiguredVirtualWidth/Height()`（`:529-535`）读取 `*_OVERRIDE` 常量，`readPositiveIntProperty` 已删除。
+
+两个必须保留的运行时依赖：
+
+- `shouldForceDefaultFramebuffer()`（`:1126-1133`）只缓存**属性解析结果**为三态 `Boolean FORCE_DEFAULT_FRAMEBUFFER_OVERRIDE`（`null` = 未配置），未配置时仍每帧调 `LwjglGraphics.isGLESContextActive()`。GLES 上下文可能在属性快照之后才建立，不能整体提为 `static final`。该查询本身只是读一个静态 boolean 字段（`LwjglGraphics.java:1032-1034`），不涉及查表。
+- `resolvePhysicalDisplayWidth/Height()` 在属性缺省时仍走 `Display.getWidth() * PixelScaleCompat.factor()`，只有属性覆盖被提前。
+
+解析语义逐条对齐旧行为，没有顺手"修正"：`parseBoolean` 保留"空白与无法识别的值回落到默认值"（不是 `Boolean.parseBoolean` 的 false）；`parseForceDefaultFramebuffer` 保留该键的 opt-out 语义——任何存在且非 `0`/`false`/`off` 的值（包括空串）都算启用；`parsePositiveInt` 对缺失/非数字/非正数一律返回 0。`LwjglHotLoopConfigTest` 覆盖这三个解析器的各分支，外加一条断言在无 `-D` 的测试 JVM 里快照落在历史默认值上。
+
+`readBooleanSystemProperty` 保留为 `LwjglHotLoopConfig.parseBoolean` 的薄封装，仍服务三处**非**每帧调用（`FRAME_PROFILER_ENABLED` `:87`、`FRAME_PROFILER_STACK_PROP` `:93`、构造函数里的 `NO_CONTEXT_DIAGNOSTICS_PROP` `:220`）。
 ### 3. 纹理绑定路径上的无条件计时 `[已修复]`
 原始问题：`GLTexture.bind()`（`GLTexture.java:375-376`）与 `bind(int)`（`:382-383`）都调 `notifyBeforeTextureAccess()`，其中 `lastAccessTimeNanos = nowMonotonicNanos()`（`nowMonotonicNanos()` 即 `System.nanoTime()`），这条路径没有任何开关保护，另有 4 处 setter 入口（`:426`、`:438`、`:451`、`:464`）与 `getHandle`（`:407`）也走同一函数。`SpriteBatch` 侧同理：`switchTexture()` 的 `FRAME_TEXTURE_SWITCHES.incrementAndGet()` 和 `flush()` 的 `FRAME_FLUSHES.incrementAndGet()` 都无条件执行。StS 每帧数千次 `switchTexture`，所以是每帧数千次 `nanoTime()` 加数千次原子自增。
 
@@ -46,7 +57,7 @@
 
 `isGpuResourceGuardianEnabled()`（`:2906-2912`）直接读 `amethyst.gdx.gpu_resource_guardian` 而不调用 `GpuResourceGuardian`，避免引入类初始化顺序依赖。它复刻了 `GpuResourceGuardian.Mode.fromProperty` 的语义：**属性缺失或无法识别时回落到 `SAFE`（即启用）**，只有显式 `off` 才算关闭。这是保守方向——宁可多保留计时也不能让回收逻辑读到脏数据。启动器默认传 `off`（`DEFAULT_GPU_RESOURCE_GUARDIAN_MODE = GpuResourceGuardianMode.OFF`，`LauncherConfig.kt:360`，经 `StsLaunchSpec.kt:589-592` 传递），所以默认配置下门控确实关闭。
 
-`SpriteBatch` 侧新增 `FRAME_DIAGNOSTICS_ENABLED`（`SpriteBatch.java:51-56`），按 `amethyst.gdx.frame_profiler` 判定，与读取方 `LwjglApplication` 的 `FRAME_PROFILER_ENABLED`（`:101`）为同一属性；启动器仅在 `performanceDeepDiagnostics` 时传 `true`（`StsLaunchSpec.kt:186`）。`flush()`（`:1150-1153`）与 `switchTexture()`（`:1249`）的自增改为条件执行，`consumeFrameDiagnostics()`（`:92-99`）在门控关闭时返回 `spriteFlushes=disabled textureSwitches=disabled maxSpritesInBatch=disabled`，避免读到误导性的 0 值。注意 `flush()` 里 `maxSpritesInBatch` 那个实例字段的更新**保持无条件**，它服务于 libGDX 的公开 API 而非本诊断路径；只有静态聚合 `updateFrameMaxSpritesInBatch()` 进了门控。
+`SpriteBatch` 侧新增 `FRAME_DIAGNOSTICS_ENABLED`（`SpriteBatch.java:51-56`），按 `amethyst.gdx.frame_profiler` 判定，与读取方 `LwjglApplication` 的 `FRAME_PROFILER_ENABLED`（`:87`）为同一属性；启动器仅在 `performanceDeepDiagnostics` 时传 `true`（`StsLaunchSpec.kt:186`）。`flush()`（`:1150-1153`）与 `switchTexture()`（`:1249`）的自增改为条件执行，`consumeFrameDiagnostics()`（`:92-99`）在门控关闭时返回 `spriteFlushes=disabled textureSwitches=disabled maxSpritesInBatch=disabled`，避免读到误导性的 0 值。注意 `flush()` 里 `maxSpritesInBatch` 那个实例字段的更新**保持无条件**，它服务于 libGDX 的公开 API 而非本诊断路径；只有静态聚合 `updateFrameMaxSpritesInBatch()` 进了门控。
 ### 4. JIT 被限制在 C1 `[待办]`
 `-XX:TieredStopAtLevel=2`（常量 `StsLaunchSpec.kt:43`，添加于 `:145`）意味着热点代码永远进不了 C2。对 StS 这种长时间运行的游戏，稳态性能会明显低于完整分层编译。同时 `-XX:ActiveProcessorCount=3`（常量 `:42`，添加于 `:166-168`）在多核设备上限制了 GC 与 JIT 编译线程的并行度。
 这两条也许是为稳定性刻意选择的，但代价没有在代码注释里说明——相邻的 `-Xint` 回退（`:139-142`）和压缩指针（`:149-150`）都有注释解释原因，这两条没有。
@@ -120,7 +131,7 @@
 - 纹理常驻软预算 768 MB，硬下限 512 MB（`GLTexture.java:177-181`：`Math.max(512MB, readLongSystemProperty(..., 768MB, ...))`）
 - 加上 metaspace、code cache、GL 驱动分配
 
-设计点超过 1.2 GB，全在一个 Android 进程内。而三项回收机制默认全部关闭：`DEFAULT_LARGE_TEXTURE_DOWNSCALE_COMPAT_ENABLED = false`（`LauncherConfig.kt:355`）、`DEFAULT_TEXTURE_RESIDENCY_MANAGER_COMPAT_ENABLED = false`（`:356`）、`DEFAULT_GPU_RESOURCE_GUARDIAN_MODE = OFF`（`:360`）。每帧调用的 `GLTexture.reclaimIdleTextures`（`LwjglApplication.java:2133`）在 `GLTexture.java:823` 因 `!TEXTURE_RESIDENCY_MANAGER_ENABLED` 直接返回。
+设计点超过 1.2 GB，全在一个 Android 进程内。而三项回收机制默认全部关闭：`DEFAULT_LARGE_TEXTURE_DOWNSCALE_COMPAT_ENABLED = false`（`LauncherConfig.kt:355`）、`DEFAULT_TEXTURE_RESIDENCY_MANAGER_COMPAT_ENABLED = false`（`:356`）、`DEFAULT_GPU_RESOURCE_GUARDIAN_MODE = OFF`（`:360`）。每帧调用的 `GLTexture.reclaimIdleTextures`（`LwjglApplication.java:2088`）在 `GLTexture.java:831` 因 `!TEXTURE_RESIDENCY_MANAGER_ENABLED` 直接返回。
 这个形状在 6 GB 设备上更容易表现为 lmkd 中途杀进程，而不是 Java `OutOfMemoryError`。
 ### 4. `Hitbox.registeredHitboxes` 整局只增不减 `[已失效 / 部分待办]`
 > **原结论的前提不成立。** 开关默认值是 **true**，不是 false。
@@ -134,7 +145,7 @@
 
 **仍然成立的是第二个代价**：修剪是对整个列表的 O(n) 反向扫描，且发生在输入处理路径内部（经 `deferFreshPreClickHoverClick` `:89-96` / `dispatchDeferredPreClickHoverInput` `:74-87`）。长时间对局后期，每次点击都要扫一遍数万条大部分已失效的条目。这条按"输入延迟"而非"内存泄漏"处理更准确。
 ### 5. `getMethod` 反射未缓存 `[待办]`
-`LwjglApplication.java:1633-1642` 的 `textureDataUseMipMaps` 每次调 `Texture.class.getMethod("getTextureData")`（`:1636`），而 `Class.getMethod` 每次返回新的 `Method` 副本。该方法在 `:1758` 对每个候选纹理每次扫描都调用，未缓存。同一文件 `:1274` 的诊断路径也是同样写法。
+`LwjglApplication.java:1588-1597` 的 `textureDataUseMipMaps` 每次调 `Texture.class.getMethod("getTextureData")`（`:1591`），而 `Class.getMethod` 每次返回新的 `Method` 副本。该方法在 `:1713` 对每个候选纹理每次扫描都调用，未缓存。同一文件 `:1240` 的诊断路径也是同样写法。
 同一个逻辑 `SpriteBatch.java:271-279` 用直接类型化调用实现（`texture.getTextureData()` + `textureData.useMipMaps()`），无反射——修复范式在代码库里已经存在。
 ---
 ## 排查结果为阴性的部分
@@ -149,24 +160,24 @@
 - `GpuLeakInjector.LEAKED_TEXTURES` 是真泄漏但是刻意的测试装置，且属性只在 debug 构建可注入——`addDebugGpuGuardianTestProperties`（`StsLaunchSpec.kt:879-892`）在 `BuildConfig.BUILD_TYPE != "debug"` 时直接返回空结果，`amethyst.gdx.debug_leak_injector` 在 `DEBUG_GPU_GUARDIAN_PROPERTY_KEYS`（`:50-54`）内
 
 **本轮补充验证的两项原"未验证"条目**（结论均为阴性/无需担心）：
-- `CompatibilitySettings.isRuntimeTextureCompatEnabled` 委托 `LauncherConfig.isRuntimeTextureCompatEnabled`（`CompatibilitySettings.kt:209-211`），后者 `getBoolean(PREF_KEY_RUNTIME_TEXTURE_COMPAT, false)`（`LauncherConfig.kt:1325`）→ **默认关闭**。因此 `shouldEnableGlobalTextureCompat()`（`LwjglApplication.java:1310-1313`）中的 `enabled` 为 false，每帧两次纹理兼容检查会在第一个条件就短路，不会真正扫描纹理。属性读取本身的开销仍计入第 2 条。
+- `CompatibilitySettings.isRuntimeTextureCompatEnabled` 委托 `LauncherConfig.isRuntimeTextureCompatEnabled`（`CompatibilitySettings.kt:209-211`），后者 `getBoolean(PREF_KEY_RUNTIME_TEXTURE_COMPAT, false)`（`LauncherConfig.kt:1325`）→ **默认关闭**。因此 `shouldEnableGlobalTextureCompat()`（`LwjglApplication.java:1276-1279`）在第一个条件就短路，每帧两次纹理兼容检查不会真正扫描纹理。属性读取开销原先计入第 2 条，该条已修复。
 - `GameSessionCoordinator.foregroundAudioRestoreRunnables`（`:92`）移除路径**完整**：`scheduleForegroundAudioRestoreRetries()`（`:892-904`）第一行就调 `cancelForegroundAudioRestoreRetries()`，后者（`:906-914`）遍历 `removeCallbacks` 后 `clear()`；另有 6 处调用点（`:250`、`:281`、`:289`、`:872`、`:893`、`:1186`）覆盖失焦、后台、销毁路径。不是泄漏。
 ---
 ## 建议的处理顺序
 按预期收益排序。已完成项移到下方"已完成"小节，保留供对照。
 
-1. **重新实现主循环属性提升**（第一部分第 2 条）。原先的 `lwjgl_hot_loop_noop_trim` 开关已被删除，需要直接把属性解析结果缓存为静态字段。注意 `shouldForceDefaultFramebuffer()` 必须保留 `isGLESContextActive()` 的运行时查询，不能整体提为 `static final`。每帧 9 次 `Hashtable` synchronized 查表，无行为风险。
-2. **让 `STS-RuntimeHeap` 只在性能浮层开启时启动**（`JvmLaunchController.kt:254` 加条件，与 `StsLaunchSpec.kt:707-708` 的写入条件对齐），`STS-LatestLogcat` 同理按 `mirrorJvmLogsToLogcat` 门控（`:252`）。前者默认配置下是纯空转唤醒，1 次/秒读一个永远不存在的文件。
-3. **`-Xmx` 按设备内存缩放**，在 `LauncherConfig.kt:1157` 的 `readJvmHeapMaxMb` 无存储值时读一次 `MemoryInfo.totalMem`，clamp 在现有 256–2048 区间内。可以顺手复用 `resolveDefaultGpuResourceGuardianMode(totalMemoryBytes)`（`:1586`）那个已存在但被废弃的签名形状。
-4. **摊销 `Hitbox.registeredHitboxes` 的 O(n) 扫描**。注意这一条已从"内存泄漏"改判为"输入延迟"：默认配置下修剪是开启的，问题是每次点击都要 O(n) 扫描。可在 `beginPreClickHoverRefreshFrame()`（`Hitbox.java:69-72`）里按帧计数分摊压缩，把点击路径的扫描降为增量。
-5. **缓存 `textureDataUseMipMaps` 的反射**（`LwjglApplication.java:1636`、`:1274`），或改为 `SpriteBatch.java:271-279` 那样的直接类型化调用。非每帧路径，收益有限。
-6. 复核 `-XX:TieredStopAtLevel=2`（`StsLaunchSpec.kt:43`）与 `-XX:ActiveProcessorCount=3`（`:42`）是否仍有必要，若是稳定性妥协请在代码里注明原因。**这条需要设备实测才能定，不适合纯代码改动。**
-7. `:game` 进程主线程的 5 个高频文件轮询（第二部分第 4 条，合计约 38 次/秒）。可以考虑合并为单个 tick 或改为文件观察者，但这是接口重构而非局部修复，改动面明显大于前面各项。
-8. 屏幕常亮默认值（第二部分第 1 条）属于产品决策而非 bug，若要改需要产品侧同意；顺手可以把 `dispatchTouchEvent`/`onTouchEvent` 的重复 `resetKeepScreenOnIdleTimer()` 去掉一处。
-9. 陀螺仪注册（第二部分第 6 条）与 Presence 心跳缺少 stop 路径（第二部分第 7 条）。前者需要先确认是否真有功能消费数据，后者需要确认长连接是产品意图还是遗漏。两条都需要先定性再动手。
+1. **让 `STS-RuntimeHeap` 只在性能浮层开启时启动**（`JvmLaunchController.kt:254` 加条件，与 `StsLaunchSpec.kt:707-708` 的写入条件对齐），`STS-LatestLogcat` 同理按 `mirrorJvmLogsToLogcat` 门控（`:252`）。前者默认配置下是纯空转唤醒，1 次/秒读一个永远不存在的文件。
+2. **`-Xmx` 按设备内存缩放**，在 `LauncherConfig.kt:1157` 的 `readJvmHeapMaxMb` 无存储值时读一次 `MemoryInfo.totalMem`，clamp 在现有 256–2048 区间内。可以顺手复用 `resolveDefaultGpuResourceGuardianMode(totalMemoryBytes)`（`:1586`）那个已存在但被废弃的签名形状。
+3. **摊销 `Hitbox.registeredHitboxes` 的 O(n) 扫描**。注意这一条已从"内存泄漏"改判为"输入延迟"：默认配置下修剪是开启的，问题是每次点击都要 O(n) 扫描。可在 `beginPreClickHoverRefreshFrame()`（`Hitbox.java:69-72`）里按帧计数分摊压缩，把点击路径的扫描降为增量。
+4. **缓存 `textureDataUseMipMaps` 的反射**（`LwjglApplication.java:1591`、`:1240`），或改为 `SpriteBatch.java:271-279` 那样的直接类型化调用。非每帧路径，收益有限。
+5. 复核 `-XX:TieredStopAtLevel=2`（`StsLaunchSpec.kt:43`）与 `-XX:ActiveProcessorCount=3`（`:42`）是否仍有必要，若是稳定性妥协请在代码里注明原因。**这条需要设备实测才能定，不适合纯代码改动。**
+6. `:game` 进程主线程的 5 个高频文件轮询（第二部分第 4 条，合计约 38 次/秒）。可以考虑合并为单个 tick 或改为文件观察者，但这是接口重构而非局部修复，改动面明显大于前面各项。
+7. 屏幕常亮默认值（第二部分第 1 条）属于产品决策而非 bug，若要改需要产品侧同意；顺手可以把 `dispatchTouchEvent`/`onTouchEvent` 的重复 `resetKeepScreenOnIdleTimer()` 去掉一处。
+8. 陀螺仪注册（第二部分第 6 条）与 Presence 心跳缺少 stop 路径（第二部分第 7 条）。前者需要先确认是否真有功能消费数据，后者需要确认长连接是产品意图还是遗漏。两条都需要先定性再动手。
 
 ### 已完成
 - 帧同步：删除开关、保留 sleep/park 最优路径（第一部分第 1 条）
+- 主循环属性提升：新增 `LwjglHotLoopConfig` 静态快照，保留 GLES 上下文运行时查询（第一部分第 2 条）
 - 纹理绑定路径无条件计时：`GLTexture` 与 `SpriteBatch` 两侧各加 `static final` 门控（第一部分第 3 条）
 - 启动器 logcat 抓取：开局停止 + 轮询 250 ms → 2 s（第二部分第 2 条）
 - EasyTier 隐藏浮层：删除 1 秒轮询，改用已有广播（第二部分第 3 条）
@@ -174,4 +185,4 @@
 ---
 两点说明：以上全部来自源码阅读，我没有在设备上运行过，所以没有实测的 mA 或核温数据；排序依据是唤醒频率、系统调用/binder 成本与屏幕/射频行为。唯一有实测数据的是第一部分第 1 条（已修复），数据来自代码注释里记录的对比。
 
-原文末尾列的两项"未验证"已在本轮全部验证完毕，结论见上方阴性清单——两项都不构成问题，其中纹理兼容扫描的默认关闭状态还削弱了第一部分第 2 条的严重性（属性读取仍在，但短路后不扫描纹理）。
+原文末尾列的两项"未验证"已在本轮全部验证完毕，结论见上方阴性清单——两项都不构成问题，其中纹理兼容扫描的默认关闭状态在第一部分第 2 条修复前就已削弱其严重性（属性读取存在但短路后不扫描纹理），该条现已修复。

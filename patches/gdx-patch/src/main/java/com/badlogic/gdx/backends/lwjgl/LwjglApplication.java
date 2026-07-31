@@ -76,23 +76,9 @@ public class LwjglApplication implements Application {
 	private static final String NO_CONTEXT_LOG_MARKER =
 		"No context is current or a function that is not available in the current context was called.";
 	private static final String ZERO_MISSING_FUNCTION_PTR_PROP = "amethyst.lwjgl.diag.zero_missing_function_ptr";
-	private static final String FORCE_DEFAULT_FBO_PROP = "amethyst.lwjgl.force_default_framebuffer";
-	private static final String DEFAULT_FBO_REBIND_CACHE_PROP = "amethyst.lwjgl.default_framebuffer_rebind_cache";
 	private static final String RENDER_SCALE_PROP = "amethyst.gdx.render_scale";
-	private static final String VIRTUAL_WIDTH_PROP = "amethyst.gdx.virtual_width";
-	private static final String VIRTUAL_HEIGHT_PROP = "amethyst.gdx.virtual_height";
-	private static final String GLFWSTUB_PHYSICAL_WIDTH_PROP = "glfwstub.physicalWidth";
-	private static final String GLFWSTUB_PHYSICAL_HEIGHT_PROP = "glfwstub.physicalHeight";
 	private static final String MOBILE_HUD_ENABLED_PROP = "amethyst.mobile_hud_enabled";
-	private static final String GLOBAL_ATLAS_FILTER_COMPAT_PROP = "amethyst.gdx.global_atlas_filter_compat";
-	private static final String RUNTIME_TEXTURE_COMPAT_PROP = "amethyst.gdx.runtime_texture_compat";
-	private static final String RUNTIME_TEXTURE_COMPAT_PERIODIC_SCAN_PROP =
-		"amethyst.gdx.runtime_texture_compat_periodic_scan";
-	private static final String GLOBAL_TEXTURE_COMPAT_VERBOSE_PROP = "amethyst.gdx.global_texture_compat_verbose";
-	private static final String GPU_RESOURCE_DIAG_ENABLED_PROP = "amethyst.gdx.gpu_resource_diag";
-	private static final String GPU_RESOURCE_SUMMARY_ENABLED_PROP = "amethyst.gdx.gpu_resource_summary";
 	private static final String ACTIVE_REFRESH_RATE_PROP = "amethyst.gdx.active_refresh_rate";
-	private static final String POST_RENDER_CLEAR_PROP = "amethyst.lwjgl.diag.post_render_clear";
 	private static final String FRAME_PROFILER_ENABLED_PROP = "amethyst.gdx.frame_profiler";
 	private static final String FRAME_PROFILER_SLOW_MS_PROP = "amethyst.gdx.frame_profiler.slow_ms";
 	private static final String FRAME_PROFILER_SUMMARY_FRAMES_PROP = "amethyst.gdx.frame_profiler.summary_frames";
@@ -529,38 +515,23 @@ public class LwjglApplication implements Application {
 	}
 
 	private static int resolvePhysicalDisplayWidth () {
-		int configured = readPositiveIntProperty(GLFWSTUB_PHYSICAL_WIDTH_PROP);
+		int configured = LwjglHotLoopConfig.PHYSICAL_WIDTH_OVERRIDE;
 		if (configured > 0) return configured;
 		return Math.max(1, (int)(Display.getWidth() * PixelScaleCompat.factor()));
 	}
 
 	private static int resolvePhysicalDisplayHeight () {
-		int configured = readPositiveIntProperty(GLFWSTUB_PHYSICAL_HEIGHT_PROP);
+		int configured = LwjglHotLoopConfig.PHYSICAL_HEIGHT_OVERRIDE;
 		if (configured > 0) return configured;
 		return Math.max(1, (int)(Display.getHeight() * PixelScaleCompat.factor()));
 	}
 
 	private static int resolveConfiguredVirtualWidth () {
-		int configured = readPositiveIntProperty(VIRTUAL_WIDTH_PROP);
-		if (configured > 0) return configured;
-		return 0;
+		return LwjglHotLoopConfig.VIRTUAL_WIDTH_OVERRIDE;
 	}
 
 	private static int resolveConfiguredVirtualHeight () {
-		int configured = readPositiveIntProperty(VIRTUAL_HEIGHT_PROP);
-		if (configured > 0) return configured;
-		return 0;
-	}
-
-	private static int readPositiveIntProperty (String property) {
-		String raw = System.getProperty(property);
-		if (raw == null) return 0;
-		try {
-			int value = Integer.parseInt(raw.trim());
-			return value > 0 ? value : 0;
-		} catch (Throwable ignored) {
-			return 0;
-		}
+		return LwjglHotLoopConfig.VIRTUAL_HEIGHT_OVERRIDE;
 	}
 
 	private static final class ScaledRenderPipeline {
@@ -1107,8 +1078,7 @@ public class LwjglApplication implements Application {
 
 	private void bindDefaultFramebufferForSwap (boolean allowBindingCache) {
 		ensureDisplayContextCurrent("pre-swap-fbo-rebind");
-		boolean useBindingCache = allowBindingCache
-			&& readBooleanSystemProperty(DEFAULT_FBO_REBIND_CACHE_PROP, true);
+		boolean useBindingCache = allowBindingCache && LwjglHotLoopConfig.DEFAULT_FBO_REBIND_CACHE_ENABLED;
 		boolean needsBind = !useBindingCache || !isDrawFramebufferKnownDefault();
 		boolean bound = false;
 		if (needsBind) {
@@ -1154,20 +1124,16 @@ public class LwjglApplication implements Application {
 	}
 
 	private boolean shouldForceDefaultFramebuffer () {
-		String configured = System.getProperty(FORCE_DEFAULT_FBO_PROP);
-		if (configured != null) {
-			configured = configured.trim();
-			return !"0".equals(configured)
-				&& !"false".equalsIgnoreCase(configured)
-				&& !"off".equalsIgnoreCase(configured);
-		}
+		Boolean configured = LwjglHotLoopConfig.FORCE_DEFAULT_FRAMEBUFFER_OVERRIDE;
+		if (configured != null) return configured.booleanValue();
 		// Default to enabled on GLES-backed contexts to avoid swapping a stale black backbuffer
-		// when third-party code leaves an offscreen FBO bound at end of frame.
+		// when third-party code leaves an offscreen FBO bound at end of frame. This stays a runtime
+		// query because the GLES context can come up after the property snapshot is taken.
 		return LwjglGraphics.isGLESContextActive();
 	}
 
 	private static boolean shouldPostRenderClear () {
-		return Boolean.getBoolean(POST_RENDER_CLEAR_PROP);
+		return LwjglHotLoopConfig.POST_RENDER_CLEAR_ENABLED;
 	}
 
 	private static Field findField (Class<?> type, String name) throws NoSuchFieldException {
@@ -1308,22 +1274,12 @@ public class LwjglApplication implements Application {
 	}
 
 	private boolean shouldEnableGlobalTextureCompat () {
-		boolean enabled = readBooleanSystemProperty(RUNTIME_TEXTURE_COMPAT_PROP, false);
-		return enabled && LwjglGraphics.isGLESContextActive();
+		if (!LwjglHotLoopConfig.RUNTIME_TEXTURE_COMPAT_ENABLED) return false;
+		return LwjglGraphics.isGLESContextActive();
 	}
 
 	private static boolean readBooleanSystemProperty (String key, boolean defaultValue) {
-		String configured = System.getProperty(key);
-		if (configured == null) return defaultValue;
-		configured = configured.trim();
-		if (configured.length() == 0) return defaultValue;
-		if ("false".equalsIgnoreCase(configured) || "0".equals(configured) || "off".equalsIgnoreCase(configured)) {
-			return false;
-		}
-		if ("true".equalsIgnoreCase(configured) || "1".equals(configured) || "on".equalsIgnoreCase(configured)) {
-			return true;
-		}
-		return defaultValue;
+		return LwjglHotLoopConfig.parseBoolean(System.getProperty(key), defaultValue);
 	}
 
 	private static boolean isGpuLeakInjectorModeEnabled (String mode) {
@@ -1567,8 +1523,7 @@ public class LwjglApplication implements Application {
 	}
 
 	private boolean shouldRunGlobalTextureCompatScan () {
-		boolean enabled = readBooleanSystemProperty(RUNTIME_TEXTURE_COMPAT_PERIODIC_SCAN_PROP, false);
-		if (!enabled) return false;
+		if (!LwjglHotLoopConfig.RUNTIME_TEXTURE_COMPAT_PERIODIC_SCAN_ENABLED) return false;
 		long frame = graphics.frameId;
 		if (frame < 3600) return (frame % 60) == 0;
 		if (frame < 7200) return (frame % 10) == 0;
@@ -1577,11 +1532,11 @@ public class LwjglApplication implements Application {
 	}
 
 	private boolean shouldEnableGlobalAtlasFilterCompatFallback () {
-		return readBooleanSystemProperty(GLOBAL_ATLAS_FILTER_COMPAT_PROP, true);
+		return LwjglHotLoopConfig.GLOBAL_ATLAS_FILTER_COMPAT_ENABLED;
 	}
 
 	private boolean shouldEnableGlobalTextureCompatVerboseLog () {
-		return readBooleanSystemProperty(GLOBAL_TEXTURE_COMPAT_VERBOSE_PROP, false);
+		return LwjglHotLoopConfig.GLOBAL_TEXTURE_COMPAT_VERBOSE_ENABLED;
 	}
 
 	private static void drainGlErrors () {
@@ -2201,8 +2156,7 @@ public class LwjglApplication implements Application {
 	}
 
 	private static boolean shouldLogGpuResourceSummary () {
-		return readBooleanSystemProperty(GPU_RESOURCE_DIAG_ENABLED_PROP, false)
-			|| readBooleanSystemProperty(GPU_RESOURCE_SUMMARY_ENABLED_PROP, false);
+		return LwjglHotLoopConfig.GPU_RESOURCE_SUMMARY_LOG_ENABLED;
 	}
 
 	private static void processQueuedAudioCommands () {

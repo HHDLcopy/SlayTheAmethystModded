@@ -27,6 +27,8 @@ Requests Java GC from selected lifecycle points to accelerate cleanup after Ram 
 
 This patch requires the launcher to leave explicit GC enabled. `RamSaver.update` drains a `ReferenceQueue` and only disposes a backing texture for entries the collector has already cleared and enqueued, so `System.gc()` here is what converts "collectible" into "native memory actually freed". The launcher therefore omits `-XX:+DisableExplicitGC` whenever Ram Saver is active (`StsLaunchSpec.resolveDisableExplicitGcEnabled`); with that flag applied these calls become no-ops and native texture release is deferred to the next incidental collection.
 
+**Rate limiting (2026 performance fix)**: `AggressiveGC` now throttles `System.gc()` calls to at most one per 45 seconds (configurable via `ramsaver.gc.throttle_seconds`, range 10-300). This prevents multiple stop-the-world GC pauses during startup when BaseMod publishes cards/relics/characters/strings/keywords in quick succession. Suppressed GC requests are logged when diagnostics are enabled. This preserves Ram Saver's memory reclamation behavior while eliminating the 10-80ms frame drops that caused severe 1% low framerate degradation and user-visible stutter.
+
 8. `optispire.RamSaverDiag`
 Adds `[ram-saver]` diagnostic logging gated by the launcher's `amethyst.gdx.gpu_resource_diag` property or the explicit `ramsaver.diag.enabled` property, with full verbose traces requiring `ramsaver.diag.verbose=true`. This addresses the need to attribute render-thread materialization stalls and repeated texture creation without flooding normal gameplay logs. Type: diagnostic hook implemented by `RamSaverDiag` and instrumentation in the texture/materialization paths.
 

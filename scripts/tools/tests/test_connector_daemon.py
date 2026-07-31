@@ -4,9 +4,11 @@ import json
 import os
 import socket as _socket
 import subprocess
+import sys
 import threading
 import time
 import unittest
+from pathlib import Path
 
 from scripts.tools.connector.client import ConnectorClient
 from scripts.tools.lib.env_device import get_test_device_serial
@@ -47,6 +49,7 @@ def _start_daemon() -> ConnectorClient:
         text=True,
     )
     info = json.loads(proc.stdout.readline().strip())
+    proc.stdout.close()
     time.sleep(0.3)
     client = ConnectorClient(port=info["port"])
     client.connect()
@@ -64,7 +67,40 @@ def _stop_daemon(conn: ConnectorClient) -> None:
         conn._daemon_proc.wait(timeout=5)
 
 
+def _free_port() -> int:
+    with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+def _quit_daemon(port: int) -> None:
+    try:
+        with _socket.create_connection(("127.0.0.1", port), timeout=2) as sock:
+            sock.sendall(b'{"method":"quit"}\n')
+            sock.recv(4096)
+    except OSError:
+        pass
+
+
 class TestConnectorDaemonIntegration(unittest.TestCase):
+
+    def test_start_cli_exits_when_output_streams_are_combined(self):
+        port = _free_port()
+        repo_root = Path(__file__).resolve().parents[3]
+        try:
+            result = subprocess.run(
+                [sys.executable, "-m", "scripts.tools.connector", "start", "--port", str(port)],
+                cwd=repo_root,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                timeout=5,
+                check=False,
+            )
+            self.assertEqual(0, result.returncode, result.stdout)
+            self.assertIn(f"Connector daemon started on port {port}.", result.stdout)
+        finally:
+            _quit_daemon(port)
 
     def test_ping_pong_over_tcp(self):
         server, port, thread = _start_fake_connector_daemon()

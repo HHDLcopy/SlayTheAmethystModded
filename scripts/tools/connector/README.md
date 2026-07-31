@@ -63,6 +63,7 @@ python -m scripts.tools.connector daemon --port 15555
 ```
 
 `start` 命令通过 TCP ping 检查端口是否已占用，已运行则拒绝重复启动。
+启动器仅从 daemon 的标准输出读取 ready JSON；完成握手后 daemon 的标准错误会与调用命令的输出流断开。因此即使 IDE、CI 或其他运行器合并并捕获 stdout/stderr，`start` 和 `restart` 也会在 daemon 就绪后正常退出。
 
 ## 环境变量
 

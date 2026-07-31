@@ -60,6 +60,7 @@ def _start_daemon(port: int) -> subprocess.Popen:
     proc = subprocess.Popen(
         [sys.executable, "-m", "scripts.tools.connector", "daemon", "--port", str(port)],
         stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
         text=True,
         start_new_session=True,
     )
@@ -76,6 +77,9 @@ def _start_daemon(port: int) -> subprocess.Popen:
         proc.terminate()
         proc.wait(timeout=5)
         raise SystemExit(f"Failed to read daemon ready signal: {e}")
+    finally:
+        if proc.stdout is not None:
+            proc.stdout.close()
     return proc
 
 

@@ -7,7 +7,7 @@ import org.junit.Test
 
 class NetworkAccelerationPolicyTest {
     @Test
-    fun shouldUseAcceleratedLinks_requiresConfiguredEnabledChinaRegionAndNoVpn() {
+    fun shouldUseAcceleratedLinks_onlyRequiresConfiguredEnabled() {
         assertTrue(
             NetworkAccelerationPolicy.shouldUseAcceleratedLinks(
                 configuredEnabled = true,
@@ -15,14 +15,14 @@ class NetworkAccelerationPolicyTest {
                 chinaRegionProvider = { true },
             ),
         )
-        assertFalse(
+        assertTrue(
             NetworkAccelerationPolicy.shouldUseAcceleratedLinks(
                 configuredEnabled = true,
                 vpnActiveProvider = { true },
                 chinaRegionProvider = { true },
             ),
         )
-        assertFalse(
+        assertTrue(
             NetworkAccelerationPolicy.shouldUseAcceleratedLinks(
                 configuredEnabled = true,
                 vpnActiveProvider = { false },
@@ -39,20 +39,20 @@ class NetworkAccelerationPolicyTest {
     }
 
     @Test
-    fun shouldBypassAcceleratedLinks_usesOfficialLinksOutsideChinaOrWithVpn() {
+    fun shouldBypassAcceleratedLinks_doesNotDisableConfiguredCandidates() {
         assertFalse(
             NetworkAccelerationPolicy.shouldBypassAcceleratedLinks(
                 vpnActiveProvider = { false },
                 chinaRegionProvider = { true },
             ),
         )
-        assertTrue(
+        assertFalse(
             NetworkAccelerationPolicy.shouldBypassAcceleratedLinks(
                 vpnActiveProvider = { true },
                 chinaRegionProvider = { true },
             ),
         )
-        assertTrue(
+        assertFalse(
             NetworkAccelerationPolicy.shouldBypassAcceleratedLinks(
                 vpnActiveProvider = { false },
                 chinaRegionProvider = { false },

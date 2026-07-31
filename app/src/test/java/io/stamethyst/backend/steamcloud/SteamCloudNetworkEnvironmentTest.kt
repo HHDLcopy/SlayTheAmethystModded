@@ -92,13 +92,13 @@ class SteamCloudNetworkEnvironmentTest {
     }
 
     @Test
-    fun isProxyOrAcceleratorActive_ignoresWattAccelerationOutsideChinaRegion() {
+    fun isProxyOrAcceleratorActive_usesWattAccelerationOutsideChinaRegion() {
         val roots = TestRoots.create("steam-cloud-proxy-active-watt-outside-cn")
         try {
             withDefaultLocale(Locale.US) {
                 LauncherConfig.setSteamCloudWattAccelerationEnabled(roots.context, true)
 
-                assertFalse(SteamCloudNetworkEnvironment.isProxyOrAcceleratorActive(roots.context))
+                assertTrue(SteamCloudNetworkEnvironment.isProxyOrAcceleratorActive(roots.context))
             }
         } finally {
             roots.rootDir.deleteRecursively()

@@ -17,15 +17,15 @@ import okhttp3.OkHttpClient
 
 internal val SteamCommunityWattToolkitRouteProfile = WattToolkitRouteProfile(
     name = "steam-community",
-    // v3 invalidates poisoned v2 entries that pinned non-workshop hosts (e.g. valvesoftware).
-    cacheFileName = "watt-steam-community-route-cache-v3.json",
+    // v4 invalidates caches created before official-link candidates were persisted.
+    cacheFileName = "watt-steam-community-route-cache-v4.json",
     supportedHosts = setOf("steamcommunity.com", "www.steamcommunity.com"),
     bootstrapForwardTargets = listOf("https://steamcommunity.rmbgame.net"),
 )
 
 internal val SteamStoreWattToolkitRouteProfile = WattToolkitRouteProfile(
     name = "steam-store",
-    cacheFileName = "watt-steam-store-route-cache-v2.json",
+    cacheFileName = "watt-steam-store-route-cache-v3.json",
     supportedHosts = setOf(
         "api.steampowered.com",
         "store.steampowered.com",
@@ -38,7 +38,7 @@ internal val SteamStoreWattToolkitRouteProfile = WattToolkitRouteProfile(
 
 internal val SteamImageCdnWattToolkitRouteProfile = WattToolkitRouteProfile(
     name = "steam-image-cdn",
-    cacheFileName = "watt-steam-image-cdn-route-cache.json",
+    cacheFileName = "watt-steam-image-cdn-route-cache-v2.json",
     supportedHosts = setOf(
         "steamcdn-a.akamaihd.net",
         "steamuserimages-a.akamaihd.net",
@@ -55,14 +55,14 @@ internal val SteamImageCdnWattToolkitRouteProfile = WattToolkitRouteProfile(
 
 internal val SteamMediaWattToolkitRouteProfile = WattToolkitRouteProfile(
     name = "steam-media",
-    cacheFileName = "watt-steam-media-route-cache.json",
+    cacheFileName = "watt-steam-media-route-cache-v2.json",
     supportedHosts = setOf("media.steampowered.com"),
     bootstrapForwardTargets = listOf("steammedia.rmbgame.net"),
 )
 
 internal val SteamContentCdnWattToolkitRouteProfile = WattToolkitRouteProfile(
     name = "steam-content-cdn",
-    cacheFileName = "watt-steam-content-cdn-route-cache-v2.json",
+    cacheFileName = "watt-steam-content-cdn-route-cache-v3.json",
     supportedHosts = setOf(
         "st.dl.eccdnx.com",
         "shared.st.dl.eccdnx.com",

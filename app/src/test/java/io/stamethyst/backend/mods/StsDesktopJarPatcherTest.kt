@@ -14,6 +14,11 @@ class StsDesktopJarPatcherTest {
     }
 
     @Test
+    fun requiredPatchClasses_includeLwjglHotLoopConfig() {
+        assertTrue(REQUIRED_STS_PATCH_CLASSES.contains(STS_PATCH_LWJGL_HOT_LOOP_CONFIG_CLASS))
+    }
+
+    @Test
     fun requiredPatchClasses_includeTextureOwnerSummary() {
         assertTrue(REQUIRED_STS_PATCH_CLASSES.contains(STS_PATCH_TEXTURE_OWNER_SUMMARY_CLASS))
     }
@@ -73,6 +78,22 @@ class StsDesktopJarPatcherTest {
         val included = method.invoke(
             StsDesktopJarPatcher,
             STS_PATCH_TEXTURE_OWNER_SUMMARY_CLASS
+        ) as Boolean
+
+        assertTrue(included)
+    }
+
+    @Test
+    fun shouldPatchStsEntry_acceptsLwjglHotLoopConfig() {
+        val method = StsDesktopJarPatcher::class.java.getDeclaredMethod(
+            "shouldPatchStsEntry",
+            String::class.java
+        )
+        method.isAccessible = true
+
+        val included = method.invoke(
+            StsDesktopJarPatcher,
+            STS_PATCH_LWJGL_HOT_LOOP_CONFIG_CLASS
         ) as Boolean
 
         assertTrue(included)

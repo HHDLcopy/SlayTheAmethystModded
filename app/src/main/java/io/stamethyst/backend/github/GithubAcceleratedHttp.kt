@@ -4,7 +4,6 @@ import android.content.Context
 import io.stamethyst.backend.network.NetworkAccelerationPolicy
 import java.io.File
 import java.io.IOException
-import java.net.InetSocketAddress
 import java.net.ProtocolException
 import java.net.Proxy
 import java.net.InetAddress
@@ -52,6 +51,7 @@ internal data class WattToolkitRouteProfile(
     val bootstrapForwardTargets: List<String>,
     val supportedProxyTypes: Set<Int> = setOf(WATT_PROXY_TYPE_DIRECT),
     val allowUncheckedRoutes: Boolean = false,
+    val officialProbePath: String = "/",
     /**
      * Subdomain suffixes (".example.com") accelerated by the same upstream rule.
      *
@@ -65,21 +65,22 @@ internal data class WattToolkitRouteProfile(
 
 internal val GithubApiWattToolkitRouteProfile = WattToolkitRouteProfile(
     name = "github-api",
-    cacheFileName = "watt-github-api-route-cache.json",
+    cacheFileName = "watt-github-api-route-cache-v2.json",
     supportedHosts = setOf("api.github.com"),
     bootstrapForwardTargets = listOf("githubapi.rmbgame.net"),
+    officialProbePath = "/rate_limit",
 )
 
 internal val GithubWebWattToolkitRouteProfile = WattToolkitRouteProfile(
     name = "github-web",
-    cacheFileName = "watt-github-web-route-cache.json",
+    cacheFileName = "watt-github-web-route-cache-v2.json",
     supportedHosts = setOf("github.com"),
     bootstrapForwardTargets = emptyList(),
 )
 
 internal val GithubUserContentWattToolkitRouteProfile = WattToolkitRouteProfile(
     name = "githubusercontent",
-    cacheFileName = "watt-githubusercontent-route-cache.json",
+    cacheFileName = "watt-githubusercontent-route-cache-v2.json",
     supportedHosts = setOf(
         "codeload.github.com",
         "githubusercontent.com",
@@ -227,14 +228,22 @@ internal fun createWattToolkitRuntime(
     readTimeoutMs: Long,
 ): ExperimentalGithubDirectAccessRuntime {
     val forwardDns = WattToolkitForwardDns()
+    val routeClient = defaultWattToolkitRouteClient()
     val resolvers = routeProfiles.map { routeProfile ->
         WattToolkitGithubRouteResolver(
             routeProfile = routeProfile,
+            client = routeClient,
             routeStore = FileBackedWattToolkitGithubRouteStore(
                 file = File(filesDir, "$cacheSubDirectory/${routeProfile.cacheFileName}"),
                 fallbackLogicalHosts = routeProfile.supportedHosts,
                 fallbackLogicalHostSuffixes = routeProfile.supportedHostSuffixes,
             ),
+            forwardTargetProbe = { target ->
+                probeWattToolkitForwardTarget(routeClient, target)
+            },
+            officialTargetProbe = { host, path ->
+                probeWattToolkitOfficialTarget(routeClient, host, path)
+            },
         )
     }
     val unsafeHostProvider: (String) -> Boolean = { host ->
@@ -372,15 +381,31 @@ internal class ExperimentalGithubDirectAccessInterceptor(
         if (routeResolvers.none { resolver -> resolver.supports(request.url.host) }) {
             return chain.proceed(request)
         }
+        var officialRequestAttempted = false
         return try {
-            executeDirectAccessRequest(request)
-        } catch (_: IOException) {
+            executeDirectAccessRequest(
+                initialLogicalRequest = request,
+                officialRequestExecutor = { officialRequest ->
+                    officialRequestAttempted = true
+                    chain.proceed(officialRequest)
+                },
+                officialRequestAttemptedProvider = { officialRequestAttempted },
+            )
+        } catch (error: IOException) {
+            if (officialRequestAttempted) {
+                routeResolvers
+                    .firstOrNull { resolver -> resolver.supports(request.url.host) }
+                    ?.markOfficialPathFailed(request.url.host)
+                throw error
+            }
             chain.proceed(request)
         }
     }
 
     private fun executeDirectAccessRequest(
         initialLogicalRequest: Request,
+        officialRequestExecutor: (Request) -> Response,
+        officialRequestAttemptedProvider: () -> Boolean,
     ): Response {
         var logicalRequest = initialLogicalRequest
         var followUpCount = 0
@@ -391,17 +416,22 @@ internal class ExperimentalGithubDirectAccessInterceptor(
             val route = resolver?.resolveRouteForHost(logicalRequest.url.host)
             var effectiveRoute = route
             var usedForwardTarget: String? = null
+            var usedOfficial = false
             // Cookies are keyed on the logical URL so they are never handed to the
             // forward target's own hostname.
             val logicalUrl = logicalRequest.url
             val cookieRequest = applyCookieHeader(logicalRequest, logicalUrl)
             val response = try {
                 val executed = executeWithForwardTargetFallback(
-                    logicalRequest = cookieRequest,
+                    logicalRequest = logicalRequest,
+                    forwardedRequest = cookieRequest,
                     route = route,
                     failedForwardTargets = failedForwardTargets,
+                    officialRequestExecutor = officialRequestExecutor,
+                    includeOfficialCandidate = !officialRequestAttemptedProvider(),
                 )
                 usedForwardTarget = executed.usedForwardTarget
+                usedOfficial = executed.usedOfficial
                 executed.response
             } catch (error: IOException) {
                 val refreshedRoute = resolver?.refreshRouteForHost(
@@ -411,16 +441,24 @@ internal class ExperimentalGithubDirectAccessInterceptor(
                 effectiveRoute = refreshedRoute
                 try {
                     val executed = executeWithForwardTargetFallback(
-                        logicalRequest = cookieRequest,
+                        logicalRequest = logicalRequest,
+                        forwardedRequest = cookieRequest,
                         route = refreshedRoute,
                         failedForwardTargets = failedForwardTargets,
+                        officialRequestExecutor = officialRequestExecutor,
+                        includeOfficialCandidate = !officialRequestAttemptedProvider(),
                     )
                     usedForwardTarget = executed.usedForwardTarget
+                    usedOfficial = executed.usedOfficial
                     executed.response
                 } catch (refreshedError: IOException) {
                     refreshedError.addSuppressed(error)
                     throw refreshedError
                 }
+            }
+            if (usedOfficial) {
+                resolver?.confirmSuccessfulOfficialPath(logicalRequest.url.host)
+                return response
             }
             persistResponseCookies(logicalUrl, response)
             if (
@@ -504,17 +542,38 @@ internal class ExperimentalGithubDirectAccessInterceptor(
     private data class ForwardedExecution(
         val response: Response,
         val usedForwardTarget: String?,
+        val usedOfficial: Boolean,
     )
 
     private fun executeWithForwardTargetFallback(
         logicalRequest: Request,
+        forwardedRequest: Request,
         route: WattToolkitGithubRoute?,
         failedForwardTargets: MutableSet<String>,
+        officialRequestExecutor: (Request) -> Response,
+        includeOfficialCandidate: Boolean,
     ): ForwardedExecution {
-        val candidateRoutes = route?.forwardTargetCandidates() ?: listOf(null)
+        val candidateRoutes = when {
+            route?.isOfficial == true -> {
+                val wattCandidates = route.copy(isOfficial = false)
+                    .forwardTargetCandidates()
+                    .filter { it.forwardTargets.isNotEmpty() }
+                if (includeOfficialCandidate) listOf(route) + wattCandidates else wattCandidates
+            }
+            route != null -> {
+                val wattCandidates = route.forwardTargetCandidates()
+                    .filter { it.forwardTargets.isNotEmpty() }
+                if (includeOfficialCandidate) wattCandidates + listOf(null) else wattCandidates
+            }
+            includeOfficialCandidate -> listOf(null)
+            else -> emptyList()
+        }
         var lastError: IOException? = null
         candidateRoutes.forEach { candidateRoute ->
-            val candidateTarget = candidateRoute?.forwardTargets?.firstOrNull()
+            val candidateTarget = candidateRoute
+                ?.takeUnless(WattToolkitGithubRoute::isOfficial)
+                ?.forwardTargets
+                ?.firstOrNull()
             if (
                 candidateTarget != null &&
                 failedForwardTargets.any { failed -> forwardTargetsEquivalent(failed, candidateTarget) }
@@ -522,19 +581,34 @@ internal class ExperimentalGithubDirectAccessInterceptor(
                 return@forEach
             }
             try {
-                val response = directCallFactory.newCall(buildNetworkRequest(logicalRequest, candidateRoute)).execute()
+                if (candidateRoute == null || candidateRoute.isOfficial) {
+                    return ForwardedExecution(
+                        response = officialRequestExecutor(logicalRequest),
+                        usedForwardTarget = null,
+                        usedOfficial = true,
+                    )
+                }
+                val response = directCallFactory.newCall(
+                    buildNetworkRequest(forwardedRequest, candidateRoute),
+                ).execute()
                 return ForwardedExecution(
                     response = response,
                     usedForwardTarget = candidateTarget,
+                    usedOfficial = false,
                 )
             } catch (error: IOException) {
                 if (candidateTarget != null) {
                     failedForwardTargets += candidateTarget
                 }
                 lastError = error
+                if (candidateRoute == null || candidateRoute.isOfficial) {
+                    routeResolvers
+                        .firstOrNull { resolver -> resolver.supports(logicalRequest.url.host) }
+                        ?.markOfficialPathFailed(logicalRequest.url.host)
+                }
             }
         }
-        throw lastError ?: IOException("No Steam acceleration route candidate was available")
+        throw lastError ?: IOException("No acceleration route candidate was available")
     }
 
     private fun forwardTargetsEquivalent(left: String, right: String): Boolean {
@@ -618,7 +692,8 @@ internal class WattToolkitGithubRouteResolver(
     private val projectGroupsUrl: HttpUrl = WATT_ACCELERATOR_PROJECTGROUPS_URL.toHttpUrl(),
     private val routeStore: WattToolkitGithubRouteStore = NoOpWattToolkitGithubRouteStore,
     private val bootstrapRouteProvider: (WattToolkitRouteProfile) -> WattToolkitGithubRoute? = ::defaultBootstrapRouteForProfile,
-    private val forwardTargetProbe: (String) -> WattToolkitForwardTargetProbe = ::probeWattToolkitForwardTarget,
+    private val forwardTargetProbe: ((String) -> WattToolkitForwardTargetProbe)? = null,
+    private val officialTargetProbe: ((String, String) -> WattToolkitForwardTargetProbe)? = null,
     private val nowProvider: () -> Long = System::currentTimeMillis,
     private val sleepProvider: (Long) -> Unit = { delayMs -> Thread.sleep(delayMs) },
     private val backgroundExecutor: Executor = sharedBestPathBackgroundExecutor,
@@ -631,6 +706,10 @@ internal class WattToolkitGithubRouteResolver(
         .toSet()
     private val backgroundRefreshInFlight = AtomicBoolean(false)
     private val recentlyFailedForwardTargets = LinkedHashMap<String, Long>()
+    private val effectiveForwardTargetProbe: (String) -> WattToolkitForwardTargetProbe =
+        forwardTargetProbe ?: { WattToolkitForwardTargetProbe.failed() }
+    private val effectiveOfficialTargetProbe: (String, String) -> WattToolkitForwardTargetProbe =
+        officialTargetProbe ?: { _, _ -> WattToolkitForwardTargetProbe.failed() }
 
     @Volatile
     private var cachedRoute: WattToolkitGithubRoute? = null
@@ -681,12 +760,16 @@ internal class WattToolkitGithubRouteResolver(
             pruneFailedTargetsLocked(now)
             val cached = cachedRoute?.takeIf { it.matchesLogicalHost(normalizedHost) } ?: return@synchronized null
             val preferred = cached.forwardTargets.firstOrNull().orEmpty()
-            if (
-                preferred.isNotEmpty() &&
+            val preferredPathFailed = if (cached.isOfficial) {
                 recentlyFailedForwardTargets.keys.any { failed ->
+                    failed == OFFICIAL_ROUTE_TARGET
+                }
+            } else {
+                preferred.isNotEmpty() && recentlyFailedForwardTargets.keys.any { failed ->
                     forwardTargetsEquivalent(failed, preferred)
                 }
-            ) {
+            }
+            if (preferredPathFailed) {
                 // Last preferred hop already failed real traffic; rediscover instead of
                 // replaying a known-bad best-path cache.
                 null
@@ -720,9 +803,11 @@ internal class WattToolkitGithubRouteResolver(
         if (!isProfileHost(normalizedHost)) {
             return null
         }
-        val excluded = excludedForwardTargets.map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+        val excluded = synchronized(lock) {
+            markFailedTargetsLocked(excludedForwardTargets)
+            recentlyFailedForwardTargets.keys.toSet()
+        }
         synchronized(lock) {
-            markFailedTargetsLocked(excluded)
             cachedRoute = null
             cachedAtMs = 0L
             persistedRouteLoaded = true
@@ -758,6 +843,35 @@ internal class WattToolkitGithubRouteResolver(
         scheduleBackgroundBestPathSearch(normalizedHost, force = false)
     }
 
+    fun confirmSuccessfulOfficialPath(host: String) {
+        val normalizedHost = host.lowercase(Locale.ROOT)
+        if (!isProfileHost(normalizedHost)) {
+            return
+        }
+        synchronized(lock) {
+            restorePersistedRouteLocked()
+            recentlyFailedForwardTargets.remove(OFFICIAL_ROUTE_TARGET)
+            val current = cachedRoute?.takeIf { it.matchesLogicalHost(normalizedHost) }
+                ?: officialRouteForHost(normalizedHost)
+            installRouteLocked(current.copy(isOfficial = true), nowProvider(), httpConfirmed = true)
+        }
+        scheduleBackgroundBestPathSearch(normalizedHost, force = false)
+    }
+
+    fun markOfficialPathFailed(host: String) {
+        val normalizedHost = host.lowercase(Locale.ROOT)
+        if (!isProfileHost(normalizedHost)) {
+            return
+        }
+        synchronized(lock) {
+            recentlyFailedForwardTargets[OFFICIAL_ROUTE_TARGET] = nowProvider()
+            cachedRoute = cachedRoute?.let { route ->
+                if (route.forwardTargets.isEmpty()) null else route.copy(isOfficial = false)
+            }
+            routeStore.clear()
+        }
+    }
+
     fun scheduleBackgroundBestPathSearch(host: String, force: Boolean = false) {
         val normalizedHost = host.lowercase(Locale.ROOT)
         if (!isProfileHost(normalizedHost)) {
@@ -782,7 +896,7 @@ internal class WattToolkitGithubRouteResolver(
                 val discovered = discoverBestRoute(normalizedHost, excluded) ?: return@execute
                 synchronized(lock) {
                     val current = cachedRoute
-                    if (current == null || shouldSilentSwitchTo(current, discovered)) {
+                    if (current == null || shouldSilentSwitchTo(current, discovered, normalizedHost)) {
                         installRouteLocked(discovered, nowProvider(), httpConfirmed = false)
                     } else {
                         lastBackgroundSearchAtMs = nowProvider()
@@ -805,8 +919,38 @@ internal class WattToolkitGithubRouteResolver(
             ?.takeIf { it.matchesLogicalHost(normalizedHost) }
         val merged = mergeDiscoveredRoutes(fetched, bootstrap)
             ?.withoutExcludedForwardTargets(excludedForwardTargets)
-        return merged
+        val rankedForwardRoute = merged?.copy(isOfficial = false)
+        val officialProbe = if (excludedForwardTargets.contains(OFFICIAL_ROUTE_TARGET)) {
+            WattToolkitForwardTargetProbe.failed()
+        } else {
+            runCatching {
+                effectiveOfficialTargetProbe(normalizedHost, routeProfile.officialProbePath)
+            }.getOrDefault(WattToolkitForwardTargetProbe.failed())
+        }
+        val forwardProbe = rankedForwardRoute?.forwardTargets
+            ?.firstOrNull()
+            ?.let { target ->
+                runCatching { effectiveForwardTargetProbe(target) }
+                    .getOrDefault(WattToolkitForwardTargetProbe.failed())
+            }
+        return when {
+            officialProbe.isBetterThan(forwardProbe) ->
+                (rankedForwardRoute ?: officialRouteForHost(normalizedHost)).copy(isOfficial = true)
+            rankedForwardRoute != null -> rankedForwardRoute
+            officialProbe.successRate > 0.0 -> officialRouteForHost(normalizedHost)
+            else -> null
+        }
     }
+
+    private fun officialRouteForHost(host: String): WattToolkitGithubRoute =
+        WattToolkitGithubRoute(
+            logicalHosts = (routeProfile.supportedHosts + host)
+                .map { it.lowercase(Locale.ROOT) }
+                .toSet(),
+            forwardTargets = emptyList(),
+            isOfficial = true,
+            logicalHostSuffixes = normalizedSupportedHostSuffixes,
+        )
 
     private fun mergeDiscoveredRoutes(
         fetched: WattToolkitGithubRoute?,
@@ -816,11 +960,11 @@ internal class WattToolkitGithubRouteResolver(
             return bootstrap
         }
         if (bootstrap == null) {
-            return fetched
+            return fetched.copy(forwardTargets = rankForwardTargets(fetched.forwardTargets))
         }
         val mergedTargets = LinkedHashSet<String>()
         // Keep probe-ranked Watt order, then append bootstrap hops as fallback.
-        fetched.forwardTargets.forEach { mergedTargets += it }
+        rankForwardTargets(fetched.forwardTargets).forEach { mergedTargets += it }
         bootstrap.forwardTargets.forEach { target ->
             if (mergedTargets.none { existing -> forwardTargetsEquivalent(existing, target) }) {
                 mergedTargets += target
@@ -844,12 +988,16 @@ internal class WattToolkitGithubRouteResolver(
         lastBackgroundSearchAtMs = now
         if (!httpConfirmed) {
             // Discovered/bootstrap routes are only in-memory until a real request
-            // proves the hop. Persisting TCP-ranked Watt hits poisoned cold starts
+            // proves the hop. Persisting probe-ranked Watt hits poisoned cold starts
             // with hosts like www.valvesoftware.com that never serve workshop HTML.
             return
         }
         lastHttpConfirmedAtMs = now
-        lastHttpConfirmedTarget = route.forwardTargets.firstOrNull().orEmpty()
+        lastHttpConfirmedTarget = if (route.isOfficial) {
+            OFFICIAL_ROUTE_TARGET
+        } else {
+            route.forwardTargets.firstOrNull().orEmpty()
+        }
         routeStore.save(
             PersistedWattToolkitGithubRoute(
                 route = route,
@@ -918,11 +1066,34 @@ internal class WattToolkitGithubRouteResolver(
         return route.copy(forwardTargets = reordered)
     }
 
+    private fun probeForRoute(
+        route: WattToolkitGithubRoute,
+        host: String,
+    ): WattToolkitForwardTargetProbe {
+        return if (route.isOfficial) {
+            runCatching {
+                effectiveOfficialTargetProbe(
+                    host,
+                    routeProfile.officialProbePath,
+                )
+            }.getOrDefault(WattToolkitForwardTargetProbe.failed())
+        } else {
+            route.forwardTargets.firstOrNull()
+                ?.let { target ->
+                    runCatching { effectiveForwardTargetProbe(target) }
+                        .getOrDefault(WattToolkitForwardTargetProbe.failed())
+                }
+                ?: WattToolkitForwardTargetProbe.failed()
+        }
+    }
+
     private fun shouldSilentSwitchTo(
         current: WattToolkitGithubRoute,
         candidate: WattToolkitGithubRoute,
+        host: String,
     ): Boolean {
         if (current.forwardTargets == candidate.forwardTargets &&
+            current.isOfficial == candidate.isOfficial &&
             current.ignoreSslCertVerification == candidate.ignoreSslCertVerification &&
             current.fakeServerName == candidate.fakeServerName &&
             current.logicalHosts == candidate.logicalHosts
@@ -931,6 +1102,14 @@ internal class WattToolkitGithubRouteResolver(
         }
         val currentPreferred = current.forwardTargets.firstOrNull().orEmpty()
         val candidatePreferred = candidate.forwardTargets.firstOrNull().orEmpty()
+        if (current.isOfficial != candidate.isOfficial) {
+            if (candidate.isOfficial && recentlyFailedForwardTargets.containsKey(OFFICIAL_ROUTE_TARGET)) {
+                return false
+            }
+            val currentProbe = probeForRoute(current, host)
+            val candidateProbe = probeForRoute(candidate, host)
+            return candidateProbe.isBetterThan(currentProbe)
+        }
         if (currentPreferred.isEmpty()) {
             return candidatePreferred.isNotEmpty()
         }
@@ -951,7 +1130,7 @@ internal class WattToolkitGithubRouteResolver(
                 current.ignoreSslCertVerification != candidate.ignoreSslCertVerification ||
                 current.fakeServerName != candidate.fakeServerName
         }
-        // TCP connect probes alone can rank unrelated open hosts highly.
+        // Lightweight probes can still rank an endpoint that rejects the real request.
         // Protect a recently HTTP-confirmed best path from silent demotion.
         val now = nowProvider()
         if (
@@ -962,9 +1141,9 @@ internal class WattToolkitGithubRouteResolver(
         ) {
             return false
         }
-        val currentProbe = runCatching { forwardTargetProbe(currentPreferred) }
+        val currentProbe = runCatching { effectiveForwardTargetProbe(currentPreferred) }
             .getOrDefault(WattToolkitForwardTargetProbe.failed())
-        val candidateProbe = runCatching { forwardTargetProbe(candidatePreferred) }
+        val candidateProbe = runCatching { effectiveForwardTargetProbe(candidatePreferred) }
             .getOrDefault(WattToolkitForwardTargetProbe.failed())
         return when {
             candidateProbe.successRate > currentProbe.successRate -> true
@@ -994,11 +1173,14 @@ internal class WattToolkitGithubRouteResolver(
         if (excludedForwardTargets.isEmpty()) {
             return this
         }
+        if (isOfficial && excludedForwardTargets.any { it == OFFICIAL_ROUTE_TARGET }) {
+            return null
+        }
         val filteredTargets = forwardTargets.filterNot { target ->
             excludedForwardTargets.any { excluded -> forwardTargetsEquivalent(excluded, target) }
         }
         if (filteredTargets.isEmpty()) {
-            return null
+            return if (isOfficial) this else null
         }
         if (filteredTargets == forwardTargets) {
             return this
@@ -1059,7 +1241,7 @@ internal class WattToolkitGithubRouteResolver(
             }
             return WattToolkitGithubRoute(
                 logicalHosts = matchedProject.logicalHosts,
-                forwardTargets = rankForwardTargets(matchedProject.forwardTargets),
+                forwardTargets = matchedProject.forwardTargets,
                 ignoreSslCertVerification = matchedProject.ignoreSslCertVerification,
                 fakeServerName = matchedProject.fakeServerName,
                 logicalHostSuffixes = normalizedSupportedHostSuffixes,
@@ -1136,7 +1318,7 @@ internal class WattToolkitGithubRouteResolver(
                 RankedWattForwardTarget(
                     target = target,
                     originalIndex = index,
-                    probe = runCatching { forwardTargetProbe(target) }
+                    probe = runCatching { effectiveForwardTargetProbe(target) }
                         .getOrDefault(WattToolkitForwardTargetProbe.failed()),
                 )
             }
@@ -1174,6 +1356,7 @@ internal class WattToolkitGithubRouteResolver(
 internal data class WattToolkitGithubRoute(
     val logicalHosts: Set<String>,
     val forwardTargets: List<String>,
+    val isOfficial: Boolean = false,
     val ignoreSslCertVerification: Boolean = false,
     val fakeServerName: String = "",
     /**
@@ -1325,13 +1508,15 @@ internal class FileBackedWattToolkitGithubRouteStore(
                 .map { it.lowercase(Locale.ROOT) }
                 .toSet()
             val forwardTargets = buildStringList(snapshot.optJSONArray("forwardTargets"))
-            if (forwardTargets.isEmpty() || logicalHosts.isEmpty()) {
+            val isOfficial = snapshot.optBoolean("isOfficial")
+            if ((!isOfficial && forwardTargets.isEmpty()) || logicalHosts.isEmpty()) {
                 return null
             }
             PersistedWattToolkitGithubRoute(
                 route = WattToolkitGithubRoute(
                     logicalHosts = logicalHosts,
                     forwardTargets = forwardTargets,
+                    isOfficial = isOfficial,
                     ignoreSslCertVerification = snapshot.optBoolean("ignoreSslCertVerification"),
                     fakeServerName = snapshot.optString("fakeServerName").trim(),
                     logicalHostSuffixes = logicalHostSuffixes,
@@ -1348,6 +1533,7 @@ internal class FileBackedWattToolkitGithubRouteStore(
                 put("cachedAtMs", route.cachedAtMs)
                 put("logicalHosts", JSONArray(route.route.logicalHosts.sorted()))
                 put("forwardTargets", JSONArray(route.route.forwardTargets))
+                put("isOfficial", route.route.isOfficial)
                 put("ignoreSslCertVerification", route.route.ignoreSslCertVerification)
                 put("fakeServerName", route.route.fakeServerName)
                 put("logicalHostSuffixes", JSONArray(route.route.logicalHostSuffixes.sorted()))
@@ -1419,29 +1605,73 @@ internal data class WattToolkitForwardTargetProbe(
     val successRate: Double
         get() = if (attempts <= 0) 0.0 else successes.toDouble() / attempts.toDouble()
 
+    fun isBetterThan(other: WattToolkitForwardTargetProbe?): Boolean {
+        if (other == null) {
+            return successes > 0
+        }
+        if (successRate != other.successRate) {
+            return successRate > other.successRate
+        }
+        val ownLatency = latencyMs ?: Long.MAX_VALUE
+        val otherLatency = other.latencyMs ?: Long.MAX_VALUE
+        return successes > 0 && ownLatency < otherLatency
+    }
+
     companion object {
         fun failed(attempts: Int = FORWARD_TARGET_PROBE_ATTEMPTS): WattToolkitForwardTargetProbe =
             WattToolkitForwardTargetProbe(successes = 0, attempts = attempts, latencyMs = null)
     }
 }
 
-private fun probeWattToolkitForwardTarget(target: String): WattToolkitForwardTargetProbe {
+private fun probeWattToolkitForwardTarget(
+    client: OkHttpClient,
+    target: String,
+): WattToolkitForwardTargetProbe {
     val url = target.toHttpUrlOrNull()
         ?: "https://$target".toHttpUrlOrNull()
         ?: return WattToolkitForwardTargetProbe.failed()
+    return probeWattToolkitHttpTarget(client, url)
+}
+
+private fun probeWattToolkitOfficialTarget(
+    client: OkHttpClient,
+    host: String,
+    path: String,
+): WattToolkitForwardTargetProbe {
+    val normalizedPath = if (path.startsWith('/')) path else "/$path"
+    val url = "https://${host.trim()}$normalizedPath".toHttpUrlOrNull()
+        ?: return WattToolkitForwardTargetProbe.failed()
+    return probeWattToolkitHttpTarget(client, url)
+}
+
+private fun probeWattToolkitHttpTarget(
+    client: OkHttpClient,
+    url: HttpUrl,
+): WattToolkitForwardTargetProbe {
+    val probeClient = client.newBuilder()
+        .connectTimeout(FORWARD_TARGET_PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        .readTimeout(FORWARD_TARGET_PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        .writeTimeout(FORWARD_TARGET_PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        .callTimeout(FORWARD_TARGET_PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        .followRedirects(false)
+        .followSslRedirects(false)
+        .retryOnConnectionFailure(false)
+        .build()
     var successes = 0
     val latencies = ArrayList<Long>(FORWARD_TARGET_PROBE_ATTEMPTS)
     repeat(FORWARD_TARGET_PROBE_ATTEMPTS) {
         val startedAt = System.nanoTime()
         try {
-            Socket().use { socket ->
-                socket.connect(
-                    InetSocketAddress(url.host, url.port),
-                    FORWARD_TARGET_PROBE_TIMEOUT_MS.toInt(),
-                )
+            probeClient.newCall(
+                Request.Builder()
+                    .url(url)
+                    .head()
+                    .build(),
+            ).execute().use {
+                // Any HTTP response proves the target completed transport and protocol setup.
+                successes++
+                latencies += ((System.nanoTime() - startedAt) / 1_000_000L).coerceAtLeast(1L)
             }
-            successes++
-            latencies += ((System.nanoTime() - startedAt) / 1_000_000L).coerceAtLeast(1L)
         } catch (_: IOException) {
             // Keep probing remaining samples so transient loss affects success rate.
         }
@@ -1541,6 +1771,7 @@ private const val DEFAULT_CONNECT_TIMEOUT_MS = 8_000L
 private const val DEFAULT_READ_TIMEOUT_MS = 18_000L
 private const val FORWARD_TARGET_PROBE_ATTEMPTS = 3
 private const val FORWARD_TARGET_PROBE_TIMEOUT_MS = 1_200L
+private const val OFFICIAL_ROUTE_TARGET = "__official__"
 private const val MAX_FOLLOW_UPS = 10
 private const val HTTP_METHOD_GET = "GET"
 private const val HTTP_METHOD_HEAD = "HEAD"

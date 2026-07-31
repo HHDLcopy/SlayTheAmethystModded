@@ -49,14 +49,14 @@ object NetworkAccelerationPolicy {
 
     internal fun shouldUseAcceleratedLinks(
         configuredEnabled: Boolean,
-        vpnActiveProvider: () -> Boolean,
-        chinaRegionProvider: () -> Boolean = { true },
-    ): Boolean = configuredEnabled && chinaRegionProvider() && !vpnActiveProvider()
+        @Suppress("UNUSED_PARAMETER") vpnActiveProvider: () -> Boolean,
+        @Suppress("UNUSED_PARAMETER") chinaRegionProvider: () -> Boolean = { true },
+    ): Boolean = configuredEnabled
 
     internal fun shouldBypassAcceleratedLinks(
-        vpnActiveProvider: () -> Boolean,
-        chinaRegionProvider: () -> Boolean,
-    ): Boolean = !chinaRegionProvider() || vpnActiveProvider()
+        @Suppress("UNUSED_PARAMETER") vpnActiveProvider: () -> Boolean,
+        @Suppress("UNUSED_PARAMETER") chinaRegionProvider: () -> Boolean,
+    ): Boolean = false
 
     internal fun isChinaRegion(countryCode: String): Boolean =
         countryCode.trim().equals(CHINA_COUNTRY_CODE, ignoreCase = true)

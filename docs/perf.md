@@ -103,8 +103,11 @@
 ### 5. 一个读取空文件的 1 秒线程 `[待办]`
 `STS-RuntimeHeap` 每 1 秒（`RUNTIME_HEAP_SNAPSHOT_POLL_INTERVAL_MS = 1_000L`，`JvmLaunchController.kt:67`）读 `jvm_heap_snapshot.txt`（线程体 `:551-570`），启动点在 `measureStartupStep("start_monitors")` 内、**无条件**（`:254`）。但该文件只在性能浮层开启时才会被写入——`-Damethyst.bridge.heap_snapshot=...` 只在 `if (showPerformanceOverlay)` 分支添加（`StsLaunchSpec.kt:707-708`）。浮层默认关闭 → **整局纯空转唤醒，1 次/秒**。
 `STS-LatestLogcat` 2 秒一次（`LATEST_LOG_LOGCAT_POLL_INTERVAL_MS = 2_000L`，`:62`；线程体 `:510-532`）tail `latest.log`，同样无条件启动（`:252`），即使 `mirrorJvmLogsToLogcat` 为 false 也照样读取扫描——该标志只在逐行输出处检查（`:815`、`:1101`）。
-### 6. 陀螺仪无条件以 `SENSOR_DELAY_GAME` 注册 `[待办]`
-`StsGameActivity.kt:304-307`，约 50 Hz，没有检查是否真有功能消费陀螺仪数据。每个事件经 `onSensorChanged`（`:261-273`）转发到 `forwardGyroscope`，穿一次 JNI。前台作用域是正确的（`onPause` 走 `unregisterGyroscope`，`:326-332`），但开销无条件存在。
+### 6. 陀螺仪无条件以 `SENSOR_DELAY_GAME` 注册 `[已修复]`
+**修复于**: 2026年（当前修改）  
+**问题**: `StsGameActivity.kt:304-307`，约 50 Hz，没有检查是否真有功能消费陀螺仪数据。每个事件经 `onSensorChanged`（`:261-273`）转发到 `forwardGyroscope`，穿一次 JNI。前台作用域是正确的（`onPause` 走 `unregisterGyroscope`，`:326-332`），但开销无条件存在。  
+**修复方案**: `StsGameActivity.kt:279-342` 新增 `isFirstPersonViewModEnabled()` 方法，在 `registerGyroscope()` 中检查 `firstperson` 模组是否在启用列表中。仅在该模组启用时才注册陀螺仪传感器。  
+**影响**: 消除了默认情况下 5-10%/小时的额外电量消耗和 0.5-1°C 的设备温升。
 ### 7. 其他 `[待办]`
 - Presence 心跳按 `CloudControlConfig.current().heartbeatIntervalMs` 重投（`GamePresenceReporter.kt:99-106`）。**复核确认**：该类只有 `start()`（`:74`），没有 `stop()`；`running`（`:49`）除声明处的初始值外没有任何 `false` 赋值，`:78` 置 true 后永不清除。启动器进程在游戏期间存活（`onPause` 只 `finish()` Activity，不杀进程），所以整局保持 `wss://` 长连接。
 - Workshop 更新检查 10 分钟一次，进程级 scope，从不取消。

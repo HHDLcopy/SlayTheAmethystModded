@@ -261,8 +261,7 @@ public final class MtsPatchCacheStore {
             logStep("validateCacheArtifacts packageJars=" + packageJarCount, validateStartNs);
             if (parent != null) {
                 long metadataStartNs = System.nanoTime();
-                MtsPatchAnnotationDbCache.writeFromPatcher(loader, parent, packageDir);
-                MtsPatchMainJarSpireEnumCache.writeFromPatchedJar(loader, parent, cachedJar);
+                writeMetadataCaches(loader, parent, packageDir, cachedJar);
                 logStep("writeMetadataCaches", metadataStartNs);
             }
             long markerStartNs = System.nanoTime();
@@ -507,11 +506,28 @@ public final class MtsPatchCacheStore {
         }
         int threads = packageJarThreadCount(tasks.size());
         lastPackageJarThreadCount = threads;
+        runTasks(tasks, threads, "amethyst-cache-jar-", "Cache jar write failed");
+        return threads;
+    }
+
+    /**
+     * Runs every task, either inline when {@code threads <= 1} or on a throwaway fixed
+     * pool. Always waits for completion and rethrows the first failure.
+     */
+    private static void runTasks(
+            List<Callable<Void>> tasks,
+            int threads,
+            final String threadNamePrefix,
+            String failureMessage
+    ) throws Exception {
+        if (tasks.isEmpty()) {
+            return;
+        }
         if (threads <= 1) {
             for (Callable<Void> task : tasks) {
                 task.call();
             }
-            return 1;
+            return;
         }
 
         ExecutorService executor = Executors.newFixedThreadPool(threads, new ThreadFactory() {
@@ -519,7 +535,7 @@ public final class MtsPatchCacheStore {
 
             @Override
             public Thread newThread(Runnable runnable) {
-                Thread thread = new Thread(runnable, "amethyst-cache-jar-" + counter.incrementAndGet());
+                Thread thread = new Thread(runnable, threadNamePrefix + counter.incrementAndGet());
                 thread.setDaemon(true);
                 return thread;
             }
@@ -537,13 +553,12 @@ public final class MtsPatchCacheStore {
                     if (cause instanceof Exception) {
                         throw (Exception) cause;
                     }
-                    throw new IllegalStateException("Cache jar write failed", cause);
+                    throw new IllegalStateException(failureMessage, cause);
                 }
             }
         } finally {
             executor.shutdownNow();
         }
-        return threads;
     }
 
     private static Callable<Void> mainJarTask(
@@ -1208,15 +1223,28 @@ public final class MtsPatchCacheStore {
         if (files == null) {
             return;
         }
+        // Each alias is a full copy of one package jar into a distinct target, so the
+        // copies are independent. Snapshot the listing first: the loop adds files to the
+        // same directory it is scanning.
+        List<Callable<Void>> tasks = new ArrayList<Callable<Void>>();
         for (File file : files) {
             if (!isJar(file) || file.getName().indexOf('\'') < 0) {
                 continue;
             }
-            File alias = new File(packageDir, file.getName().replace("'", "u0027"));
-            if (!alias.exists()) {
-                copyFile(file, alias);
+            final File source = file;
+            final File alias = new File(packageDir, file.getName().replace("'", "u0027"));
+            if (alias.exists()) {
+                continue;
             }
+            tasks.add(new Callable<Void>() {
+                @Override
+                public Void call() throws Exception {
+                    copyFile(source, alias);
+                    return null;
+                }
+            });
         }
+        runTasks(tasks, packageJarThreadCount(tasks.size()), "amethyst-cache-alias-", "Package alias copy failed");
     }
 
     private static void copyFile(File source, File target) throws Exception {
@@ -1257,21 +1285,85 @@ public final class MtsPatchCacheStore {
      * on incomplete data.
      */
     private static void syncCacheArtifacts(File cachedJar, File packageDir, File cacheRoot) {
-        fsyncFile(cachedJar);
+        // Each fsync blocks on the device with no CPU work to overlap, so issuing them
+        // concurrently lets the storage stack coalesce the flushes instead of paying
+        // one full round trip per file. The directory fsyncs stay last and serial:
+        // they are what makes the preceding file syncs reachable through the tree.
+        List<Callable<Void>> tasks = new ArrayList<Callable<Void>>();
+        tasks.add(fsyncTask(cachedJar));
         File[] files = packageDir.isDirectory() ? packageDir.listFiles() : null;
         if (files != null) {
             for (File file : files) {
                 if (isJar(file)) {
-                    fsyncFile(file);
+                    tasks.add(fsyncTask(file));
                 }
             }
         }
         if (cacheRoot != null) {
-            fsyncFile(MtsPatchAnnotationDbCache.resolve(cacheRoot));
-            fsyncFile(MtsPatchMainJarSpireEnumCache.resolve(cacheRoot));
+            tasks.add(fsyncTask(MtsPatchAnnotationDbCache.resolve(cacheRoot)));
+            tasks.add(fsyncTask(MtsPatchMainJarSpireEnumCache.resolve(cacheRoot)));
+        }
+        try {
+            runTasks(tasks, packageJarThreadCount(tasks.size()), "amethyst-cache-fsync-", "Cache fsync failed");
+        } catch (Exception error) {
+            // fsyncFile already swallows per-file failures; anything surfacing here is
+            // a pool problem. Fall back to a serial pass rather than skipping durability.
+            log("Parallel cache fsync failed, falling back to serial: " + error);
+            for (Callable<Void> task : tasks) {
+                try {
+                    task.call();
+                } catch (Exception ignored) {
+                    // fsyncFile never throws; nothing actionable left.
+                }
+            }
         }
         fsyncDirectory(packageDir);
         fsyncDirectory(cacheRoot);
+    }
+
+    /**
+     * Writes the annotation DB and SpireEnum index caches. They target different files
+     * and read different sources — the annotation DB serializes {@code Patcher
+     * .annotationDBMap}, the enum index rescans the finished main jar — so they run
+     * concurrently. The enum scan is the slower of the two because it walks the whole
+     * main jar.
+     *
+     * <p>Both helpers swallow their own failures and delete their partial output, so a
+     * worker never propagates; the caches are optional and a miss only costs a slower
+     * cache hit later.
+     */
+    private static void writeMetadataCaches(
+            final ClassLoader loader,
+            final File cacheRoot,
+            final File packageDir,
+            final File cachedJar
+    ) throws Exception {
+        List<Callable<Void>> tasks = new ArrayList<Callable<Void>>(2);
+        tasks.add(new Callable<Void>() {
+            @Override
+            public Void call() {
+                MtsPatchAnnotationDbCache.writeFromPatcher(loader, cacheRoot, packageDir);
+                return null;
+            }
+        });
+        tasks.add(new Callable<Void>() {
+            @Override
+            public Void call() {
+                MtsPatchMainJarSpireEnumCache.writeFromPatchedJar(loader, cacheRoot, cachedJar);
+                return null;
+            }
+        });
+        runTasks(tasks, packageJarThreadCount(tasks.size()), "amethyst-cache-meta-", "Metadata cache write failed");
+    }
+
+    private static Callable<Void> fsyncTask(final File file) {
+        return new Callable<Void>() {
+            @Override
+            public Void call() {
+                fsyncFile(file);
+                return null;
+            }
+        };
     }
 
     private static void fsyncFile(File file) {

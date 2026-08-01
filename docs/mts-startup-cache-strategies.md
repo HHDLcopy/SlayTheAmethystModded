@@ -220,6 +220,25 @@ it has already taken over MTS's output stream, so it must fail loudly rather tha
 success over a partially written cache — `store` then falls back to the normal patching
 flow and never commits a marker.
 
+Three later stages of `store` use the same `runTasks` helper and the same thread cap:
+
+- `createJsonEscapedPackageAliases` copies each apostrophe-bearing package jar to its
+  `u0027` alias. Each alias is a full copy into a distinct target. The directory listing
+  is snapshotted before the copies start, since the stage adds files to the directory it
+  is scanning.
+- `writeMetadataCaches` writes the annotation DB and the SpireEnum index concurrently.
+  They read different sources — the annotation DB serializes `Patcher.annotationDBMap`,
+  the enum index rescans the finished main jar — and target different files. The enum
+  scan is the slower of the two because it walks the whole main jar. Both helpers
+  swallow their own failures and delete their partial output, so neither propagates; the
+  caches are optional and a miss only costs a slower cache hit later.
+- `syncCacheArtifacts` issues the per-file fsyncs concurrently. Each one blocks on the
+  device with no CPU work to overlap, so running them together lets the storage stack
+  coalesce the flushes instead of paying one round trip per file. The two directory
+  fsyncs stay last and serial — they are what makes the preceding file syncs reachable
+  through the tree. A pool failure here falls back to a serial pass rather than skipping
+  durability.
+
 ## Write durability
 
 The marker is the commit point for the whole cache, so it must never become durable

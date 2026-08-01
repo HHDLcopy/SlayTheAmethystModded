@@ -189,6 +189,29 @@ Cache reads are conservative:
 - Runtime compat cache-hit patches check `amethyst.mts.patch_cache.current=true`,
   so they do not alter non-cache launches.
 
+## Cache build parallelism
+
+Each mod's package jar is an independent read-modify-write: it reads only its own
+source jar and the shared immutable entry snapshot, and writes only its own target
+jar. `writeFastPackageJars` therefore spreads the mods across a small fixed pool
+instead of writing them one at a time.
+
+The pool is capped at `min(availableProcessors, 4, modCount)`. The work is bound by
+storage as much as by CPU, so a larger pool mostly thrashes the flash on the devices
+this runs on. Override with `-Damethyst.mts.patch_cache.package_jar_threads=<n>`;
+`1` forces the original serial path.
+
+Two mods whose source jars share a file name resolve to the same target path. MTS's
+serial loop let the later mod overwrite the earlier one; writing them concurrently
+would instead interleave both into one file and corrupt it. Tasks are keyed by target
+path so only the last mod per target is written, which preserves the original
+last-wins result and removes the collision.
+
+A worker failure is re-raised from `writeFastPackageJars`. By the time the fast path
+runs it has already taken over MTS's output stream, so it must fail loudly rather than
+report success over a partially written package directory — `store` then falls back to
+the normal patching flow and never commits a marker.
+
 ## Write durability
 
 The marker is the commit point for the whole cache, so it must never become durable

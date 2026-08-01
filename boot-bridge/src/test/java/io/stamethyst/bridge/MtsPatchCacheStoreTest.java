@@ -14,9 +14,13 @@ import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.jar.JarOutputStream;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 public class MtsPatchCacheStoreTest {
     private static final String PROP_ENABLED = "amethyst.mts.patch_cache.enabled";
@@ -24,6 +28,7 @@ public class MtsPatchCacheStoreTest {
     private static final String PROP_MARKER = "amethyst.mts.patch_cache.marker";
     private static final String PROP_PACKAGE_DIR = "amethyst.mts.patch_cache.package_dir";
     private static final String PROP_EXPECTED = "amethyst.mts.patch_cache.expected";
+    private static final String PROP_PACKAGE_JAR_THREADS = "amethyst.mts.patch_cache.package_jar_threads";
 
     @Test
     public void store_writesMarkerWhenCacheJarAndPackageJarsExist() throws Exception {
@@ -351,6 +356,241 @@ public class MtsPatchCacheStoreTest {
             clearCacheProperties();
             resetStubTracking();
             PackageJar.writePackageJarFiles = true;
+            deleteRecursively(root);
+        }
+    }
+
+    @Test
+    public void packageJarFastPath_writesEveryModPackageJarInParallel() throws Exception {
+        File root = Files.createTempDirectory("mts-patch-cache-parallel-").toFile();
+        try {
+            setCacheProperties(root);
+            resetStubTracking();
+            File baseJar = new File(root, "base.jar");
+            writeJar(baseJar, "base/Base.class", "base");
+            Loader.STS_JAR = baseJar.getAbsolutePath();
+
+            // Enough mods to actually spread across the pool, each with its own
+            // class so a cross-thread mixup shows up as wrong bytes rather than
+            // as a missing file.
+            int modCount = 12;
+            File[] modJars = new File[modCount];
+            ModInfo[] modInfos = new ModInfo[modCount];
+            PackageJar.Entries entries = new PackageJar.Entries();
+            entries.add(new PackageJar.Entry("base/Base.class", PackageJar.Type.BASEGAME));
+            for (int index = 0; index < modCount; index++) {
+                String modId = "mod" + index;
+                modJars[index] = new File(root, "Mod" + index + ".jar");
+                writeJar(modJars[index], modId + "/Entry.class", "body-" + index);
+                modInfos[index] = new ModInfo(modId, modJars[index].toURI().toURL());
+                entries.add(new PackageJar.Entry(modId + "/Entry.class", modId));
+                entries.add(new PackageJar.Entry(
+                        modId + "/Generated.class",
+                        ("generated-" + index).getBytes("UTF-8"),
+                        modJars[index].toURI().toURL()
+                ));
+            }
+            Loader.MODINFOS = modInfos;
+
+            JarOutputStream openOutput = new JarOutputStream(
+                    new FileOutputStream(new File(root, "desktop-1.0-modded.jar"))
+            );
+
+            assertTrue(MtsPatchCacheStore.packageJarFastPath(
+                    new MTSClassPool(),
+                    entries,
+                    openOutput,
+                    new File(root, "desktop-1.0-modded.jar").getAbsolutePath()
+            ));
+
+            // Guards against this test silently degrading into a serial run and
+            // therefore no longer covering the concurrent path at all.
+            assertTrue(
+                    "Expected the parallel path to run with more than one worker",
+                    MtsPatchCacheStore.lastPackageJarThreadCount > 1
+            );
+
+            for (int index = 0; index < modCount; index++) {
+                String modId = "mod" + index;
+                File packageJar = new File(root, "package/Mod" + index + "-modded.jar");
+                assertTrue("Missing package jar for " + modId, packageJar.isFile());                assertArrayEquals(
+                        "Mod body landed in the wrong package jar",
+                        ("body-" + index).getBytes("UTF-8"),
+                        readJarEntry(packageJar, modId + "/Entry.class")
+                );
+                assertArrayEquals(
+                        "OUTJAR entry landed in the wrong package jar",
+                        ("generated-" + index).getBytes("UTF-8"),
+                        readJarEntry(packageJar, modId + "/Generated.class")
+                );
+                // Each package jar must carry only its own mod's classes.
+                for (int other = 0; other < modCount; other++) {
+                    if (other != index) {
+                        assertNull(
+                                "Package jar leaked another mod's class",
+                                readJarEntry(packageJar, "mod" + other + "/Entry.class")
+                        );
+                    }
+                }
+            }
+        } finally {
+            clearCacheProperties();
+            resetStubTracking();
+            deleteRecursively(root);
+        }
+    }
+
+    @Test
+    public void packageJarFastPath_writesDuplicateTargetNamesSerially() throws Exception {
+        File root = Files.createTempDirectory("mts-patch-cache-dupe-").toFile();
+        try {
+            setCacheProperties(root);
+            resetStubTracking();
+            File baseJar = new File(root, "base.jar");
+            writeJar(baseJar, "base/Base.class", "base");
+            Loader.STS_JAR = baseJar.getAbsolutePath();
+
+            // Two mods whose source jars share a file name collapse onto one target
+            // path. Writing those concurrently would interleave into the same file,
+            // so they must fall back to a serial write and stay readable.
+            File firstDir = new File(root, "a");
+            File secondDir = new File(root, "b");
+            assertTrue(firstDir.mkdirs());
+            assertTrue(secondDir.mkdirs());
+            File firstJar = new File(firstDir, "Same.jar");
+            File secondJar = new File(secondDir, "Same.jar");
+            writeJar(firstJar, "first/Entry.class", "first");
+            writeJar(secondJar, "second/Entry.class", "second");
+
+            Loader.MODINFOS = new ModInfo[] {
+                    new ModInfo("first", firstJar.toURI().toURL()),
+                    new ModInfo("second", secondJar.toURI().toURL())
+            };
+
+            PackageJar.Entries entries = new PackageJar.Entries();
+            entries.add(new PackageJar.Entry("base/Base.class", PackageJar.Type.BASEGAME));
+            entries.add(new PackageJar.Entry("first/Entry.class", "first"));
+            entries.add(new PackageJar.Entry("second/Entry.class", "second"));
+
+            JarOutputStream openOutput = new JarOutputStream(
+                    new FileOutputStream(new File(root, "desktop-1.0-modded.jar"))
+            );
+
+            assertTrue(MtsPatchCacheStore.packageJarFastPath(
+                    new MTSClassPool(),
+                    entries,
+                    openOutput,
+                    new File(root, "desktop-1.0-modded.jar").getAbsolutePath()
+            ));
+
+            // The jar must be intact and readable rather than a corrupted interleave.
+            File packageJar = new File(root, "package/Same-modded.jar");
+            assertTrue(packageJar.isFile());
+            assertTrue(hasJarEntry(packageJar, "second/Entry.class"));
+            assertArrayEquals(
+                    "second".getBytes("UTF-8"),
+                    readJarEntry(packageJar, "second/Entry.class")
+            );
+        } finally {
+            clearCacheProperties();
+            resetStubTracking();
+            deleteRecursively(root);
+        }
+    }
+
+    @Test
+    public void packageJarFastPath_honoursThreadCountOverride() throws Exception {
+        File root = Files.createTempDirectory("mts-patch-cache-threads-").toFile();
+        try {
+            setCacheProperties(root);
+            resetStubTracking();
+            System.setProperty(PROP_PACKAGE_JAR_THREADS, "1");
+            File baseJar = new File(root, "base.jar");
+            File modJar = new File(root, "Solo.jar");
+            writeJar(baseJar, "base/Base.class", "base");
+            writeJar(modJar, "solo/Entry.class", "solo");
+            Loader.STS_JAR = baseJar.getAbsolutePath();
+            Loader.MODINFOS = new ModInfo[] {
+                    new ModInfo("solo", modJar.toURI().toURL())
+            };
+
+            PackageJar.Entries entries = new PackageJar.Entries();
+            entries.add(new PackageJar.Entry("base/Base.class", PackageJar.Type.BASEGAME));
+            entries.add(new PackageJar.Entry("solo/Entry.class", "solo"));
+
+            JarOutputStream openOutput = new JarOutputStream(
+                    new FileOutputStream(new File(root, "desktop-1.0-modded.jar"))
+            );
+
+            assertTrue(MtsPatchCacheStore.packageJarFastPath(
+                    new MTSClassPool(),
+                    entries,
+                    openOutput,
+                    new File(root, "desktop-1.0-modded.jar").getAbsolutePath()
+            ));
+
+            File packageJar = new File(root, "package/Solo-modded.jar");
+            assertTrue(packageJar.isFile());
+            assertArrayEquals("solo".getBytes("UTF-8"), readJarEntry(packageJar, "solo/Entry.class"));
+            assertEquals(
+                    "Override must force a single worker",
+                    1,
+                    MtsPatchCacheStore.lastPackageJarThreadCount
+            );
+        } finally {
+            System.clearProperty(PROP_PACKAGE_JAR_THREADS);
+            clearCacheProperties();
+            resetStubTracking();
+            deleteRecursively(root);
+        }
+    }
+
+    @Test
+    public void packageJarFastPath_propagatesFailureFromWorker() throws Exception {
+        File root = Files.createTempDirectory("mts-patch-cache-worker-fail-").toFile();
+        try {
+            setCacheProperties(root);
+            resetStubTracking();
+            File baseJar = new File(root, "base.jar");
+            writeJar(baseJar, "base/Base.class", "base");
+            Loader.STS_JAR = baseJar.getAbsolutePath();
+
+            File goodJar = new File(root, "Good.jar");
+            writeJar(goodJar, "good/Entry.class", "good");
+            // Points at a jar that was never created, so that worker throws.
+            File missingJar = new File(root, "Missing.jar");
+
+            Loader.MODINFOS = new ModInfo[] {
+                    new ModInfo("good", goodJar.toURI().toURL()),
+                    new ModInfo("missing", missingJar.toURI().toURL())
+            };
+
+            PackageJar.Entries entries = new PackageJar.Entries();
+            entries.add(new PackageJar.Entry("base/Base.class", PackageJar.Type.BASEGAME));
+            entries.add(new PackageJar.Entry("good/Entry.class", "good"));
+            entries.add(new PackageJar.Entry("missing/Entry.class", "missing"));
+
+            JarOutputStream openOutput = new JarOutputStream(
+                    new FileOutputStream(new File(root, "desktop-1.0-modded.jar"))
+            );
+
+            // A worker failure must not be swallowed: the fast path has already taken
+            // over the MTS output stream, so it has to raise rather than report success
+            // over a partially written package dir.
+            try {
+                MtsPatchCacheStore.packageJarFastPath(
+                        new MTSClassPool(),
+                        entries,
+                        openOutput,
+                        new File(root, "desktop-1.0-modded.jar").getAbsolutePath()
+                );
+                fail("Expected worker failure to propagate");
+            } catch (IllegalStateException expected) {
+                assertNotNull(expected.getCause());
+            }
+        } finally {
+            clearCacheProperties();
+            resetStubTracking();
             deleteRecursively(root);
         }
     }

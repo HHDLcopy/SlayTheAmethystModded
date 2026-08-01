@@ -20,6 +20,13 @@ import java.util.Collection;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.jar.Attributes;
 import java.util.jar.JarEntry;
 import java.util.jar.JarInputStream;
@@ -38,6 +45,10 @@ public final class MtsPatchCacheStore {
     private static final String PROPERTY_MARKER = "amethyst.mts.patch_cache.marker";
     private static final String PROPERTY_PACKAGE_DIR = "amethyst.mts.patch_cache.package_dir";
     private static final String PROPERTY_EXPECTED = "amethyst.mts.patch_cache.expected";
+    private static final String PROPERTY_PACKAGE_JAR_THREADS = "amethyst.mts.patch_cache.package_jar_threads";
+    private static final int MAX_PACKAGE_JAR_THREADS = 4;
+    /** Worker count used by the last package-jar write. Read by tests only. */
+    static volatile int lastPackageJarThreadCount = 0;
     private static final ThreadLocal<Boolean> COMPILE_CAPTURE_RESTORE_OUT_JAR = new ThreadLocal<Boolean>();
 
     private MtsPatchCacheStore() {
@@ -128,11 +139,12 @@ public final class MtsPatchCacheStore {
             }
 
             writeFastMainJar(reflection, snapshots, cachedJar);
-            writeFastPackageJars(reflection, snapshots, packageDir);
+            int packageThreads = writeFastPackageJars(reflection, snapshots, packageDir);
             logStep(
                     "packageJarFastPath entries=" + snapshots.size() +
                             " cacheBytes=" + (cachedJar.isFile() ? cachedJar.length() : 0L) +
-                            " packageJars=" + countPackageJars(packageDir),
+                            " packageJars=" + countPackageJars(packageDir) +
+                            " packageThreads=" + packageThreads,
                     startNs
             );
             return true;
@@ -490,33 +502,162 @@ public final class MtsPatchCacheStore {
         }
     }
 
-    private static void writeFastPackageJars(
+    /**
+     * Writes one modded package jar per mod. Each mod reads its own source jar and
+     * writes its own target jar, sharing only immutable state, so the work is spread
+     * across a small pool. Returns the number of worker threads actually used.
+     */
+    private static int writeFastPackageJars(
             PackageJarReflection reflection,
             List<EntrySnapshot> entries,
             File packageDir
     ) throws Exception {
-        Map<String, EntrySnapshot> entriesByPath = mapEntriesByPath(entries);
+        final Map<String, EntrySnapshot> entriesByPath = mapEntriesByPath(entries);
+        final List<EntrySnapshot> sharedEntries = entries;
         Object[] modInfos = reflection.modInfos();
+
+        List<PackageJarTask> tasks = new ArrayList<PackageJarTask>(modInfos.length);
+        // Group by target path first. Two mods whose source jars share a file name
+        // collapse onto one target; MTS's serial loop let the later mod overwrite the
+        // earlier one, and running them concurrently would instead interleave both
+        // into the same file. Keeping only the last mod per target both preserves the
+        // original last-wins result and removes the collision.
+        Map<String, PackageJarTask> tasksByTarget = new LinkedHashMap<String, PackageJarTask>();
         for (int index = 0; index < modInfos.length; index++) {
             Object modInfo = modInfos[index];
             URL jarUrl = reflection.modJarUrl(modInfo);
             String modId = reflection.modId(modInfo);
             File sourceJar = new File(jarUrl.toURI());
             File targetJar = new File(packageDir, reflection.createModdedJarName(sourceJar.getName()));
-            Set<String> written = new HashSet<String>();
-            FileOutputStream fileOutput = new FileOutputStream(targetJar, false);
-            try {
-                JarOutputStream output = new JarOutputStream(fileOutput);
-                try {
-                    output.setLevel(Deflater.NO_COMPRESSION);
-                    writeOutJarEntries(output, written, entries, jarUrl);
-                    writeSelectedJarEntries(output, written, entriesByPath, new FileInputStream(sourceJar), modId, "MOD");
-                } finally {
-                    output.close();
-                }
-            } finally {
-                fileOutput.close();
+            PackageJarTask task =
+                    new PackageJarTask(sharedEntries, entriesByPath, jarUrl, modId, sourceJar, targetJar);
+            PackageJarTask displaced = tasksByTarget.put(targetJar.getAbsolutePath(), task);
+            if (displaced != null) {
+                log("Duplicate package jar target, keeping last mod: " + targetJar.getName());
             }
+        }
+        tasks.addAll(tasksByTarget.values());
+
+        if (tasks.isEmpty()) {
+            lastPackageJarThreadCount = 0;
+            return 0;
+        }
+        int threads = packageJarThreadCount(tasks.size());
+        lastPackageJarThreadCount = threads;
+        if (threads <= 1) {
+            for (PackageJarTask task : tasks) {
+                task.call();
+            }
+            return 1;
+        }
+
+        ExecutorService executor = Executors.newFixedThreadPool(threads, new ThreadFactory() {
+            private final AtomicInteger counter = new AtomicInteger();
+
+            @Override
+            public Thread newThread(Runnable runnable) {
+                Thread thread = new Thread(runnable, "amethyst-package-jar-" + counter.incrementAndGet());
+                thread.setDaemon(true);
+                return thread;
+            }
+        });
+        try {
+            List<Future<Void>> futures = executor.invokeAll(tasks);
+            // invokeAll waits for completion, but the failures only surface on get().
+            // Propagate the first one so store() falls back to the normal MTS flow
+            // instead of committing a marker over a partially written package dir.
+            for (Future<Void> future : futures) {
+                try {
+                    future.get();
+                } catch (ExecutionException failure) {
+                    Throwable cause = failure.getCause();
+                    if (cause instanceof Exception) {
+                        throw (Exception) cause;
+                    }
+                    throw new IllegalStateException("Package jar write failed", cause);
+                }
+            }
+        } finally {
+            executor.shutdownNow();
+        }
+        return threads;
+    }
+
+    private static int packageJarThreadCount(int taskCount) {
+        String override = System.getProperty(PROPERTY_PACKAGE_JAR_THREADS, "").trim();
+        if (override.length() != 0) {
+            try {
+                int requested = Integer.parseInt(override);
+                if (requested >= 1) {
+                    return Math.min(requested, taskCount);
+                }
+            } catch (NumberFormatException ignored) {
+                log("Ignoring invalid " + PROPERTY_PACKAGE_JAR_THREADS + ": " + override);
+            }
+        }
+        // The work is a read-modify-write over jars, so it is bound by storage as much
+        // as by CPU. Capping at 4 keeps the pool from thrashing the flash on the phones
+        // this runs on while still covering the common many-small-mods case.
+        int cpus = Runtime.getRuntime().availableProcessors();
+        return Math.max(1, Math.min(Math.min(cpus, MAX_PACKAGE_JAR_THREADS), taskCount));
+    }
+
+    private static void writeSinglePackageJar(
+            List<EntrySnapshot> entries,
+            Map<String, EntrySnapshot> entriesByPath,
+            URL jarUrl,
+            String modId,
+            File sourceJar,
+            File targetJar
+    ) throws Exception {
+        Set<String> written = new HashSet<String>();
+        FileOutputStream fileOutput = new FileOutputStream(targetJar, false);
+        try {
+            JarOutputStream output = new JarOutputStream(fileOutput);
+            try {
+                output.setLevel(Deflater.NO_COMPRESSION);
+                writeOutJarEntries(output, written, entries, jarUrl);
+                writeSelectedJarEntries(output, written, entriesByPath, new FileInputStream(sourceJar), modId, "MOD");
+            } finally {
+                output.close();
+            }
+        } finally {
+            fileOutput.close();
+        }
+    }
+
+    /**
+     * One mod's package jar write. Holds only immutable shared state; {@code written}
+     * is created per call so tasks never touch each other's data.
+     */
+    private static final class PackageJarTask implements Callable<Void> {
+        private final List<EntrySnapshot> entries;
+        private final Map<String, EntrySnapshot> entriesByPath;
+        private final URL jarUrl;
+        private final String modId;
+        private final File sourceJar;
+        private final File targetJar;
+
+        PackageJarTask(
+                List<EntrySnapshot> entries,
+                Map<String, EntrySnapshot> entriesByPath,
+                URL jarUrl,
+                String modId,
+                File sourceJar,
+                File targetJar
+        ) {
+            this.entries = entries;
+            this.entriesByPath = entriesByPath;
+            this.jarUrl = jarUrl;
+            this.modId = modId;
+            this.sourceJar = sourceJar;
+            this.targetJar = targetJar;
+        }
+
+        @Override
+        public Void call() throws Exception {
+            writeSinglePackageJar(entries, entriesByPath, jarUrl, modId, sourceJar, targetJar);
+            return null;
         }
     }
 

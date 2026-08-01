@@ -14,8 +14,12 @@ import io.stamethyst.config.RuntimePaths
 import java.io.File
 import java.io.IOException
 import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
+import java.util.zip.ZipFile
 
 object MtsClasspathWarmupCoordinator {
+    private val SEPARATOR_BYTE = byteArrayOf('|'.code.toByte())
+
     @JvmStatic
     @Throws(IOException::class)
     fun prewarmIfReady(context: Context, progressCallback: StartupProgressCallback? = null): Boolean {
@@ -200,18 +204,49 @@ object MtsClasspathWarmupCoordinator {
         markerFile.writeText(buildCacheMarkerValue(context), StandardCharsets.UTF_8)
     }
 
+    /**
+     * The leading schema line is a version guard: adding or reordering a field below
+     * changes the marker format, and without it an older marker written by a previous
+     * build could still compare equal to a newer one field-for-field.
+     */
     private fun buildCacheMarkerValue(context: Context): String = buildString {
-        append(fileFingerprint("desktop", RuntimePaths.importedStsJar(context))).append('\n')
-        append(fileFingerprint("modthespire", RuntimePaths.importedMtsJar(context))).append('\n')
-        append(fileFingerprint("basemod", RuntimePaths.importedBaseModJar(context))).append('\n')
-        append(fileFingerprint("stslib", RuntimePaths.importedStsLibJar(context))).append('\n')
-        append(fileFingerprint("gdxpatch", RuntimePaths.gdxPatchJar(context))).append('\n')
+        append("schema|1").append('\n')
+        append(jarFingerprint("desktop", RuntimePaths.importedStsJar(context))).append('\n')
+        append(jarFingerprint("modthespire", RuntimePaths.importedMtsJar(context))).append('\n')
+        append(jarFingerprint("basemod", RuntimePaths.importedBaseModJar(context))).append('\n')
+        append(jarFingerprint("stslib", RuntimePaths.importedStsLibJar(context))).append('\n')
+        append(jarFingerprint("gdxpatch", RuntimePaths.gdxPatchJar(context))).append('\n')
     }
 
-    private fun fileFingerprint(label: String, file: File): String {
-        val exists = file.isFile
-        val length = if (exists) file.length() else -1L
-        val lastModified = if (exists) file.lastModified() else -1L
-        return "$label|${file.absolutePath}|$length|$lastModified"
+    /**
+     * Mirrors the patch cache's jar fingerprint: size plus a digest over the central
+     * directory (entry names, sizes, CRC32s) instead of mtime, so a jar rebuilt in place
+     * with an unchanged size cannot pass as current, and a copy that only moves mtime
+     * does not force a needless rebuild. Degrades to size and mtime for unreadable zips.
+     */
+    private fun jarFingerprint(label: String, file: File): String {
+        if (!file.isFile) {
+            return "$label|${file.absolutePath}|-1|-1"
+        }
+        val entryDigest = try {
+            ZipFile(file).use { zip ->
+                val digest = MessageDigest.getInstance("SHA-256")
+                for (entry in zip.entries()) {
+                    digest.update(entry.name.toByteArray(StandardCharsets.UTF_8))
+                    digest.update(SEPARATOR_BYTE)
+                    digest.update(entry.size.toString().toByteArray(StandardCharsets.UTF_8))
+                    digest.update(SEPARATOR_BYTE)
+                    digest.update(entry.crc.toString().toByteArray(StandardCharsets.UTF_8))
+                    digest.update(SEPARATOR_BYTE)
+                }
+                digest.digest().joinToString(separator = "") { byte -> "%02x".format(byte) }
+            }
+        } catch (_: Throwable) {
+            null
+        }
+        if (entryDigest == null) {
+            return "$label|${file.absolutePath}|${file.length()}|${file.lastModified()}|nozip"
+        }
+        return "$label|${file.absolutePath}|${file.length()}|$entryDigest"
     }
 }

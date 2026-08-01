@@ -176,8 +176,26 @@ owns the remaining startup work.
 ## Invalidation and fallback rules
 
 The launcher invalidates startup caches when core runtime assets, game body patches,
-MTS components, or the enabled mod set change. The patch cache marker also changes
-when any enabled mod jar's path, length, or last-modified timestamp changes.
+MTS components, or the enabled mod set change. The patch cache marker also changes when
+any enabled mod jar's contents change.
+
+Jar identity is size plus a SHA-256 over the zip central directory — every entry's name,
+uncompressed size, and CRC32 — not the file's last-modified timestamp. Both marker
+builders (`MtsPatchCacheCoordinator` and `MtsClasspathWarmupCoordinator`) use this.
+
+The reason is that size and mtime miss the case that matters most: a mod jar rebuilt in
+place keeps its size and can keep or reset its mtime, and would then pass as unchanged,
+producing a cache hit over mod bytecode that no longer exists. Hashing whole files would
+also catch it, but it has to read every byte of every mod on each launch, which cancels
+out the cache hit it is meant to protect. The central directory already carries a
+per-entry CRC32 computed by the writer, so any content change moves it, and reading it
+costs a few KB of seeks rather than the whole archive. The same change also stops a copy
+or restore that only moves mtime from forcing a needless rebuild.
+
+Files that are not readable zips fall back to size and mtime with a `nozip` tag, so a
+corrupt or non-jar entry still contributes something instead of collapsing to a
+constant. Both markers carry a leading `schema|` line so that adding or reordering a
+field cannot let an older marker compare equal to a newer one.
 
 Cache reads are conservative:
 

@@ -7,9 +7,11 @@ import java.io.File
 import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
+import java.util.zip.ZipFile
 
 internal object MtsPatchCacheCoordinator {
     private const val MIN_CACHE_JAR_BYTES = 1024L * 1024L
+    private val SEPARATOR_BYTE = byteArrayOf('|'.code.toByte())
     private const val PROPERTY_ENABLED = "amethyst.mts.patch_cache.enabled"
     private const val PROPERTY_CURRENT = "amethyst.mts.patch_cache.current"
     private const val PROPERTY_JAR = "amethyst.mts.patch_cache.jar"
@@ -150,16 +152,16 @@ internal object MtsPatchCacheCoordinator {
         modFileList: File
     ): String {
         val rawMarker = buildString {
-            append("schema|6").append('\n')
-            append(fileFingerprint("desktop", desktopJar)).append('\n')
-            append(fileFingerprint("modthespire", mtsJar)).append('\n')
-            append(fileFingerprint("basemod", baseModJar)).append('\n')
-            append(fileFingerprint("stslib", stsLibJar)).append('\n')
-            append(fileFingerprint("bootbridge", bootBridgeJar)).append('\n')
-            append(fileFingerprint("gdxpatch", gdxPatchJar)).append('\n')
+            append("schema|7").append('\n')
+            append(jarFingerprint("desktop", desktopJar)).append('\n')
+            append(jarFingerprint("modthespire", mtsJar)).append('\n')
+            append(jarFingerprint("basemod", baseModJar)).append('\n')
+            append(jarFingerprint("stslib", stsLibJar)).append('\n')
+            append(jarFingerprint("bootbridge", bootBridgeJar)).append('\n')
+            append(jarFingerprint("gdxpatch", gdxPatchJar)).append('\n')
             append(textFileFingerprint("mod_file_list", modFileList)).append('\n')
             readModFiles(modFileList).forEachIndexed { index, modFile ->
-                append(fileFingerprint("mod[$index]", modFile)).append('\n')
+                append(jarFingerprint("mod[$index]", modFile)).append('\n')
             }
         }.trimEnd()
         return sha256(rawMarker)
@@ -179,11 +181,49 @@ internal object MtsPatchCacheCoordinator {
         }
     }
 
-    private fun fileFingerprint(label: String, file: File): String {
-        val exists = file.isFile
-        val length = if (exists) file.length() else -1L
-        val lastModified = if (exists) file.lastModified() else -1L
-        return "$label|${file.absolutePath}|$length|$lastModified"
+    /**
+     * Fingerprints a jar by its central directory rather than by mtime.
+     *
+     * Size and mtime alone let a jar that was rebuilt in place — same size, mtime
+     * preserved or reset by a copy — pass as unchanged, which yields a stale cache hit
+     * against mod bytecode that no longer exists. Hashing the whole file would be
+     * correct but has to read every byte of every mod on each launch, which cancels out
+     * the cache hit it is protecting.
+     *
+     * The central directory is the middle ground: it already stores a per-entry CRC32
+     * that the writer computed over the entry's uncompressed bytes, so any content
+     * change moves it. Reading it costs a few KB of seeks instead of the whole archive.
+     *
+     * Falls back to size and mtime when the file is not a readable zip, so non-jar or
+     * corrupt entries still contribute something rather than silently collapsing to a
+     * constant.
+     */
+    private fun jarFingerprint(label: String, file: File): String {
+        if (!file.isFile) {
+            return "$label|${file.absolutePath}|-1|-1"
+        }
+        val entryDigest = try {
+            ZipFile(file).use { zip ->
+                val digest = MessageDigest.getInstance("SHA-256")
+                // Enumeration order follows the central directory, which is stable for a
+                // given archive, so no extra sort is needed to keep this deterministic.
+                for (entry in zip.entries()) {
+                    digest.update(entry.name.toByteArray(StandardCharsets.UTF_8))
+                    digest.update(SEPARATOR_BYTE)
+                    digest.update(entry.size.toString().toByteArray(StandardCharsets.UTF_8))
+                    digest.update(SEPARATOR_BYTE)
+                    digest.update(entry.crc.toString().toByteArray(StandardCharsets.UTF_8))
+                    digest.update(SEPARATOR_BYTE)
+                }
+                digest.digest().toHex()
+            }
+        } catch (_: Throwable) {
+            null
+        }
+        if (entryDigest == null) {
+            return "$label|${file.absolutePath}|${file.length()}|${file.lastModified()}|nozip"
+        }
+        return "$label|${file.absolutePath}|${file.length()}|$entryDigest"
     }
 
     private fun textFileFingerprint(label: String, file: File): String {
@@ -201,9 +241,10 @@ internal object MtsPatchCacheCoordinator {
         return "$label|${file.absolutePath}|$length|$contentHash"
     }
 
-    private fun sha256(text: String): String {
-        val digest = MessageDigest.getInstance("SHA-256")
+    private fun sha256(text: String): String =
+        MessageDigest.getInstance("SHA-256")
             .digest(text.toByteArray(StandardCharsets.UTF_8))
-        return digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
-    }
+            .toHex()
+
+    private fun ByteArray.toHex(): String = joinToString(separator = "") { byte -> "%02x".format(byte) }
 }

@@ -53,8 +53,8 @@ class TestArthasManager(unittest.TestCase):
         mgr = ArthasManager(connector=mock_conn, agent_client=mock_agent)
         mgr.start()
 
-        # Two JARs pushed: core + bridge
-        self.assertEqual(mock_conn.push.call_count, 2)
+        # Three JARs pushed: core + bootstrap spy + bridge
+        self.assertEqual(mock_conn.push.call_count, 3)
         # load_agent with correct arg format
         mock_agent.load_agent.assert_called_once()
         args_call = mock_agent.load_agent.call_args

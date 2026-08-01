@@ -33,10 +33,15 @@ ArthasShell            Device JVM
 
 ```
 ① LOAD_AGENT arthas-core.jar
-   → 追加 system classpath（无 Agent-Class）
+    → 追加 system classpath（无 Agent-Class）
 ② load_agent(arthas-bridge.jar, "{core};port=8099")
-   → 隔离 ClassLoader 反射 agentmain，启动 ServerSocket
+    → 隔离 ClassLoader 反射 agentmain，启动 ServerSocket
 ```
+
+`arthas-spy.jar` 必须和 `arthas-core.jar` 放在同一目录。Arthas Bootstrap
+会在初始化时从该目录找到它，并追加到 bootstrap classpath；它不是独立的
+agent，不能通过 `load_agent()` 调用。资源包必须包含
+`java/arthas/SpyAPI.class` 和 `SpyAPI$AbstractSpy.class`。
 
 `ArthasCommandBridge.start()` 概要：
 
@@ -278,6 +283,7 @@ game-probe 负责游戏语义；Arthas 负责通用 JVM 诊断。
 | `Multiple Android devices online` | 未指定 `--device` / `STS_TEST_DEVICE` | 显式 serial |
 | `connect_stream` BrokenPipe | bridge 已 `stop` | 重启游戏后重新 `start` |
 | `LOAD_AGENT` → `already bind` | bridge 重复加载 | 重启游戏 |
+| `Could not initialize class ...Enhancer` / `SpyAPI$AbstractSpy` | `arthas-spy.jar` 内容错误或未与 `arthas-core.jar` 同目录部署 | 确认 spy JAR 包含 `java/arthas/SpyAPI.class`、`SpyAPI$AbstractSpy.class`，并重启游戏后重新 `start` |
 | `LOAD_AGENT` → class file version | JAR 高于 JDK 8 | `-source 8 -target 8` 重编 bridge |
 | `Type xxx not present` | CommonSuperBridge 首次 retransform 未就绪 | 同 serial 重连（CLI 自动重试） |
 | `ognl` 返回 `null` | 方法为 `void` | 正常；改用有返回值方法 |

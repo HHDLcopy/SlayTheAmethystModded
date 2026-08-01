@@ -53,13 +53,12 @@ final class MtsPatchAnnotationDbCache {
     static void writeFromPatcher(ClassLoader loader, File cacheRoot, File packageDir) {
         long startedAtNs = System.nanoTime();
         File cacheFile = resolve(cacheRoot);
-        File tempFile = new File(cacheFile.getAbsolutePath() + ".tmp");
         try {
             Object annotationDbMap = patcherAnnotationDbMap(loader).get(null);
             if (!(annotationDbMap instanceof Map)) {
                 throw new IllegalStateException("Patcher.annotationDBMap is not a Map");
             }
-            Map<String, Object> entries = new LinkedHashMap<String, Object>();
+            final Map<String, Object> entries = new LinkedHashMap<String, Object>();
             for (Object rawEntry : ((Map<?, ?>) annotationDbMap).entrySet()) {
                 Map.Entry<?, ?> entry = (Map.Entry<?, ?>) rawEntry;
                 Object key = entry.getKey();
@@ -75,28 +74,17 @@ final class MtsPatchAnnotationDbCache {
             if (entries.isEmpty()) {
                 throw new IllegalStateException("Patcher.annotationDBMap had no serializable entries");
             }
-            File parent = cacheFile.getParentFile();
-            if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
-                throw new IOException("Failed to create annotation DB cache dir: " + parent.getAbsolutePath());
-            }
-            ObjectOutputStream output = new ObjectOutputStream(new FileOutputStream(tempFile, false));
-            try {
-                output.writeInt(CACHE_SCHEMA);
-                output.writeObject(entries);
-            } finally {
-                output.close();
-            }
-            if (cacheFile.isFile() && !cacheFile.delete()) {
-                throw new IOException("Failed to replace annotation DB cache: " + cacheFile.getAbsolutePath());
-            }
-            if (!tempFile.renameTo(cacheFile)) {
-                throw new IOException("Failed to move annotation DB cache into place: " + cacheFile.getAbsolutePath());
-            }
+            AtomicFileWriter.write(cacheFile, new AtomicFileWriter.ContentWriter() {
+                @Override
+                public void write(FileOutputStream output) throws IOException {
+                    ObjectOutputStream objectOutput = new ObjectOutputStream(output);
+                    objectOutput.writeInt(CACHE_SCHEMA);
+                    objectOutput.writeObject(entries);
+                    objectOutput.flush();
+                }
+            });
             log("Wrote cached MTS annotation DB entries=" + entries.size() + " took " + elapsedMs(startedAtNs) + "ms");
         } catch (Throwable error) {
-            if (tempFile.isFile()) {
-                tempFile.delete();
-            }
             if (cacheFile.isFile()) {
                 cacheFile.delete();
             }

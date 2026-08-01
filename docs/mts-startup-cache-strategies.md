@@ -188,3 +188,44 @@ Cache reads are conservative:
   the original scan.
 - Runtime compat cache-hit patches check `amethyst.mts.patch_cache.current=true`,
   so they do not alter non-cache launches.
+
+## Write durability
+
+The marker is the commit point for the whole cache, so it must never become durable
+before the artifacts it vouches for. `MtsPatchCacheStore.store` fsyncs the main jar,
+the package jars, and both sub-caches, and only then writes the marker. Without that
+ordering the filesystem is free to persist the small marker ahead of the large jars,
+which would turn a power loss during a cache build into a silent cache hit on
+truncated data — the 1 MiB size floor only catches truncation to near-zero.
+
+Every cache file is replaced through `AtomicFileWriter`: write to `<name>.tmp`, fsync
+the contents, rename over the target, then fsync the directory entry. `renameTo` over
+an existing path is atomic on the Android filesystems the launcher targets; the
+delete-then-copy path is a fallback for filesystems that refuse it. This removes the
+window where a crash mid-write could leave a half-written sub-cache in place.
+
+## Class loading under a cache hit
+
+`ChildFirstJarClassLoader` loads the cached jars child-first so the patched copies win
+over the unpatched ones still on the launch classpath. Two rules keep that from
+breaking type identity:
+
+- A small set of namespaces is parent-first, because a class loaded on both sides
+  produces two distinct `Class` objects and fails with `ClassCastException` as soon as
+  an instance crosses the boundary: the JDK namespaces, the endorsed XML/GSS packages,
+  `com.badlogic.gdx`, `org.lwjgl`, log4j/slf4j, and `io.stamethyst.bridge`. ModTheSpire's
+  own classes are deliberately *not* parent-first — the cached jar carries the patched
+  copies and those are the ones the game must run. Matching is on a package boundary,
+  so an unrelated mod class such as `javafx.Thing` is not mistaken for a JDK class.
+  Parent-first lookups fall back to the child on miss, since these namespaces are not
+  guaranteed to be complete in the parent: `io.stamethyst.bridge.FirstPersonGyroBridge`
+  ships inside the gdx patch merged into the cached jar and has never been on the
+  launch classpath.
+- Resource lookup is child-first to match class lookup. Otherwise the parent's
+  unpatched `ModTheSpire.jar` can answer for a resource whose class-side counterpart
+  came from the cached jar. `getResources` returns child entries before parent ones.
+
+The loader registers as parallel-capable and locks per class name. Locking the whole
+loader instead would serialize every load performed by Loadout's scanner threads,
+BaseMod, and the GDX asset threads, and risks deadlock when a parent-first delegation
+happens while another thread holds the parent's lock.

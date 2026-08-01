@@ -248,8 +248,11 @@ public final class MtsPatchCacheStore {
                 logStep("writeMetadataCaches", metadataStartNs);
             }
             long markerStartNs = System.nanoTime();
+            syncCacheArtifacts(cachedJar, packageDir, parent);
+            logStep("syncCacheArtifacts", markerStartNs);
+            long markerWriteStartNs = System.nanoTime();
             writeMarker(markerFile, expectedMarker);
-            logStep("writeMarker", markerStartNs);
+            logStep("writeMarker", markerWriteStartNs);
             log("MTS patch cache is ready: packageJars=" + packageJarCount);
             logStep("store total", storeStartNs);
             deleteIfExists(diagnosticFile);
@@ -328,13 +331,19 @@ public final class MtsPatchCacheStore {
             input.close();
         }
 
-        if (!cachedJar.delete()) {
-            deleteIfExists(tempJar);
-            throw new IllegalStateException("Failed to replace cache jar: " + cachedJar.getAbsolutePath());
-        }
+        // Replace in place without opening a window where neither jar exists. rename(2)
+        // over an existing path is atomic on the Android filesystems we target; the
+        // delete+copy path is only a fallback for filesystems that refuse it.
+        fsyncFile(tempJar);
         if (!tempJar.renameTo(cachedJar)) {
-            copyFile(tempJar, cachedJar);
-            deleteIfExists(tempJar);
+            if (!cachedJar.delete()) {
+                deleteIfExists(tempJar);
+                throw new IllegalStateException("Failed to replace cache jar: " + cachedJar.getAbsolutePath());
+            }
+            if (!tempJar.renameTo(cachedJar)) {
+                copyFile(tempJar, cachedJar);
+                deleteIfExists(tempJar);
+            }
         }
         logStep("rewriteCachedJar compiledClasses=" + classes.size(), rewriteStartNs);
         return classes.size();
@@ -1027,17 +1036,79 @@ public final class MtsPatchCacheStore {
         }
     }
 
-    private static void writeMarker(File markerFile, String expectedMarker) throws Exception {
-        File parent = markerFile.getParentFile();
-        if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
-            throw new IllegalStateException("Failed to create marker dir: " + parent.getAbsolutePath());
+    private static void writeMarker(File markerFile, final String expectedMarker) throws Exception {
+        // The marker is the commit point for the whole cache. It must only become
+        // durable after every artifact it vouches for is already on disk, otherwise a
+        // power loss can leave a "current" marker pointing at truncated jars.
+        AtomicFileWriter.write(markerFile, new AtomicFileWriter.ContentWriter() {
+            @Override
+            public void write(FileOutputStream output) throws java.io.IOException {
+                output.write(expectedMarker.getBytes(StandardCharsets.UTF_8));
+                output.write('\n');
+            }
+        });
+    }
+
+    /**
+     * Flushes the cache artifacts to stable storage before the marker is written.
+     * Without this the filesystem is free to make the small marker durable ahead of
+     * the large jars, which would turn an interrupted build into a silent cache hit
+     * on incomplete data.
+     */
+    private static void syncCacheArtifacts(File cachedJar, File packageDir, File cacheRoot) {
+        fsyncFile(cachedJar);
+        File[] files = packageDir.isDirectory() ? packageDir.listFiles() : null;
+        if (files != null) {
+            for (File file : files) {
+                if (isJar(file)) {
+                    fsyncFile(file);
+                }
+            }
         }
-        FileOutputStream output = new FileOutputStream(markerFile, false);
+        if (cacheRoot != null) {
+            fsyncFile(MtsPatchAnnotationDbCache.resolve(cacheRoot));
+            fsyncFile(MtsPatchMainJarSpireEnumCache.resolve(cacheRoot));
+        }
+        fsyncDirectory(packageDir);
+        fsyncDirectory(cacheRoot);
+    }
+
+    private static void fsyncFile(File file) {
+        if (file == null || !file.isFile()) {
+            return;
+        }
         try {
-            output.write(expectedMarker.getBytes(StandardCharsets.UTF_8));
-            output.write('\n');
+            java.io.FileInputStream input = new java.io.FileInputStream(file);
+            try {
+                input.getFD().sync();
+            } finally {
+                input.close();
+            }
+        } catch (Throwable ignored) {
+            // Best effort: a failed fsync must not fail the cache build.
+        }
+    }
+
+    private static void fsyncDirectory(File directory) {
+        if (directory == null || !directory.isDirectory()) {
+            return;
+        }
+        java.nio.channels.FileChannel channel = null;
+        try {
+            channel = java.nio.channels.FileChannel.open(
+                    directory.toPath(),
+                    java.nio.file.StandardOpenOption.READ
+            );
+            channel.force(true);
+        } catch (Throwable ignored) {
+            // Directory fsync is not portable; ignore failures.
         } finally {
-            output.close();
+            if (channel != null) {
+                try {
+                    channel.close();
+                } catch (Throwable ignored) {
+                }
+            }
         }
     }
 

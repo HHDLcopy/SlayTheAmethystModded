@@ -36,36 +36,22 @@ final class MtsPatchMainJarSpireEnumCache {
     static void writeFromPatchedJar(ClassLoader loader, File cacheRoot, File cachedJar) {
         long startedAtNs = System.nanoTime();
         File cacheFile = resolve(cacheRoot);
-        File tempFile = new File(cacheFile.getAbsolutePath() + ".tmp");
         try {
-            Set<String> enumClassNames = scanPatchedJar(loader, cachedJar);
-            File parent = cacheFile.getParentFile();
-            if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
-                throw new IOException("Failed to create enum cache dir: " + parent.getAbsolutePath());
-            }
-            FileOutputStream output = new FileOutputStream(tempFile, false);
-            try {
-                output.write(HEADER.getBytes(StandardCharsets.UTF_8));
-                output.write('\n');
-                for (String className : enumClassNames) {
-                    output.write(className.getBytes(StandardCharsets.UTF_8));
+            final Set<String> enumClassNames = scanPatchedJar(loader, cachedJar);
+            AtomicFileWriter.write(cacheFile, new AtomicFileWriter.ContentWriter() {
+                @Override
+                public void write(FileOutputStream output) throws IOException {
+                    output.write(HEADER.getBytes(StandardCharsets.UTF_8));
                     output.write('\n');
+                    for (String className : enumClassNames) {
+                        output.write(className.getBytes(StandardCharsets.UTF_8));
+                        output.write('\n');
+                    }
                 }
-            } finally {
-                output.close();
-            }
-            if (cacheFile.isFile() && !cacheFile.delete()) {
-                throw new IOException("Failed to replace enum cache: " + cacheFile.getAbsolutePath());
-            }
-            if (!tempFile.renameTo(cacheFile)) {
-                throw new IOException("Failed to move enum cache into place: " + cacheFile.getAbsolutePath());
-            }
+            });
             log("Wrote cached MTS main jar SpireEnum entries=" + enumClassNames.size() +
                     " took " + elapsedMs(startedAtNs) + "ms");
         } catch (Throwable error) {
-            if (tempFile.isFile()) {
-                tempFile.delete();
-            }
             if (cacheFile.isFile()) {
                 cacheFile.delete();
             }

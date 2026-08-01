@@ -1,6 +1,7 @@
 package io.stamethyst.bridge;
 
 import java.io.File;
+import java.io.IOException;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Array;
 import java.lang.reflect.Constructor;
@@ -12,6 +13,8 @@ import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Enumeration;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -476,41 +479,126 @@ public final class MtsPatchCacheBootstrap {
         log(message + " took " + elapsedMs + "ms");
     }
 
-    private static final class ChildFirstJarClassLoader extends URLClassLoader {
+    static final class ChildFirstJarClassLoader extends URLClassLoader {
+        static {
+            // Without this the JVM serializes every loadClass call on a single lock.
+            // Loadout's scanner threads, BaseMod, and the GDX asset threads all load
+            // classes concurrently through this loader, so a single lock is both a
+            // startup bottleneck and a deadlock risk once a parent-first delegation
+            // happens while another thread holds the parent's lock.
+            registerAsParallelCapable();
+        }
+
         ChildFirstJarClassLoader(URL[] urls, ClassLoader parent) {
             super(urls, parent);
         }
 
         @Override
-        protected synchronized Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
-            if (isParentFirst(name)) {
-                return super.loadClass(name, resolve);
-            }
-
-            Class<?> loaded = findLoadedClass(name);
-            if (loaded == null) {
-                try {
-                    loaded = findClass(name);
-                } catch (ClassNotFoundException ignored) {
-                    loaded = super.loadClass(name, false);
+        protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+            synchronized (getClassLoadingLock(name)) {
+                Class<?> loaded = findLoadedClass(name);
+                if (loaded == null) {
+                    loaded = isParentFirst(name) ? loadParentFirst(name) : loadChildFirst(name);
                 }
+                if (resolve) {
+                    resolveClass(loaded);
+                }
+                return loaded;
             }
-            if (resolve) {
-                resolveClass(loaded);
-            }
-            return loaded;
         }
 
+        private Class<?> loadParentFirst(String name) throws ClassNotFoundException {
+            try {
+                return super.loadClass(name, false);
+            } catch (ClassNotFoundException parentMiss) {
+                // The reserved namespaces are not guaranteed to be complete in the
+                // parent. `io.stamethyst.bridge.FirstPersonGyroBridge`, for example,
+                // ships inside the gdx patch that is merged into the cached jar and
+                // has never been on the launch classpath. Falling back keeps the
+                // namespace list from turning into a hardcoded per-class exception.
+                try {
+                    return findClass(name);
+                } catch (ClassNotFoundException childMiss) {
+                    throw parentMiss;
+                }
+            }
+        }
+
+        private Class<?> loadChildFirst(String name) throws ClassNotFoundException {
+            try {
+                return findClass(name);
+            } catch (ClassNotFoundException childMiss) {
+                return super.loadClass(name, false);
+            }
+        }
+
+        @Override
+        public URL getResource(String name) {
+            // Class lookup is child-first, so resource lookup has to match. Otherwise
+            // the parent's unpatched ModTheSpire.jar can answer for a resource whose
+            // class-side counterpart came from the cached patched jar.
+            URL childResource = findResource(name);
+            if (childResource != null) {
+                return childResource;
+            }
+            return super.getResource(name);
+        }
+
+        @Override
+        public Enumeration<URL> getResources(String name) throws IOException {
+            List<URL> ordered = new ArrayList<URL>();
+            addAll(ordered, findResources(name));
+            ClassLoader parent = getParent();
+            if (parent != null) {
+                addAll(ordered, parent.getResources(name));
+            }
+            return Collections.enumeration(ordered);
+        }
+
+        private static void addAll(List<URL> target, Enumeration<URL> source) {
+            if (source == null) {
+                return;
+            }
+            while (source.hasMoreElements()) {
+                URL url = source.nextElement();
+                if (url != null && !target.contains(url)) {
+                    target.add(url);
+                }
+            }
+        }
+
+        /**
+         * Namespaces that must resolve to a single class identity across the parent
+         * and the cached jars. Anything loaded on both sides would otherwise produce
+         * two distinct Class objects and fail with ClassCastException the moment an
+         * instance crosses the boundary.
+         *
+         * ModTheSpire's own classes are deliberately absent: the cached jar carries
+         * the patched copies and those are the ones the game must run.
+         */
         private boolean isParentFirst(String name) {
-            return name.startsWith("java.") ||
-                    name.startsWith("javax.") ||
-                    name.startsWith("sun.") ||
-                    name.startsWith("jdk.") ||
-                    name.startsWith("com.badlogic.gdx.") ||
-                    name.startsWith("org.lwjgl.") ||
-                    name.startsWith("org.apache.logging.log4j.") ||
-                    (name.startsWith("io.stamethyst.bridge.") &&
-                            !"io.stamethyst.bridge.FirstPersonGyroBridge".equals(name));
+            return startsWithPackage(name, "java") ||
+                    startsWithPackage(name, "javax") ||
+                    startsWithPackage(name, "sun") ||
+                    startsWithPackage(name, "jdk") ||
+                    startsWithPackage(name, "org.w3c.dom") ||
+                    startsWithPackage(name, "org.xml.sax") ||
+                    startsWithPackage(name, "org.ietf.jgss") ||
+                    startsWithPackage(name, "com.badlogic.gdx") ||
+                    startsWithPackage(name, "org.lwjgl") ||
+                    startsWithPackage(name, "org.apache.logging.log4j") ||
+                    startsWithPackage(name, "org.slf4j") ||
+                    startsWithPackage(name, "io.stamethyst.bridge");
+        }
+
+        /**
+         * Matches on a package boundary so an unrelated mod class such as
+         * `javafx.Thing` or `sunset.Mod` is not mistaken for a reserved namespace.
+         */
+        private static boolean startsWithPackage(String name, String packageName) {
+            return name.startsWith(packageName) &&
+                    name.length() > packageName.length() &&
+                    name.charAt(packageName.length()) == '.';
         }
     }
 }

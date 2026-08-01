@@ -191,15 +191,23 @@ Cache reads are conservative:
 
 ## Cache build parallelism
 
-Each mod's package jar is an independent read-modify-write: it reads only its own
-source jar and the shared immutable entry snapshot, and writes only its own target
-jar. `writeFastPackageJars` therefore spreads the mods across a small fixed pool
-instead of writing them one at a time.
+Every jar the cache build writes is an independent read-modify-write over a distinct
+target file, sharing only the immutable entry snapshot. `writeFastCacheJars` therefore
+puts all of them — the merged main jar and one task per mod package jar — on a single
+fixed pool instead of writing them one at a time.
 
-The pool is capped at `min(availableProcessors, 4, modCount)`. The work is bound by
+The main jar shares the pool rather than running ahead of it. It carries the whole base
+game jar, so it is the single largest write, and overlapping it with the package jars is
+where most of the wall-clock saving comes from.
+
+Work that touches MTS statics stays on the calling thread: `createClassPath()`, the
+`Loader.MODINFOS` reflection reads, and opening the MTS/Kotlin/core-patches/base-game
+source streams all happen while building the task list, never inside a worker.
+
+The pool is capped at `min(availableProcessors, 4, taskCount)`. The work is bound by
 storage as much as by CPU, so a larger pool mostly thrashes the flash on the devices
 this runs on. Override with `-Damethyst.mts.patch_cache.package_jar_threads=<n>`;
-`1` forces the original serial path.
+`1` forces the original serial path, running every task inline on the calling thread.
 
 Two mods whose source jars share a file name resolve to the same target path. MTS's
 serial loop let the later mod overwrite the earlier one; writing them concurrently
@@ -207,10 +215,10 @@ would instead interleave both into one file and corrupt it. Tasks are keyed by t
 path so only the last mod per target is written, which preserves the original
 last-wins result and removes the collision.
 
-A worker failure is re-raised from `writeFastPackageJars`. By the time the fast path
-runs it has already taken over MTS's output stream, so it must fail loudly rather than
-report success over a partially written package directory — `store` then falls back to
-the normal patching flow and never commits a marker.
+A worker failure is re-raised from `writeFastCacheJars`. By the time the fast path runs
+it has already taken over MTS's output stream, so it must fail loudly rather than report
+success over a partially written cache — `store` then falls back to the normal patching
+flow and never commits a marker.
 
 ## Write durability
 

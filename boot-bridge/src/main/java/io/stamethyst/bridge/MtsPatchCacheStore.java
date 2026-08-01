@@ -14,8 +14,10 @@ import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Objects;
@@ -47,8 +49,13 @@ public final class MtsPatchCacheStore {
     private static final String PROPERTY_EXPECTED = "amethyst.mts.patch_cache.expected";
     private static final String PROPERTY_PACKAGE_JAR_THREADS = "amethyst.mts.patch_cache.package_jar_threads";
     private static final int MAX_PACKAGE_JAR_THREADS = 4;
-    /** Worker count used by the last package-jar write. Read by tests only. */
+    /** Worker count used by the last cache-jar write. Read by tests only. */
     static volatile int lastPackageJarThreadCount = 0;
+    /** Distinct threads that ran cache-jar tasks in the last write. Read by tests only. */
+    static final Set<String> lastCacheJarThreadNames =
+            Collections.synchronizedSet(new LinkedHashSet<String>());
+    /** Name of the thread that wrote the main jar in the last write. Read by tests only. */
+    static volatile String lastMainJarThreadName = null;
     private static final ThreadLocal<Boolean> COMPILE_CAPTURE_RESTORE_OUT_JAR = new ThreadLocal<Boolean>();
 
     private MtsPatchCacheStore() {
@@ -138,13 +145,12 @@ public final class MtsPatchCacheStore {
                 throw new IllegalStateException("Failed to create cache package dir: " + packageDir.getAbsolutePath());
             }
 
-            writeFastMainJar(reflection, snapshots, cachedJar);
-            int packageThreads = writeFastPackageJars(reflection, snapshots, packageDir);
+            int packageThreads = writeFastCacheJars(reflection, snapshots, cachedJar, packageDir);
             logStep(
                     "packageJarFastPath entries=" + snapshots.size() +
                             " cacheBytes=" + (cachedJar.isFile() ? cachedJar.length() : 0L) +
                             " packageJars=" + countPackageJars(packageDir) +
-                            " packageThreads=" + packageThreads,
+                            " jarThreads=" + packageThreads,
                     startNs
             );
             return true;
@@ -470,18 +476,117 @@ public final class MtsPatchCacheStore {
         return null;
     }
 
-    private static void writeFastMainJar(
+    /**
+     * Writes the merged main jar and every mod's package jar. The main jar and each
+     * package jar target a distinct file and share only immutable state, so all of them
+     * run on one pool rather than the main jar blocking the package jars. The main jar
+     * is the single largest write (it carries the whole base game jar), so overlapping
+     * it with the package jars is where most of the wall-clock saving comes from.
+     * Returns the number of worker threads actually used.
+     */
+    private static int writeFastCacheJars(
             PackageJarReflection reflection,
             List<EntrySnapshot> entries,
-            File cachedJar
+            File cachedJar,
+            File packageDir
     ) throws Exception {
-        Manifest manifest = new Manifest();
+        List<Callable<Void>> tasks = new ArrayList<Callable<Void>>();
+        // Built on the calling thread: createClassPath() and the Loader/MODINFOS
+        // reflection reads touch MTS statics, so they stay off the workers.
+        tasks.add(mainJarTask(reflection, entries, cachedJar));
+        tasks.addAll(packageJarTasks(reflection, entries, packageDir));
+        return runCacheJarTasks(tasks);
+    }
+
+    private static int runCacheJarTasks(List<Callable<Void>> tasks) throws Exception {
+        lastCacheJarThreadNames.clear();
+        lastMainJarThreadName = null;
+        if (tasks.isEmpty()) {
+            lastPackageJarThreadCount = 0;
+            return 0;
+        }
+        int threads = packageJarThreadCount(tasks.size());
+        lastPackageJarThreadCount = threads;
+        if (threads <= 1) {
+            for (Callable<Void> task : tasks) {
+                task.call();
+            }
+            return 1;
+        }
+
+        ExecutorService executor = Executors.newFixedThreadPool(threads, new ThreadFactory() {
+            private final AtomicInteger counter = new AtomicInteger();
+
+            @Override
+            public Thread newThread(Runnable runnable) {
+                Thread thread = new Thread(runnable, "amethyst-cache-jar-" + counter.incrementAndGet());
+                thread.setDaemon(true);
+                return thread;
+            }
+        });
+        try {
+            List<Future<Void>> futures = executor.invokeAll(tasks);
+            // invokeAll waits for completion, but failures only surface on get().
+            // Propagate the first one so store() falls back to the normal MTS flow
+            // instead of committing a marker over a partially written cache.
+            for (Future<Void> future : futures) {
+                try {
+                    future.get();
+                } catch (ExecutionException failure) {
+                    Throwable cause = failure.getCause();
+                    if (cause instanceof Exception) {
+                        throw (Exception) cause;
+                    }
+                    throw new IllegalStateException("Cache jar write failed", cause);
+                }
+            }
+        } finally {
+            executor.shutdownNow();
+        }
+        return threads;
+    }
+
+    private static Callable<Void> mainJarTask(
+            PackageJarReflection reflection,
+            final List<EntrySnapshot> entries,
+            final File cachedJar
+    ) throws Exception {
+        final Manifest manifest = new Manifest();
         Attributes attributes = manifest.getMainAttributes();
         attributes.put(Attributes.Name.MANIFEST_VERSION, "1.0");
         attributes.put(Attributes.Name.MAIN_CLASS, "com.evacipated.cardcrawl.modthespire.PackageJar$PrepackagedLauncher");
         attributes.put(Attributes.Name.CLASS_PATH, reflection.createClassPath());
         attributes.put(new Attributes.Name("Created-By"), "ModTheSpire");
 
+        // The four source streams are opened here rather than inside the worker: each
+        // one reads an MTS static or a ProtectionDomain, which must not race with the
+        // package jar workers.
+        final InputStream mtsJar = reflection.openMtsJar();
+        final InputStream kotlinJar = reflection.openKotlinJar();
+        final InputStream corePatchesJar = reflection.openCorePatchesJar();
+        final InputStream baseGameJar = reflection.openBaseGameJar();
+
+        return new Callable<Void>() {
+            @Override
+            public Void call() throws Exception {
+                String threadName = Thread.currentThread().getName();
+                lastMainJarThreadName = threadName;
+                lastCacheJarThreadNames.add(threadName);
+                writeFastMainJar(manifest, entries, cachedJar, mtsJar, kotlinJar, corePatchesJar, baseGameJar);
+                return null;
+            }
+        };
+    }
+
+    private static void writeFastMainJar(
+            Manifest manifest,
+            List<EntrySnapshot> entries,
+            File cachedJar,
+            InputStream mtsJar,
+            InputStream kotlinJar,
+            InputStream corePatchesJar,
+            InputStream baseGameJar
+    ) throws Exception {
         Map<String, EntrySnapshot> entriesByPath = mapEntriesByPath(entries);
         Set<String> written = new HashSet<String>();
         FileOutputStream fileOutput = new FileOutputStream(cachedJar, false);
@@ -489,11 +594,11 @@ public final class MtsPatchCacheStore {
             JarOutputStream output = new JarOutputStream(fileOutput, manifest);
             try {
                 output.setLevel(Deflater.NO_COMPRESSION);
-                writeSelectedJarEntries(output, written, entriesByPath, reflection.openMtsJar(), null, "MTS");
-                writeSelectedJarEntries(output, written, entriesByPath, reflection.openKotlinJar(), null, "KOTLIN");
+                writeSelectedJarEntries(output, written, entriesByPath, mtsJar, null, "MTS");
+                writeSelectedJarEntries(output, written, entriesByPath, kotlinJar, null, "KOTLIN");
                 writeOutJarEntries(output, written, entries, null);
-                writeSelectedJarEntries(output, written, entriesByPath, reflection.openCorePatchesJar(), null, "COREPATCH");
-                writeSelectedJarEntries(output, written, entriesByPath, reflection.openBaseGameJar(), null, "BASEGAME");
+                writeSelectedJarEntries(output, written, entriesByPath, corePatchesJar, null, "COREPATCH");
+                writeSelectedJarEntries(output, written, entriesByPath, baseGameJar, null, "BASEGAME");
             } finally {
                 output.close();
             }
@@ -503,11 +608,10 @@ public final class MtsPatchCacheStore {
     }
 
     /**
-     * Writes one modded package jar per mod. Each mod reads its own source jar and
-     * writes its own target jar, sharing only immutable state, so the work is spread
-     * across a small pool. Returns the number of worker threads actually used.
+     * Builds one task per mod package jar. Each mod reads its own source jar and writes
+     * its own target jar, sharing only immutable state.
      */
-    private static int writeFastPackageJars(
+    private static List<PackageJarTask> packageJarTasks(
             PackageJarReflection reflection,
             List<EntrySnapshot> entries,
             File packageDir
@@ -516,7 +620,6 @@ public final class MtsPatchCacheStore {
         final List<EntrySnapshot> sharedEntries = entries;
         Object[] modInfos = reflection.modInfos();
 
-        List<PackageJarTask> tasks = new ArrayList<PackageJarTask>(modInfos.length);
         // Group by target path first. Two mods whose source jars share a file name
         // collapse onto one target; MTS's serial loop let the later mod overwrite the
         // earlier one, and running them concurrently would instead interleave both
@@ -536,51 +639,7 @@ public final class MtsPatchCacheStore {
                 log("Duplicate package jar target, keeping last mod: " + targetJar.getName());
             }
         }
-        tasks.addAll(tasksByTarget.values());
-
-        if (tasks.isEmpty()) {
-            lastPackageJarThreadCount = 0;
-            return 0;
-        }
-        int threads = packageJarThreadCount(tasks.size());
-        lastPackageJarThreadCount = threads;
-        if (threads <= 1) {
-            for (PackageJarTask task : tasks) {
-                task.call();
-            }
-            return 1;
-        }
-
-        ExecutorService executor = Executors.newFixedThreadPool(threads, new ThreadFactory() {
-            private final AtomicInteger counter = new AtomicInteger();
-
-            @Override
-            public Thread newThread(Runnable runnable) {
-                Thread thread = new Thread(runnable, "amethyst-package-jar-" + counter.incrementAndGet());
-                thread.setDaemon(true);
-                return thread;
-            }
-        });
-        try {
-            List<Future<Void>> futures = executor.invokeAll(tasks);
-            // invokeAll waits for completion, but the failures only surface on get().
-            // Propagate the first one so store() falls back to the normal MTS flow
-            // instead of committing a marker over a partially written package dir.
-            for (Future<Void> future : futures) {
-                try {
-                    future.get();
-                } catch (ExecutionException failure) {
-                    Throwable cause = failure.getCause();
-                    if (cause instanceof Exception) {
-                        throw (Exception) cause;
-                    }
-                    throw new IllegalStateException("Package jar write failed", cause);
-                }
-            }
-        } finally {
-            executor.shutdownNow();
-        }
-        return threads;
+        return new ArrayList<PackageJarTask>(tasksByTarget.values());
     }
 
     private static int packageJarThreadCount(int taskCount) {
@@ -656,6 +715,7 @@ public final class MtsPatchCacheStore {
 
         @Override
         public Void call() throws Exception {
+            lastCacheJarThreadNames.add(Thread.currentThread().getName());
             writeSinglePackageJar(entries, entriesByPath, jarUrl, modId, sourceJar, targetJar);
             return null;
         }

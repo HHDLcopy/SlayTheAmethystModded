@@ -409,6 +409,20 @@ public class MtsPatchCacheStoreTest {
                     "Expected the parallel path to run with more than one worker",
                     MtsPatchCacheStore.lastPackageJarThreadCount > 1
             );
+            // The main jar must share the pool with the package jars rather than being
+            // written serially ahead of them: it carries the whole base game jar, so
+            // overlapping it is where most of the wall-clock saving comes from.
+            assertNotNull("Main jar task never ran", MtsPatchCacheStore.lastMainJarThreadName);
+            assertTrue(
+                    "Main jar must run on a pool worker, not the calling thread, was: "
+                            + MtsPatchCacheStore.lastMainJarThreadName,
+                    MtsPatchCacheStore.lastMainJarThreadName.startsWith("amethyst-cache-jar-")
+            );
+            assertTrue(
+                    "Expected cache jar work to span multiple threads, saw: "
+                            + MtsPatchCacheStore.lastCacheJarThreadNames,
+                    MtsPatchCacheStore.lastCacheJarThreadNames.size() > 1
+            );
 
             for (int index = 0; index < modCount; index++) {
                 String modId = "mod" + index;
@@ -536,6 +550,17 @@ public class MtsPatchCacheStoreTest {
                     "Override must force a single worker",
                     1,
                     MtsPatchCacheStore.lastPackageJarThreadCount
+            );
+            // With one worker the tasks run inline on the calling thread, so no pool
+            // thread should ever appear.
+            assertEquals(
+                    "Serial path must not spawn pool threads",
+                    1,
+                    MtsPatchCacheStore.lastCacheJarThreadNames.size()
+            );
+            assertFalse(
+                    "Serial path must run inline, not on a pool worker",
+                    MtsPatchCacheStore.lastMainJarThreadName.startsWith("amethyst-cache-jar-")
             );
         } finally {
             System.clearProperty(PROP_PACKAGE_JAR_THREADS);

@@ -197,6 +197,14 @@ corrupt or non-jar entry still contributes something instead of collapsing to a
 constant. Both markers carry a leading `schema|` line so that adding or reordering a
 field cannot let an older marker compare equal to a newer one.
 
+The marker is computed once per launch, in `appendRuntimeProperties`. On a desktop
+machine over a synthetic 47-jar / 71 MB load order with a warm page cache, the three
+options measured at 0 ms for size+mtime, 15 ms for the central directory digest, and
+54 ms for a full content hash. Absolute numbers will be higher on a phone and on a cold
+cache, but the ratio is what motivated the choice: correctness against in-place rebuilds
+for roughly a third of the cost of hashing whole files, against a cache hit that saves
+seconds.
+
 Cache reads are conservative:
 
 - If the marker is missing or mismatched, MTS runs the normal patching flow.

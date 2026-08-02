@@ -363,6 +363,50 @@ public class MtsPatchCacheStoreTest {
     }
 
     @Test
+    public void store_keepsMergedCacheJarUncompressed() throws Exception {
+        File root = Files.createTempDirectory("mts-patch-cache-store-merge-level-").toFile();
+        try {
+            setCacheProperties(root);
+            resetStubTracking();
+            PackageJar.writePackageJarFiles = true;
+            ByteArrayMapClassPath compiledClasses = new ByteArrayMapClassPath();
+
+            // Highly compressible, so a default-deflate rewrite is unmistakable:
+            // stored at level 0 the entry grows slightly, deflated it collapses.
+            byte[] patchedCardLibrary = new byte[64 * 1024];
+            java.util.Arrays.fill(patchedCardLibrary, (byte) 'a');
+            compiledClasses.addClass(
+                    "com.megacrit.cardcrawl.helpers.CardLibrary",
+                    null,
+                    patchedCardLibrary
+            );
+
+            MtsPatchCacheStore.store(new MTSClassPool(), compiledClasses);
+
+            File cachedJar = new File(root, "desktop-1.0-modded.jar");
+            assertTrue(cachedJar.isFile());
+            // The merge pass rewrites every entry of the main jar. It must preserve the
+            // NO_COMPRESSION level writeFastMainJar uses, otherwise a cache hit pays
+            // inflater cost on every class load for the whole base game jar. At level 0
+            // deflate only adds a small block wrapper; real deflate would collapse this
+            // buffer of identical bytes by orders of magnitude.
+            long compressedSize = jarEntryCompressedSize(
+                    cachedJar,
+                    "com/megacrit/cardcrawl/helpers/CardLibrary.class"
+            );
+            assertTrue(
+                    "merged entry was recompressed: compressedSize=" + compressedSize,
+                    compressedSize >= patchedCardLibrary.length
+            );
+        } finally {
+            clearCacheProperties();
+            resetStubTracking();
+            PackageJar.writePackageJarFiles = true;
+            deleteRecursively(root);
+        }
+    }
+
+    @Test
     public void packageJarFastPath_writesEveryModPackageJarInParallel() throws Exception {
         File root = Files.createTempDirectory("mts-patch-cache-parallel-").toFile();
         try {
@@ -771,6 +815,17 @@ public class MtsPatchCacheStoreTest {
                 input.close();
             }
             return output.toByteArray();
+        } finally {
+            jarFile.close();
+        }
+    }
+
+    private static long jarEntryCompressedSize(File jar, String name) throws Exception {
+        JarFile jarFile = new JarFile(jar);
+        try {
+            JarEntry entry = jarFile.getJarEntry(name);
+            assertNotNull("missing jar entry: " + name, entry);
+            return entry.getCompressedSize();
         } finally {
             jarFile.close();
         }

@@ -363,3 +363,22 @@ returns per-mod patch sets and the caller drops them. Their only consumer is
 `Patcher.injectPatches`, which must not run on a hit since the cached jar already carries
 the injected bytecode. The call is made for its side effect of populating
 `Patcher.annotationDBMap`, which the subsequent SpireEnum pass reads.
+
+## Cached jar compression level
+
+Both fast-path writers deliberately set `Deflater.NO_COMPRESSION` on the jars they
+produce. The trade is intentional: these files live in app-private storage and are
+rebuilt whenever the marker changes, so the disk they cost is cheap and temporary,
+while every class the JVM loads from them on a hit would otherwise pay inflater time.
+The main jar carries the whole base game, so it dominates that cost.
+
+`mergeCompiledClasses` runs after `writeFastMainJar` whenever Javassist produced patched
+base-game classes, and it rewrites every entry of the main jar into a fresh temporary jar
+before renaming it over the original. It was creating that `ZipOutputStream` without
+setting a level, so it silently re-deflated the entire main jar at the default level and
+undid the choice made a moment earlier — the uncompressed main jar only survived when the
+merge pass happened not to run. The merge writer now sets the same level as the other two.
+
+`store_keepsMergedCacheJarUncompressed` locks this in. Note that `NO_COMPRESSION` still
+emits `DEFLATED` entries, just with stored blocks, so the entry method is not a usable
+signal; the test asserts on compressed size using a highly compressible payload instead.

@@ -332,6 +332,7 @@ public final class MtsPatchCacheStore {
         ZipInputStream input = new ZipInputStream(new FileInputStream(cachedJar));
         try {
             ZipOutputStream output = new ZipOutputStream(new FileOutputStream(tempJar, false));
+            output.setLevel(Deflater.NO_COMPRESSION);
             try {
                 byte[] buffer = new byte[8192];
                 ZipEntry entry;

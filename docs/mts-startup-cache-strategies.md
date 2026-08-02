@@ -335,3 +335,31 @@ a file whose identity does not carry the current marker will be rejected by the 
 anyway, so it is already dead weight. Files too short or malformed to have a header are
 swept for the same reason. The sweep runs after the marker is committed and never
 throws — housekeeping must not invalidate an otherwise complete cache.
+
+## Fallback boundary on a cache hit
+
+`launchIfCurrent` returning false means "the cache could not be used, run the normal
+ModTheSpire path instead", and the patched `Loader.runMods` acts on that by falling
+through into a full patch-and-launch pass. That answer is only safe before control
+reaches the cached launcher.
+
+`invokeCachedLauncher` calls `PrepackagedLauncher.main` synchronously, and that call runs
+the entire game. Anything it throws — a mod crashing during initialization, a GDX failure,
+a crash deep inside `DesktopLauncher.main` — used to be caught by the same broad
+`catch (Throwable)` and reported as a cache miss. The fallback then re-ran the whole
+pipeline inside a JVM that had already taken MTS static state, loaded the game classes,
+and possibly opened a window. That second pass cannot succeed, and it buries the original
+crash.
+
+Failures raised from inside that invocation are now wrapped in `CachedGameLaunchFailure`
+and rethrown instead of downgraded to a miss. Everything before it — building the URL
+list, constructing the classloader, resolving the launcher class and its `main` — is still
+a legitimate miss, because none of it has handed control to the game yet. The wrapper is a
+`RuntimeException` subclass because the hook site calls `launchIfCurrent` through a `()Z`
+descriptor and cannot declare checked exceptions.
+
+One deliberate non-issue at the same layer: `MtsPatchAnnotationDbCache.restoreIntoPatcher`
+returns per-mod patch sets and the caller drops them. Their only consumer is
+`Patcher.injectPatches`, which must not run on a hit since the cached jar already carries
+the injected bytecode. The call is made for its side effect of populating
+`Patcher.annotationDBMap`, which the subsequent SpireEnum pass reads.

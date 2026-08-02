@@ -75,10 +75,26 @@ public final class MtsPatchCacheBootstrap {
             log("Launching cached MTS patch jar: " + cachedJar.getAbsolutePath());
             invokeCachedLauncher(cachedJar, baseJar, packageDir, readMtsArgs());
             return true;
+        } catch (CachedGameLaunchFailure gameFailure) {
+            // The cached launcher had already started the game when this failed, so
+            // falling back would re-run the whole patch pipeline inside a JVM that is
+            // no longer clean. Propagate instead, keeping the real crash as the cause.
+            log("Cached MTS launch failed after the game started, not falling back: " + gameFailure.getCause());
+            throw gameFailure;
         } catch (Throwable error) {
             log("Patch cache launch failed, falling back to ModTheSpire patching: " + error);
             error.printStackTrace(System.out);
             return false;
+        }
+    }
+
+    /**
+     * Marks a failure raised after control passed to the cached game launcher, to
+     * separate it from the setup failures that the ModTheSpire path can still retry.
+     */
+    private static final class CachedGameLaunchFailure extends RuntimeException {
+        CachedGameLaunchFailure(Throwable cause) {
+            super(cause);
         }
     }
 
@@ -327,6 +343,11 @@ public final class MtsPatchCacheBootstrap {
         File cacheRoot = new File(System.getProperty(PROPERTY_JAR, "")).getParentFile();
         if (cacheRoot != null) {
             try {
+                // The returned patch sets are intentionally dropped. Their only consumer is
+                // Patcher.injectPatches, which must not run on a cache hit: the cached jar
+                // already carries the injected bytecode. What is needed here is the side
+                // effect of populating Patcher.annotationDBMap, which the SpireEnum pass in
+                // bustPrepackagedEnumsFromCache reads afterwards.
                 MtsPatchAnnotationDbCache.restoreIntoPatcher(loader, cacheRoot, resolvePackageDir(), modInfos);
                 log("Prepared cached MTS annotation DB from cache: mods=" + Array.getLength(modInfos));
                 logElapsed("Prepared cached MTS annotation DB", startedAtNs);
@@ -439,10 +460,20 @@ public final class MtsPatchCacheBootstrap {
             Method main = launcher.getMethod("main", String[].class);
             logElapsed("Resolved cached MTS launcher main", methodLookupStartNs);
             log("Invoking cached MTS prepackaged launcher");
-            main.invoke(null, (Object) args);
-        } catch (InvocationTargetException error) {
-            Throwable cause = error.getCause();
-            throw cause == null ? error : cause;
+            try {
+                main.invoke(null, (Object) args);
+            } catch (Throwable gameFailure) {
+                // Everything above this point can still be retried by the normal
+                // ModTheSpire path. Once the launcher itself is running, the JVM has
+                // taken static MTS state, loaded the game classes, and possibly opened
+                // a window, so a second patch-and-launch pass in the same JVM cannot
+                // succeed. Mark the failure so the caller reports it instead of
+                // silently falling back.
+                Throwable cause = gameFailure instanceof InvocationTargetException
+                        ? gameFailure.getCause()
+                        : gameFailure;
+                throw new CachedGameLaunchFailure(cause == null ? gameFailure : cause);
+            }
         } finally {
             if (previousUserDir == null) {
                 System.clearProperty("user.dir");

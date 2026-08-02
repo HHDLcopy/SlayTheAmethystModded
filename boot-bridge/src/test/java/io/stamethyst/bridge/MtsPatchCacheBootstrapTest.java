@@ -19,6 +19,7 @@ import java.util.jar.JarOutputStream;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
@@ -121,6 +122,37 @@ public class MtsPatchCacheBootstrapTest {
             setCacheProperties(cachedJar, marker, packageDir, "expected", gameDir);
 
             assertFalse(MtsPatchCacheBootstrap.launchIfCurrent());
+        } finally {
+            clearCacheProperties();
+            deleteRecursively(root);
+        }
+    }
+
+    @Test
+    public void launchIfCurrent_doesNotFallBackAfterTheCachedGameAlreadyStarted() throws Exception {
+        File root = Files.createTempDirectory("mts-patch-cache-bootstrap-late-crash-").toFile();
+        try {
+            File cachedJar = buildFakePrepackagedJarThatThrowsAfterGameStart(root);
+            File marker = new File(root, ".mts_patch_cache");
+            File packageDir = new File(root, "package");
+            File gameDir = new File(root, "game");
+            Files.write(marker.toPath(), "expected\n".getBytes(StandardCharsets.UTF_8));
+            writeFakePackageJar(packageDir);
+
+            setCacheProperties(cachedJar, marker, packageDir, "expected", gameDir);
+
+            // The launcher reached the game and only then threw. Returning false here would
+            // make the patched Loader.runMods continue into a full second patch-and-launch
+            // pass in a JVM that has already booted the game, instead of surfacing the crash.
+            RuntimeException propagated = null;
+            try {
+                MtsPatchCacheBootstrap.launchIfCurrent();
+            } catch (RuntimeException error) {
+                propagated = error;
+            }
+            assertEquals("0", System.getProperty(PROP_LAUNCHED));
+            assertNotNull("A crash after game start must not trigger the patch fallback", propagated);
+            assertEquals("crash after the game started", propagated.getCause().getMessage());
         } finally {
             clearCacheProperties();
             deleteRecursively(root);
@@ -962,6 +994,55 @@ public class MtsPatchCacheBootstrapTest {
         JarOutputStream jarOut = new JarOutputStream(new FileOutputStream(jar));
         try {
             addClass(jarOut, classDir, "com/megacrit/cardcrawl/core/CardCrawlGame.class");
+        } finally {
+            jarOut.close();
+        }
+        return jar;
+    }
+
+    /**
+     * Builds a cached launcher that signals it reached the game and then throws, which is
+     * what a crash inside DesktopLauncher.main looks like from launchIfCurrent's frame.
+     */
+    private static File buildFakePrepackagedJarThatThrowsAfterGameStart(File root) throws Exception {
+        File sourceDir = new File(root, "src");
+        File classDir = new File(root, "classes");
+        File packageDir = new File(sourceDir, "com/evacipated/cardcrawl/modthespire");
+        assertTrue(packageDir.mkdirs());
+        assertTrue(classDir.mkdirs());
+
+        File source = new File(packageDir, "PackageJar.java");
+        Files.write(
+                source.toPath(),
+                (
+                        "package com.evacipated.cardcrawl.modthespire;\n" +
+                                "public final class PackageJar {\n" +
+                                "  public static final class PrepackagedLauncher {\n" +
+                                "    public static void main(String[] args) {\n" +
+                                "      System.setProperty(\"" + PROP_LAUNCHED + "\", String.valueOf(args.length));\n" +
+                                "      throw new RuntimeException(\"crash after the game started\");\n" +
+                                "    }\n" +
+                                "  }\n" +
+                                "}\n"
+                ).getBytes(StandardCharsets.UTF_8)
+        );
+
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        if (compiler == null) {
+            throw new IllegalStateException("JDK compiler is required for this test");
+        }
+        assertEquals(0, compiler.run(null, null, null, "-d", classDir.getAbsolutePath(), source.getAbsolutePath()));
+
+        File jar = new File(root, "desktop-1.0-modded.jar");
+        JarOutputStream jarOut = new JarOutputStream(new FileOutputStream(jar));
+        try {
+            addClass(jarOut, classDir, "com/evacipated/cardcrawl/modthespire/PackageJar.class");
+            addClass(jarOut, classDir, "com/evacipated/cardcrawl/modthespire/PackageJar$PrepackagedLauncher.class");
+            jarOut.putNextEntry(new JarEntry("amethyst-cache-padding.bin"));
+            byte[] padding = new byte[1024 * 1024];
+            new Random(42L).nextBytes(padding);
+            jarOut.write(padding);
+            jarOut.closeEntry();
         } finally {
             jarOut.close();
         }

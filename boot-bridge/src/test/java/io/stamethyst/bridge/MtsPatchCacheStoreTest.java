@@ -29,6 +29,8 @@ public class MtsPatchCacheStoreTest {
     private static final String PROP_PACKAGE_DIR = "amethyst.mts.patch_cache.package_dir";
     private static final String PROP_EXPECTED = "amethyst.mts.patch_cache.expected";
     private static final String PROP_PACKAGE_JAR_THREADS = "amethyst.mts.patch_cache.package_jar_threads";
+    private static final String PROP_SCAN_CACHE_DIR = "amethyst.loadout.scan_cache_dir";
+    private static final String PROP_MIN_FREE_BYTES = "amethyst.mts.patch_cache.min_free_bytes";
 
     @Test
     public void store_writesMarkerWhenCacheJarAndPackageJarsExist() throws Exception {
@@ -617,6 +619,109 @@ public class MtsPatchCacheStoreTest {
             clearCacheProperties();
             resetStubTracking();
             deleteRecursively(root);
+        }
+    }
+
+    @Test
+    public void store_deletesLoadoutScanCachesFromEarlierCacheKeys() throws Exception {
+        File root = Files.createTempDirectory("mts-patch-cache-scan-sweep-").toFile();
+        try {
+            setCacheProperties(root);
+            resetStubTracking();
+            File scanCacheDir = new File(root, "loadout-scan-cache");
+            assertTrue(scanCacheDir.mkdirs());
+            System.setProperty(PROP_SCAN_CACHE_DIR, scanCacheDir.getAbsolutePath());
+
+            // Written under the marker this run is about to commit, so still readable.
+            File current = new File(scanCacheDir, "aaaaaaaaaaaa-power.txt");
+            writeScanCacheFile(current, "mts|expected|SomeMod|1.0.0");
+            // Written under a previous marker: readCacheFile rejects it, so it is dead weight.
+            File stale = new File(scanCacheDir, "bbbbbbbbbbbb-power.txt");
+            writeScanCacheFile(stale, "mts|old-marker|SomeMod|0.9.0");
+            // Truncated past repair, also unusable to the mod.
+            File truncated = new File(scanCacheDir, "cccccccccccc-orb.txt");
+            writeTextFile(truncated, "schema=2\n");
+            // Not a scan cache file at all; must be left alone.
+            File unrelated = new File(scanCacheDir, "notes.bin");
+            writeTextFile(unrelated, "keep me");
+
+            MtsPatchCacheStore.store(new MTSClassPool());
+
+            assertTrue(new File(root, ".mts_patch_cache").isFile());
+            assertTrue(current.isFile());
+            assertFalse(stale.exists());
+            assertFalse(truncated.exists());
+            assertTrue(unrelated.isFile());
+        } finally {
+            System.clearProperty(PROP_SCAN_CACHE_DIR);
+            clearCacheProperties();
+            resetStubTracking();
+            deleteRecursively(root);
+        }
+    }
+
+    @Test
+    public void store_skipsBuildAndKeepsPreviousCacheWhenFreeSpaceIsInsufficient() throws Exception {
+        File root = Files.createTempDirectory("mts-patch-cache-no-space-").toFile();
+        try {
+            setCacheProperties(root);
+            resetStubTracking();
+            // A previous, still-valid cache. The precheck must run before store's cleanup
+            // so a build that cannot succeed does not destroy what already works.
+            File previousJar = new File(root, "desktop-1.0-modded.jar");
+            File previousMarker = new File(root, ".mts_patch_cache");
+            writeJar(previousJar, "old/Old.class", "old");
+            writeTextFile(previousMarker, "expected\n");
+            // Larger than any real filesystem can offer.
+            System.setProperty(PROP_MIN_FREE_BYTES, Long.toString(Long.MAX_VALUE));
+
+            MtsPatchCacheStore.store(new MTSClassPool());
+
+            assertTrue(previousJar.isFile());
+            assertTrue(previousMarker.isFile());
+            assertArrayEquals("old".getBytes("UTF-8"), readJarEntry(previousJar, "old/Old.class"));
+            // observedUserDir stays null only if packageJar was never called at all.
+            assertNull(PackageJar.observedUserDir);
+        } finally {
+            System.clearProperty(PROP_MIN_FREE_BYTES);
+            clearCacheProperties();
+            resetStubTracking();
+            deleteRecursively(root);
+        }
+    }
+
+    @Test
+    public void store_buildsCacheWhenFreeSpaceRequirementIsSatisfied() throws Exception {
+        File root = Files.createTempDirectory("mts-patch-cache-has-space-").toFile();
+        try {
+            setCacheProperties(root);
+            resetStubTracking();
+            // Pairs with the previous test: identical setup, trivial requirement. Proves the
+            // skip above comes from the space check and not from unrelated setup.
+            System.setProperty(PROP_MIN_FREE_BYTES, "1");
+
+            MtsPatchCacheStore.store(new MTSClassPool());
+
+            assertTrue(new File(root, "desktop-1.0-modded.jar").length() >= 1024L * 1024L);
+            assertTrue(new File(root, ".mts_patch_cache").isFile());
+        } finally {
+            System.clearProperty(PROP_MIN_FREE_BYTES);
+            clearCacheProperties();
+            resetStubTracking();
+            deleteRecursively(root);
+        }
+    }
+
+    private static void writeScanCacheFile(File file, String identity) throws Exception {
+        writeTextFile(file, "schema=2\nkind=power\nidentity=" + identity + "\nsome.Class\n");
+    }
+
+    private static void writeTextFile(File file, String content) throws Exception {
+        FileOutputStream output = new FileOutputStream(file);
+        try {
+            output.write(content.getBytes("UTF-8"));
+        } finally {
+            output.close();
         }
     }
 

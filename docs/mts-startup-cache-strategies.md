@@ -305,3 +305,33 @@ The loader registers as parallel-capable and locks per class name. Locking the w
 loader instead would serialize every load performed by Loadout's scanner threads,
 BaseMod, and the GDX asset threads, and risks deadlock when a parent-first delegation
 happens while another thread holds the parent's lock.
+
+## Space precheck and scan cache sweep
+
+Two forms of unbounded cost were possible once the cache had been running for a while.
+
+`store` refuses to start when the filesystem cannot plausibly hold the result. The
+estimate is coarse — three times the base game jar, floored at 256MB — because the real
+output size is unknown until the jars are written, and the aim is only to reject the
+hopeless case. The check runs *before* `store` enters its cleanup block, which is the
+point of it: that block deletes the previous marker, the previous metadata caches, and
+the previous package jars. Without the precheck, a build doomed by a full disk would
+destroy a working cache, fail, fall back correctly, and then repeat the same doomed
+build and its full cost on every subsequent launch. `amethyst.mts.patch_cache.min_free_bytes`
+overrides the estimate; unknown free space is treated as permission to proceed, so an
+unreadable filesystem does not silently disable caching.
+
+`loadout-scan-cache/` was the one directory that only ever grew. Every other artifact is
+overwritten or wiped per build — the package directory by `deletePackageJars`, the main
+jar and both metadata caches by being rewritten in place — but the scan cache file names
+embed a hash of the whole patch cache marker, so each new marker produces an entirely
+fresh set of names and strands the previous set forever. Nothing collected them: the
+runtime compat mod only replaces the single file it is about to write, and the launcher
+only clears the directory when the user turns the feature off.
+
+A completed build now sweeps them. Staleness is decided by reading the `identity=`
+header, which is exactly the test `LoadoutClassScanCachePatches.readCacheFile` applies:
+a file whose identity does not carry the current marker will be rejected by the mod
+anyway, so it is already dead weight. Files too short or malformed to have a header are
+swept for the same reason. The sweep runs after the marker is committed and never
+throws — housekeeping must not invalidate an otherwise complete cache.

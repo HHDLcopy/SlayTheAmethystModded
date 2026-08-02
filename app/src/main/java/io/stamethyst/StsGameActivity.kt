@@ -26,6 +26,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import io.stamethyst.backend.audio.GameAudioController
 import io.stamethyst.backend.diag.MemoryDiagnosticsLogger
+import io.stamethyst.backend.easytier.EasyTierGameProcessPriorityBinding
 import io.stamethyst.backend.launch.GameProcessLaunchGuard
 import io.stamethyst.backend.launch.StartupTraceEvents
 import io.stamethyst.backend.presence.GamePresenceStateMarker
@@ -162,6 +163,9 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
         }
         // The game Activity runs in :game, which has its own CloudControlConfig singleton.
         CloudControlConfig.refreshOnAppStart(applicationContext)
+        // Holds :easytier at this process's LMK priority so a low-memory device reclaims the game
+        // before it silently kills the virtual network underneath a running session.
+        EasyTierGameProcessPriorityBinding.attach(this)
         setContentView(R.layout.activity_game)
         setVolumeControlStream(AudioManager.STREAM_MUSIC)
 
@@ -199,6 +203,7 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
         if (::sessionCoordinator.isInitialized) {
             sessionCoordinator.onDestroy()
         }
+        EasyTierGameProcessPriorityBinding.detach(this)
         GamePresenceStateMarker.markLauncherActive(this)
         if (launchGuardAcquired && (!::sessionCoordinator.isInitialized || !sessionCoordinator.jvmLaunchStarted)) {
             releaseLaunchGuard()

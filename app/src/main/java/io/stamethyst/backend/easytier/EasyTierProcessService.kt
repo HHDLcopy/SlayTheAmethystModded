@@ -5,6 +5,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.net.VpnService
+import android.os.Binder
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -17,6 +18,7 @@ import io.stamethyst.config.CloudControlConfig
 import io.stamethyst.config.LauncherConfig
 
 class EasyTierProcessService : Service() {
+    private val priorityBinder = Binder()
     private lateinit var statusPollThread: HandlerThread
     private lateinit var statusPollHandler: Handler
     private var statusPollRunnable: Runnable? = null
@@ -217,7 +219,12 @@ class EasyTierProcessService : Service() {
         statusPollHandler = Handler(statusPollThread.looper)
     }
 
-    override fun onBind(intent: Intent?): IBinder? = null
+    /**
+     * Exists only so the `:game` process can hold a `BIND_IMPORTANT` binding and pull this process
+     * into the game's LMK priority band; see [EasyTierGameProcessPriorityBinding]. The binder
+     * intentionally exposes no interface — session control stays on the start-command path.
+     */
+    override fun onBind(intent: Intent?): IBinder = priorityBinder
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val safeIntent = intent ?: return START_NOT_STICKY

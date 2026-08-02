@@ -251,5 +251,5 @@ Bundle contents:
 
 - Android SDK configured through `local.properties` `sdk.dir`, `ANDROID_SDK_ROOT`, `ANDROID_HOME`, or PATH.
 - At least one online adb device or emulator.
-- Build dependencies required by the app, including `desktop-1.0.jar` and `runtime-pack/jre8-pojav.zip`, before running install/smoke.
+- Extract the build dependency bundle into the repository root before running install/smoke. It must contain `build-deps/steamapps/common/SlayTheSpire/desktop-1.0.jar` and `build-deps/runtime-pack/jre8-pojav.zip`.
 - Python 3.10 or newer for `scripts/tools/main.py`.

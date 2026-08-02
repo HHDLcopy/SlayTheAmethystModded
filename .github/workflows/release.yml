@@ -95,18 +95,14 @@ jobs:
             exit 1
           fi
 
-          mkdir -p runtime-pack
-          cp -R "$deps_root/runtime-pack/." runtime-pack/
-          echo "STEAM_PATH=$deps_root/steamapps" >> "$GITHUB_ENV"
+          mkdir -p build-deps
+          cp -R "$deps_root/." build-deps/
 
       - name: Run Android lint
-        env:
-          STEAM_PATH: ${{ env.STEAM_PATH }}
         run: ./gradlew :app:lintDebug --stacktrace
 
       - name: Build signed release APKs
         env:
-          STEAM_PATH: ${{ env.STEAM_PATH }}
           RELEASE_STORE_FILE: ${{ env.RELEASE_STORE_FILE }}
           RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}

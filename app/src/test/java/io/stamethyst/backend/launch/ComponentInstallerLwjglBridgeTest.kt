@@ -9,6 +9,27 @@ import org.junit.Test
 
 class ComponentInstallerLwjglBridgeTest {
     @Test
+    fun removeLegacyMarketNatives_removesNestedLibgdxVideoCopiesOnly() {
+        val root = Files.createTempDirectory("legacy-market-natives-").toFile()
+        try {
+            val nested = File(root, "historical/arm64").apply { mkdirs() }
+            val legacy = File(nested, "libgdx-video-desktoparm64.so").apply {
+                writeText("legacy")
+            }
+            val retained = File(nested, "libjnitensorflow.so").apply {
+                writeText("retained")
+            }
+
+            ComponentInstaller.removeLegacyMarketNatives(root)
+
+            assertFalse(legacy.exists())
+            assertTrue(retained.isFile)
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun lwjglBridgeVersionCheck_rejectsStalePersistentBridge() {
         val root = Files.createTempDirectory("lwjgl-bridge-version-").toFile()
         try {

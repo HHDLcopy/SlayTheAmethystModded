@@ -101,7 +101,7 @@ flowchart TB
 
     subgraph RuntimeAssets["运行时资产"]
         DesktopJar["desktop-1.0.jar"]
-        RuntimePack["runtime-pack / files/runtimes/Internal"]
+        RuntimePack["build-deps/runtime-pack / files/runtimes/Internal"]
         BootBridgeJar["boot-bridge.jar"]
         AgentJar["agent-connector.jar"]
         RuntimeMods["MTS Mods / enabled_mods.txt / mods/*.jar"]

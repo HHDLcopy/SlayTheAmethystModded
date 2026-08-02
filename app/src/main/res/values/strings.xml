@@ -2639,6 +2639,13 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="main_easytier_room_closed">Room is closed</string>
     <string name="main_easytier_room_list_title">Online rooms</string>
     <string name="main_easytier_room_list_empty">No open rooms right now. Create one and other players will see it here.</string>
+    <string name="main_easytier_room_search_hint">Search room or owner</string>
+    <string name="main_easytier_room_search_clear">Clear search</string>
+    <string name="main_easytier_room_filter_joinable">Joinable only</string>
+    <string name="main_easytier_room_list_no_match">No room matches the current filter.</string>
+    <string name="main_easytier_room_locked_select_blocked">This room is locked, so the owner is not accepting new players.</string>
+    <string name="main_easytier_sheet_summary_selected">Selected room %1$s</string>
+    <string name="main_easytier_sheet_summary_room_count">%1$d room(s) online</string>
     <string name="main_easytier_room_item_owner">Owner %1$s</string>
     <string name="main_easytier_room_item_online_count">Online %1$d</string>
     <string name="main_easytier_room_item_in_game_count">In game %1$d</string>

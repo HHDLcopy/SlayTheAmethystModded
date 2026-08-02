@@ -63,14 +63,16 @@
 
 ### 1. Provide build-time dependencies
 
-Set `STEAM_PATH` as an environment variable, or set `steam.path` in `gradle.properties`, pointing to a Steam root or `steamapps` directory that contains Slay the Spire.
+Download `build-deps.tar.gz` from the private dependency release and extract it at the
+repository root. The build uses the project-local `build-deps/` directory directly;
+no Steam installation or path environment variable is required.
 
 Required files:
-- `${STEAM_PATH}/common/SlayTheSpire/desktop-1.0.jar`
-- `runtime-pack/jre8-pojav.zip`
+- `build-deps/steamapps/common/SlayTheSpire/desktop-1.0.jar`
+- `build-deps/runtime-pack/jre8-pojav.zip`
 
 Dependency download sources:
-- Runtime pack: [ModinMobileSTS/SlayTheAmethystModdedDependence](https://github.com/ModinMobileSTS/SlayTheAmethystModdedDependence/releases/tag/pojav-jre8)
+- Build dependency bundle: [ModinMobileSTS/SlayTheAmethystModdedDependence](https://github.com/ModinMobileSTS/SlayTheAmethystModdedDependence/releases)
 - Native library market: [ModinMobileSTS/SlayTheAmethystResource](https://github.com/ModinMobileSTS/SlayTheAmethystResource)
 
 > [!NOTE]
@@ -186,7 +188,7 @@ Further reading:
 | `app/` | Main Android app and launcher |
 | `boot-bridge/` | Bootstrapping bridge jar |
 | `patches/gdx-patch/` | Runtime compatibility patch project |
-| `runtime-pack/` | Local runtime pack and native bridge inputs |
+| `build-deps/` | Local build dependency bundle and runtime inputs |
 | `docs/` | Developer-facing guides, multilingual READMEs, and architecture notes |
 
 <a id="credits"></a>

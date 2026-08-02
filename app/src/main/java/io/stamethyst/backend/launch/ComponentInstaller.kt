@@ -9,6 +9,7 @@ import io.stamethyst.backend.diag.MemoryDiagnosticsLogger
 import io.stamethyst.backend.fs.FileTreeCleaner
 import io.stamethyst.backend.mods.MtsLoaderCrashPatcher
 import io.stamethyst.backend.mods.ModJarSupport
+import io.stamethyst.backend.nativelib.NativeLibraryMarketService
 import io.stamethyst.backend.resources.RuntimeResourceProvider
 import io.stamethyst.config.RuntimePaths
 import java.io.File
@@ -78,6 +79,7 @@ object ComponentInstaller {
     fun ensureInstalled(context: Context, progressCallback: StartupProgressCallback?) {
         throwIfInterrupted()
         RuntimePaths.ensureBaseDirs(context)
+        removeLegacyMarketNatives(RuntimePaths.gdxPatchNativesDir(context))
         val resources = RuntimeResourceProvider(context)
         val packagedComponentsState = evaluatePackagedComponentsState(
             context = context,
@@ -226,6 +228,7 @@ object ComponentInstaller {
                 RuntimePaths.gdxPatchNativesDir(context)
             )
         }
+        removeLegacyMarketNatives(RuntimePaths.gdxPatchNativesDir(context))
         throwIfInterrupted()
         reportProgress(
             progressCallback,
@@ -929,6 +932,21 @@ object ComponentInstaller {
         if (legacyHinaPatch.isFile) {
             legacyHinaPatch.delete()
         }
+    }
+
+    @Throws(IOException::class)
+    internal fun removeLegacyMarketNatives(root: File) {
+        if (!root.exists()) {
+            return
+        }
+        root.walkTopDown()
+            .filter { it.isFile && NativeLibraryMarketService.isMarketManagedLegacyNative(it.name) }
+            .toList()
+            .forEach { legacyNative ->
+                if (legacyNative.exists() && !legacyNative.delete()) {
+                    throw IOException("Failed to remove legacy native library: ${legacyNative.absolutePath}")
+                }
+            }
     }
 
     @Throws(IOException::class)

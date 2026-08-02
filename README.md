@@ -43,7 +43,7 @@
 </p>
 
 > [!IMPORTANT]
-> 本仓库 **不包含** Slay the Spire 的桌面版 jar。构建前请先准备你自己的 Steam 游戏文件。
+> 本仓库不包含私有构建依赖。构建前请从依赖发布页下载 `build-deps.tar.gz`，不需要安装 Steam 客户端。
 
 <a id="highlights"></a>
 
@@ -65,21 +65,19 @@
 
 ### 1. 准备构建依赖
 
-设置环境变量 `STEAM_PATH`，或者在 `gradle.properties` 中设置 `steam.path`，其值应指向包含 Slay the
-Spire 的 Steam 根目录或 `steamapps` 目录。
+从私有依赖发布页下载 `build-deps.tar.gz`，并在仓库根目录解压。构建只使用项目内的
+`build-deps/` 目录，不需要配置 Steam 路径或环境变量。
 
 必需文件：
 
-- `${STEAM_PATH}/common/SlayTheSpire/desktop-1.0.jar`
-- `runtime-pack/jre8-pojav.zip`
+- `build-deps/steamapps/common/SlayTheSpire/desktop-1.0.jar`
+- `build-deps/runtime-pack/jre8-pojav.zip`
 
 依赖下载来源：
 
-- Runtime
-  Pack: [ModinMobileSTS/SlayTheAmethystModdedDependence](https://github.com/ModinMobileSTS/SlayTheAmethystModdedDependence/releases/tag/pojav-jre8)
--
+- 构建依赖包：[ModinMobileSTS/SlayTheAmethystModdedDependence](https://github.com/ModinMobileSTS/SlayTheAmethystModdedDependence/releases)
 
-原生库市场: [ModinMobileSTS/SlayTheAmethystResource](https://github.com/ModinMobileSTS/SlayTheAmethystResource)
+- 原生库市场：[ModinMobileSTS/SlayTheAmethystResource](https://github.com/ModinMobileSTS/SlayTheAmethystResource)
 
 > [!NOTE]
 > `ModTheSpire.jar`、`BaseMod.jar`、`StSLib.jar` 等核心模组 jar 由应用资源打包提供，不会在构建时从外部模组源动态解析。
@@ -208,7 +206,7 @@ Autoplay 会随机处理 `CardRewardScreen` 发现/奖励选牌页，日志中�
 | `app/`               | 主 Android 应用与启动器实现    |
 | `boot-bridge/`       | 启动桥接 jar 模块           |
 | `patches/gdx-patch/` | 运行时兼容补丁模块             |
-| `runtime-pack/`      | 本地运行时包与原生桥接输入         |
+| `build-deps/`        | 本地构建依赖包与运行时输入         |
 | `docs/`              | 开发文档、多语言 README 与架构说明 |
 
 <a id="credits"></a>

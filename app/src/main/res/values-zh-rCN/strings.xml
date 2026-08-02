@@ -2638,6 +2638,13 @@
     <string name="main_easytier_room_closed">房间已关闭</string>
     <string name="main_easytier_room_list_title">在线房间</string>
     <string name="main_easytier_room_list_empty">暂无可加入的房间。可以创建一个房间，其他玩家会在这里看到。</string>
+    <string name="main_easytier_room_search_hint">搜索房间号或房主</string>
+    <string name="main_easytier_room_search_clear">清空搜索</string>
+    <string name="main_easytier_room_filter_joinable">只看可加入</string>
+    <string name="main_easytier_room_list_no_match">没有符合当前筛选条件的房间。</string>
+    <string name="main_easytier_room_locked_select_blocked">该房间已锁定，房主暂不接收新玩家。</string>
+    <string name="main_easytier_sheet_summary_selected">已选择房间 %1$s</string>
+    <string name="main_easytier_sheet_summary_room_count">当前有 %1$d 个在线房间</string>
     <string name="main_easytier_room_item_owner">房主 %1$s</string>
     <string name="main_easytier_room_item_online_count">在线 %1$d</string>
     <string name="main_easytier_room_item_in_game_count">游戏中 %1$d</string>

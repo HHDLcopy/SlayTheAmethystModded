@@ -2,6 +2,8 @@ package io.stamethyst.ui.main
 
 import android.app.Activity
 import android.os.Build
+import android.view.HapticFeedbackConstants
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
@@ -46,13 +48,12 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -70,6 +71,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -101,6 +103,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -110,6 +113,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -158,10 +162,12 @@ import io.stamethyst.ui.rememberCloudControlSettings
 import io.stamethyst.model.ModItemUi
 import io.stamethyst.model.WorkshopModState
 import io.stamethyst.ui.Icons
+import io.stamethyst.ui.haptics.LauncherHaptics
 import io.stamethyst.ui.resolve
 import io.stamethyst.ui.rememberLoadingSkeletonStyle
 import io.stamethyst.ui.icon.ArrowBack
 import io.stamethyst.ui.icon.Close
+import io.stamethyst.ui.icon.PlayArrow
 import io.stamethyst.ui.icon.Settings
 import io.stamethyst.ui.modimport.ModImportRequestBus
 import io.stamethyst.ui.preferences.LauncherPreferences
@@ -194,8 +200,6 @@ private enum class SteamCloudNetworkPromptAction {
 }
 
 private const val MODS_CONTENT_MOUNT_DELAY_MS = 80L
-// Four standard 86.dp room cards plus three 10.dp gaps.
-private val EASY_TIER_ONLINE_ROOMS_VIEWPORT_HEIGHT = 374.dp
 private const val TOGETHER_IN_SPIRE_WORKSHOP_ID = 2384072973UL
 private const val EASY_TIER_WORKSHOP_APP_ID = 646570u
 private const val TOGETHER_IN_SPIRE_CHINESE_PATCH_WORKSHOP_ID = 3766232527UL
@@ -204,6 +208,11 @@ private const val TOGETHER_IN_SPIRE_PREVIEW_URL =
 private const val TOGETHER_IN_SPIRE_CHINESE_PATCH_PREVIEW_URL =
     "https://images.steamusercontent.com/ugc/61465446613181762/80882D085E6E5EF35E795498B925C8D81C448A60/"
 private const val EASY_TIER_ROOM_AUTO_REFRESH_INTERVAL_MS = 5_000L
+
+// Clearance kept below the sheet content so the connection FAB never covers the last room card.
+private val EASY_TIER_SHEET_FAB_CLEARANCE = 88.dp
+
+private const val EASY_TIER_SHEET_NOTICE_DURATION_MS = 4_000L
 
 @Composable
 private fun LauncherGamePage(
@@ -1285,9 +1294,66 @@ internal fun easyTierTroubleshootingMessageResId(
     }
 }
 
+/** Recovery action offered directly on the EasyTier troubleshooting card. */
+internal enum class EasyTierTroubleshootingAction {
+    None,
+    GrantVpn,
+    Retry,
+    RefreshRooms,
+}
+
+/**
+ * Maps a failure into the one recovery step the user can take from the sheet.
+ *
+ * Permission problems reopen the Android VPN consent dialog, transport/session failures retry
+ * the connection, and stale room or runtime state re-reads the room list first.
+ */
+internal fun easyTierTroubleshootingAction(
+    state: MainScreenViewModel.EasyTierIndicatorState,
+    failureCategory: EasyTierFailureCategory,
+    busy: Boolean = false,
+): EasyTierTroubleshootingAction {
+    if (busy) {
+        return EasyTierTroubleshootingAction.None
+    }
+    return when (failureCategory) {
+        EasyTierFailureCategory.VpnPermissionRequired,
+        EasyTierFailureCategory.VpnPermissionDenied,
+        EasyTierFailureCategory.VpnPermissionRevoked -> EasyTierTroubleshootingAction.GrantVpn
+        EasyTierFailureCategory.None -> {
+            if (state == MainScreenViewModel.EasyTierIndicatorState.PERMISSION_REQUIRED) {
+                EasyTierTroubleshootingAction.GrantVpn
+            } else {
+                EasyTierTroubleshootingAction.Retry
+            }
+        }
+        EasyTierFailureCategory.ConfigMissing,
+        EasyTierFailureCategory.RoomClosed,
+        EasyTierFailureCategory.RuntimeBridgePending,
+        EasyTierFailureCategory.RuntimeBridgeUnavailable -> EasyTierTroubleshootingAction.RefreshRooms
+        EasyTierFailureCategory.SessionClosed,
+        EasyTierFailureCategory.SessionExpired,
+        EasyTierFailureCategory.BackgroundStartBlocked,
+        EasyTierFailureCategory.Unknown -> EasyTierTroubleshootingAction.Retry
+        EasyTierFailureCategory.SessionKicked -> EasyTierTroubleshootingAction.None
+    }
+}
+
+@StringRes
+internal fun easyTierTroubleshootingActionLabelResId(
+    action: EasyTierTroubleshootingAction,
+): Int? = when (action) {
+    EasyTierTroubleshootingAction.GrantVpn -> R.string.main_easytier_action_grant_vpn
+    EasyTierTroubleshootingAction.Retry -> R.string.main_easytier_action_retry
+    EasyTierTroubleshootingAction.RefreshRooms -> R.string.main_easytier_action_refresh_rooms
+    EasyTierTroubleshootingAction.None -> null
+}
+
 @Composable
 private fun EasyTierTroubleshootingCard(
     @StringRes messageResId: Int,
+    action: EasyTierTroubleshootingAction = EasyTierTroubleshootingAction.None,
+    onAction: () -> Unit = {},
 ) {
     Surface(
         shape = RoundedCornerShape(18.dp),
@@ -1314,6 +1380,19 @@ private fun EasyTierTroubleshootingCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onErrorContainer,
             )
+            easyTierTroubleshootingActionLabelResId(action)?.let { labelResId ->
+                Button(
+                    onClick = onAction,
+                    modifier = Modifier.align(Alignment.End),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
+                    ),
+                    contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp),
+                ) {
+                    Text(stringResource(labelResId))
+                }
+            }
         }
     }
 }
@@ -1339,6 +1418,31 @@ internal enum class EasyTierRoomSheetPage {
     Create,
     Tutorial,
     MemberMods,
+}
+
+internal enum class EasyTierSheetBackTarget {
+    None,
+    Rooms,
+    MemberMods,
+    WorkshopDetail,
+}
+
+/**
+ * Resolves what a system back press should do while the EasyTier sheet is open.
+ *
+ * Deepest level wins so back unwinds one step at a time. While a room creation request is
+ * in flight the handler stays disabled to match the header back button, which is also disabled.
+ */
+internal fun easyTierSheetBackTarget(
+    page: EasyTierRoomSheetPage,
+    workshopDetailVisible: Boolean,
+    creating: Boolean,
+): EasyTierSheetBackTarget = when {
+    workshopDetailVisible -> EasyTierSheetBackTarget.WorkshopDetail
+    creating -> EasyTierSheetBackTarget.None
+    page == EasyTierRoomSheetPage.MemberMods -> EasyTierSheetBackTarget.MemberMods
+    page == EasyTierRoomSheetPage.Rooms -> EasyTierSheetBackTarget.None
+    else -> EasyTierSheetBackTarget.Rooms
 }
 
 internal enum class EasyTierRoomPanelMode {
@@ -1375,7 +1479,8 @@ internal fun easyTierRoomContentMode(
 
 internal fun shouldShowEasyTierConnectionAction(
     panelMode: EasyTierRoomPanelMode,
-): Boolean = panelMode != EasyTierRoomPanelMode.JoinedOwner
+    hasSelectedRoom: Boolean = true,
+): Boolean = hasSelectedRoom && panelMode != EasyTierRoomPanelMode.JoinedOwner
 
 internal fun isEasyTierDisconnectActionEnabled(
     state: MainScreenViewModel.EasyTierIndicatorState,
@@ -1443,40 +1548,106 @@ private fun EasyTierOnlineRoomsSection(
     currentPlayerId: String,
     loading: Boolean,
     onSelectRoom: (String) -> Unit,
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+    joinableOnly: Boolean,
+    onJoinableOnlyChange: (Boolean) -> Unit,
+    onSelectLockedRoom: () -> Unit,
 ) {
+    val view = LocalView.current
+    val totalRoomCount = visibleRooms.size
+    val listedRooms = remember(visibleRooms, searchQuery, joinableOnly, currentPlayerId) {
+        sortEasyTierRooms(
+            rooms = filterEasyTierRooms(
+                rooms = visibleRooms,
+                query = searchQuery,
+                joinableOnly = joinableOnly,
+                currentPlayerId = currentPlayerId,
+            ),
+            currentPlayerId = currentPlayerId,
+        )
+    }
+    val filteredEmpty = isEasyTierRoomListFilteredEmpty(
+        totalRoomCount = totalRoomCount,
+        visibleRoomCount = listedRooms.size,
+    )
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
             text = stringResource(R.string.main_easytier_room_list_title),
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.SemiBold,
         )
-        if (loading && visibleRooms.isEmpty()) {
-            EasyTierOnlineRoomsLoadingSkeleton()
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(EASY_TIER_ONLINE_ROOMS_VIEWPORT_HEIGHT),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                if (visibleRooms.isEmpty()) {
-                    item {
-                        Surface(
-                            shape = RoundedCornerShape(18.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                        ) {
-                            Text(
-                                text = stringResource(R.string.main_easytier_room_list_empty),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(14.dp),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+        // Search and the joinable filter stay mounted while loading so the query survives the 5s
+        // auto-refresh instead of being torn down together with the list.
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = onSearchQueryChange,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text(stringResource(R.string.main_easytier_room_search_hint)) },
+            singleLine = true,
+            trailingIcon = {
+                if (searchQuery.isNotEmpty()) {
+                    IconButton(onClick = { onSearchQueryChange("") }) {
+                        Icon(
+                            imageVector = Icons.Close,
+                            contentDescription = stringResource(
+                                R.string.main_easytier_room_search_clear,
+                            ),
+                        )
                     }
                 }
-                items(visibleRooms, key = { room -> room.roomId }) { room ->
+            },
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .toggleable(
+                    value = joinableOnly,
+                    role = Role.Checkbox,
+                    onValueChange = { checked ->
+                        LauncherHaptics.perform(view, HapticFeedbackConstants.CLOCK_TICK)
+                        onJoinableOnlyChange(checked)
+                    },
+                ),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Checkbox(checked = joinableOnly, onCheckedChange = null)
+            Text(
+                text = stringResource(R.string.main_easytier_room_filter_joinable),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        if (loading && listedRooms.isEmpty() && !filteredEmpty) {
+            EasyTierOnlineRoomsLoadingSkeleton()
+        } else {
+            // The sheet owns a single vertical scroll, so the room list expands inline instead of
+            // nesting a second scrollable viewport inside it.
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                if (listedRooms.isEmpty()) {
+                    Surface(
+                        shape = RoundedCornerShape(18.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                    ) {
+                        Text(
+                            text = if (filteredEmpty) {
+                                stringResource(R.string.main_easytier_room_list_no_match)
+                            } else {
+                                stringResource(R.string.main_easytier_room_list_empty)
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                listedRooms.forEach { room ->
                     val selected = room.roomId == preferredRoomId
                     val selectable = canSelectEasyTierRoom(room, currentPlayerId)
                     val roomColor by animateColorAsState(
@@ -1492,11 +1663,26 @@ private fun EasyTierOnlineRoomsSection(
                         modifier = Modifier
                             .fillMaxWidth()
                             .animateContentSize(animationSpec = tween(durationMillis = 220))
+                            // Locked rooms stay clickable on purpose: tapping explains why the room
+                            // cannot be joined instead of swallowing the gesture silently.
                             .selectable(
                                 selected = selected,
-                                enabled = selectable,
                                 role = Role.RadioButton,
-                                onClick = { onSelectRoom(room.roomId) },
+                                onClick = {
+                                    if (selectable) {
+                                        LauncherHaptics.perform(
+                                            view,
+                                            HapticFeedbackConstants.CLOCK_TICK,
+                                        )
+                                        onSelectRoom(room.roomId)
+                                    } else {
+                                        LauncherHaptics.perform(
+                                            view,
+                                            HapticFeedbackConstants.LONG_PRESS,
+                                        )
+                                        onSelectLockedRoom()
+                                    }
+                                },
                             ),
                         shape = RoundedCornerShape(18.dp),
                         color = if (selectable) {
@@ -1558,7 +1744,7 @@ private fun EasyTierOnlineRoomsSection(
                                             ),
                                             style = MaterialTheme.typography.bodySmall,
                                             fontWeight = FontWeight.Medium,
-                                            color = Color(0xFF2E7D32),
+                                            color = MaterialTheme.colorScheme.tertiary,
                                         )
                                     }
                                 }
@@ -1603,6 +1789,7 @@ private fun EasyTierRoomMembersSection(
     onKickMember: (EasyTierRoomMember) -> Unit,
     onViewMemberMods: (EasyTierRoomMember) -> Unit,
 ) {
+    val view = LocalView.current
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
             text = stringResource(R.string.main_easytier_room_members_title),
@@ -1689,7 +1876,7 @@ private fun EasyTierRoomMembersSection(
                                         style = MaterialTheme.typography.bodySmall,
                                         fontWeight = if (inGame) FontWeight.Medium else FontWeight.Normal,
                                         color = if (inGame) {
-                                            Color(0xFF2E7D32)
+                                            MaterialTheme.colorScheme.tertiary
                                         } else {
                                             MaterialTheme.colorScheme.onSurfaceVariant
                                         },
@@ -1709,7 +1896,10 @@ private fun EasyTierRoomMembersSection(
                     }
                     if (canKickMember) {
                         IconButton(
-                            onClick = { onKickMember(member) },
+                            onClick = {
+                                LauncherHaptics.perform(view, HapticFeedbackConstants.LONG_PRESS)
+                                onKickMember(member)
+                            },
                             modifier = Modifier
                                 .align(Alignment.CenterEnd)
                                 .padding(end = 28.dp)
@@ -1880,6 +2070,7 @@ private fun EasyTierOwnerActionsSection(
     onUnlockRoom: () -> Unit,
     onCloseRoom: () -> Unit,
 ) {
+    val view = LocalView.current
     Surface(
         shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.38f),
@@ -1931,6 +2122,7 @@ private fun EasyTierOwnerActionsSection(
             ) {
                 OutlinedButton(
                     onClick = {
+                        LauncherHaptics.perform(view, HapticFeedbackConstants.CLOCK_TICK)
                         if (room.allowNewJoins) onLockRoom() else onUnlockRoom()
                     },
                     enabled = !mutating,
@@ -1954,7 +2146,10 @@ private fun EasyTierOwnerActionsSection(
                     }
                 }
                 Button(
-                    onClick = onCloseRoom,
+                    onClick = {
+                        LauncherHaptics.perform(view, HapticFeedbackConstants.LONG_PRESS)
+                        onCloseRoom()
+                    },
                     enabled = !mutating,
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.buttonColors(
@@ -1975,6 +2170,75 @@ internal fun canSelectEasyTierRoom(
 ): Boolean {
     return room.closedAtMs <= 0L &&
         (room.allowNewJoins || room.ownerPlayerId.trim() == currentPlayerId.trim())
+}
+
+/**
+ * Orders the room list so the entries a player actually wants are reachable without scrolling:
+ * own rooms first, then joinable ones, then the busiest, and finally a stable id tiebreaker so
+ * the 5s auto-refresh never reshuffles equal rooms under the user's finger.
+ */
+internal fun sortEasyTierRooms(
+    rooms: List<EasyTierRoomListItem>,
+    currentPlayerId: String,
+): List<EasyTierRoomListItem> {
+    val normalizedPlayerId = currentPlayerId.trim()
+    return rooms.sortedWith(
+        compareByDescending<EasyTierRoomListItem> {
+            normalizedPlayerId.isNotEmpty() && it.ownerPlayerId.trim() == normalizedPlayerId
+        }
+            .thenByDescending { it.allowNewJoins }
+            .thenByDescending { it.onlineMemberCount }
+            .thenByDescending { it.memberCount }
+            .thenBy { it.roomId.lowercase(Locale.ROOT) },
+    )
+}
+
+/**
+ * Applies the sheet's search query and the joinable-only toggle. Matching covers room id, owner
+ * display name and owner id so players can find a room from whatever the host told them.
+ */
+internal fun filterEasyTierRooms(
+    rooms: List<EasyTierRoomListItem>,
+    query: String,
+    joinableOnly: Boolean,
+    currentPlayerId: String,
+): List<EasyTierRoomListItem> {
+    val normalizedQuery = query.trim().lowercase(Locale.ROOT)
+    return rooms.filter { room ->
+        val matchesQuery = normalizedQuery.isEmpty() ||
+            room.roomId.lowercase(Locale.ROOT).contains(normalizedQuery) ||
+            room.ownerDisplayName.lowercase(Locale.ROOT).contains(normalizedQuery) ||
+            room.ownerPlayerId.lowercase(Locale.ROOT).contains(normalizedQuery)
+        val matchesJoinable = !joinableOnly || canSelectEasyTierRoom(room, currentPlayerId)
+        matchesQuery && matchesJoinable
+    }
+}
+
+/**
+ * True when the list is empty only because of the active search or filter, so the sheet can tell
+ * the player to widen the filter instead of claiming no rooms exist at all.
+ */
+internal fun isEasyTierRoomListFilteredEmpty(
+    totalRoomCount: Int,
+    visibleRoomCount: Int,
+): Boolean = totalRoomCount > 0 && visibleRoomCount == 0
+
+internal enum class EasyTierRoomsHeaderSummary {
+    SelectedRoom,
+    RoomCount,
+}
+
+/**
+ * The sheet header sits right above the overview card, so repeating the connection status there is
+ * noise. The rooms page instead reports room-browser context: which room is selected, or how many
+ * rooms are online when nothing is picked yet.
+ */
+internal fun easyTierRoomsHeaderSummary(
+    selectedRoomId: String,
+): EasyTierRoomsHeaderSummary = if (selectedRoomId.isNotBlank()) {
+    EasyTierRoomsHeaderSummary.SelectedRoom
+} else {
+    EasyTierRoomsHeaderSummary.RoomCount
 }
 
 internal fun canConnectEasyTierRoom(
@@ -2355,7 +2619,7 @@ private fun EasyTierCreateRoomPanel(
                         uriHandler.openUri(cloudControlSettings.qqGroupUrl)
                 },
                 style = MaterialTheme.typography.labelMedium.copy(
-                    color = Color(0xFF1565C0),
+                    color = MaterialTheme.colorScheme.primary,
                     textDecoration = TextDecoration.Underline,
                 ),
             )
@@ -2428,18 +2692,30 @@ internal fun EasyTierBottomSheetContent(
     var memberModsPageMember by remember { mutableStateOf<EasyTierRoomMember?>(null) }
     var memberWorkshopDetailItem by remember { mutableStateOf<WorkshopItemSummary?>(null) }
     var kickMessage by remember { mutableStateOf("") }
+    var roomSearchQuery by remember { mutableStateOf("") }
+    var joinableRoomsOnly by remember { mutableStateOf(false) }
+    // The launcher's snackbar host sits below this full-height sheet, so confirmations have to be
+    // rendered inside the sheet to be visible at all.
+    var sheetNotice by remember { mutableStateOf<UiText?>(null) }
+    val sheetView = LocalView.current
     val memberWorkshopDetailViewModel: WorkshopViewModel = viewModel()
-    memberWorkshopDetailItem?.let { item ->
-        WorkshopDetailScreen(
-            appId = item.appId,
-            publishedFileId = item.publishedFileId,
-            viewModel = memberWorkshopDetailViewModel,
-            modifier = modifier,
-            onBack = { memberWorkshopDetailItem = null },
-            onOpenBaiduTranslationCredentials = {},
-            onOpenDetails = { relatedItem -> memberWorkshopDetailItem = relatedItem },
-        )
-        return
+    // Secondary sheet pages own the system back gesture so it steps back one level
+    // instead of tearing down the whole sheet and discarding in-progress form drafts.
+    val backTarget = easyTierSheetBackTarget(
+        page = page,
+        workshopDetailVisible = memberWorkshopDetailItem != null,
+        creating = roomBrowser.creating,
+    )
+    BackHandler(enabled = backTarget != EasyTierSheetBackTarget.None) {
+        when (backTarget) {
+            EasyTierSheetBackTarget.WorkshopDetail -> memberWorkshopDetailItem = null
+            EasyTierSheetBackTarget.MemberMods -> {
+                memberModsPageMember = null
+                page = EasyTierRoomSheetPage.Rooms
+            }
+            EasyTierSheetBackTarget.Rooms -> page = EasyTierRoomSheetPage.Rooms
+            EasyTierSheetBackTarget.None -> Unit
+        }
     }
     val creatingRoom = page == EasyTierRoomSheetPage.Create && roomBrowser.creating
     val disconnectAction = shouldDisconnectEasyTierUiState(indicator.state)
@@ -2466,6 +2742,16 @@ internal fun EasyTierBottomSheetContent(
         joinedSelectedRoom -> EasyTierRoomPanelMode.JoinedMember
         else -> EasyTierRoomPanelMode.Unjoined
     }
+    val connectionActionEnabled = if (disconnectAction) {
+        isEasyTierDisconnectActionEnabled(indicator.state)
+    } else {
+        selectedRoomCanBeJoined
+    }
+    val showConnectionFab = page == EasyTierRoomSheetPage.Rooms &&
+        shouldShowEasyTierConnectionAction(
+            panelMode = panelMode,
+            hasSelectedRoom = roomBrowser.preferredRoomId.isNotBlank(),
+        )
     val roomsLoading = page == EasyTierRoomSheetPage.Rooms &&
         (initialLoading || roomBrowser.loading)
     val contentMode = easyTierRoomContentMode(
@@ -2479,6 +2765,25 @@ internal fun EasyTierBottomSheetContent(
         failureCategory = indicator.failureCategory,
         errorSummary = indicator.errorSummary,
     )
+    val troubleshootingAction = easyTierTroubleshootingAction(
+        state = indicator.state,
+        failureCategory = indicator.failureCategory,
+        busy = roomBrowser.loading || roomBrowser.creating || roomBrowser.mutating,
+    )
+    // Mirror launcher notices into the sheet. Room actions report success through the shared
+    // notice bus, whose host is stacked below this sheet and therefore invisible while it is open.
+    LaunchedEffect(Unit) {
+        LauncherTransientNoticeBus.requests.collect { request ->
+            sheetNotice = request.message
+        }
+    }
+    // Auto-dismiss the in-sheet notice so it behaves like a snackbar rather than a sticky banner.
+    LaunchedEffect(sheetNotice) {
+        if (sheetNotice != null) {
+            delay(EASY_TIER_SHEET_NOTICE_DURATION_MS)
+            sheetNotice = null
+        }
+    }
     LaunchedEffect(roomBrowser.creating, selectedRoom?.roomId, roomBrowser.errorSummary) {
         if (roomBrowser.creating || submittedCreateRoomId.isBlank()) {
             return@LaunchedEffect
@@ -2496,41 +2801,60 @@ internal fun EasyTierBottomSheetContent(
         }
     }
 
-    PullToRefreshBox(
-        isRefreshing = roomsLoading,
-        onRefresh = {
-            if (
-                page == EasyTierRoomSheetPage.Rooms &&
-                !roomBrowser.loading &&
-                !roomBrowser.creating &&
-                !roomBrowser.mutating
-            ) {
-                onRefreshRooms()
-            }
-        },
-        state = pullToRefreshState,
-        indicator = {
-            if (page == EasyTierRoomSheetPage.Rooms) {
-                PullToRefreshDefaults.Indicator(
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .zIndex(2f),
-                    isRefreshing = roomsLoading,
-                    state = pullToRefreshState,
-                )
-            }
-        },
-        modifier = Modifier
-            .then(modifier)
-            .fillMaxWidth(),
+    Box(
+        modifier = modifier.fillMaxWidth(),
     ) {
-        Column(
+        // The workshop detail page is a branch instead of an early return, so the sheet keeps its
+        // page/draft state alive underneath and restores it when the detail page is dismissed.
+        val workshopDetailItem = memberWorkshopDetailItem
+        if (workshopDetailItem != null) {
+            WorkshopDetailScreen(
+                appId = workshopDetailItem.appId,
+                publishedFileId = workshopDetailItem.publishedFileId,
+                viewModel = memberWorkshopDetailViewModel,
+                modifier = Modifier.fillMaxWidth(),
+                onBack = { memberWorkshopDetailItem = null },
+                onOpenBaiduTranslationCredentials = {},
+                onOpenDetails = { relatedItem -> memberWorkshopDetailItem = relatedItem },
+            )
+        } else {
+        PullToRefreshBox(
+            isRefreshing = roomsLoading,
+            onRefresh = {
+                if (
+                    page == EasyTierRoomSheetPage.Rooms &&
+                    !roomBrowser.loading &&
+                    !roomBrowser.creating &&
+                    !roomBrowser.mutating
+                ) {
+                    onRefreshRooms()
+                }
+            },
+            state = pullToRefreshState,
+            indicator = {
+                if (page == EasyTierRoomSheetPage.Rooms) {
+                    PullToRefreshDefaults.Indicator(
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .zIndex(2f),
+                        isRefreshing = roomsLoading,
+                        state = pullToRefreshState,
+                    )
+                }
+            },
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 12.dp)
-                .navigationBarsPadding()
-                .verticalScroll(rememberScrollState()),
+                .fillMaxWidth(),
         ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 12.dp)
+                    .navigationBarsPadding()
+                    // The create-room form lives inside this scroller, so the keyboard has to
+                    // shrink the viewport instead of covering the description field.
+                    .imePadding()
+                    .verticalScroll(rememberScrollState()),
+            ) {
             AnimatedContent(
             targetState = page,
             modifier = Modifier.fillMaxWidth(),
@@ -2586,7 +2910,20 @@ internal fun EasyTierBottomSheetContent(
                         fontWeight = FontWeight.SemiBold,
                     )
                     val summary = when (targetPage) {
-                        EasyTierRoomSheetPage.Rooms -> easyTierOverviewSummary(indicator)
+                        // The overview card already owns the connection status, so the header
+                        // reports room-browser context instead of repeating the same sentence.
+                        EasyTierRoomSheetPage.Rooms -> when (
+                            easyTierRoomsHeaderSummary(roomBrowser.preferredRoomId)
+                        ) {
+                            EasyTierRoomsHeaderSummary.SelectedRoom -> stringResource(
+                                R.string.main_easytier_sheet_summary_selected,
+                                roomBrowser.preferredRoomId,
+                            )
+                            EasyTierRoomsHeaderSummary.RoomCount -> stringResource(
+                                R.string.main_easytier_sheet_summary_room_count,
+                                visibleRooms.size,
+                            )
+                        }
                         EasyTierRoomSheetPage.Create -> stringResource(R.string.main_easytier_create_room_summary)
                         EasyTierRoomSheetPage.Tutorial -> stringResource(R.string.main_easytier_tutorial_summary)
                         EasyTierRoomSheetPage.MemberMods -> {
@@ -2629,7 +2966,18 @@ internal fun EasyTierBottomSheetContent(
         ) { messageResId ->
             if (messageResId != null) {
                 Box(modifier = Modifier.padding(top = 8.dp)) {
-                    EasyTierTroubleshootingCard(messageResId = messageResId)
+                    EasyTierTroubleshootingCard(
+                        messageResId = messageResId,
+                        action = troubleshootingAction,
+                        onAction = {
+                            when (troubleshootingAction) {
+                                EasyTierTroubleshootingAction.GrantVpn,
+                                EasyTierTroubleshootingAction.Retry -> onConnect()
+                                EasyTierTroubleshootingAction.RefreshRooms -> onRefreshRooms()
+                                EasyTierTroubleshootingAction.None -> Unit
+                            }
+                        },
+                    )
                 }
             }
         }
@@ -2697,12 +3045,30 @@ internal fun EasyTierBottomSheetContent(
             label = "easyTierRoomError",
         ) { errorSummary ->
             if (errorSummary != null) {
-                Text(
-                    text = errorSummary,
-                    modifier = Modifier.padding(top = 8.dp),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = errorSummary,
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                    // A room-list error is almost always recoverable by re-reading the list,
+                    // so keep that step reachable without hunting for the pull-to-refresh gesture.
+                    TextButton(
+                        onClick = onRefreshRooms,
+                        enabled = !roomBrowser.loading &&
+                            !roomBrowser.creating &&
+                            !roomBrowser.mutating,
+                    ) {
+                        Text(stringResource(R.string.main_easytier_action_refresh_rooms))
+                    }
+                }
             }
         }
 
@@ -2861,41 +3227,125 @@ internal fun EasyTierBottomSheetContent(
                             currentPlayerId = roomBrowser.currentPlayerId,
                             loading = roomBrowser.loading,
                             onSelectRoom = onSelectRoom,
+                            searchQuery = roomSearchQuery,
+                            onSearchQueryChange = { roomSearchQuery = it },
+                            joinableOnly = joinableRoomsOnly,
+                            onJoinableOnlyChange = { joinableRoomsOnly = it },
+                            onSelectLockedRoom = {
+                                sheetNotice = UiText.StringResource(
+                                    R.string.main_easytier_room_locked_select_blocked,
+                                )
+                            },
                         )
                     }
 
-                    if (shouldShowEasyTierConnectionAction(contentPanelMode)) {
-                        Button(
-                            onClick = {
-                                if (disconnectAction) {
-                                    onDisconnect()
-                                } else {
-                                    onConnect()
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            enabled = if (disconnectAction) {
-                                isEasyTierDisconnectActionEnabled(indicator.state)
-                            } else {
-                                selectedRoomCanBeJoined
-                            },
+                }
+            }
+        }
+        }
+            // Reserve room below the scrolling content so the connection FAB floats over
+            // padding instead of the last room card.
+            if (showConnectionFab) {
+                Spacer(modifier = Modifier.height(EASY_TIER_SHEET_FAB_CLEARANCE))
+            }
+        }
+        }
+        }
+
+        // In-sheet notice strip: the launcher SnackbarHost is stacked below this sheet, so
+        // confirmations and blocked-action explanations are rendered here to stay visible.
+        Box(modifier = Modifier.matchParentSize()) {
+            AnimatedVisibility(
+                visible = sheetNotice != null,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(start = 20.dp, end = 20.dp, bottom = 20.dp)
+                    .zIndex(4f),
+                enter = fadeIn(animationSpec = tween(durationMillis = 160)) +
+                    slideInVertically(
+                        initialOffsetY = { height -> height / 2 },
+                        animationSpec = tween(durationMillis = 200),
+                    ),
+                exit = fadeOut(animationSpec = tween(durationMillis = 120)) +
+                    slideOutVertically(
+                        targetOffsetY = { height -> height / 2 },
+                        animationSpec = tween(durationMillis = 160),
+                    ),
+            ) {
+                val notice = sheetNotice
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.inverseSurface,
+                    contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+                    tonalElevation = 6.dp,
+                    shadowElevation = 8.dp,
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = notice?.resolve().orEmpty(),
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        TextButton(
+                            onClick = { sheetNotice = null },
+                            colors = ButtonDefaults.textButtonColors(
+                                contentColor = MaterialTheme.colorScheme.inversePrimary,
+                            ),
                         ) {
-                            Text(
-                                if (disconnectAction) {
-                                    stringResource(R.string.main_easytier_action_disconnect)
-                                } else {
-                                    stringResource(
-                                        R.string.main_easytier_action_connect_selected_room
-                                    )
-                                }
-                            )
+                            Text(stringResource(R.string.common_action_close))
                         }
                     }
                 }
             }
+            AnimatedVisibility(
+                visible = showConnectionFab,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .navigationBarsPadding()
+                    .padding(end = 20.dp, bottom = 20.dp)
+                    .zIndex(3f),
+                enter = fadeIn(animationSpec = tween(durationMillis = 160)) +
+                    scaleIn(initialScale = 0.82f, animationSpec = tween(durationMillis = 180)),
+                exit = fadeOut(animationSpec = tween(durationMillis = 100)) +
+                    scaleOut(targetScale = 0.82f, animationSpec = tween(durationMillis = 100)),
+            ) {
+                ExtendedFloatingActionButton(
+                    onClick = {
+                        if (connectionActionEnabled) {
+                            LauncherHaptics.perform(sheetView, HapticFeedbackConstants.KEYBOARD_TAP)
+                            if (disconnectAction) {
+                                onDisconnect()
+                            } else {
+                                onConnect()
+                            }
+                        }
+                    },
+                    modifier = Modifier.alpha(if (connectionActionEnabled) 1f else 0.6f),
+                    icon = {
+                        Icon(
+                            imageVector = if (disconnectAction) Icons.Close else Icons.PlayArrow,
+                            contentDescription = null,
+                        )
+                    },
+                    text = {
+                        Text(
+                            if (disconnectAction) {
+                                stringResource(R.string.main_easytier_action_disconnect)
+                            } else {
+                                stringResource(R.string.main_easytier_action_connect_selected_room)
+                            }
+                        )
+                    },
+                )
             }
         }
-    }
     }
     closeConfirmationRoom?.let { room ->
         androidx.compose.material3.AlertDialog(

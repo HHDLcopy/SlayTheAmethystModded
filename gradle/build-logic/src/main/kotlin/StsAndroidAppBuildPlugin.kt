@@ -302,7 +302,7 @@ private fun Project.registerRuntimeAssetTasks(
     val packagedLwjglBridgeJarDir = layout.buildDirectory.dir("generated/callbackBridgeRuntimeJar")
     val generatedLwjglBridgeVersionDir = layout.buildDirectory.dir("generated/callbackBridgeVersion")
     val generatedLwjglBridgeAssetDir = generatedRuntimeAssetsDir.map { it.dir("components/lwjgl3") }
-    val runtimePackZip = rootProject.layout.projectDirectory.file("runtime-pack/jre8-pojav.zip")
+    val runtimePackZip = rootProject.layout.projectDirectory.file("build-deps/runtime-pack/jre8-pojav.zip")
     val log4jRuntimeComponents = configurations.create("log4jRuntimeComponents") {
         isCanBeConsumed = false
         isCanBeResolved = true
@@ -479,7 +479,7 @@ private fun Project.registerRuntimeAssetTasks(
             if (!runtimePackFile.isFile) {
                 throw GradleException(
                     "Missing runtime pack zip: ${runtimePackFile.absolutePath}. " +
-                        "Expected runtime-pack/jre8-pojav.zip."
+                        "Expected build-deps/runtime-pack/jre8-pojav.zip."
                 )
             }
         }

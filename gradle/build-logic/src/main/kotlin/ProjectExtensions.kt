@@ -1,6 +1,4 @@
 import org.gradle.api.Project
-import org.gradle.kotlin.dsl.getByType
-import java.io.File
 
 fun Project.runCommand(cmd: String, defaultValue: String = ""): String {
     val output = providers.exec {
@@ -22,10 +20,3 @@ fun Project.readGradleProperty(name: String, defaultValue: String = ""): String 
     providers.gradleProperty(name)
         .orElse(defaultValue)
         .get()
-
-val Project.steamJars: SteamJarsExtension
-    get() = extensions.getByType<SteamJarsExtension>()
-
-fun Project.desktopJar(): File = steamJars.desktopJar()
-
-fun Project.modJar(id: String, name: String): File = steamJars.modJar(id, name)

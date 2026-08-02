@@ -16,10 +16,6 @@ dependencies {
 
 gradlePlugin {
     plugins {
-        create("steamPathPlugin") {
-            id = "io.stamethyst.steam-path"
-            implementationClass = "SteamPathPlugin"
-        }
         create("androidAppBuildPlugin") {
             id = "io.stamethyst.android-app-build"
             implementationClass = "StsAndroidAppBuildPlugin"

@@ -203,7 +203,7 @@ flowchart LR
         RuntimeCompat[":mods:amethyst-runtime-compat"]:::build
         FloatingTools[":mods:amethyst-floating-tools"]:::build
         RamSaver[":mods:ram-saver"]:::build
-        RuntimePack["runtime-pack/jre8-pojav.zip"]:::build
+        RuntimePack["build-deps/runtime-pack/jre8-pojav.zip"]:::build
     end
 
     subgraph BuildLogic["Gradle Build Logic"]

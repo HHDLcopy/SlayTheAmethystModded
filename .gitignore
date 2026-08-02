@@ -21,9 +21,8 @@ build/
 *.pfx
 signing/*
 
-# Local runtime packs and extracted runtimes
-runtime-pack/*
-!runtime-pack/README.txt
+# Local build dependency bundle
+build-deps/
 app/src/main/assets/components/jre
 
 # Temporary local workspace files

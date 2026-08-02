@@ -1,6 +1,5 @@
 plugins {
     id("java")
-    id("io.stamethyst.steam-path")
 }
 
 java {
@@ -14,7 +13,7 @@ java {
 val appProjectRef = rootProject.project(":app")
 
 dependencies {
-    compileOnly(files(desktopJar()))
+    compileOnly(files(rootProject.file("build-deps/steamapps/common/SlayTheSpire/desktop-1.0.jar")))
     compileOnly(files(appProjectRef.file("src/main/assets/components/mods/BaseMod.jar")))
     compileOnly(files(appProjectRef.file("src/main/assets/components/mods/ModTheSpire.jar")))
 }

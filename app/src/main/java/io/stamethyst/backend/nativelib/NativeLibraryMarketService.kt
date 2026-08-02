@@ -68,6 +68,17 @@ object NativeLibraryMarketService {
     private const val USER_AGENT = "SlayTheAmethyst-NativeMarket"
     private const val DOWNLOAD_PROGRESS_REPORT_INTERVAL_NS = 200_000_000L
     private const val DOWNLOAD_PROGRESS_REPORT_STEP_BYTES = 64L * 1024L
+    private val MARKET_MANAGED_LEGACY_NATIVE_NAMES = setOf(
+        "libgdx-video-desktoparm64.so"
+    )
+
+    internal fun isMarketManagedLegacyNative(fileName: String): Boolean {
+        return fileName in MARKET_MANAGED_LEGACY_NATIVE_NAMES
+    }
+
+    internal fun shouldTreatAsBundledNative(fileName: String): Boolean {
+        return !isMarketManagedLegacyNative(fileName)
+    }
 
     fun fetchCatalog(
         context: Context,
@@ -356,9 +367,11 @@ object NativeLibraryMarketService {
             if (!stagedNames.add(library.name)) {
                 throw IOException("Native package ${entry.displayName} produced duplicate file ${library.name}.")
             }
-            if (hasBundledNativeAsset(context.assets, library.name) ||
-                findFileByName(RuntimePaths.gdxPatchNativesDir(context), library.name)?.isFile == true
-            ) {
+            val conflictsWithBundledNative = shouldTreatAsBundledNative(library.name) &&
+                (hasBundledNativeAsset(context.assets, library.name) ||
+                    findFileByName(RuntimePaths.gdxPatchNativesDir(context), library.name)?.isFile == true
+                )
+            if (conflictsWithBundledNative) {
                 throw IOException("Native file ${library.name} is already bundled with this build.")
             }
         }
@@ -530,6 +543,7 @@ object NativeLibraryMarketService {
 
     private fun isPackageBundled(context: Context, entry: NativeLibraryMarketCatalogEntry): Boolean {
         val expectedLibraries = expectedSharedLibraryNames(entry)
+            .filter(::shouldTreatAsBundledNative)
         if (expectedLibraries.isEmpty()) {
             return false
         }

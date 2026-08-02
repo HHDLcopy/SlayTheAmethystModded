@@ -1,11 +1,14 @@
 package io.stamethyst.ui.main
 
+import io.stamethyst.backend.easytier.EasyTierFailureCategory
 import io.stamethyst.backend.easytier.EasyTierRoomMember
 import io.stamethyst.backend.easytier.EasyTierNetworkMode
 import io.stamethyst.backend.easytier.EasyTierRoomInfo
 import io.stamethyst.backend.easytier.EasyTierRoomListItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -168,7 +171,7 @@ class MainScreenEasyTierCardTest {
     }
 
     @Test
-    fun connectionAction_isAlwaysVisibleExceptForOwner() {
+    fun connectionAction_requiresSelectedRoomAndHidesForOwner() {
         assertFalse(
             shouldShowEasyTierConnectionAction(
                 panelMode = EasyTierRoomPanelMode.JoinedOwner,
@@ -182,6 +185,12 @@ class MainScreenEasyTierCardTest {
         assertTrue(
             shouldShowEasyTierConnectionAction(
                 panelMode = EasyTierRoomPanelMode.Unjoined,
+            )
+        )
+        assertFalse(
+            shouldShowEasyTierConnectionAction(
+                panelMode = EasyTierRoomPanelMode.Unjoined,
+                hasSelectedRoom = false,
             )
         )
     }
@@ -260,4 +269,236 @@ class MainScreenEasyTierCardTest {
             )
         )
     }
+
+    @Test
+    fun easyTierSheetBackTarget_unwindsOneLevelAtATime() {
+        assertEquals(
+            EasyTierSheetBackTarget.None,
+            easyTierSheetBackTarget(
+                page = EasyTierRoomSheetPage.Rooms,
+                workshopDetailVisible = false,
+                creating = false,
+            )
+        )
+        assertEquals(
+            EasyTierSheetBackTarget.Rooms,
+            easyTierSheetBackTarget(
+                page = EasyTierRoomSheetPage.Create,
+                workshopDetailVisible = false,
+                creating = false,
+            )
+        )
+        assertEquals(
+            EasyTierSheetBackTarget.Rooms,
+            easyTierSheetBackTarget(
+                page = EasyTierRoomSheetPage.Tutorial,
+                workshopDetailVisible = false,
+                creating = false,
+            )
+        )
+        assertEquals(
+            EasyTierSheetBackTarget.MemberMods,
+            easyTierSheetBackTarget(
+                page = EasyTierRoomSheetPage.MemberMods,
+                workshopDetailVisible = false,
+                creating = false,
+            )
+        )
+        // The workshop detail overlay sits on top of the member mods page.
+        assertEquals(
+            EasyTierSheetBackTarget.WorkshopDetail,
+            easyTierSheetBackTarget(
+                page = EasyTierRoomSheetPage.MemberMods,
+                workshopDetailVisible = true,
+                creating = false,
+            )
+        )
+    }
+
+    @Test
+    fun easyTierSheetBackTarget_staysDisabledWhileCreatingButKeepsWorkshopDetail() {
+        assertEquals(
+            EasyTierSheetBackTarget.None,
+            easyTierSheetBackTarget(
+                page = EasyTierRoomSheetPage.Create,
+                workshopDetailVisible = false,
+                creating = true,
+            )
+        )
+        assertEquals(
+            EasyTierSheetBackTarget.WorkshopDetail,
+            easyTierSheetBackTarget(
+                page = EasyTierRoomSheetPage.MemberMods,
+                workshopDetailVisible = true,
+                creating = true,
+            )
+        )
+    }
+
+    @Test
+    fun easyTierTroubleshootingAction_mapsFailureToRecoveryStep() {
+        assertEquals(
+            EasyTierTroubleshootingAction.GrantVpn,
+            easyTierTroubleshootingAction(
+                state = MainScreenViewModel.EasyTierIndicatorState.PERMISSION_REQUIRED,
+                failureCategory = EasyTierFailureCategory.VpnPermissionRequired,
+            )
+        )
+        assertEquals(
+            EasyTierTroubleshootingAction.GrantVpn,
+            easyTierTroubleshootingAction(
+                state = MainScreenViewModel.EasyTierIndicatorState.PERMISSION_REQUIRED,
+                failureCategory = EasyTierFailureCategory.None,
+            )
+        )
+        assertEquals(
+            EasyTierTroubleshootingAction.Retry,
+            easyTierTroubleshootingAction(
+                state = MainScreenViewModel.EasyTierIndicatorState.CONNECTION_FAILED,
+                failureCategory = EasyTierFailureCategory.Unknown,
+            )
+        )
+        assertEquals(
+            EasyTierTroubleshootingAction.RefreshRooms,
+            easyTierTroubleshootingAction(
+                state = MainScreenViewModel.EasyTierIndicatorState.DISCONNECTED,
+                failureCategory = EasyTierFailureCategory.RoomClosed,
+            )
+        )
+        // Being kicked is not something the user can retry their way out of.
+        assertEquals(
+            EasyTierTroubleshootingAction.None,
+            easyTierTroubleshootingAction(
+                state = MainScreenViewModel.EasyTierIndicatorState.DISCONNECTED,
+                failureCategory = EasyTierFailureCategory.SessionKicked,
+            )
+        )
+    }
+
+    @Test
+    fun easyTierTroubleshootingAction_hidesActionWhileBusy() {
+        assertEquals(
+            EasyTierTroubleshootingAction.None,
+            easyTierTroubleshootingAction(
+                state = MainScreenViewModel.EasyTierIndicatorState.CONNECTION_FAILED,
+                failureCategory = EasyTierFailureCategory.Unknown,
+                busy = true,
+            )
+        )
+    }
+
+    @Test
+    fun easyTierTroubleshootingActionLabel_isPresentForEveryActionableCase() {
+        assertNull(easyTierTroubleshootingActionLabelResId(EasyTierTroubleshootingAction.None))
+        EasyTierTroubleshootingAction.entries
+            .filter { it != EasyTierTroubleshootingAction.None }
+            .forEach { action ->
+                assertNotNull(easyTierTroubleshootingActionLabelResId(action))
+            }
+    }
+
+    @Test
+    fun sortEasyTierRooms_ranksOwnRoomsThenJoinableThenBusiest() {
+        val rooms = listOf(
+            roomListItem(roomId = "quiet-open", onlineMemberCount = 1),
+            roomListItem(roomId = "locked-busy", allowNewJoins = false, onlineMemberCount = 9),
+            roomListItem(roomId = "busy-open", onlineMemberCount = 5),
+            roomListItem(roomId = "mine", ownerPlayerId = "me", allowNewJoins = false),
+        )
+
+        val sorted = sortEasyTierRooms(rooms = rooms, currentPlayerId = "me")
+
+        assertEquals(
+            listOf("mine", "busy-open", "quiet-open", "locked-busy"),
+            sorted.map { it.roomId },
+        )
+    }
+
+    @Test
+    fun sortEasyTierRooms_fallsBackToRoomIdSoAutoRefreshDoesNotReshuffle() {
+        val rooms = listOf(
+            roomListItem(roomId = "charlie", onlineMemberCount = 2, memberCount = 3),
+            roomListItem(roomId = "alpha", onlineMemberCount = 2, memberCount = 3),
+            roomListItem(roomId = "bravo", onlineMemberCount = 2, memberCount = 3),
+        )
+
+        val sorted = sortEasyTierRooms(rooms = rooms, currentPlayerId = "me")
+
+        assertEquals(listOf("alpha", "bravo", "charlie"), sorted.map { it.roomId })
+        // Re-sorting the already sorted list must not move anything.
+        assertEquals(
+            sorted.map { it.roomId },
+            sortEasyTierRooms(rooms = sorted, currentPlayerId = "me").map { it.roomId },
+        )
+    }
+
+    @Test
+    fun filterEasyTierRooms_matchesRoomIdOwnerNameAndOwnerId() {
+        val rooms = listOf(
+            roomListItem(roomId = "dragon-den", ownerPlayerId = "p-1", ownerDisplayName = "Ada"),
+            roomListItem(roomId = "quiet-room", ownerPlayerId = "p-2", ownerDisplayName = "Bob"),
+        )
+
+        val byRoomId = filterEasyTierRooms(rooms, "DRAGON", joinableOnly = false, currentPlayerId = "me")
+        assertEquals(listOf("dragon-den"), byRoomId.map { it.roomId })
+
+        val byOwnerName = filterEasyTierRooms(rooms, "bob", joinableOnly = false, currentPlayerId = "me")
+        assertEquals(listOf("quiet-room"), byOwnerName.map { it.roomId })
+
+        val byOwnerId = filterEasyTierRooms(rooms, "p-1", joinableOnly = false, currentPlayerId = "me")
+        assertEquals(listOf("dragon-den"), byOwnerId.map { it.roomId })
+
+        val blankQueryKeepsEverything =
+            filterEasyTierRooms(rooms, "   ", joinableOnly = false, currentPlayerId = "me")
+        assertEquals(rooms.size, blankQueryKeepsEverything.size)
+    }
+
+    @Test
+    fun filterEasyTierRooms_joinableOnlyStillKeepsTheOwnersLockedRoom() {
+        val rooms = listOf(
+            roomListItem(roomId = "mine-locked", ownerPlayerId = "me", allowNewJoins = false),
+            roomListItem(roomId = "other-locked", ownerPlayerId = "other", allowNewJoins = false),
+            roomListItem(roomId = "other-open", ownerPlayerId = "other"),
+        )
+
+        val filtered = filterEasyTierRooms(rooms, "", joinableOnly = true, currentPlayerId = "me")
+
+        assertEquals(listOf("mine-locked", "other-open"), filtered.map { it.roomId })
+    }
+
+    @Test
+    fun isEasyTierRoomListFilteredEmpty_separatesFilterMissesFromAnEmptyBackend() {
+        assertTrue(isEasyTierRoomListFilteredEmpty(totalRoomCount = 4, visibleRoomCount = 0))
+        assertFalse(isEasyTierRoomListFilteredEmpty(totalRoomCount = 0, visibleRoomCount = 0))
+        assertFalse(isEasyTierRoomListFilteredEmpty(totalRoomCount = 4, visibleRoomCount = 2))
+    }
+
+    @Test
+    fun easyTierRoomsHeaderSummary_reportsRoomContextInsteadOfConnectionStatus() {
+        assertEquals(
+            EasyTierRoomsHeaderSummary.SelectedRoom,
+            easyTierRoomsHeaderSummary(selectedRoomId = "dragon-den"),
+        )
+        assertEquals(
+            EasyTierRoomsHeaderSummary.RoomCount,
+            easyTierRoomsHeaderSummary(selectedRoomId = "   "),
+        )
+    }
+
+    private fun roomListItem(
+        roomId: String,
+        ownerPlayerId: String = "owner-x",
+        ownerDisplayName: String = "Owner X",
+        allowNewJoins: Boolean = true,
+        onlineMemberCount: Int = 0,
+        memberCount: Int = 1,
+    ) = EasyTierRoomListItem(
+        roomId = roomId,
+        ownerPlayerId = ownerPlayerId,
+        ownerDisplayName = ownerDisplayName,
+        mode = EasyTierNetworkMode.Room,
+        allowNewJoins = allowNewJoins,
+        memberCount = memberCount,
+        onlineMemberCount = onlineMemberCount,
+    )
 }

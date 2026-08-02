@@ -5,11 +5,29 @@ import java.nio.file.Files
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NativeLibraryMarketServiceTest {
+    @Test
+    fun legacyLibgdxVideoNative_isManagedByMarketInsteadOfBundledDetection() {
+        assertTrue(
+            NativeLibraryMarketService.isMarketManagedLegacyNative(
+                "libgdx-video-desktoparm64.so"
+            )
+        )
+        assertFalse(
+            NativeLibraryMarketService.shouldTreatAsBundledNative(
+                "libgdx-video-desktoparm64.so"
+            )
+        )
+        assertTrue(
+            NativeLibraryMarketService.shouldTreatAsBundledNative("libjnitensorflow.so")
+        )
+    }
+
     @Test
     fun parseCatalog_supportsCurrentFormat() {
         val parsed = NativeLibraryMarketService.parseCatalog(

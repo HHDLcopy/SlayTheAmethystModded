@@ -2,6 +2,7 @@ package io.stamethyst.ui.settings
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Rect
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -19,6 +20,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
 import kotlin.math.abs
 import kotlin.math.max
 
@@ -164,11 +166,15 @@ class SettingsHeaderRenderingInstrumentedTest {
     private fun assertHeaderTextRenderedAfterSettling(title: String, stage: String) {
         Thread.sleep(RENDER_SETTLE_MS)
         val titleNode = waitForHeaderText(title)
-        val screenshot = device.takeScreenshot()
+        val screenshotFile = File.createTempFile("settings-header-", ".png", context.cacheDir)
+        assertTrue("Failed to capture screenshot for $stage", device.takeScreenshot(screenshotFile))
+        val screenshot = BitmapFactory.decodeFile(screenshotFile.absolutePath)
+        assertTrue("Failed to decode screenshot for $stage", screenshot != null)
         try {
-            assertRenderedForegroundPixels(screenshot, titleNode.visibleBounds, stage)
+            assertRenderedForegroundPixels(screenshot!!, titleNode.visibleBounds, stage)
         } finally {
             screenshot.recycle()
+            screenshotFile.delete()
         }
     }
 

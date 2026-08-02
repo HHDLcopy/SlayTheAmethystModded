@@ -47,3 +47,32 @@ class TestArthasCLI(unittest.TestCase):
         )
         mock_shell.command.assert_called_once_with("test")
         self.assertIn("result", out.getvalue())
+
+    def test_query_limits_bare_dashboard_to_one_sample(self):
+        from scripts.tools.arthas.cli import run_query
+
+        stream = Stream(sock=MagicMock(), stream_id="s1")
+        out = io.StringIO()
+        with patch("scripts.tools.arthas.cli.ArthasShell") as MockShell:
+            mock_shell = MockShell.return_value
+            mock_shell.command.return_value = "dashboard output"
+            run_query(stream=stream, command="dashboard", stdout=out)
+
+        mock_shell.command.assert_called_once_with("dashboard -n 1")
+        self.assertIn("dashboard output", out.getvalue())
+
+    def test_query_preserves_dashboard_options(self):
+        from scripts.tools.arthas.cli import run_query
+
+        stream = Stream(sock=MagicMock(), stream_id="s1")
+        out = io.StringIO()
+        with patch("scripts.tools.arthas.cli.ArthasShell") as MockShell:
+            mock_shell = MockShell.return_value
+            mock_shell.command.return_value = "dashboard output"
+            run_query(
+                stream=stream,
+                command="dashboard -n 5",
+                stdout=out,
+            )
+
+        mock_shell.command.assert_called_once_with("dashboard -n 5")

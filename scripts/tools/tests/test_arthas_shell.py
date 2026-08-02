@@ -101,3 +101,14 @@ class TestArthasShell(unittest.TestCase):
         result = shell.command("trace Foo bar")
         self.assertTrue(stream1_closed)
         self.assertIn("TypeNotPresentException", result)
+
+    def test_command_reports_closed_shell_without_output(self):
+        from scripts.tools.arthas.shell import ArthasShell
+
+        mock_sock = MagicMock()
+        mock_sock.recv.side_effect = [Exception("timeout"), b""]
+        stream = Stream(sock=mock_sock, stream_id="s1")
+        shell = ArthasShell(stream=stream)
+
+        with self.assertRaisesRegex(RuntimeError, "returned no output"):
+            shell.command("dashboard -n 1")

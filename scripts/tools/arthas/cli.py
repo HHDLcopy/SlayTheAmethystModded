@@ -7,6 +7,14 @@ from scripts.tools.connector.client import Stream
 from scripts.tools.arthas.shell import ArthasShell
 
 
+def _normalize_query(command: str) -> str:
+    """Make dashboard queries finite so the one-shot CLI can finish reliably."""
+    normalized = command.strip()
+    if normalized == "dashboard":
+        return "dashboard -n 1"
+    return command
+
+
 def run_query(
     stream: Stream,
     command: str,
@@ -14,7 +22,7 @@ def run_query(
     stdout: Any = sys.stdout,
 ) -> None:
     shell = ArthasShell(stream=stream, reconnect_fn=reconnect_fn)
-    result = shell.command(command)
+    result = shell.command(_normalize_query(command))
     stdout.write(result + "\n")
 
 

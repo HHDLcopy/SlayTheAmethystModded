@@ -16,6 +16,7 @@ COMMANDS = (
     "install",
     "start",
     "stop",
+    "exit",
     "logs",
     "screenshot",
     "status",
@@ -1466,7 +1467,7 @@ rm -rf files/sts/package files/sts/mts_patch_cache
 
         if command in ("doctor", "install", "start", "stop", "logs", "screenshot", "status",
                        "mods", "set-mods", "smoke", "decompil", "agent-attach", "agent-detach",
-                       "agent-list", "agent-status", "play", "hotreload", "perf", "single-room",
+                       "agent-list", "agent-status", "play", "hotreload", "perf", "single-room", "exit",
                        "startup-cache-profile", "console"):
             if command == "doctor":
                 from scripts.tools.harness.doctor import run_doctor
@@ -1548,8 +1549,12 @@ rm -rf files/sts/package files/sts/mts_patch_cache
             elif command == "single-room":
                 ctx.options.autoplay = True
                 ctx.options.autoplay_mode = "single_room"
-                from scripts.tools.harness.smoke import run_smoke
-                return run_smoke(ctx, resolved_out_dir)
+                from scripts.tools.harness.single_room_run import run_single_room
+                return run_single_room(ctx, resolved_out_dir)
+            elif command == "exit":
+                from scripts.tools.harness.exit import run_exit
+                run_exit(ctx, resolved_out_dir)
+                return 0 if self.result.get("success") else 1
             elif command == "startup-cache-profile":
                 from scripts.tools.harness.startup_cache import run_startup_cache_profile
                 return run_startup_cache_profile(ctx, resolved_out_dir)

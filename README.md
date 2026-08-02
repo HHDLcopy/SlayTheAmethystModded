@@ -141,6 +141,7 @@ python .\scripts\tools\main.py sts-harness -Command smoke -LaunchMode mts_basemo
 python .\scripts\tools\main.py sts-harness -Command smoke -Autoplay
 python .\scripts\tools\main.py sts-harness -Command smoke -Autoplay -AutoplaySaveMode continue
 python .\scripts\tools\main.py sts-harness -Command single-room -SingleRoomCharacter IRONCLAD -SingleRoomMonster Cultist -SingleRoomCards "Strike_R,Defend_R,Bash"
+python .\scripts\tools\main.py sts-harness -Command exit
 python .\scripts\tools\main.py sts-harness -Command steam-cloud-sync -CloudSyncPullIntervalSeconds 15 -SkipInstall
 ```
 
@@ -186,7 +187,7 @@ python .\scripts\tools\main.py sts-harness -Command steam-cloud-sync -CloudSyncP
 
 Autoplay 会随机处理 `CardRewardScreen` 发现/奖励选牌页，日志中会出现 `[amethyst-autoplay] choice: ...`。`-PdisableCardObtainEffectOwnershipCompat=true` 可在复现同一张牌对象被获得特效和手牌布局同时驱动的问题时，关闭内置的 `ShowCardAndAddToHandEffect` 所有权兼容补丁。
 
-`single-room` 会启动一次可配置的单房间战斗，支持模组人物、模组卡牌和 BaseMod/原版 encounter id；玩家死亡或怪物全灭后退出，并把 `latest.log` 中的单房间结果解析到 `statusSnapshot.latestLog.singleRoomResult`。
+`single-room` 会启动一次可配置的单房间战斗，支持模组人物、模组卡牌和 BaseMod/原版 encounter id；玩家死亡或怪物全灭后记录结果但保持进程运行，便于性能采样和手动检查。使用通用 `exit` 命令通过 GDX 优雅退出；`stop` 保留为 force-stop 兜底。结果仍解析到 `statusSnapshot.latestLog.singleRoomResult`。
 
 `steam-cloud-sync` 会默认修改 `sts/saves/.amethyst-cloud-sync-harness.txt` 这个 harness 自己的标记文件，而不是直接改真实角色存档；随后不带 debug launch extra 打开启动器，走正常 Steam Cloud 刷新/上传链路，并按间隔把 `steam-cloud/last-operation-summary.txt`、`push-summary.txt`、`manifest.json`、`sync-baseline.json`、`sts/latest.log`、`sts/boot_bridge_events.log` 等内容拉回到 `polls/<n>/snapshot.json`。只有看到新的 `Outcome: SUCCESS` 且 `Operation: manual_push` 或 `force_push` 才会判成功；最终日志导出会先尝试 `:app:stsPullLogs`，失败时退回 adb 直拉关键文件。
 

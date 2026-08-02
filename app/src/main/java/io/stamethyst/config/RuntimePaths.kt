@@ -37,6 +37,7 @@ object RuntimePaths {
     private const val TOUCHSCREEN_CARD_HOLD_STATE_FILE_NAME = ".touchscreen_card_hold_state"
     private const val GAME_PRESENCE_STATE_FILE_NAME = ".game_presence_state"
     private const val RUNTIME_RESCUE_TOAST_REQUEST_FILE_NAME = ".runtime_rescue_toast_request"
+    private const val HARNESS_EXIT_REQUEST_FILE_NAME = ".harness_exit_request"
     private const val JVM_HISTOGRAM_DIR_NAME = "jvm_histograms"
     private const val LOGCAT_DIR_NAME = "logcat"
     private const val LEGACY_LOGCAT_CAPTURE_FILE_NAME = "logcat_capture.log"
@@ -229,6 +230,10 @@ object RuntimePaths {
     @JvmStatic
     fun runtimeRescueToastRequestFile(context: Context): File =
         File(stsRoot(context), RUNTIME_RESCUE_TOAST_REQUEST_FILE_NAME)
+
+    @JvmStatic
+    fun harnessExitRequestFile(context: Context): File =
+        File(stsRoot(context), HARNESS_EXIT_REQUEST_FILE_NAME)
 
     @JvmStatic
     fun latestLog(context: Context): File = File(stsRoot(context), LATEST_LOG_FILE_NAME)

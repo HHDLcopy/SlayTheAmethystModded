@@ -88,6 +88,11 @@ class ConsoleCliTest(unittest.TestCase):
                 args = parser.parse_args(["-Command", "console", option, "19099"])
                 self.assertEqual(args.agent_port, 19099)
 
+    def test_exit_command_in_choices(self):
+        parser = create_parser()
+        command_actions = [action for action in parser._actions if action.dest == "command"]
+        self.assertIn("exit", command_actions[0].choices)
+
     def test_console_command_with_device_serial(self):
         parser = create_parser()
         args = parser.parse_args([

@@ -78,7 +78,8 @@ Harness commands:
 - `console`: BaseMod DevConsole via game-probe.
 - `hotreload`: dump or redefine classes via game-probe.
 - `perf`: attach a monitor and collect PERF stats.
-- `single-room`: one-room combat autoplay test.
+- `single-room`: one-room combat autoplay test that stays running for inspection and sampling.
+- `exit`: request a graceful GDX exit for the current game process. Use `stop` for force-stop fallback.
 - `startup-cache-profile`: run one cache-build launch and then one or more cache-hit launches, exporting per-run logs and a startup timing summary.
 - `steam-cloud-sync`: modify a device-side `sts/` file, open the launcher to trigger Steam Cloud sync, poll Steam Cloud diagnostics/runtime logs into per-interval snapshots, export the full log bundle, and stop the app.
 
@@ -132,6 +133,7 @@ python scripts/tools/main.py sts-harness -Command smoke -LaunchMode mts_basemod 
 python scripts/tools/main.py sts-harness -Command smoke -Autoplay
 python scripts/tools/main.py sts-harness -Command smoke -Autoplay -AutoplaySaveMode continue
 python scripts/tools/main.py sts-harness -Command single-room -SingleRoomCharacter IRONCLAD -SingleRoomMonster Cultist -SingleRoomCards "Strike_R,Defend_R,Bash"
+python scripts/tools/main.py sts-harness -Command exit
 python scripts/tools/main.py sts-harness -Command startup-cache-profile -LaunchMode mts_basemod -CacheHitRuns 2 -SkipInstall
 python scripts/tools/main.py sts-harness -Command steam-cloud-sync -CloudSyncPullIntervalSeconds 15 -SkipInstall
 python scripts/tools/main.py sts-harness -Command smoke -Autoplay -DisableCardObtainEffectOwnershipCompat

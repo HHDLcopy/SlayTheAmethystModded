@@ -39,14 +39,12 @@ final class AutoplaySingleRoomRunner {
     private static boolean roomConfigurationStarted;
     private static boolean roomConfigurationFailed;
     private static boolean resultLogged;
-    private static long exitRequestedAtMillis;
 
     private AutoplaySingleRoomRunner() {
     }
 
     static void tick() {
         if (resultLogged) {
-            requestExitAgainIfNeeded();
             return;
         }
         AutoplaySingleRoomSpec activeSpec = loadSpecOnce();
@@ -681,7 +679,6 @@ final class AutoplaySingleRoomRunner {
                 + " playerHp=" + (player == null ? -1 : player.currentHealth)
                 + " monsterHp=" + remainingMonsterHp(monsters)
         );
-        requestExit();
     }
 
     private static void logConfigError(String detail) {
@@ -699,7 +696,6 @@ final class AutoplaySingleRoomRunner {
                 + " monsterHp=-1"
                 + " detail=" + normalizeLogToken(detail)
         );
-        requestExit();
     }
 
     private static int remainingMonsterHp(MonsterGroup monsters) {
@@ -713,24 +709,6 @@ final class AutoplaySingleRoomRunner {
             }
         }
         return total;
-    }
-
-    private static void requestExitAgainIfNeeded() {
-        long now = currentTimeMillis();
-        if (now - exitRequestedAtMillis > 2000L) {
-            requestExit();
-        }
-    }
-
-    private static void requestExit() {
-        exitRequestedAtMillis = currentTimeMillis();
-        try {
-            if (Gdx.app != null) {
-                Gdx.app.exit();
-            }
-        } catch (Throwable t) {
-            AutoplayLog.warn("single_room exit request failed", t);
-        }
     }
 
     private static AbstractRoom safeGetCurrentRoom() {
@@ -765,7 +743,4 @@ final class AutoplaySingleRoomRunner {
         return value.trim().replace(' ', '_').toLowerCase(Locale.ROOT);
     }
 
-    private static long currentTimeMillis() {
-        return System.nanoTime() / 1_000_000L;
-    }
 }

@@ -343,11 +343,11 @@ public final class MtsPatchCacheBootstrap {
         File cacheRoot = new File(System.getProperty(PROPERTY_JAR, "")).getParentFile();
         if (cacheRoot != null) {
             try {
-                // The returned patch sets are intentionally dropped. Their only consumer is
-                // Patcher.injectPatches, which must not run on a cache hit: the cached jar
-                // already carries the injected bytecode. What is needed here is the side
-                // effect of populating Patcher.annotationDBMap, which the SpireEnum pass in
-                // bustPrepackagedEnumsFromCache reads afterwards.
+                // Called for its side effect of populating Patcher.annotationDBMap,
+                // which the SpireEnum pass in bustPrepackagedEnumsFromCache reads
+                // afterwards. It deliberately does not collect patch sets: their only
+                // consumer is Patcher.injectPatches, which must not run on a cache hit
+                // because the cached jar already carries the injected bytecode.
                 MtsPatchAnnotationDbCache.restoreIntoPatcher(loader, cacheRoot, resolvePackageDir(), modInfos);
                 log("Prepared cached MTS annotation DB from cache: mods=" + Array.getLength(modInfos));
                 logElapsed("Prepared cached MTS annotation DB", startedAtNs);

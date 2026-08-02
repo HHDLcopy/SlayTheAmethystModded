@@ -15,9 +15,7 @@ import java.lang.reflect.Method;
 import java.net.URL;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -31,10 +29,6 @@ final class MtsPatchAnnotationDbCache {
     private static final String ANNOTATION_DB = "org.scannotation.AnnotationDB";
     private static final String MTS_PATCHER = "com.evacipated.cardcrawl.modthespire.Patcher";
     private static final String MTS_MOD_INFO = "com.evacipated.cardcrawl.modthespire.ModInfo";
-    private static final String SPIRE_PATCH = "com.evacipated.cardcrawl.modthespire.lib.SpirePatch";
-    private static final String SPIRE_PATCHES = "com.evacipated.cardcrawl.modthespire.lib.SpirePatches";
-    private static final String SPIRE_PATCH2 = "com.evacipated.cardcrawl.modthespire.lib.SpirePatch2";
-    private static final String SPIRE_PATCHES2 = "com.evacipated.cardcrawl.modthespire.lib.SpirePatches2";
 
     private MtsPatchAnnotationDbCache() {
     }
@@ -92,7 +86,15 @@ final class MtsPatchAnnotationDbCache {
         }
     }
 
-    static List<Iterable<String>> restoreIntoPatcher(
+    /**
+     * Rebuilds {@code Patcher.annotationDBMap} from the on-disk cache.
+     *
+     * <p>Deliberately does not collect per-mod patch sets. Their only consumer is
+     * {@code Patcher.injectPatches}, which must never run on a cache hit — the cached
+     * jar already carries the injected bytecode. Collecting them cost four
+     * {@code Class.forName} lookups and a set copy per mod for a result nobody read.
+     */
+    static void restoreIntoPatcher(
             ClassLoader loader,
             File cacheRoot,
             File packageDir,
@@ -108,7 +110,6 @@ final class MtsPatchAnnotationDbCache {
         Method getAnnotationIndex = annotationDbClass.getMethod("getAnnotationIndex");
         Field jarUrlField = Class.forName(MTS_MOD_INFO, false, loader).getField("jarURL");
         Map<Object, Object> annotationDbMap = new HashMap<Object, Object>();
-        List<Iterable<String>> patchSets = new ArrayList<Iterable<String>>();
 
         for (int i = 0; i < Array.getLength(modInfos); i++) {
             Object modInfo = Array.get(modInfos, i);
@@ -123,14 +124,12 @@ final class MtsPatchAnnotationDbCache {
             }
             Object db = cloneAnnotationDb(annotationDbClass, getAnnotationIndex, cachedDb);
             annotationDbMap.put(url, db);
-            patchSets.add(collectPatchSet(loader, getAnnotationIndex, db));
         }
 
         patcherAnnotationDbMap(loader).set(null, annotationDbMap);
         log("Restored cached MTS annotation DB: mods=" + Array.getLength(modInfos) +
                 " entries=" + cachedEntries.size() +
                 " took " + elapsedMs(startedAtNs) + "ms");
-        return patchSets;
     }
 
     private static Map<?, ?> readCachedEntries(File cacheFile, ClassLoader loader) throws Exception {
@@ -170,37 +169,6 @@ final class MtsPatchAnnotationDbCache {
             }
         }
         return db;
-    }
-
-    private static Iterable<String> collectPatchSet(
-            ClassLoader loader,
-            Method getAnnotationIndex,
-            Object db
-    ) throws Exception {
-        Map<?, ?> annotationIndex = (Map<?, ?>) getAnnotationIndex.invoke(db);
-        Set<String> patches = new HashSet<String>();
-        addAnnotationSet(loader, annotationIndex, SPIRE_PATCH, patches);
-        addAnnotationSet(loader, annotationIndex, SPIRE_PATCHES, patches);
-        addAnnotationSet(loader, annotationIndex, SPIRE_PATCH2, patches);
-        addAnnotationSet(loader, annotationIndex, SPIRE_PATCHES2, patches);
-        return patches;
-    }
-
-    private static void addAnnotationSet(
-            ClassLoader loader,
-            Map<?, ?> annotationIndex,
-            String annotationClassName,
-            Set<String> target
-    ) throws Exception {
-        Class<?> annotationClass = Class.forName(annotationClassName, false, loader);
-        Object raw = annotationIndex.get(annotationClass.getName());
-        if (raw instanceof Iterable) {
-            for (Object item : (Iterable<?>) raw) {
-                if (item instanceof String) {
-                    target.add((String) item);
-                }
-            }
-        }
     }
 
     private static Object findCachedDbForUrl(Map<?, ?> cachedEntries, URL url, File packageDir) {

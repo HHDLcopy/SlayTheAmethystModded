@@ -358,11 +358,14 @@ a legitimate miss, because none of it has handed control to the game yet. The wr
 `RuntimeException` subclass because the hook site calls `launchIfCurrent` through a `()Z`
 descriptor and cannot declare checked exceptions.
 
-One deliberate non-issue at the same layer: `MtsPatchAnnotationDbCache.restoreIntoPatcher`
-returns per-mod patch sets and the caller drops them. Their only consumer is
-`Patcher.injectPatches`, which must not run on a hit since the cached jar already carries
-the injected bytecode. The call is made for its side effect of populating
-`Patcher.annotationDBMap`, which the subsequent SpireEnum pass reads.
+A related point at the same layer: `MtsPatchAnnotationDbCache.restoreIntoPatcher` is called
+purely for its side effect of populating `Patcher.annotationDBMap`, which the subsequent
+SpireEnum pass reads. It used to also build per-mod patch sets and return them, and the
+caller dropped the result on the floor. That was correct to discard — the only consumer of
+patch sets is `Patcher.injectPatches`, which must not run on a hit since the cached jar
+already carries the injected bytecode — but computing them cost four `Class.forName`
+lookups and a set copy per installed mod on every cache hit for nothing. The collection is
+gone and the method returns `void`.
 
 ## Cached jar compression level
 

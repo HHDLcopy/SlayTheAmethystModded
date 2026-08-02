@@ -171,7 +171,7 @@ Extra options:
 
 Autoplay randomly handles `CardRewardScreen` discovery/card reward choice pages and writes `[amethyst-autoplay] choice: ...` log lines. Use `-PdisableCardObtainEffectOwnershipCompat=true` when you need a repro run with the bundled `ShowCardAndAddToHandEffect` ownership compatibility patch disabled.
 
-`single-room` runs one configured autoplay combat room, then exits after the player dies or all configured monsters are defeated. The result marker from `latest.log` is parsed into `statusSnapshot.latestLog.singleRoomResult`.
+`single-room` runs one configured autoplay combat room and keeps the game process running after the player dies or all configured monsters are defeated, so battle state and performance samples can be collected. Use the generic `exit` harness command for a graceful GDX shutdown; `stop` remains the force-stop fallback. The result marker from `latest.log` is parsed into `statusSnapshot.latestLog.singleRoomResult`.
 
 Further reading:
 - [Simplified Chinese README](../README.md)

@@ -25,7 +25,9 @@ Harness.run()
         ├── screenshot           → harness/screenshot.run_screenshot(ctx, out_dir)
         ├── status               → harness/status.run_status(ctx)
         ├── mods / set-mods      → harness/mods.run_mods/run_set_mods(ctx)
-        ├── smoke / single-room  → harness/smoke.run_smoke(ctx, out_dir)
+        ├── smoke               → harness/smoke.run_smoke(ctx, out_dir)
+        ├── single-room         → harness/single_room_run.run_single_room(ctx, out_dir)
+        ├── exit                → harness/exit.run_exit(ctx, out_dir)
         ├── decompil             → harness/decompil.run_decompil(ctx, out_dir)
         ├── agent-attach/detach/list/status → harness/agent.*(ctx, out_dir)
         ├── play                 → harness/play.run_play(ctx, out_dir)
@@ -73,6 +75,8 @@ Harness.run()
 | `hotreload.py` | hotreload 命令 |
 | `perf.py` | perf 命令 |
 | `smoke.py` | smoke 命令 |
+| `single_room_run.py` | single-room 启动并保持运行 |
+| `exit.py` | 通用 GDX 优雅退出请求，超时后 force-stop |
 | `single_room.py` | single-room spec 构建 + 设备推送 |
 | `startup_cache.py` | startup-cache-profile 命令 |
 

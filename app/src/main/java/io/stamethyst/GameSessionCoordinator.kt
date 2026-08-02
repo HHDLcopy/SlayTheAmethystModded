@@ -49,6 +49,7 @@ internal class GameSessionCoordinator(
         private const val LAN_GAME_STATE_REQUEST_POLL_MS = 300L
         private const val FILE_PICKER_REQUEST_POLL_MS = 120L
         private const val RESCUE_TOAST_REQUEST_POLL_MS = 120L
+        private const val HARNESS_EXIT_REQUEST_POLL_MS = 120L
         private const val EXPECTED_GAME_EXIT_PROCESS_KILL_DELAY_MS = 1500L
         private const val EXPECTED_GAME_EXIT_LAUNCHER_RESTART_DELAY_MS = 180L
         private val FOREGROUND_AUDIO_RESTORE_DELAYS_MS = longArrayOf(150L, 400L, 1000L, 2200L)
@@ -83,6 +84,7 @@ internal class GameSessionCoordinator(
     private var lanGameStateRequestPollStarted = false
     private var filePickerRequestPollStarted = false
     private var rescueToastRequestPollStarted = false
+    private var harnessExitRequestPollStarted = false
     private var rescueToastShown = false
     @Volatile
     private var destroyed = false
@@ -140,6 +142,14 @@ internal class GameSessionCoordinator(
             pollRuntimeRescueToastRequest()
             if (!destroyed && rescueToastRequestPollStarted) {
                 mainHandler.postDelayed(this, RESCUE_TOAST_REQUEST_POLL_MS)
+            }
+        }
+    }
+    private val harnessExitRequestPollRunnable = object : Runnable {
+        override fun run() {
+            pollHarnessExitRequest()
+            if (!destroyed && harnessExitRequestPollStarted) {
+                mainHandler.postDelayed(this, HARNESS_EXIT_REQUEST_POLL_MS)
             }
         }
     }
@@ -244,6 +254,7 @@ internal class GameSessionCoordinator(
         stopLanGameStateRequestPolling()
         stopFilePickerRequestPolling()
         stopRescueToastRequestPolling()
+        stopHarnessExitRequestPolling()
         inGameEasyTierOverlayController.onDestroy()
         RuntimePaths.touchscreenCardHoldStateFile(activity).delete()
         reportEasyTierInGameState(EasyTierInGameSessionState.Online)
@@ -1026,6 +1037,13 @@ internal class GameSessionCoordinator(
         lastRescueToastRequestPayload = ""
         RuntimePaths.runtimeRescueToastRequestFile(activity).delete()
         mainHandler.post(rescueToastRequestPollRunnable)
+        startHarnessExitRequestPolling()
+    }
+
+    private fun startHarnessExitRequestPolling() {
+        if (harnessExitRequestPollStarted) return
+        harnessExitRequestPollStarted = true
+        mainHandler.post(harnessExitRequestPollRunnable)
     }
 
     private fun stopKeyboardRequestPolling() {
@@ -1046,6 +1064,11 @@ internal class GameSessionCoordinator(
     private fun stopRescueToastRequestPolling() {
         rescueToastRequestPollStarted = false
         mainHandler.removeCallbacks(rescueToastRequestPollRunnable)
+    }
+
+    private fun stopHarnessExitRequestPolling() {
+        harnessExitRequestPollStarted = false
+        mainHandler.removeCallbacks(harnessExitRequestPollRunnable)
     }
 
     private fun pollInGameKeyboardRequest() {
@@ -1153,6 +1176,15 @@ internal class GameSessionCoordinator(
             R.string.runtime_save_rescue_toast,
             Toast.LENGTH_LONG
         )
+    }
+
+    private fun pollHarnessExitRequest() {
+        if (!jvmLaunchController.runtimeLifecycleReady || backExitRequested) return
+        val requestFile = RuntimePaths.harnessExitRequestFile(activity)
+        val requested = try { requestFile.isFile && requestFile.readText().trim().isNotEmpty() } catch (_: Throwable) { false }
+        if (!requested) return
+        requestFile.delete()
+        requestBackExitToLauncher()
     }
 
     private fun trySchedulePostBootSurfaceSoftRefresh(triggerReason: String) {

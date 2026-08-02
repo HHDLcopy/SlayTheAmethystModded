@@ -58,6 +58,8 @@ class ArthasShell:
             buf += chunk
             if b"$ " in buf:
                 break
+        if not buf:
+            raise RuntimeError("Arthas shell returned no output before timeout or close")
         text = buf.decode("utf-8", errors="replace").strip()
         end = text.rfind("\n[arthas@")
         if end >= 0:

@@ -59,7 +59,7 @@ def create_parser() -> argparse.ArgumentParser:
         dest="autoplay_mode",
         choices=AUTOPLAY_MODES,
         default="normal",
-        help="Autoplay run mode. single_room runs one configured combat and exits after the player or monsters die.",
+         help="Autoplay run mode. single_room runs one configured combat and remains available until -Command exit.",
     )
     parser.add_argument(
         "-SingleRoomSpec",

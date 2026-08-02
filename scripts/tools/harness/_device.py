@@ -99,7 +99,7 @@ def parse_remote_path_state_output(relative_path: str, text: str | None) -> dict
 
 def clear_runtime_signals(ctx: HarnessContext) -> None:
     sts_root = resolve_device_sts_root(ctx)
-    for relative_path in ("boot_bridge_events.log", "latest.log"):
+    for relative_path in ("boot_bridge_events.log", "latest.log", ".harness_exit_request"):
         remote_path = f"{sts_root['root']}/{relative_path}"
         quoted = quote_android_shell(remote_path)
         if sts_root["accessMode"] == "run-as":

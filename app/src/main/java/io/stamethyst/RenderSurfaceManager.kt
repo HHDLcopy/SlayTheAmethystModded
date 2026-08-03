@@ -62,7 +62,6 @@ class RenderSurfaceManager(
     private val cropScreenBottom: Boolean,
     private val isSoftKeyboardSessionActive: () -> Boolean,
     private val onSurfaceReady: () -> Unit,
-    private val onSurfaceDestroyed: () -> Unit,
     private val onTextureFrameUpdate: (Long) -> Unit
 ) {
     private val state = RenderSurfaceState()
@@ -169,7 +168,6 @@ class RenderSurfaceManager(
                 disconnectBridgeSurfaceIfNeeded()
                 state.markSurfaceDestroyed()
                 syncPreferredRefreshRate("surface_destroyed")
-                onSurfaceDestroyed()
             }
 
             override fun onTextureFrameUpdated(timestampNs: Long) {

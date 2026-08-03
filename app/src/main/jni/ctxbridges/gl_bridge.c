@@ -104,9 +104,16 @@ static void gl_advance_context_generation(const char* reason) {
     ;
 }
 
-static void gl_replace_queued_surface_locked(gl_render_window_t* bundle, ANativeWindow* window) {
+static bool gl_replace_queued_surface_locked(
+        gl_render_window_t* bundle,
+        ANativeWindow* window,
+        uint64_t generation
+) {
     if (bundle == NULL) {
-        return;
+        return false;
+    }
+    if (generation < bundle->latestSurfaceGeneration) {
+        return false;
     }
     if (bundle->newNativeSurface != NULL) {
         ANativeWindow_release(bundle->newNativeSurface);
@@ -116,14 +123,22 @@ static void gl_replace_queued_surface_locked(gl_render_window_t* bundle, ANative
         ANativeWindow_acquire(window);
         bundle->newNativeSurface = window;
     }
+    bundle->newSurfaceGeneration = generation;
+    bundle->latestSurfaceGeneration = generation;
+    return true;
 }
 
-static void gl_queue_surface(gl_render_window_t* bundle, ANativeWindow* window, const char* reason) {
+static void gl_queue_surface(
+        gl_render_window_t* bundle,
+        ANativeWindow* window,
+        uint64_t generation,
+        const char* reason
+) {
     if (bundle == NULL) {
         return;
     }
     pthread_mutex_lock(&g_surface_mutex);
-    gl_replace_queued_surface_locked(bundle, window);
+    gl_replace_queued_surface_locked(bundle, window, generation);
     pthread_mutex_unlock(&g_surface_mutex);
     ;
 }
@@ -132,15 +147,19 @@ static void gl_queue_bridge_window_surface(gl_render_window_t* bundle, const cha
     if (bundle == NULL) {
         return;
     }
-    ANativeWindow* window = pojavAcquireBridgeWindow();
+    uint64_t generation = 0;
+    ANativeWindow* window = pojavAcquireBridgeWindowWithGeneration(&generation);
     pthread_mutex_lock(&g_surface_mutex);
-    gl_replace_queued_surface_locked(bundle, window);
+    gl_replace_queued_surface_locked(bundle, window, generation);
     pthread_mutex_unlock(&g_surface_mutex);
     pojavReleaseBridgeWindow(window);
     ;
 }
 
-static ANativeWindow* gl_take_queued_surface(gl_render_window_t* bundle) {
+static ANativeWindow* gl_take_queued_surface(
+        gl_render_window_t* bundle,
+        uint64_t* generation
+) {
     ANativeWindow* queued = NULL;
     if (bundle == NULL) {
         return NULL;
@@ -148,13 +167,31 @@ static ANativeWindow* gl_take_queued_surface(gl_render_window_t* bundle) {
     pthread_mutex_lock(&g_surface_mutex);
     queued = bundle->newNativeSurface;
     bundle->newNativeSurface = NULL;
+    if (generation != NULL) {
+        *generation = bundle->newSurfaceGeneration;
+    }
+    bundle->newSurfaceGeneration = 0;
     pthread_mutex_unlock(&g_surface_mutex);
     return queued;
 }
 
-static ANativeWindow* gl_take_queued_or_bridge_surface(gl_render_window_t* bundle) {
-    ANativeWindow* queued = gl_take_queued_surface(bundle);
-    if (queued != NULL) {
+static void gl_finish_surface_switch(gl_render_window_t* bundle, uint64_t consumedGeneration) {
+    pthread_mutex_lock(&g_surface_mutex);
+    bundle->activeSurfaceGeneration = consumedGeneration;
+    char nextState = bundle->newSurfaceGeneration != 0
+        ? STATE_RENDERER_NEW_WINDOW
+        : STATE_RENDERER_ALIVE;
+    atomic_store_explicit(&bundle->state, nextState, memory_order_release);
+    pthread_mutex_unlock(&g_surface_mutex);
+    pojavAcknowledgeBridgeWindowGeneration(consumedGeneration);
+}
+
+static ANativeWindow* gl_take_queued_or_bridge_surface(
+        gl_render_window_t* bundle,
+        uint64_t* generation
+) {
+    ANativeWindow* queued = gl_take_queued_surface(bundle, generation);
+    if (queued != NULL || (generation != NULL && *generation != 0)) {
         return queued;
     }
 
@@ -164,7 +201,7 @@ static ANativeWindow* gl_take_queued_or_bridge_surface(gl_render_window_t* bundl
         pojav_environ->mainWindowBundle == (basic_render_window_t*)bundle;
     pthread_mutex_unlock(&g_surface_mutex);
     if (isMainWindowBundle) {
-        queued = pojavAcquireBridgeWindow();
+        queued = pojavAcquireBridgeWindowWithGeneration(generation);
     }
 
     if (queued != NULL) {
@@ -180,7 +217,8 @@ static bool gl_try_restore_main_window_surface(gl_render_window_t* bundle, const
     }
 
     bool queued = false;
-    ANativeWindow* window = pojavAcquireBridgeWindow();
+    uint64_t generation = 0;
+    ANativeWindow* window = pojavAcquireBridgeWindowWithGeneration(&generation);
     if (window == NULL) {
         return false;
     }
@@ -189,9 +227,10 @@ static bool gl_try_restore_main_window_surface(gl_render_window_t* bundle, const
     if (pojav_environ != NULL &&
         pojav_environ->mainWindowBundle == (basic_render_window_t*)bundle &&
         bundle->nativeSurface == NULL) {
-        gl_replace_queued_surface_locked(bundle, window);
-        bundle->state = STATE_RENDERER_NEW_WINDOW;
-        queued = true;
+        queued = gl_replace_queued_surface_locked(bundle, window, generation);
+        if (queued) {
+            atomic_store_explicit(&bundle->state, STATE_RENDERER_NEW_WINDOW, memory_order_release);
+        }
     }
     pthread_mutex_unlock(&g_surface_mutex);
     pojavReleaseBridgeWindow(window);
@@ -411,7 +450,8 @@ void gl_swap_surface(gl_render_window_t* bundle) {
     if (bundle == NULL) {
         return;
     }
-    ANativeWindow* queuedSurface = gl_take_queued_or_bridge_surface(bundle);
+    uint64_t queuedGeneration = 0;
+    ANativeWindow* queuedSurface = gl_take_queued_or_bridge_surface(bundle, &queuedGeneration);
     if(bundle->nativeSurface != NULL) {
         ANativeWindow_release(bundle->nativeSurface);
         bundle->nativeSurface = NULL;
@@ -487,6 +527,7 @@ void gl_swap_surface(gl_render_window_t* bundle) {
         ;
         printf("GLBridgeDiag: surface create failed err=0x%04x\n", eglGetError_p());
     }
+    gl_finish_surface_switch(bundle, queuedGeneration);
 }
 
 static bool gl_make_current_with_recovery(gl_render_window_t* bundle, const char* reason) {
@@ -534,14 +575,15 @@ void gl_make_current(gl_render_window_t* bundle) {
         return;
     }
     bool hasSetMainWindow = false;
-    ANativeWindow* window = pojavAcquireBridgeWindow();
+    uint64_t generation = 0;
+    ANativeWindow* window = pojavAcquireBridgeWindowWithGeneration(&generation);
     pthread_mutex_lock(&g_surface_mutex);
     if(pojav_environ->mainWindowBundle == NULL) {
         pojav_environ->mainWindowBundle = (basic_render_window_t*)bundle;
         hasSetMainWindow = true;
     }
     if (pojav_environ->mainWindowBundle == (basic_render_window_t*)bundle) {
-        gl_replace_queued_surface_locked(bundle, window);
+        gl_replace_queued_surface_locked(bundle, window, generation);
     }
     pthread_mutex_unlock(&g_surface_mutex);
     pojavReleaseBridgeWindow(window);
@@ -555,11 +597,16 @@ void gl_make_current(gl_render_window_t* bundle) {
         if(hasSetMainWindow) {
             pthread_mutex_lock(&g_surface_mutex);
             if (pojav_environ->mainWindowBundle == (basic_render_window_t*)bundle) {
-                gl_replace_queued_surface_locked(bundle, NULL);
-                pojav_environ->mainWindowBundle = NULL;
+                gl_replace_queued_surface_locked(bundle, NULL, generation);
             }
             pthread_mutex_unlock(&g_surface_mutex);
             gl_swap_surface(bundle);
+            pthread_mutex_lock(&g_surface_mutex);
+            if (pojav_environ->mainWindowBundle == (basic_render_window_t*)bundle &&
+                bundle->newSurfaceGeneration == 0) {
+                pojav_environ->mainWindowBundle = NULL;
+            }
+            pthread_mutex_unlock(&g_surface_mutex);
         }
     }
 
@@ -594,14 +641,13 @@ void gl_swap_buffers() {
         stageStartNs = nowNs;
     }
 
-    if(currentBundle->state == STATE_RENDERER_NEW_WINDOW) {
+    if(atomic_load_explicit(&currentBundle->state, memory_order_acquire) == STATE_RENDERER_NEW_WINDOW) {
         // Detach everything to destroy the old EGLSurface safely.
         eglMakeCurrent_p(g_EglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
         gl_swap_surface(currentBundle);
         if (!gl_make_current_with_recovery(currentBundle, "window switch")) {
             return;
         }
-        currentBundle->state = STATE_RENDERER_ALIVE;
     }
     if (g_swap_profiler_enabled) {
         int64_t nowNs = gl_now_monotonic_ns();
@@ -642,7 +688,8 @@ void gl_swap_buffers() {
             }
             ;
             printf("GLBridgeDiag: eglSwapBuffers failed err=0x%04x surface=%p native=%p state=%d\n",
-                   swapErr, currentBundle->surface, currentBundle->nativeSurface, currentBundle->state);
+                   swapErr, currentBundle->surface, currentBundle->nativeSurface,
+                   atomic_load_explicit(&currentBundle->state, memory_order_relaxed));
             return;
         }
     }
@@ -665,13 +712,14 @@ void gl_swap_buffers() {
                    ((double)eglSwapNs) / 1000000.0,
                    currentBundle->surface,
                    currentBundle->nativeSurface,
-                   currentBundle->state);
+                    atomic_load_explicit(&currentBundle->state, memory_order_relaxed));
         }
     }
     if (g_swap_heartbeat_logging_enabled) {
         if ((g_swap_diag_counter % 600) == 0) {
             printf("GLBridgeDiag: swap heartbeat #%u surface=%p native=%p state=%d\n",
-                   g_swap_diag_counter, currentBundle->surface, currentBundle->nativeSurface, currentBundle->state);
+                    g_swap_diag_counter, currentBundle->surface, currentBundle->nativeSurface,
+                    atomic_load_explicit(&currentBundle->state, memory_order_relaxed));
         }
     }
 
@@ -679,17 +727,24 @@ void gl_swap_buffers() {
 
 void gl_setup_window() {
     bool updated = false;
-    ANativeWindow* window = pojavAcquireBridgeWindow();
+    bool hasMainBundle = false;
+    uint64_t generation = 0;
+    ANativeWindow* window = pojavAcquireBridgeWindowWithGeneration(&generation);
     pthread_mutex_lock(&g_surface_mutex);
     if(pojav_environ->mainWindowBundle != NULL) {
+        hasMainBundle = true;
         ;
         gl_render_window_t* mainBundle = (gl_render_window_t*)pojav_environ->mainWindowBundle;
-        mainBundle->state = STATE_RENDERER_NEW_WINDOW;
-        gl_replace_queued_surface_locked(mainBundle, window);
-        updated = true;
+        updated = gl_replace_queued_surface_locked(mainBundle, window, generation);
+        if (updated) {
+            atomic_store_explicit(&mainBundle->state, STATE_RENDERER_NEW_WINDOW, memory_order_release);
+        }
     }
     pthread_mutex_unlock(&g_surface_mutex);
     pojavReleaseBridgeWindow(window);
+    if (!hasMainBundle) {
+        pojavAcknowledgeBridgeWindowGeneration(generation);
+    }
     if (updated) {
         ;
     }

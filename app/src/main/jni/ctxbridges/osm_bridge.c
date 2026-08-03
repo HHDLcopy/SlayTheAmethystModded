@@ -2,11 +2,24 @@
 // Created by maks on 18.10.2023.
 //
 #include <malloc.h>
+#include <pthread.h>
 #include <string.h>
 #include <environ/environ.h>
 #include "osm_bridge.h"
 #define TAG __FILE_NAME__
 static __thread osm_render_window_t* currentBundle;
+static pthread_mutex_t g_osm_surface_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+static void osm_finish_surface_switch(osm_render_window_t* bundle, uint64_t consumedGeneration) {
+    pthread_mutex_lock(&g_osm_surface_mutex);
+    bundle->activeSurfaceGeneration = consumedGeneration;
+    char nextState = bundle->newSurfaceGeneration != 0
+        ? STATE_RENDERER_NEW_WINDOW
+        : STATE_RENDERER_ALIVE;
+    atomic_store_explicit(&bundle->state, nextState, memory_order_release);
+    pthread_mutex_unlock(&g_osm_surface_mutex);
+    pojavAcknowledgeBridgeWindowGeneration(consumedGeneration);
+}
 // a tiny buffer for rendering when there's nowhere t render
 static char no_render_buffer[4];
 
@@ -45,34 +58,42 @@ void osm_set_no_render_buffer(ANativeWindow_Buffer* buffer) {
 }
 
 void osm_swap_surfaces(osm_render_window_t* bundle) {
-    if(bundle->nativeSurface != NULL) {
-        if(!bundle->disable_rendering) {
+    pthread_mutex_lock(&g_osm_surface_mutex);
+    ANativeWindow* nextSurface = bundle->newNativeSurface;
+    ANativeWindow* previousSurface = bundle->nativeSurface;
+    bool previousRenderingDisabled = bundle->disable_rendering;
+    uint64_t nextGeneration = bundle->newSurfaceGeneration;
+    bundle->newNativeSurface = NULL;
+    bundle->newSurfaceGeneration = 0;
+    bundle->nativeSurface = nextSurface;
+    pthread_mutex_unlock(&g_osm_surface_mutex);
+
+    if(previousSurface != NULL) {
+        if(!previousRenderingDisabled) {
             ;
-            ANativeWindow_unlockAndPost(bundle->nativeSurface);
+            ANativeWindow_unlockAndPost(previousSurface);
         }
-        ANativeWindow_release(bundle->nativeSurface);
+        ANativeWindow_release(previousSurface);
     }
-    if(bundle->newNativeSurface != NULL) {
+    if(nextSurface != NULL) {
         ;
-        bundle->nativeSurface = bundle->newNativeSurface;
-        bundle->newNativeSurface = NULL;
-        ANativeWindow_setBuffersGeometry(bundle->nativeSurface, 0, 0, WINDOW_FORMAT_RGBX_8888);
+        ANativeWindow_setBuffersGeometry(nextSurface, 0, 0, WINDOW_FORMAT_RGBX_8888);
         bundle->disable_rendering = false;
-        return;
     }else {
         ;
-        bundle->nativeSurface = NULL;
         osm_set_no_render_buffer(&bundle->buffer);
         bundle->disable_rendering = true;
     }
-
+    osm_finish_surface_switch(bundle, nextGeneration);
 }
 
 void osm_release_window() {
+    pthread_mutex_lock(&g_osm_surface_mutex);
     if (currentBundle->newNativeSurface != NULL) {
         pojavReleaseBridgeWindow(currentBundle->newNativeSurface);
     }
     currentBundle->newNativeSurface = NULL;
+    pthread_mutex_unlock(&g_osm_surface_mutex);
     osm_swap_surfaces(currentBundle);
 }
 
@@ -93,16 +114,33 @@ void osm_make_current(osm_render_window_t* bundle) {
     }
     bool hasSetMainWindow = false;
     currentBundle = bundle;
+    pthread_mutex_lock(&g_osm_surface_mutex);
     if(pojav_environ->mainWindowBundle == NULL) {
         pojav_environ->mainWindowBundle = (basic_render_window_t*) bundle;
-        ;
-        pojav_environ->mainWindowBundle->newNativeSurface = pojavAcquireBridgeWindow();
         hasSetMainWindow = true;
+    }
+    pthread_mutex_unlock(&g_osm_surface_mutex);
+    if(hasSetMainWindow) {
+        ;
+        uint64_t generation = 0;
+        ANativeWindow* window = pojavAcquireBridgeWindowWithGeneration(&generation);
+        pthread_mutex_lock(&g_osm_surface_mutex);
+        if (pojav_environ->mainWindowBundle == (basic_render_window_t*)bundle &&
+            generation >= bundle->latestSurfaceGeneration) {
+            if (bundle->newNativeSurface != NULL) {
+                pojavReleaseBridgeWindow(bundle->newNativeSurface);
+            }
+            bundle->newNativeSurface = window;
+            bundle->newSurfaceGeneration = generation;
+            bundle->latestSurfaceGeneration = generation;
+            window = NULL;
+        }
+        pthread_mutex_unlock(&g_osm_surface_mutex);
+        pojavReleaseBridgeWindow(window);
     }
     if(bundle->nativeSurface == NULL) {
         //prepare the buffer for our first render!
         osm_swap_surfaces(bundle);
-        if(hasSetMainWindow) pojav_environ->mainWindowBundle->state = STATE_RENDERER_ALIVE;
     }
     osm_set_no_render_buffer(&bundle->buffer);
     osm_apply_current_ll();
@@ -110,9 +148,8 @@ void osm_make_current(osm_render_window_t* bundle) {
 }
 
 void osm_swap_buffers() {
-    if(currentBundle->state == STATE_RENDERER_NEW_WINDOW) {
+    if(atomic_load_explicit(&currentBundle->state, memory_order_acquire) == STATE_RENDERER_NEW_WINDOW) {
         osm_swap_surfaces(currentBundle);
-        currentBundle->state = STATE_RENDERER_ALIVE;
     }
 
     if(currentBundle->nativeSurface != NULL && !currentBundle->disable_rendering)
@@ -128,18 +165,45 @@ void osm_swap_buffers() {
 }
 
 void osm_setup_window() {
-    if(pojav_environ->mainWindowBundle != NULL) {
-        ;
-        pojav_environ->mainWindowBundle->state = STATE_RENDERER_NEW_WINDOW;
-        if (pojav_environ->mainWindowBundle->newNativeSurface != NULL) {
-            pojavReleaseBridgeWindow(pojav_environ->mainWindowBundle->newNativeSurface);
+    uint64_t generation = 0;
+    ANativeWindow* window = pojavAcquireBridgeWindowWithGeneration(&generation);
+    pthread_mutex_lock(&g_osm_surface_mutex);
+    basic_render_window_t* mainBundle = pojav_environ->mainWindowBundle;
+    if(mainBundle != NULL) {
+        if (generation < mainBundle->latestSurfaceGeneration) {
+            pthread_mutex_unlock(&g_osm_surface_mutex);
+            pojavReleaseBridgeWindow(window);
+            return;
         }
-        pojav_environ->mainWindowBundle->newNativeSurface = pojavAcquireBridgeWindow();
+        if (mainBundle->newNativeSurface != NULL) {
+            pojavReleaseBridgeWindow(mainBundle->newNativeSurface);
+        }
+        mainBundle->newNativeSurface = window;
+        mainBundle->newSurfaceGeneration = generation;
+        mainBundle->latestSurfaceGeneration = generation;
+        atomic_store_explicit(
+            &mainBundle->state,
+            STATE_RENDERER_NEW_WINDOW,
+            memory_order_release
+        );
+        pthread_mutex_unlock(&g_osm_surface_mutex);
+        return;
     }
+    pthread_mutex_unlock(&g_osm_surface_mutex);
+    pojavReleaseBridgeWindow(window);
+    pojavAcknowledgeBridgeWindowGeneration(generation);
 }
 
 void osm_swap_interval(int swapInterval) {
-    if(pojav_environ->mainWindowBundle != NULL && pojav_environ->mainWindowBundle->nativeSurface != NULL) {
-        setNativeWindowSwapInterval(pojav_environ->mainWindowBundle->nativeSurface, swapInterval);
+    pthread_mutex_lock(&g_osm_surface_mutex);
+    basic_render_window_t* mainBundle = pojav_environ->mainWindowBundle;
+    ANativeWindow* window = mainBundle == NULL ? NULL : mainBundle->nativeSurface;
+    if (window != NULL) {
+        ANativeWindow_acquire(window);
+    }
+    pthread_mutex_unlock(&g_osm_surface_mutex);
+    if (window != NULL) {
+        setNativeWindowSwapInterval(window, swapInterval);
+        pojavReleaseBridgeWindow(window);
     }
 }

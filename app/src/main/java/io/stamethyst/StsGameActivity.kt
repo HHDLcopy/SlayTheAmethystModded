@@ -482,7 +482,6 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
             cropScreenBottom = sessionConfig.cropScreenBottom,
             isSoftKeyboardSessionActive = { inputHandler.isSoftKeyboardSessionActive() },
             onSurfaceReady = { sessionCoordinator.onSurfaceReady() },
-            onSurfaceDestroyed = { },
             onTextureFrameUpdate = { timestampNs ->
                 sessionCoordinator.onTextureFrameUpdate(timestampNs)
             }

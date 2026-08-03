@@ -7,7 +7,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
+#include <errno.h>
 #include <sys/types.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <EGL/egl.h>
@@ -55,10 +57,26 @@ EGLConfig config;
 struct PotatoBridge potatoBridge;
 static bool g_bridge_ready = false;
 static pthread_mutex_t g_pojav_window_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t g_pojav_window_consumed;
+static pthread_once_t g_pojav_window_consumed_once = PTHREAD_ONCE_INIT;
+static uint64_t g_bridge_window_generation = 0;
+static uint64_t g_consumed_bridge_window_generation = 0;
+static const int64_t BRIDGE_WINDOW_DETACH_TIMEOUT_MS = 500;
 
-EXTERNAL_API ANativeWindow* pojavAcquireBridgeWindow(void) {
+static void pojav_init_window_consumed_condition(void) {
+    pthread_condattr_t attributes;
+    pthread_condattr_init(&attributes);
+    pthread_condattr_setclock(&attributes, CLOCK_MONOTONIC);
+    pthread_cond_init(&g_pojav_window_consumed, &attributes);
+    pthread_condattr_destroy(&attributes);
+}
+
+EXTERNAL_API ANativeWindow* pojavAcquireBridgeWindowWithGeneration(uint64_t* generation) {
     pthread_mutex_lock(&g_pojav_window_mutex);
     ANativeWindow* window = (pojav_environ == NULL) ? NULL : pojav_environ->pojavWindow;
+    if (generation != NULL) {
+        *generation = g_bridge_window_generation;
+    }
     if (window != NULL) {
         ANativeWindow_acquire(window);
     }
@@ -66,10 +84,61 @@ EXTERNAL_API ANativeWindow* pojavAcquireBridgeWindow(void) {
     return window;
 }
 
+EXTERNAL_API ANativeWindow* pojavAcquireBridgeWindow(void) {
+    return pojavAcquireBridgeWindowWithGeneration(NULL);
+}
+
 EXTERNAL_API void pojavReleaseBridgeWindow(ANativeWindow* window) {
     if (window != NULL) {
         ANativeWindow_release(window);
     }
+}
+
+EXTERNAL_API void pojavAcknowledgeBridgeWindowGeneration(uint64_t generation) {
+    if (generation == 0) {
+        return;
+    }
+    pthread_once(&g_pojav_window_consumed_once, pojav_init_window_consumed_condition);
+    pthread_mutex_lock(&g_pojav_window_mutex);
+    if (generation > g_consumed_bridge_window_generation) {
+        g_consumed_bridge_window_generation = generation;
+        pthread_cond_broadcast(&g_pojav_window_consumed);
+    }
+    pthread_mutex_unlock(&g_pojav_window_mutex);
+}
+
+static bool pojav_wait_for_bridge_window_generation(uint64_t generation, int64_t timeout_ms) {
+    if (generation == 0) {
+        return true;
+    }
+
+    struct timespec deadline;
+    pthread_once(&g_pojav_window_consumed_once, pojav_init_window_consumed_condition);
+    clock_gettime(CLOCK_MONOTONIC, &deadline);
+    deadline.tv_sec += timeout_ms / 1000;
+    deadline.tv_nsec += (timeout_ms % 1000) * 1000000LL;
+    if (deadline.tv_nsec >= 1000000000L) {
+        deadline.tv_sec++;
+        deadline.tv_nsec -= 1000000000L;
+    }
+
+    pthread_mutex_lock(&g_pojav_window_mutex);
+    while (g_consumed_bridge_window_generation < generation) {
+        int wait_result = pthread_cond_timedwait(
+            &g_pojav_window_consumed,
+            &g_pojav_window_mutex,
+            &deadline
+        );
+        if (wait_result == ETIMEDOUT) {
+            break;
+        }
+        if (wait_result != 0) {
+            break;
+        }
+    }
+    bool consumed = g_consumed_bridge_window_generation >= generation;
+    pthread_mutex_unlock(&g_pojav_window_mutex);
+    return consumed;
 }
 
 #include "ctxbridges/egl_loader.h"
@@ -112,6 +181,7 @@ JNIEXPORT void JNICALL Java_net_kdt_pojavlaunch_utils_JREUtils_setupBridgeWindow
     ANativeWindow* previousWindow = pojav_environ->pojavWindow;
     pojav_environ->pojavWindow = nextWindow;
     if (previousWindow != nextWindow) {
+        g_bridge_window_generation++;
         pojav_reset_window_geometry_cache(pojav_environ);
     }
     pthread_mutex_unlock(&g_pojav_window_mutex);
@@ -130,19 +200,40 @@ JNIEXPORT void JNICALL Java_net_kdt_pojavlaunch_utils_JREUtils_setupBridgeWindow
 
 
 JNIEXPORT void JNICALL
-Java_net_kdt_pojavlaunch_utils_JREUtils_releaseBridgeWindow(ABI_COMPAT JNIEnv *env, ABI_COMPAT jclass clazz) {
+Java_net_kdt_pojavlaunch_utils_JREUtils_releaseBridgeWindow(
+        ABI_COMPAT JNIEnv *env,
+        ABI_COMPAT jclass clazz
+) {
     pthread_mutex_lock(&g_pojav_window_mutex);
     ANativeWindow* window = pojav_environ->pojavWindow;
+    if (window == NULL) {
+        pthread_mutex_unlock(&g_pojav_window_mutex);
+        return;
+    }
     pojav_environ->pojavWindow = NULL;
+    uint64_t release_generation = ++g_bridge_window_generation;
     pojav_reset_window_geometry_cache(pojav_environ);
     pthread_mutex_unlock(&g_pojav_window_mutex);
 
     if (br_setup_window != NULL) {
         // Notify renderer bridge that the window is gone so it can switch to pbuffer early.
         br_setup_window();
+    } else {
+        pojavAcknowledgeBridgeWindowGeneration(release_generation);
     }
     if (window != NULL) {
         ANativeWindow_release(window);
+    }
+    bool consumed = pojav_wait_for_bridge_window_generation(
+        release_generation,
+        BRIDGE_WINDOW_DETACH_TIMEOUT_MS
+    );
+    if (!consumed) {
+        printf(
+            "EGLBridge: timed out waiting %lld ms for render thread to detach window generation %llu\n",
+            (long long)BRIDGE_WINDOW_DETACH_TIMEOUT_MS,
+            (unsigned long long)release_generation
+        );
     }
 }
 
@@ -406,4 +497,3 @@ EXTERNAL_API void pojavSwapInterval(int interval) {
     }
     br_swap_interval(interval);
 }
-

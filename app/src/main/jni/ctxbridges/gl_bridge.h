@@ -3,13 +3,18 @@
 //
 #include <EGL//egl.h>
 #include <stdbool.h>
+#include <stdatomic.h>
+#include <stdint.h>
 #ifndef POJAVLAUNCHER_GL_BRIDGE_H
 #define POJAVLAUNCHER_GL_BRIDGE_H
 
 typedef struct {
-    char       state;
+    _Atomic char state;
     struct ANativeWindow *nativeSurface;
     struct ANativeWindow *newNativeSurface;
+    uint64_t newSurfaceGeneration;
+    uint64_t activeSurfaceGeneration;
+    uint64_t latestSurfaceGeneration;
     EGLConfig  config;
     EGLint     format;
     EGLContext context;

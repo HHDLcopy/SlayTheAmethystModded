@@ -331,7 +331,7 @@ game-probe 负责游戏语义；Arthas 负责通用 JVM 诊断。
 |------|---------|------|
 | `Multiple Android devices online` | 未指定 `--device` / `STS_TEST_DEVICE` | 显式 serial |
 | `connect_stream` BrokenPipe | 已执行 `shutdown`（后端销毁、端口释放） | 重新 `start`；无需重启游戏 |
-| `shell closed before a complete prompt` | 后端已被 `stop` 命令销毁 | 重新 `start`（幂等 attach 会重建 bootstrap） |
+| `shell closed before a complete prompt` | 后端已被 `shutdown` 命令销毁 | 重新 `start`（幂等 attach 会重建 bootstrap） |
 | `LOAD_AGENT` → `already bind` | bridge 重复加载 | 无需处理；幂等 attach 会复用现有监听器 |
 | `Could not initialize class ...Enhancer` / `SpyAPI$AbstractSpy` | `arthas-spy.jar` 内容错误或未与 `arthas-core.jar` 同目录部署 | 确认 spy JAR 包含 `java/arthas/SpyAPI.class`、`SpyAPI$AbstractSpy.class`，并重启游戏后重新 `start` |
 | `LOAD_AGENT` → class file version | JAR 高于 JDK 8 | `-source 8 -target 8` 重编 bridge |

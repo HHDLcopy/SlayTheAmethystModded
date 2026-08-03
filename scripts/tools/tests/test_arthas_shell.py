@@ -22,6 +22,26 @@ class TestArthasShell(unittest.TestCase):
         result = shell.command("version")
         self.assertEqual(result, "3.6.9")
 
+    def test_command_consumes_prompt_already_buffered_by_connector(self):
+        from scripts.tools.arthas.shell import ArthasShell
+
+        mock_sock = MagicMock()
+        mock_sock.recv.side_effect = [
+            OSError(),
+            b"version output\n[arthas@1]$ ",
+        ]
+        stream = Stream(
+            sock=mock_sock,
+            stream_id="s1",
+            initial_data=b"[arthas@1]$ ",
+        )
+        shell = ArthasShell(stream=stream)
+
+        result = shell.command("version")
+
+        self.assertEqual(result, "version output")
+        self.assertEqual(mock_sock.recv.call_count, 2)
+
     def test_command_strips_prompt_from_multi_line_output(self):
         from scripts.tools.arthas.shell import ArthasShell
         mock_sock = MagicMock()

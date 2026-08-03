@@ -32,4 +32,26 @@ public class SocketTermTest {
         client.close();
         server.close();
     }
+
+    @Test
+    public void inputArrivingBeforeReadlineIsDeliveredAfterRegistration() throws Exception {
+        ServerSocket server = new ServerSocket(0);
+        Socket client = new Socket("127.0.0.1", server.getLocalPort());
+        SocketTerm term = new SocketTerm(server.accept());
+        final String[] input = {null};
+
+        term.feed("version");
+        term.readline("prompt", new com.taobao.arthas.core.shell.handlers.Handler<String>() {
+            @Override
+            public void handle(String value) {
+                input[0] = value;
+            }
+        });
+
+        assertEquals("version", input[0]);
+
+        term.close();
+        client.close();
+        server.close();
+    }
 }

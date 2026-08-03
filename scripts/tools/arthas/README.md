@@ -175,6 +175,8 @@ conn.close()
 
 `ArthasShell.command()` 负责 drain prompt、发送命令、读到下一完整 prompt。Connector
 握手与首段 stream 数据同包到达时，握手后的 remainder 会保留并交给 `Stream`，不会丢失。
+Bridge 会话在 readline handler 尚未注册时暂存已到达的输入行，避免连接建立竞态丢弃查询命令；
+bridge 只使用一次 shell 初始化和 readline 生命周期，不额外写入非 Arthas 协议的 ready 文本。
 
 命令用法见离线文档 [`docs/`](docs/)（索引 [`docs/README.md`](docs/README.md)）与[官方命令列表](https://arthas.aliyun.com/doc/commands.html)。
 

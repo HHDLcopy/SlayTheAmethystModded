@@ -35,25 +35,13 @@ public class BridgeSession implements Runnable {
             log("SocketTerm created, calling shellServer.createShell");
             Shell shell = shellServer.createShell(term);
             log("shellServer.createShell returned: " + shell);
-            try {
-                java.lang.reflect.Method init = shell.getClass()
-                    .getDeclaredMethod("init");
-                init.setAccessible(true);
-                init.invoke(shell);
-                java.lang.reflect.Method rl = shell.getClass()
-                    .getDeclaredMethod("readline");
-                rl.setAccessible(true);
-                rl.invoke(shell);
-                log("shell.init()+readline() done");
-            } catch (Exception e) {
-                java.io.StringWriter sw = new java.io.StringWriter();
-                e.printStackTrace(new java.io.PrintWriter(sw));
-                log("init/readline FAILED: " + sw);
-            }
+            java.lang.reflect.Method init = shell.getClass().getDeclaredMethod("init");
+            init.setAccessible(true);
+            init.invoke(shell);
+            java.lang.reflect.Method readline = shell.getClass().getDeclaredMethod("readline");
+            readline.setAccessible(true);
+            readline.invoke(shell);
             log("entering read loop");
-
-            socket.getOutputStream().write("arthas-bridge ready\n".getBytes("UTF-8"));
-            socket.getOutputStream().flush();
 
             InputStream in = socket.getInputStream();
             byte[] buf = new byte[8192];

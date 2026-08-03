@@ -10,6 +10,8 @@ import java.io.FileWriter;
 import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.net.Socket;
+import java.util.ArrayDeque;
+import java.util.Queue;
 
 public class SocketTerm implements Term {
     private static PrintWriter _log;
@@ -24,6 +26,7 @@ public class SocketTerm implements Term {
     private final Socket socket;
     private OutputStream out;
     private Handler<String> pendingReadline;
+    private final Queue<String> pendingInput = new ArrayDeque<String>();
     private Handler<String> stdinHandler;
     private SignalHandler interruptHandler;
     private boolean closed;
@@ -33,14 +36,15 @@ public class SocketTerm implements Term {
         this.out = socket.getOutputStream();
     }
 
-    void feed(String line) {
+    synchronized void feed(String line) {
         log("feed: " + line);
         if (pendingReadline != null) {
             Handler<String> h = pendingReadline;
             pendingReadline = null;
             h.handle(line);
         } else {
-            log("feed DROPPED (no pendingReadline)");
+            pendingInput.add(line);
+            log("feed queued (no pendingReadline)");
         }
     }
 
@@ -71,8 +75,13 @@ public class SocketTerm implements Term {
         return interruptHandler != null && interruptHandler.deliver(3);
     }
     @Override public Term suspendHandler(com.taobao.arthas.core.shell.term.SignalHandler h) { return this; }
-    @Override public void readline(String prompt, Handler<String> handler) {
+    @Override public synchronized void readline(String prompt, Handler<String> handler) {
         log("readline: " + prompt.trim());
+        if (!pendingInput.isEmpty()) {
+            write(prompt);
+            handler.handle(pendingInput.remove());
+            return;
+        }
         this.pendingReadline = handler;
         write(prompt);
     }

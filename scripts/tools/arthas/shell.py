@@ -56,7 +56,7 @@ class ArthasShell:
         self._sock.settimeout(min(0.5, max(0.05, duration)))
         while time.monotonic() < deadline:
             try:
-                chunk = self._sock.recv(8192)
+                chunk = self._stream.read(8192)
             except socket.timeout:
                 continue
             except OSError as exc:
@@ -77,7 +77,7 @@ class ArthasShell:
         self._sock.settimeout(0.5)
         while True:
             try:
-                data = self._sock.recv(8192)
+                data = self._stream.read(8192)
                 if not data:
                     break
             except Exception:
@@ -90,7 +90,7 @@ class ArthasShell:
             if _PROMPT.search(buf):
                 break
             try:
-                chunk = self._sock.recv(8192)
+                chunk = self._stream.read(8192)
             except socket.timeout as exc:
                 raise ArthasQueryTimeout(
                     "Arthas command timed out before a complete prompt was received"

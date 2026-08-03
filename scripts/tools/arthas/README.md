@@ -11,6 +11,46 @@
 - 交互：`shell` / `query`（`ArthasShell` 解析 prompt）
 - Android 适配：无 Netty bridge、MTS ClassLoader、线程 CPU `/proc` fallback、async-profiler、JFR `.jfc`
 
+## 生命周期语义
+
+Bridge 后端设计为**长驻**：`ServerSocket` + accept 循环独立于 Arthas
+`ArthasBootstrap`。因此 `stop` 与 `shutdown` 是两种不同强度的清理：
+
+| 操作 | 发送的 Arthas 命令 | 后端 / 端口 | 之后能否直接 `query` |
+|------|-------------------|------------|--------------------|
+| `stop` | `reset` | 保持存活，`:8099` 继续监听 | 能，无需重新 `start` |
+| `shutdown` | `reset` + `stop` | `ShellServer` 销毁，监听器关闭，端口释放 | 不能，需重新 `start` |
+
+`stop` 只撤销字节码增强与 listener（`reset`），是日常调试收尾的默认选择；它不会
+让 JVM 进入端口被占但无法服务的半死状态。
+
+`shutdown` 走完整销毁：`stop` 会调用 `ArthasBootstrap.destroy()`，销毁
+`ShellServer` 与 `SpyAPI`。bridge 的 accept 循环在下一次连接时发现 bootstrap 已
+销毁，随即关闭自己的 `ServerSocket`；`ArthasManager.shutdown()` 轮询端口直到不再
+接受连接（默认最多 10s）后返回。
+
+### 幂等 attach
+
+`agentmain` 可在同一 JVM 上重复调用。`ArthasCommandBridge` 把 `ServerSocket` 存为
+静态字段：
+
+- 若已有存活监听器且端口一致 → 跳过重建，只刷新 bootstrap 与 command resolver 后返回，
+  **不会抛 `BindException`**。
+- accept 循环不持有 `shellServer` 引用，每次 accept 时动态取
+  `ArthasBootstrap.getInstance().getShellServer()`，因此重复 attach 后旧循环会自动
+  使用新 bootstrap，无需重启循环。
+- `new ServerSocket(port)` 抛 `BindException` 时区分「自己的旧监听器」（复用）与
+  「外部进程占用」（才算失败）。
+
+因此 `start` → `stop` → `start` 序列在同一 JVM 内是安全的，无需 force-stop 应用。
+
+### 会话回收
+
+`SocketTerm.lastAccessedTime()` 恒返回当前时间，`ShellServerImpl` 的 reaper 永远不会
+evict bridge 会话。`BridgeSession` 因此在读循环结束后显式调用
+`shell.close("session closed")`，否则每次 `query` 都会在 `ShellServerImpl.sessions`
+里泄漏一个 `ShellImpl`。
+
 ## 依赖与架构
 
 ```
@@ -108,7 +148,8 @@ export STS_TEST_DEVICE=localhost:15555   # 可选默认
 
 python3 -m scripts.tools.arthas --device localhost:15555 start
 python3 -m scripts.tools.arthas --device localhost:15555 query "version"
-python3 -m scripts.tools.arthas --device localhost:15555 stop
+python3 -m scripts.tools.arthas --device localhost:15555 stop      # 轻量清理，后端保持
+python3 -m scripts.tools.arthas --device localhost:15555 shutdown  # 完整销毁，释放端口
 ```
 
 解析顺序：`--device` → `STS_TEST_DEVICE`（非空且非 `auto`）→ 仅 1 台在线时自动选择 → 否则报错并列 serial。
@@ -120,7 +161,8 @@ python3 -m scripts.tools.arthas --device <serial> start   # 推送 + LOAD_AGENT 
 python3 -m scripts.tools.arthas --device <serial> shell   # 交互 shell
 python3 -m scripts.tools.arthas --device <serial> query "thread -n 5"
 python3 -m scripts.tools.arthas --device <serial> query --duration 20 "monitor com.example.Foo bar"
-python3 -m scripts.tools.arthas --device <serial> stop    # reset/stop + unforward
+python3 -m scripts.tools.arthas --device <serial> stop      # reset + unforward（后端长驻）
+python3 -m scripts.tools.arthas --device <serial> shutdown  # reset + stop + 等端口释放
 ```
 
 可选：`--agent-port`（默认 9099）、`--arthas-port`（默认 8099）。
@@ -158,11 +200,11 @@ stream = conn.connect_stream(port=8099)
 shell = ArthasShell(stream=stream)
 print(shell.command("thread -n 3"))
 stream.close()
-mgr.stop(port=8099)
+mgr.stop(port=8099)       # reset only; backend stays alive
 conn.close()
 ```
 
-等价加载细节见 `manager.py` 的 `start()` / `stop()`。
+等价加载细节见 `manager.py` 的 `start()` / `stop()` / `shutdown()`。
 
 ## 协议
 
@@ -288,8 +330,9 @@ game-probe 负责游戏语义；Arthas 负责通用 JVM 诊断。
 | 症状 | 可能原因 | 处理 |
 |------|---------|------|
 | `Multiple Android devices online` | 未指定 `--device` / `STS_TEST_DEVICE` | 显式 serial |
-| `connect_stream` BrokenPipe | bridge 已 `stop` | 重启游戏后重新 `start` |
-| `LOAD_AGENT` → `already bind` | bridge 重复加载 | 重启游戏 |
+| `connect_stream` BrokenPipe | 已执行 `shutdown`（后端销毁、端口释放） | 重新 `start`；无需重启游戏 |
+| `shell closed before a complete prompt` | 后端已被 `stop` 命令销毁 | 重新 `start`（幂等 attach 会重建 bootstrap） |
+| `LOAD_AGENT` → `already bind` | bridge 重复加载 | 无需处理；幂等 attach 会复用现有监听器 |
 | `Could not initialize class ...Enhancer` / `SpyAPI$AbstractSpy` | `arthas-spy.jar` 内容错误或未与 `arthas-core.jar` 同目录部署 | 确认 spy JAR 包含 `java/arthas/SpyAPI.class`、`SpyAPI$AbstractSpy.class`，并重启游戏后重新 `start` |
 | `LOAD_AGENT` → class file version | JAR 高于 JDK 8 | `-source 8 -target 8` 重编 bridge |
 | `Type xxx not present` | CommonSuperBridge 首次 retransform 未就绪 | 同 serial 重连（CLI 自动重试） |
@@ -300,10 +343,10 @@ game-probe 负责游戏语义；Arthas 负责通用 JVM 诊断。
 
 | 文件 | 职责 |
 |------|------|
-| `manager.py` | 推送资源 → LOAD_AGENT → forward；`stop` 发 reset/stop 后 unforward |
+| `manager.py` | 推送资源 → LOAD_AGENT → forward；`stop` 只发 reset，`shutdown` 发 reset+stop 并等端口释放 |
 | `shell.py` | `ArthasShell`：prompt / 命令 / 输出；`TypeNotPresentException` 重连 |
 | `cli.py` | `run_shell` / `run_query` |
-| `__main__.py` | CLI：设备解析、`start`/`shell`/`query`/`stop` |
+| `__main__.py` | CLI：设备解析、`start`/`shell`/`query`/`stop`/`shutdown` |
 | `resource/arthas-core.jar` | Arthas 3.6.9 命令引擎 |
 | `resource/arthas-bridge.jar` | 自定义 bridge（源码在仓库根 `arthas-bridge/`） |
 | `resource/arthas-spy.jar` | Arthas spy |
@@ -319,11 +362,11 @@ game-probe 负责游戏语义；Arthas 负责通用 JVM 诊断。
 
 | 文件 | 说明 |
 |------|------|
-| `ArthasCommandBridge.java` | `agentmain`：Bootstrap、命令注册、ServerSocket、`.so` / profiler |
+| `ArthasCommandBridge.java` | `agentmain`：Bootstrap、命令注册、幂等 ServerSocket 监听器 + `shutdownBridge()`、`.so` / profiler |
 | `MetaspaceCommand.java` | `classloader-metaspace` |
 | `ArthasBootstrapCompat.java` | 无 Netty Bootstrap（Apache 2.0 修改） |
 | `SocketTerm.java` | 纯 socket `Term` |
-| `BridgeSession.java` | 每连接 shell 会话 |
+| `BridgeSession.java` | 每连接 shell 会话；结束时 `shell.close()` 防止 session 泄漏 |
 | `CommonSuperBridge.java` | MTS 下 ASM 公共父类解析 |
 | `ClassMetaClassWriterTransformer.java` | 注入 `CommonSuperBridge` |
 | `ProcFSBridge.java` / `ProcFSThreadCpuPatch.java` | 线程 CPU fallback |

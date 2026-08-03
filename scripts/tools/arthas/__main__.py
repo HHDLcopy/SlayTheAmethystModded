@@ -21,6 +21,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_query(args)
     if args.command == "stop":
         return _cmd_stop(args)
+    if args.command == "shutdown":
+        return _cmd_shutdown(args)
     _usage()
     return 1
 
@@ -63,7 +65,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument(
         "command",
-        choices=("start", "shell", "query", "stop"),
+        choices=("start", "shell", "query", "stop", "shutdown"),
         help="Lifecycle or query command.",
     )
     parser.add_argument(
@@ -88,11 +90,12 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 
 
 def _usage() -> None:
-    print("Usage: python -m scripts.tools.arthas [--device SERIAL] <start|shell|query|stop> [query cmd...]")
+    print("Usage: python -m scripts.tools.arthas [--device SERIAL] <start|shell|query|stop|shutdown> [query cmd...]")
     print("  start      – push JARs, load agent, forward ports")
     print("  shell      – interactive Arthas shell via connect_stream(:8099)")
     print("  query CMD  – one-shot Arthas command")
-    print("  stop       – reset/stop Arthas service and unforward ports")
+    print("  stop       – reset enhancers and unforward ports (backend stays alive)")
+    print("  shutdown   – reset + stop Arthas, wait for port release, unforward")
 
 
 def resolve_device(conn: ConnectorClient, cli_device: str | None) -> str:
@@ -244,7 +247,25 @@ def _cmd_stop(args: argparse.Namespace) -> int:
             raise RuntimeError(f"Failed to select device: {device}")
         mgr = ArthasManager(connector=conn, agent_client=None)
         mgr.stop(port=args.arthas_port)
-        print(f"Arthas stopped on {device}.")
+        print(f"Arthas reset on {device}; bridge backend still listening.")
+        return 0
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def _cmd_shutdown(args: argparse.Namespace) -> int:
+    conn = ConnectorClient()
+    try:
+        conn.connect()
+        device = resolve_device(conn, args.device)
+        if not conn.select(device):
+            raise RuntimeError(f"Failed to select device: {device}")
+        mgr = ArthasManager(connector=conn, agent_client=None)
+        mgr.shutdown(port=args.arthas_port)
+        print(f"Arthas shut down on {device}; bridge port released.")
         return 0
     finally:
         try:

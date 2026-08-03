@@ -29,11 +29,21 @@ public class BridgeSession implements Runnable {
 
     @Override
     public void run() {
+        Shell shell = null;
         try {
             log("creating SocketTerm");
             SocketTerm term = new SocketTerm(socket);
             log("SocketTerm created, calling shellServer.createShell");
-            Shell shell = shellServer.createShell(term);
+            try {
+                shell = shellServer.createShell(term);
+            } catch (IllegalStateException ise) {
+                if (ise.getMessage() != null && ise.getMessage().contains("Closed")) {
+                    log("shellServer already closed, dropping connection: " + ise);
+                } else {
+                    log("createShell failed: " + ise);
+                }
+                return;
+            }
             log("shellServer.createShell returned: " + shell);
             java.lang.reflect.Method init = shell.getClass().getDeclaredMethod("init");
             init.setAccessible(true);
@@ -73,6 +83,9 @@ public class BridgeSession implements Runnable {
             t.printStackTrace(new PrintWriter(sw));
             log("THROWABLE: " + sw.toString());
         } finally {
+            if (shell != null) {
+                try { shell.close("session closed"); } catch (Exception ignored) {}
+            }
             try { socket.close(); } catch (Exception ignored) {}
         }
     }

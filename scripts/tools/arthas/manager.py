@@ -7,6 +7,7 @@ protocol command.  All device I/O goes through connector daemon.
 from __future__ import annotations
 
 import importlib.util
+import time
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -105,6 +106,42 @@ class ArthasManager:
         self._conn.forward(port=port)
 
     def stop(self, port: int = 8099) -> None:
+        """Lightweight stop: send reset to clear enhancers, then unforward.
+
+        The backend ServerSocket and ArthasBootstrap remain alive so the port
+        can be reused without restarting the JVM.  Use shutdown() for a full
+        teardown.
+        """
+        stream = None
+        try:
+            try:
+                self._conn.forward(port=port)
+                stream = self._conn.connect_stream(port=port)
+                shell = ArthasShell(stream=stream)
+                try:
+                    shell.command("reset")
+                except Exception:
+                    pass
+            except Exception:
+                pass
+        finally:
+            if stream is not None:
+                try:
+                    stream.close()
+                except Exception:
+                    pass
+            try:
+                self._conn.unforward(port=port)
+            except Exception:
+                pass
+
+    def shutdown(self, port: int = 8099, wait_timeout: float = 10.0) -> None:
+        """Full teardown: reset enhancers, stop Arthas, wait for port release.
+
+        Arthas ``stop`` destroys the bootstrap; the bridge accept loop notices
+        on its next connection and closes its ServerSocket.  This method polls
+        until that happens so a subsequent start() can rebind the port.
+        """
         stream = None
         try:
             try:
@@ -120,7 +157,6 @@ class ArthasManager:
                 except Exception:
                     pass
             except Exception:
-                # Bridge may already be gone; still clean local forwards.
                 pass
         finally:
             if stream is not None:
@@ -132,6 +168,36 @@ class ArthasManager:
                 self._conn.unforward(port=port)
             except Exception:
                 pass
+
+        self._await_port_release(port, wait_timeout)
+
+    def _await_port_release(self, port: int, wait_timeout: float) -> bool:
+        """Poll the bridge port until connections stop succeeding.
+
+        Returns True once the port is free, False if wait_timeout elapsed
+        while it was still accepting.
+        """
+        deadline = time.monotonic() + wait_timeout
+        while time.monotonic() < deadline:
+            probe = None
+            try:
+                self._conn.forward(port=port)
+                probe = self._conn.connect_stream(port=port)
+            except Exception:
+                # Cannot reach the port any more: the listener is gone.
+                return True
+            finally:
+                if probe is not None:
+                    try:
+                        probe.close()
+                    except Exception:
+                        pass
+                try:
+                    self._conn.unforward(port=port)
+                except Exception:
+                    pass
+            time.sleep(0.3)
+        return False
 
     # ── Companion file (AllocTracer symbols for stripped libjvm.so) ───
 

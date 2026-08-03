@@ -167,35 +167,39 @@ class TestArthasMainCommands(unittest.TestCase):
         self.assertEqual(0, code)
         conn.select.assert_called_once_with("localhost:15555")
         mgr.stop.assert_called_once()
+        mgr.shutdown.assert_not_called()
         conn.close.assert_called_once()
 
-
-class TestArthasManagerStop(unittest.TestCase):
-    def test_stop_sends_reset_and_stop_before_unforward(self) -> None:
-        from scripts.tools.arthas.manager import ArthasManager
+    def test_shutdown_selects_device_and_invokes_manager_shutdown(self) -> None:
+        from scripts.tools.arthas import __main__ as arthas_main
 
         conn = MagicMock()
-        stream = MagicMock()
-        conn.connect_stream.return_value = stream
-        shell = MagicMock()
-        mgr = ArthasManager(connector=conn, agent_client=None)
-        with patch("scripts.tools.arthas.manager.ArthasShell", return_value=shell):
-            mgr.stop(port=8099)
+        mgr = MagicMock()
+        with patch.object(arthas_main, "ConnectorClient", return_value=conn), patch.object(
+            arthas_main, "ArthasManager", return_value=mgr
+        ), patch.object(arthas_main, "resolve_device", return_value="localhost:15555"):
+            code = arthas_main.main(["--device", "localhost:15555", "shutdown"])
 
-        conn.forward.assert_called_once_with(port=8099)
-        shell.command.assert_any_call("reset")
-        shell.command.assert_any_call("stop")
-        stream.close.assert_called_once()
-        conn.unforward.assert_called_once_with(port=8099)
+        self.assertEqual(0, code)
+        conn.select.assert_called_once_with("localhost:15555")
+        mgr.shutdown.assert_called_once()
+        mgr.stop.assert_not_called()
+        conn.close.assert_called_once()
 
-    def test_stop_is_idempotent_when_bridge_unavailable(self) -> None:
-        from scripts.tools.arthas.manager import ArthasManager
+    def test_shutdown_parses_arthas_port(self) -> None:
+        from scripts.tools.arthas import __main__ as arthas_main
 
         conn = MagicMock()
-        conn.forward.side_effect = RuntimeError("bridge down")
-        mgr = ArthasManager(connector=conn, agent_client=None)
-        mgr.stop(port=8099)
-        conn.unforward.assert_called_once_with(port=8099)
+        mgr = MagicMock()
+        with patch.object(arthas_main, "ConnectorClient", return_value=conn), patch.object(
+            arthas_main, "ArthasManager", return_value=mgr
+        ), patch.object(arthas_main, "resolve_device", return_value="localhost:15555"):
+            arthas_main.main(["--device", "localhost:15555", "--arthas-port", "18099", "shutdown"])
+
+        mgr.shutdown.assert_called_once_with(port=18099)
+
+
+# ArthasManager stop/shutdown semantics are covered by test_arthas_manager.py.
 
 
 if __name__ == "__main__":

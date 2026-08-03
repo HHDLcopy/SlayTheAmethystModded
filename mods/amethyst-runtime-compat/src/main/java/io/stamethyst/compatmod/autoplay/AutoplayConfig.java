@@ -29,6 +29,9 @@ public final class AutoplayConfig {
     /** Properties file consumed by single-room mode. */
     public static final String AUTOPLAY_SINGLE_ROOM_SPEC_PROP =
         "amethyst.debug.autoplay.single_room_spec";
+    /** When true, single-room configures the encounter but never plays cards or ends turns. */
+    public static final String AUTOPLAY_SINGLE_ROOM_HOLD_PROP =
+        "amethyst.debug.autoplay.single_room_hold";
 
     public static final String MODE_NORMAL = "normal";
     public static final String MODE_SINGLE_ROOM = "single_room";
@@ -53,6 +56,8 @@ public final class AutoplayConfig {
         readSaveMode(AUTOPLAY_SAVE_MODE_PROP, SAVE_MODE_FRESH);
     private static final String SINGLE_ROOM_SPEC_PATH =
         readString(AUTOPLAY_SINGLE_ROOM_SPEC_PROP, "");
+    private static final boolean SINGLE_ROOM_HOLD =
+        readBoolean(AUTOPLAY_SINGLE_ROOM_HOLD_PROP, false);
     private static final long TICK_INTERVAL_MS =
         clampLong(readLong(AUTOPLAY_TICK_INTERVAL_MS_PROP, DEFAULT_TICK_INTERVAL_MS),
             MIN_TICK_INTERVAL_MS, MAX_TICK_INTERVAL_MS);
@@ -97,6 +102,10 @@ public final class AutoplayConfig {
 
     public static String getSingleRoomSpecPath() {
         return SINGLE_ROOM_SPEC_PATH;
+    }
+
+    public static boolean isSingleRoomHoldEnabled() {
+        return SINGLE_ROOM_HOLD;
     }
 
     public static boolean shouldContinueLastSave() {

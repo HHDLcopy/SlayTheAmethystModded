@@ -2,6 +2,7 @@ package io.stamethyst.arthas;
 
 import com.taobao.arthas.core.shell.cli.Completion;
 import com.taobao.arthas.core.shell.handlers.Handler;
+import com.taobao.arthas.core.shell.term.SignalHandler;
 import com.taobao.arthas.core.shell.term.Term;
 import io.termd.core.function.Function;
 
@@ -24,6 +25,7 @@ public class SocketTerm implements Term {
     private OutputStream out;
     private Handler<String> pendingReadline;
     private Handler<String> stdinHandler;
+    private SignalHandler interruptHandler;
     private boolean closed;
 
     public SocketTerm(Socket socket) throws Exception {
@@ -64,7 +66,10 @@ public class SocketTerm implements Term {
     @Override public long lastAccessedTime() { return System.currentTimeMillis(); }
     @Override public Term echo(String text) { return write(text); }
     @Override public Term setSession(com.taobao.arthas.core.shell.session.Session s) { return this; }
-    @Override public Term interruptHandler(com.taobao.arthas.core.shell.term.SignalHandler h) { return this; }
+    @Override public Term interruptHandler(SignalHandler h) { this.interruptHandler = h; return this; }
+    boolean interrupt() {
+        return interruptHandler != null && interruptHandler.deliver(3);
+    }
     @Override public Term suspendHandler(com.taobao.arthas.core.shell.term.SignalHandler h) { return this; }
     @Override public void readline(String prompt, Handler<String> handler) {
         log("readline: " + prompt.trim());

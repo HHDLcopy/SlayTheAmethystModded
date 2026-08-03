@@ -26,6 +26,17 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
+    duration = None
+    normalized_argv = list(argv)
+    if "--duration" in normalized_argv:
+        index = normalized_argv.index("--duration")
+        if index + 1 >= len(normalized_argv):
+            raise SystemExit("--duration requires a number")
+        try:
+            duration = float(normalized_argv[index + 1])
+        except ValueError:
+            raise SystemExit("--duration requires a number") from None
+        del normalized_argv[index:index + 2]
     parser = argparse.ArgumentParser(
         prog="python -m scripts.tools.arthas",
         description="Arthas lifecycle and query helper for SlayTheAmethyst Android JVMs.",
@@ -60,10 +71,17 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         nargs="*",
         help="Arthas command text for query mode.",
     )
+    parser.add_argument(
+        "--duration",
+        type=float,
+        default=None,
+        help="Seconds to collect monitor/watch/trace output before Ctrl-C.",
+    )
     if not argv:
         parser.print_help()
         raise SystemExit(1)
-    args = parser.parse_args(argv)
+    args = parser.parse_args(normalized_argv)
+    args.duration = duration
     if args.command == "query" and not args.query_parts:
         parser.error("query requires an Arthas command")
     return args
@@ -147,6 +165,7 @@ def _cmd_start(args: argparse.Namespace) -> int:
 def _cmd_shell(args: argparse.Namespace) -> int:
     conn = ConnectorClient()
     stream = None
+    shell = None
     try:
         conn.connect()
         device = resolve_device(conn, args.device)
@@ -154,17 +173,19 @@ def _cmd_shell(args: argparse.Namespace) -> int:
             raise RuntimeError(f"Failed to select device: {device}")
         conn.forward(port=args.arthas_port)
         stream = conn.connect_stream(port=args.arthas_port)
-        run_shell(
+        shell = run_shell(
             stream,
             reconnect_fn=_make_arthas_stream(device, args.arthas_port),
         )
         return 0
     finally:
-        if stream is not None:
+        if shell is not None:
             try:
-                stream.close()
+                shell.close()
             except Exception:
                 pass
+        elif stream is not None:
+            stream.close()
         try:
             conn.unforward(port=args.arthas_port)
         except Exception:
@@ -178,6 +199,7 @@ def _cmd_shell(args: argparse.Namespace) -> int:
 def _cmd_query(args: argparse.Namespace) -> int:
     conn = ConnectorClient()
     stream = None
+    shell = None
     try:
         conn.connect()
         device = resolve_device(conn, args.device)
@@ -185,13 +207,19 @@ def _cmd_query(args: argparse.Namespace) -> int:
             raise RuntimeError(f"Failed to select device: {device}")
         conn.forward(port=args.arthas_port)
         stream = conn.connect_stream(port=args.arthas_port)
-        run_query(
-            stream,
-            " ".join(args.query_parts),
-            reconnect_fn=_make_arthas_stream(device, args.arthas_port),
-        )
+        query_kwargs = {
+            "reconnect_fn": _make_arthas_stream(device, args.arthas_port),
+        }
+        if args.duration is not None:
+            query_kwargs["duration"] = args.duration
+        shell = run_query(stream, " ".join(args.query_parts), **query_kwargs)
         return 0
     finally:
+        if shell is not None:
+            try:
+                shell.close()
+            except Exception:
+                pass
         if stream is not None:
             try:
                 stream.close()

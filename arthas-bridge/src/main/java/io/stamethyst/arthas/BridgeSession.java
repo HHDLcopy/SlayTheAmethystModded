@@ -65,7 +65,10 @@ public class BridgeSession implements Runnable {
                 if (n < 0) break;
                 for (int i = 0; i < n; i++) {
                     char c = (char) (buf[i] & 0xFF);
-                    if (c == '\n') {
+                    if (c == 3) {
+                        log("interrupt");
+                        term.interrupt();
+                    } else if (c == '\n') {
                         term.feed(lineBuf.toString());
                         lineBuf.setLength(0);
                     } else if (c != '\r') {

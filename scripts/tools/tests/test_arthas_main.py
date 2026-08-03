@@ -6,6 +6,17 @@ from unittest.mock import MagicMock, patch
 
 
 class TestArthasDeviceResolution(unittest.TestCase):
+    def test_parse_query_accepts_duration_before_command(self) -> None:
+        from scripts.tools.arthas.__main__ import _parse_args
+
+        args = _parse_args([
+            "--device", "localhost:15555", "query", "--duration", "20",
+            "monitor Foo bar",
+        ])
+
+        self.assertEqual(args.query_parts, ["monitor Foo bar"])
+        self.assertEqual(args.duration, 20.0)
+
     def test_resolve_device_prefers_cli_device(self) -> None:
         from scripts.tools.arthas.__main__ import resolve_device
 

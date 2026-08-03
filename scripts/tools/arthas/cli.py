@@ -19,11 +19,17 @@ def run_query(
     stream: Stream,
     command: str,
     reconnect_fn: Callable[[], Stream] | None = None,
+    duration: float | None = None,
     stdout: Any = sys.stdout,
-) -> None:
+) -> ArthasShell:
     shell = ArthasShell(stream=stream, reconnect_fn=reconnect_fn)
-    result = shell.command(_normalize_query(command))
+    normalized = _normalize_query(command)
+    if duration is None:
+        result = shell.command(normalized)
+    else:
+        result = shell.command(normalized, duration=duration)
     stdout.write(result + "\n")
+    return shell
 
 
 def run_shell(
@@ -31,7 +37,7 @@ def run_shell(
     reconnect_fn: Callable[[], Stream] | None = None,
     stdin: Any = sys.stdin,
     stdout: Any = sys.stdout,
-) -> None:
+) -> ArthasShell:
     shell = ArthasShell(stream=stream, reconnect_fn=reconnect_fn)
     while True:
         try:
@@ -50,3 +56,4 @@ def run_shell(
             break
         except EOFError:
             break
+    return shell

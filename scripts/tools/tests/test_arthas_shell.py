@@ -69,7 +69,7 @@ class TestArthasShell(unittest.TestCase):
             return stream2
 
         shell = ArthasShell(stream=stream1, reconnect_fn=reconnect_fn)
-        result = shell.command("trace Foo bar")
+        result = shell.command("version")
         self.assertTrue(stream1_closed)
         self.assertEqual(result, "ok result")
         self.assertIs(shell._sock, mock_sock2)
@@ -98,7 +98,7 @@ class TestArthasShell(unittest.TestCase):
             return stream2
 
         shell = ArthasShell(stream=stream1, reconnect_fn=reconnect_fn)
-        result = shell.command("trace Foo bar")
+        result = shell.command("version")
         self.assertTrue(stream1_closed)
         self.assertIn("TypeNotPresentException", result)
 
@@ -110,5 +110,34 @@ class TestArthasShell(unittest.TestCase):
         stream = Stream(sock=mock_sock, stream_id="s1")
         shell = ArthasShell(stream=stream)
 
-        with self.assertRaisesRegex(RuntimeError, "returned no output"):
+        with self.assertRaisesRegex(RuntimeError, "complete prompt"):
             shell.command("dashboard -n 1")
+
+    def test_streaming_command_collects_until_duration_then_interrupts(self):
+        from scripts.tools.arthas.shell import ArthasShell
+
+        mock_sock = MagicMock()
+        mock_sock.recv.side_effect = [
+            Exception("no stale prompt"),
+            b"Affect(class count: 1, method count: 1)\n",
+            b"timestamp total\n",
+            b"[arthas@1]$ ",
+        ]
+        stream = Stream(sock=mock_sock, stream_id="s1")
+        shell = ArthasShell(stream=stream)
+
+        result = shell.command("monitor Foo bar", duration=0)
+
+        self.assertIn("Affect(class count: 1", result)
+        mock_sock.sendall.assert_any_call(b"monitor Foo bar\n")
+        mock_sock.sendall.assert_any_call(b"\x03")
+
+    def test_partial_finite_output_timeout_is_not_success(self):
+        from scripts.tools.arthas.shell import ArthasQueryTimeout, ArthasShell
+
+        mock_sock = MagicMock()
+        mock_sock.recv.side_effect = [Exception("no stale prompt"), b"partial", __import__("socket").timeout()]
+        shell = ArthasShell(Stream(sock=mock_sock, stream_id="s1"))
+
+        with self.assertRaises(ArthasQueryTimeout):
+            shell.command("version", timeout=0.01)

@@ -37,6 +37,7 @@ class ConnectorClient:
         self._port = resolve_connector_port(port)
         self._auto_start = auto_start
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._recv_buffer = b""
 
     @property
     def port(self) -> int:
@@ -196,16 +197,17 @@ class ConnectorClient:
         self._sock.sendall((line + "\n").encode("utf-8"))
 
     def _recv_json(self) -> dict[str, Any]:
-        buffer = b""
+        buffer = self._recv_buffer
         while True:
+            if b"\n" in buffer:
+                line, self._recv_buffer = buffer.split(b"\n", 1)
+                return json.loads(line.decode("utf-8"))
             chunk = self._sock.recv(4096)
             if not chunk:
                 break
             buffer += chunk
-            if b"\n" in buffer:
-                line, _ = buffer.split(b"\n", 1)
-                return json.loads(line.decode("utf-8"))
         if buffer:
+            self._recv_buffer = b""
             return json.loads(buffer.decode("utf-8"))
         return {}
 
@@ -222,13 +224,16 @@ class ConnectorClient:
         sock = self._sock
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._sock.connect(("127.0.0.1", self._port))
-        return Stream(sock=sock, stream_id=stream_id)
+        initial_data = self._recv_buffer
+        self._recv_buffer = b""
+        return Stream(sock=sock, stream_id=stream_id, initial_data=initial_data)
 
 
 class Stream:
-    def __init__(self, sock: socket.socket, stream_id: str) -> None:
+    def __init__(self, sock: socket.socket, stream_id: str, *, initial_data: bytes = b"") -> None:
         self._sock = sock
         self.stream_id = stream_id
+        self._buffer = initial_data
 
     def write(self, data: bytes) -> None:
         self._sock.sendall(data)
@@ -245,6 +250,10 @@ class Stream:
         return buffer
 
     def read(self, size: int = 4096) -> bytes:
+        if self._buffer:
+            data = self._buffer[:size]
+            self._buffer = self._buffer[size:]
+            return data
         return self._sock.recv(size)
 
     def close(self) -> None:

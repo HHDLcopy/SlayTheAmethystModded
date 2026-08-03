@@ -119,10 +119,14 @@ python3 -m scripts.tools.arthas --device localhost:15555 stop
 python3 -m scripts.tools.arthas --device <serial> start   # 推送 + LOAD_AGENT + forward
 python3 -m scripts.tools.arthas --device <serial> shell   # 交互 shell
 python3 -m scripts.tools.arthas --device <serial> query "thread -n 5"
+python3 -m scripts.tools.arthas --device <serial> query --duration 20 "monitor com.example.Foo bar"
 python3 -m scripts.tools.arthas --device <serial> stop    # reset/stop + unforward
 ```
 
 可选：`--agent-port`（默认 9099）、`--arthas-port`（默认 8099）。
+`monitor`、`watch`、`trace` 是持续输出命令；`query` 会持续收集到 `--duration` 到期，
+默认使用 15 秒，然后发送 Ctrl-C 结束 Arthas listener，再关闭 stream。没有完整 Arthas
+prompt 的部分输出会被报告为 timeout/连接错误，不会被误报为成功结果。
 
 `start` 结束后关闭 game-probe 会话；`shell` / `query` 在成功、失败或中断时关闭 stream 并 `unforward`。
 `TypeNotPresentException` 自动重连保持同一 serial。
@@ -169,7 +173,8 @@ conn.close()
 ← 3.6.9\n[arthas@12345]$
 ```
 
-`ArthasShell.command()` 负责 drain prompt、发送命令、读到下一 prompt。
+`ArthasShell.command()` 负责 drain prompt、发送命令、读到下一完整 prompt。Connector
+握手与首段 stream 数据同包到达时，握手后的 remainder 会保留并交给 `Stream`，不会丢失。
 
 命令用法见离线文档 [`docs/`](docs/)（索引 [`docs/README.md`](docs/README.md)）与[官方命令列表](https://arthas.aliyun.com/doc/commands.html)。
 

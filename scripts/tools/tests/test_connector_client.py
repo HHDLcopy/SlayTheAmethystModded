@@ -122,6 +122,22 @@ class TestConnectorClient(unittest.TestCase):
         self.assertIs(client._sock, mock_new_sock)
 
     @patch("socket.socket")
+    def test_connect_stream_preserves_handshake_remainder(self, mock_socket_cls):
+        from scripts.tools.connector.client import ConnectorClient
+
+        mock_new_sock = MagicMock()
+        mock_socket_cls.return_value = mock_new_sock
+        client = ConnectorClient(port=1)
+        mock_sock = MagicMock()
+        mock_sock.recv.return_value = b'{"stream_id":"s1"}\ninitial prompt'
+        client._sock = mock_sock
+
+        stream = client.connect_stream(port=8099)
+
+        self.assertEqual(stream.read(), b"initial prompt")
+        stream.close()
+
+    @patch("socket.socket")
     def test_stream_raw_io(self, mock_socket_cls):
         from scripts.tools.connector.client import ConnectorClient, Stream
         mock_new_sock = MagicMock()

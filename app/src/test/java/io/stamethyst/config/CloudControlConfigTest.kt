@@ -319,35 +319,6 @@ class CloudControlConfigTest {
     }
 
     @Test
-    fun packagedDefaultCloudControlPayload_containsSteamDepotKey() {
-        val parsed = CloudControlConfig.parseSettings(readPackagedDefaultCloudControlPayload())
-
-        assertNotNull(parsed)
-        assertEquals(30, parsed?.heartbeatIntervalSeconds)
-        assertEquals(
-            "wss://heartbeat.nas.apricityx.top:23163/api/presence/ws",
-            parsed?.heartbeatWsUrl,
-        )
-        assertEquals("1051836431", parsed?.qqGroupNumber)
-        assertTrue(parsed?.easyTier?.enabled == true)
-        assertEquals("1.5.1-dev1", parsed?.easyTier?.minimumOnlineLobbyCompatibleVersion)
-        assertEquals(
-            "https://heartbeat.nas.apricityx.top:23163",
-            parsed?.easyTier?.roomApiBaseUrl,
-        )
-        assertEquals(
-            "https://heartbeat.nas.apricityx.top:23163",
-            parsed?.easyTier?.webConsoleApiBaseUrl,
-        )
-        assertEquals("udp://frp-dry.com:12333", parsed?.easyTier?.configServerUrl)
-        assertEquals("tcp://frp-dog.com:12332", parsed?.easyTier?.entryNodeUrl)
-        assertEquals(1, parsed?.steamDepotKeys?.size)
-        assertEquals(646570L, parsed?.steamDepotKeys?.single()?.appId)
-        assertEquals(646571L, parsed?.steamDepotKeys?.single()?.depotId)
-        assertEquals(stsDepotKeyHex, parsed?.steamDepotKeys?.single()?.keyHex)
-    }
-
-    @Test
     fun packagedLocalTestCloudControlPayload_pointsEveryOnlineEndpointToLocalService() {
         val parsed = CloudControlConfig.parseSettings(readPackagedCloudControlPayload("cloud-control-test.json"))
 

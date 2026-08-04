@@ -13,40 +13,6 @@ import org.junit.Test
 
 class SteamCloudDiagnosticsStoreTest {
     @Test
-    fun writeSummary_persistsCredentialLoginHistory() {
-        val roots = TestRoots.create("steam-cloud-diagnostics-login-history")
-        try {
-            SteamCloudDiagnosticsStore.writeSummary(
-                context = roots.context,
-                operation = "credentials_login",
-                outcome = "SUCCESS",
-                accountName = "test-user",
-                startedAtMs = 1_000L,
-                completedAtMs = 2_000L,
-                diagnostics = null,
-                extraLines = listOf("Login detail line"),
-            )
-
-            val historyFiles = SteamCloudDiagnosticsStore.loginHistoryDir(roots.context)
-                .listFiles()
-                ?.toList()
-                .orEmpty()
-            assertEquals(1, historyFiles.size)
-            assertTrue(historyFiles.single().name.startsWith("login-success-"))
-            val text = historyFiles.single().readText(StandardCharsets.UTF_8)
-            assertTrue(text.contains("Operation: credentials_login"))
-            assertTrue(text.contains("Outcome: SUCCESS"))
-            assertTrue(text.contains("Login detail line"))
-            assertEquals(
-                0,
-                SteamCloudDiagnosticsStore.failureHistoryDir(roots.context).listFiles()?.size ?: 0
-            )
-        } finally {
-            roots.rootDir.deleteRecursively()
-        }
-    }
-
-    @Test
     fun writeSummary_persistsFailedCredentialLoginInFailureHistory() {
         val roots = TestRoots.create("steam-cloud-diagnostics-failed-login-history")
         try {

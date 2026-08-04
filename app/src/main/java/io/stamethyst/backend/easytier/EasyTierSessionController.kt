@@ -288,7 +288,10 @@ object EasyTierSessionController {
         context: Context,
         resId: Int,
         fallback: String,
-    ): String = runCatching { context.getString(resId) }.getOrDefault(fallback)
+    ): String = runCatching { context.getString(resId) }
+        .getOrNull()
+        ?.takeIf { it.isNotBlank() }
+        ?: fallback
 
     @JvmStatic
     fun resolveRequestedRoomId(

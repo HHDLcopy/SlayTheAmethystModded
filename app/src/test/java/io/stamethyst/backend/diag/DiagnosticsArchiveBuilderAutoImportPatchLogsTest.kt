@@ -122,7 +122,7 @@ class DiagnosticsArchiveBuilderAutoImportPatchLogsTest {
             assertTrue(summaryText.contains("Failure Category: RuntimeBridgePending"))
 
             val eventEntry = zipFile.entries().asSequence()
-                .firstOrNull { it.name.startsWith("sts/easytier/events/event-failed-") }
+                .firstOrNull { it.name.startsWith("sts/easytier/event-failed-") }
             assertNotNull(eventEntry)
         }
     }

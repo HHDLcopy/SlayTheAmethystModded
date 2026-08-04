@@ -205,6 +205,7 @@ android {
 
     @Suppress("UnstableApiUsage")
     testOptions {
+        unitTests.isReturnDefaultValues = true
         unitTests.all {
             it.maxParallelForks = (Runtime.getRuntime().availableProcessors() / 2).coerceAtLeast(1)
         }

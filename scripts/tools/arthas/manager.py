@@ -58,118 +58,31 @@ class ArthasManager:
         mgr.stop()
     """
 
-    def __init__(self, connector: Any, agent_client: Any) -> None:
+    def __init__(self, connector: Any, agent_client: Any, agent_port: int = 9099) -> None:
         self._conn = connector
         self._agent = agent_client
+        self._agent_port = agent_port
 
     def start(self, port: int = 8099) -> None:
-        # 0. Ensure downloadable companion assets exist locally
-        self._ensure_companion()
-        self._ensure_jfr_jfc()
-
-        # 1. Clean up stale .so from old location (migrated to arthas/ dir)
-        self._conn.shell(command="rm -f /data/data/io.stamethyst/files/libprocfs_cpu.so")
-
-        # 2. Push JARs and native libs to device (idempotent)
-        for jar_name, _has_agent_class in _JARS:
-            local = str(_RESOURCE_DIR / jar_name)
-            remote = f"{_ARTHAS_DIR}/{jar_name}"
-            self._conn.push(local=local, remote=remote)
-
-        for lib_name, _ in _NATIVE_LIBS:
-            local = str(_RESOURCE_DIR / lib_name)
-            remote = f"{_ARTHAS_DIR}/{lib_name}"
-            self._conn.push(local=local, remote=remote)
-
-        so_name = _ASYNC_PROFILER_SO
-        local_so = str(_RESOURCE_DIR / so_name)
-        remote_so = f"{_ARTHAS_DIR}/{so_name}"
-        self._conn.push(local=local_so, remote=remote_so)
-
-        # 2b. Push companion debug symbols (AllocTracer symbols for libjvm.so)
-        self.push_companion()
-
-        # 2c. Push JFR config templates beside jfr.jar (java.home/lib/jfr)
-        self.push_jfr_jfc()
-
-        # 3. Load core.jar into system classpath (no Agent-Class),
-        #    then load bridge agent via isolated classloader → agentmain
-        core_path = f"{_ARTHAS_DIR}/arthas-core.jar"
-        agent_path = f"{_ARTHAS_DIR}/arthas-bridge.jar"
-        self._agent.send("LOAD_AGENT " + core_path)
-        self._agent.load_agent(
-            agent_path,
-            f"{core_path};port={port}",
-        )
-
-        # 4. Forward bridge port
-        self._conn.forward(port=port)
+        self._conn.arthas_ensure(agent_port=self._agent_port, arthas_port=port)
 
     def stop(self, port: int = 8099) -> None:
-        """Lightweight stop: send reset to clear enhancers, then unforward.
+        """Lightweight stop: ask connector daemon to reset Arthas.
 
         The backend ServerSocket and ArthasBootstrap remain alive so the port
         can be reused without restarting the JVM.  Use shutdown() for a full
         teardown.
         """
-        stream = None
-        try:
-            try:
-                self._conn.forward(port=port)
-                stream = self._conn.connect_stream(port=port)
-                shell = ArthasShell(stream=stream)
-                try:
-                    shell.command("reset")
-                except Exception:
-                    pass
-            except Exception:
-                pass
-        finally:
-            if stream is not None:
-                try:
-                    stream.close()
-                except Exception:
-                    pass
-            try:
-                self._conn.unforward(port=port)
-            except Exception:
-                pass
+        self._conn.arthas_reset(agent_port=self._agent_port, arthas_port=port)
 
     def shutdown(self, port: int = 8099, wait_timeout: float = 10.0) -> None:
-        """Full teardown: reset enhancers, stop Arthas, wait for port release.
+        """Full teardown: ask connector daemon to reset and stop Arthas.
 
         Arthas ``stop`` destroys the bootstrap; the bridge accept loop notices
         on its next connection and closes its ServerSocket.  This method polls
         until that happens so a subsequent start() can rebind the port.
         """
-        stream = None
-        try:
-            try:
-                self._conn.forward(port=port)
-                stream = self._conn.connect_stream(port=port)
-                shell = ArthasShell(stream=stream)
-                try:
-                    shell.command("reset")
-                except Exception:
-                    pass
-                try:
-                    shell.command("stop")
-                except Exception:
-                    pass
-            except Exception:
-                pass
-        finally:
-            if stream is not None:
-                try:
-                    stream.close()
-                except Exception:
-                    pass
-            try:
-                self._conn.unforward(port=port)
-            except Exception:
-                pass
-
-        self._await_port_release(port, wait_timeout)
+        self._conn.arthas_shutdown(arthas_port=port)
 
     def _await_port_release(self, port: int, wait_timeout: float) -> bool:
         """Poll the bridge port until connections stop succeeding.

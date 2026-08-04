@@ -2,6 +2,7 @@ import argparse
 import base64
 import json
 import os
+import re
 import shutil
 import socket as _socket
 import subprocess
@@ -13,6 +14,14 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+
+_ARTHAS_PROMPT = re.compile(rb"\[arthas@([^\]\r\n]+)\]\$ ?")
+_ARTHAS_AGENT_PORT = 9099
+_ARTHAS_BRIDGE_PORT = 8099
+_ARTHAS_DEVICE_DIR = "/data/data/io.stamethyst/files/arthas"
+_ARTHAS_RESOURCE_DIR = Path(__file__).resolve().parents[1] / "arthas" / "resource"
+_RUNTIME_ROOT = "/data/data/io.stamethyst/files/runtimes/Internal"
 
 
 def _resolve_adb_path() -> str:
@@ -58,12 +67,13 @@ class Daemon:
     def __init__(self, port: int | None = None, adb_path: str | None = None) -> None:
         self._port = port
         self._running = True
-        self._device_serial: str | None = None
         self._server: _socket.socket | None = None
         self._adb_path = adb_path or _resolve_adb_path()
         self._logcat_captures: dict[str, dict[str, Any]] = {}
         self._logcat_lock = threading.Lock()
         self._capture_counter = 0
+        self._arthas_runtimes: dict[str, dict[str, Any]] = {}
+        self._arthas_runtimes_lock = threading.Lock()
 
     def start(self) -> None:
         self._server = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
@@ -87,15 +97,16 @@ class Daemon:
             t = threading.Thread(target=self._handle, args=(conn,), daemon=True)
             t.start()
 
-    def _require_device(self) -> dict[str, Any] | None:
-        if not self._device_serial:
+    @staticmethod
+    def _require_device(serial: str | None) -> dict[str, Any] | None:
+        if not serial:
             return {"error": {"code": -32001, "message": "no device selected"}}
         return None
 
-    def _adb_cmd(self, *args: str) -> list[str]:
+    def _adb_cmd(self, serial: str | None, *args: str) -> list[str]:
         cmd = [self._adb_path]
-        if self._device_serial:
-            cmd.extend(["-s", self._device_serial])
+        if serial:
+            cmd.extend(["-s", serial])
         cmd.extend(args)
         return cmd
 
@@ -103,14 +114,15 @@ class Daemon:
         self,
         args: list[str],
         *,
+        serial: str | None,
         timeout_s: float = 30,
         capture: str = "text",
         local_path: str = "",
     ) -> dict[str, Any]:
-        err = self._require_device()
+        err = self._require_device(serial)
         if err is not None and args and args[0] != "devices":
             return err
-        cmd = self._adb_cmd(*args)
+        cmd = self._adb_cmd(serial, *args)
         try:
             if capture == "none":
                 completed = subprocess.run(
@@ -147,6 +159,7 @@ class Daemon:
             return {"error": {"code": -32000, "message": str(e)}}
 
     def _handle(self, conn: _socket.socket) -> None:
+        session: dict[str, Any] = {"serial": None}
         try:
             conn.settimeout(30)
             reader = conn.makefile("r", encoding="utf-8", newline="\n")
@@ -162,7 +175,7 @@ class Daemon:
                 except json.JSONDecodeError:
                     self._respond(conn, {"error": {"code": -32000, "message": "invalid json"}})
                     continue
-                resp = self._dispatch(req, conn)
+                resp = self._dispatch(req, conn, session)
                 if resp is None:
                     return
                 self._respond(conn, resp)
@@ -174,32 +187,60 @@ class Daemon:
             except Exception:
                 pass
 
-    def _connect_stream(self, req: dict[str, Any], client_conn: _socket.socket) -> None:
+    def _open_forwarded_socket(self, serial: str, port: int) -> tuple[_socket.socket, int]:
+        forwarded = subprocess.run(
+            self._adb_cmd(serial, "forward", "tcp:0", f"tcp:{port}"),
+            timeout=10,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=True,
+        )
+        local_port = int(forwarded.stdout.strip())
+        device = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+        device.settimeout(10)
+        try:
+            device.connect(("127.0.0.1", local_port))
+        except Exception:
+            device.close()
+            self._remove_forward(serial, local_port)
+            raise
+        return device, local_port
+
+    def _remove_forward(self, serial: str, local_port: int) -> None:
+        try:
+            subprocess.run(
+                self._adb_cmd(serial, "forward", "--remove", f"tcp:{local_port}"),
+                timeout=5,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            pass
+
+    def _connect_stream(
+        self,
+        req: dict[str, Any],
+        client_conn: _socket.socket,
+        serial: str | None,
+    ) -> None:
         params = req.get("params", {})
         port = params.get("port", 0)
-        stream_id = f"s{port}"
-
-        if self._device_serial:
-            subprocess.run(
-                self._adb_cmd("forward", f"tcp:{port}", f"tcp:{port}"),
-                timeout=10, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-        dev_conn = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
-        dev_conn.settimeout(10)
+        if not serial:
+            self._respond(client_conn, {"error": {"code": -32001, "message": "no device selected"}})
+            return
         try:
-            dev_conn.connect(("127.0.0.1", port))
+            dev_conn, local_port = self._open_forwarded_socket(serial, port)
         except Exception as e:
             self._respond(client_conn, {"error": {"code": -32000, "message": f"connect failed: {e}"}})
             return
 
-        self._respond(client_conn, {"stream_id": stream_id})
-        self._do_passthrough(client_conn, dev_conn)
-        dev_conn.close()
-        if self._device_serial:
-            subprocess.run(
-                self._adb_cmd("forward", "--remove", f"tcp:{port}"),
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                timeout=5)
+        self._respond(client_conn, {"stream_id": f"s{port}"})
+        try:
+            self._do_passthrough(client_conn, dev_conn)
+        finally:
+            dev_conn.close()
+            self._remove_forward(serial, local_port)
 
     @staticmethod
     def _do_passthrough(client: _socket.socket, device: _socket.socket) -> None:
@@ -222,8 +263,169 @@ class Daemon:
         except Exception:
             pass
 
-    def _logcat_dump(self, params: dict[str, Any]) -> dict[str, Any]:
-        err = self._require_device()
+    def _arthas_runtime(self, serial: str) -> dict[str, Any]:
+        with self._arthas_runtimes_lock:
+            runtime = self._arthas_runtimes.get(serial)
+            if runtime is None:
+                runtime = {
+                    "lock": threading.Lock(),
+                    "state": "unknown",
+                    "pid": None,
+                    "last_error": "",
+                    "last_checked": 0.0,
+                }
+                self._arthas_runtimes[serial] = runtime
+            return runtime
+
+    def _read_until_prompt(self, sock: _socket.socket, timeout: float = 5.0) -> str:
+        deadline = time.monotonic() + timeout
+        data = bytearray()
+        sock.settimeout(min(1.0, timeout))
+        while time.monotonic() < deadline:
+            chunk = sock.recv(8192)
+            if not chunk:
+                raise RuntimeError("Arthas bridge closed before prompt")
+            data.extend(chunk)
+            match = _ARTHAS_PROMPT.search(data)
+            if match:
+                return match.group(1).decode("ascii", errors="replace")
+        raise RuntimeError("Arthas bridge did not return a prompt")
+
+    def _probe_arthas(self, serial: str, port: int) -> str:
+        sock, local_port = self._open_forwarded_socket(serial, port)
+        try:
+            return self._read_until_prompt(sock)
+        finally:
+            sock.close()
+            self._remove_forward(serial, local_port)
+
+    def _agent_command(self, serial: str, port: int, command: str) -> str:
+        sock, local_port = self._open_forwarded_socket(serial, port)
+        try:
+            sock.sendall((command + "\n").encode("utf-8"))
+            sock.settimeout(10)
+            data = bytearray()
+            while b"\n" not in data:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    break
+                data.extend(chunk)
+            return bytes(data).split(b"\n", 1)[0].decode("utf-8", errors="replace").rstrip("\r")
+        finally:
+            sock.close()
+            self._remove_forward(serial, local_port)
+
+    def _push_arthas_resources(self, serial: str) -> None:
+        files = (
+            "arthas-core.jar",
+            "arthas-spy.jar",
+            "arthas-bridge.jar",
+            "libprocfs_cpu.so",
+            "libasyncProfiler-linux-arm64.so",
+        )
+        for name in files:
+            path = _ARTHAS_RESOURCE_DIR / name
+            if not path.is_file():
+                raise RuntimeError(f"missing Arthas resource: {path}")
+            subprocess.run(
+                self._adb_cmd(serial, "push", str(path), f"{_ARTHAS_DEVICE_DIR}/{name}"),
+                timeout=60,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                check=True,
+            )
+        companions = (
+            (_ARTHAS_RESOURCE_DIR / "jdk-companion" / "aarch64" / "libjvm.debuginfo",
+             f"{_RUNTIME_ROOT}/lib/aarch64/server/libjvm.debuginfo"),
+            (_ARTHAS_RESOURCE_DIR / "jdk-companion" / "jfr" / "default.jfc",
+             f"{_RUNTIME_ROOT}/lib/jfr/default.jfc"),
+            (_ARTHAS_RESOURCE_DIR / "jdk-companion" / "jfr" / "profile.jfc",
+             f"{_RUNTIME_ROOT}/lib/jfr/profile.jfc"),
+        )
+        for local, remote in companions:
+            if not local.is_file():
+                continue
+            subprocess.run(
+                self._adb_cmd(serial, "shell", "mkdir", "-p", str(Path(remote).parent)),
+                timeout=10,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=True,
+            )
+            subprocess.run(
+                self._adb_cmd(serial, "push", str(local), remote),
+                timeout=60,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                check=True,
+            )
+
+    def _recover_arthas(self, serial: str, agent_port: int, arthas_port: int) -> str:
+        self._push_arthas_resources(serial)
+        core = f"{_ARTHAS_DEVICE_DIR}/arthas-core.jar"
+        bridge = f"{_ARTHAS_DEVICE_DIR}/arthas-bridge.jar"
+        response = self._agent_command(serial, agent_port, f"LOAD_AGENT {core}")
+        if response != "OK":
+            raise RuntimeError(f"game-probe rejected arthas-core: {response or 'connection closed'}")
+        response = self._agent_command(
+            serial, agent_port, f"LOAD_AGENT {bridge} {core};port={arthas_port}",
+        )
+        if response != "OK":
+            raise RuntimeError(f"game-probe rejected arthas bridge: {response or 'connection closed'}")
+        return self._probe_arthas(serial, arthas_port)
+
+    def _ensure_arthas(self, serial: str, agent_port: int, arthas_port: int) -> dict[str, Any]:
+        runtime = self._arthas_runtime(serial)
+        with runtime["lock"]:
+            try:
+                pid = self._probe_arthas(serial, arthas_port)
+                runtime.update(state="ready", pid=pid, last_error="", last_checked=time.time())
+                return {"ok": True, "state": "ready", "pid": pid, "recovered": False}
+            except Exception as bridge_error:
+                try:
+                    pid = self._recover_arthas(serial, agent_port, arthas_port)
+                except Exception as recovery_error:
+                    message = str(recovery_error)
+                    runtime.update(
+                        state="game_unavailable",
+                        pid=None,
+                        last_error=message,
+                        last_checked=time.time(),
+                    )
+                    return {
+                        "error": {
+                            "code": -32010,
+                            "message": "Arthas unavailable: game-probe is not reachable or cannot load Arthas; " + message,
+                            "bridge_error": str(bridge_error),
+                        }
+                    }
+                runtime.update(state="ready", pid=pid, last_error="", last_checked=time.time())
+                return {"ok": True, "state": "ready", "pid": pid, "recovered": True}
+
+    def _run_arthas_command(self, serial: str, port: int, command: str) -> None:
+        sock, local_port = self._open_forwarded_socket(serial, port)
+        try:
+            self._read_until_prompt(sock)
+            sock.sendall((command + "\n").encode("utf-8"))
+            self._read_until_prompt(sock)
+        finally:
+            sock.close()
+            self._remove_forward(serial, local_port)
+
+    def _arthas_status(self, serial: str) -> dict[str, Any]:
+        runtime = self._arthas_runtime(serial)
+        with runtime["lock"]:
+            return {
+                "ok": True,
+                "serial": serial,
+                "state": runtime["state"],
+                "pid": runtime["pid"],
+                "last_error": runtime["last_error"],
+                "last_checked": runtime["last_checked"],
+            }
+
+    def _logcat_dump(self, params: dict[str, Any], serial: str | None) -> dict[str, Any]:
+        err = self._require_device(serial)
         if err is not None:
             return err
         since = str(params.get("since", "") or "").strip()
@@ -232,7 +434,7 @@ class Daemon:
         args = ["logcat", "-d", "-v", "threadtime", "-b", "main", "-b", "system", "-b", "crash"]
         if since:
             args.extend(["-T", since])
-        result = self._run_adb(args, timeout_s=timeout_ms / 1000, capture="text")
+        result = self._run_adb(args, serial=serial, timeout_s=timeout_ms / 1000, capture="text")
         if "error" in result:
             return result
         text = result.get("stdout", "")
@@ -242,8 +444,8 @@ class Daemon:
             return {"ok": True, "exit": result.get("exit", 0), "local_path": local_path, "bytes": len(text.encode("utf-8", errors="replace"))}
         return {"ok": True, "exit": result.get("exit", 0), "stdout": text, "stderr": ""}
 
-    def _logcat_start(self, params: dict[str, Any]) -> dict[str, Any]:
-        err = self._require_device()
+    def _logcat_start(self, params: dict[str, Any], serial: str | None) -> dict[str, Any]:
+        err = self._require_device(serial)
         if err is not None:
             return err
         since = str(params.get("since", "") or "").strip()
@@ -255,7 +457,7 @@ class Daemon:
         stderr_path = local_path + ".stderr"
         args = ["logcat", "-v", "threadtime", "-b", "main", "-b", "system", "-b", "crash"]
         args.extend(["-T", since if since else "1"])
-        cmd = self._adb_cmd(*args)
+        cmd = self._adb_cmd(serial, *args)
         stdout_stream = open(local_path, "wb")
         stderr_stream = open(stderr_path, "wb")
         try:
@@ -351,8 +553,14 @@ class Daemon:
                 })
             return {"ok": True, "captures": items}
 
-    def _dispatch(self, req: dict[str, Any], conn: _socket.socket) -> dict[str, Any] | None:
+    def _dispatch(
+        self,
+        req: dict[str, Any],
+        conn: _socket.socket,
+        session: dict[str, Any],
+    ) -> dict[str, Any] | None:
         method = req.get("method", "")
+        serial = session.get("serial")
         if method == "ping":
             return {"pong": True}
         elif method == "devices":
@@ -365,18 +573,18 @@ class Daemon:
                 if not devs:
                     devs = _adb_devices(self._adb_path)
                 if devs:
-                    self._device_serial = devs[0]["serial"]
+                    session["serial"] = devs[0]["serial"]
                 else:
                     return {"error": {"code": -32001, "message": "no devices"}}
             else:
-                self._device_serial = serial
-            return {"ok": True, "serial": self._device_serial}
+                session["serial"] = serial
+            return {"ok": True, "serial": session["serial"]}
         elif method == "status":
-            if not self._device_serial:
+            if not serial:
                 return {"error": {"code": -32001, "message": "no device selected"}}
             devs = _adb_devices(self._adb_path)
             for d in devs:
-                if d["serial"] == self._device_serial:
+                if d["serial"] == serial:
                     return {
                         "serial": d["serial"],
                         "state": "online" if d["state"] == "device" else "offline",
@@ -389,7 +597,7 @@ class Daemon:
             port = params.get("port")
             try:
                 subprocess.check_call(
-                    self._adb_cmd("forward", f"tcp:{port}", f"tcp:{port}"),
+                    self._adb_cmd(serial, "forward", f"tcp:{port}", f"tcp:{port}"),
                     timeout=10, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 return {"ok": True, "port": port}
             except Exception as e:
@@ -399,7 +607,7 @@ class Daemon:
             port = params.get("port")
             try:
                 subprocess.check_call(
-                    self._adb_cmd("forward", "--remove", f"tcp:{port}"),
+                    self._adb_cmd(serial, "forward", "--remove", f"tcp:{port}"),
                     timeout=10, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 return {"ok": True}
             except Exception as e:
@@ -408,7 +616,7 @@ class Daemon:
             params = req.get("params", {})
             cmd = params.get("command", "")
             timeout = params.get("timeout_ms", 30000) / 1000
-            return self._run_adb(["shell", cmd], timeout_s=timeout, capture="text")
+            return self._run_adb(["shell", cmd], serial=serial, timeout_s=timeout, capture="text")
         elif method == "adb":
             params = req.get("params", {})
             args = params.get("args") or []
@@ -419,7 +627,7 @@ class Daemon:
             local_path = str(params.get("local_path", "") or "")
             if capture not in {"text", "binary", "none"}:
                 return {"error": {"code": -32004, "message": "capture must be text|binary|none"}}
-            return self._run_adb(list(args), timeout_s=timeout, capture=capture, local_path=local_path)
+            return self._run_adb(list(args), serial=serial, timeout_s=timeout, capture=capture, local_path=local_path)
         elif method == "install":
             params = req.get("params", {})
             local = params.get("local", "")
@@ -431,7 +639,7 @@ class Daemon:
             if replace:
                 args.append("-r")
             args.append(local)
-            return self._run_adb(args, timeout_s=timeout, capture="text")
+            return self._run_adb(args, serial=serial, timeout_s=timeout, capture="text")
         elif method == "push":
             params = req.get("params", {})
             local = params.get("local", "")
@@ -439,7 +647,7 @@ class Daemon:
             timeout = params.get("timeout_ms", 30000) / 1000
             try:
                 subprocess.check_call(
-                    self._adb_cmd("push", local, remote),
+                    self._adb_cmd(serial, "push", local, remote),
                     timeout=timeout, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 return {"ok": True}
             except Exception as e:
@@ -451,21 +659,81 @@ class Daemon:
             timeout = params.get("timeout_ms", 30000) / 1000
             try:
                 subprocess.check_call(
-                    self._adb_cmd("pull", remote, local),
+                    self._adb_cmd(serial, "pull", remote, local),
                     timeout=timeout, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 return {"ok": True}
             except Exception as e:
                 return {"error": {"code": -32000, "message": str(e)}}
         elif method == "logcat_dump":
-            return self._logcat_dump(req.get("params", {}))
+            return self._logcat_dump(req.get("params", {}), serial)
         elif method == "logcat_start":
-            return self._logcat_start(req.get("params", {}))
+            return self._logcat_start(req.get("params", {}), serial)
         elif method == "logcat_stop":
             return self._logcat_stop(req.get("params", {}))
         elif method == "logcat_status":
             return self._logcat_status(req.get("params", {}))
+        elif method == "arthas_status":
+            err = self._require_device(serial)
+            return err or self._arthas_status(serial)
+        elif method == "arthas_ensure":
+            err = self._require_device(serial)
+            if err:
+                return err
+            params = req.get("params", {})
+            return self._ensure_arthas(
+                serial,
+                int(params.get("agent_port", _ARTHAS_AGENT_PORT)),
+                int(params.get("arthas_port", _ARTHAS_BRIDGE_PORT)),
+            )
+        elif method == "arthas_reset":
+            err = self._require_device(serial)
+            if err:
+                return err
+            params = req.get("params", {})
+            result = self._ensure_arthas(
+                serial,
+                int(params.get("agent_port", _ARTHAS_AGENT_PORT)),
+                int(params.get("arthas_port", _ARTHAS_BRIDGE_PORT)),
+            )
+            if "error" in result:
+                return result
+            self._run_arthas_command(serial, int(params.get("arthas_port", _ARTHAS_BRIDGE_PORT)), "reset")
+            return {"ok": True}
+        elif method == "arthas_shutdown":
+            err = self._require_device(serial)
+            if err:
+                return err
+            params = req.get("params", {})
+            port = int(params.get("arthas_port", _ARTHAS_BRIDGE_PORT))
+            try:
+                self._run_arthas_command(serial, port, "reset")
+                self._run_arthas_command(serial, port, "stop")
+            except Exception:
+                pass
+            runtime = self._arthas_runtime(serial)
+            with runtime["lock"]:
+                runtime.update(state="stopped", pid=None, last_error="", last_checked=time.time())
+            return {"ok": True}
+        elif method == "arthas_connect_stream":
+            err = self._require_device(serial)
+            if err:
+                return err
+            params = req.get("params", {})
+            result = self._ensure_arthas(
+                serial,
+                int(params.get("agent_port", _ARTHAS_AGENT_PORT)),
+                int(params.get("arthas_port", _ARTHAS_BRIDGE_PORT)),
+            )
+            if "error" in result:
+                return result
+            self._connect_stream(
+                {"params": {"port": int(params.get("arthas_port", _ARTHAS_BRIDGE_PORT))}},
+                conn,
+                serial,
+            )
+            return None
         elif method == "connect_stream":
-            return self._connect_stream(req, conn)
+            return self._connect_stream(req, conn, serial)
         elif method == "quit":
             with self._logcat_lock:
                 captures = list(self._logcat_captures.items())

@@ -41,6 +41,8 @@ class TestModifiedArthasCommands(unittest.TestCase):
 
     def test_version_command_returns_non_null(self):
         """Load bridge via modified Arthas, send 'version', expect non-null output."""
+        if not get_test_device_serial() or get_test_device_serial() == "auto":
+            self.skipTest("set STS_TEST_DEVICE to run real-device Arthas integration")
         conn = _start_daemon()
         try:
             conn.select(get_test_device_serial())

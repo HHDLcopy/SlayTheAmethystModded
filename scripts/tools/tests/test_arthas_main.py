@@ -67,15 +67,13 @@ class TestArthasDeviceResolution(unittest.TestCase):
 
 
 class TestArthasMainCommands(unittest.TestCase):
-    def test_start_selects_explicit_device_and_closes_agent(self) -> None:
+    def test_start_selects_explicit_device_and_uses_daemon_health_check(self) -> None:
         from scripts.tools.arthas import __main__ as arthas_main
 
         conn = MagicMock()
-        agent = MagicMock()
         mgr = MagicMock()
         with patch.object(arthas_main, "ConnectorClient", return_value=conn), patch.object(
-            arthas_main, "AgentClient", return_value=agent
-        ), patch.object(arthas_main, "ArthasManager", return_value=mgr), patch.object(
+            arthas_main, "ArthasManager", return_value=mgr), patch.object(
             arthas_main, "resolve_device", return_value="localhost:15555"
         ):
             code = arthas_main.main(["--device", "localhost:15555", "start"])
@@ -83,9 +81,7 @@ class TestArthasMainCommands(unittest.TestCase):
         self.assertEqual(0, code)
         conn.connect.assert_called_once()
         conn.select.assert_called_once_with("localhost:15555")
-        agent.connect.assert_called_once()
         mgr.start.assert_called_once()
-        agent.close.assert_called_once()
         conn.close.assert_called_once()
 
     def test_query_selects_explicit_device_and_cleans_up(self) -> None:
@@ -93,7 +89,7 @@ class TestArthasMainCommands(unittest.TestCase):
 
         conn = MagicMock()
         stream = MagicMock()
-        conn.connect_stream.return_value = stream
+        conn.connect_arthas_stream.return_value = stream
         with patch.object(arthas_main, "ConnectorClient", return_value=conn), patch.object(
             arthas_main, "resolve_device", return_value="localhost:25555"
         ), patch.object(arthas_main, "run_query") as run_query:
@@ -103,11 +99,10 @@ class TestArthasMainCommands(unittest.TestCase):
 
         self.assertEqual(0, code)
         conn.select.assert_called_once_with("localhost:25555")
-        conn.forward.assert_called_once_with(port=8099)
+        conn.connect_arthas_stream.assert_called_once_with(agent_port=9099, arthas_port=8099)
         run_query.assert_called_once()
         self.assertEqual("version", run_query.call_args.args[1])
         stream.close.assert_called_once()
-        conn.unforward.assert_called_once_with(port=8099)
         conn.close.assert_called_once()
 
     def test_query_cleans_up_on_failure(self) -> None:
@@ -115,15 +110,14 @@ class TestArthasMainCommands(unittest.TestCase):
 
         conn = MagicMock()
         stream = MagicMock()
-        conn.connect_stream.return_value = stream
+        conn.connect_arthas_stream.return_value = stream
         with patch.object(arthas_main, "ConnectorClient", return_value=conn), patch.object(
             arthas_main, "resolve_device", return_value="localhost:15555"
         ), patch.object(arthas_main, "run_query", side_effect=RuntimeError("boom")):
-            with self.assertRaises(RuntimeError):
-                arthas_main.main(["--device", "localhost:15555", "query", "version"])
+            code = arthas_main.main(["--device", "localhost:15555", "query", "version"])
 
+        self.assertEqual(1, code)
         stream.close.assert_called_once()
-        conn.unforward.assert_called_once_with(port=8099)
         conn.close.assert_called_once()
 
     def test_reconnect_keeps_resolved_device(self) -> None:
@@ -131,7 +125,7 @@ class TestArthasMainCommands(unittest.TestCase):
 
         conn = MagicMock()
         stream = MagicMock()
-        conn.connect_stream.return_value = stream
+        conn.connect_arthas_stream.return_value = stream
         captured = {}
 
         def capture_run_query(stream_arg, command, reconnect_fn=None, stdout=None):
@@ -146,13 +140,13 @@ class TestArthasMainCommands(unittest.TestCase):
         self.assertIsNotNone(reconnect)
         reconnect_conn = MagicMock()
         reconnect_stream = MagicMock()
-        reconnect_conn.connect_stream.return_value = reconnect_stream
+        reconnect_conn.connect_arthas_stream.return_value = reconnect_stream
         with patch.object(arthas_main, "ConnectorClient", return_value=reconnect_conn):
             result = reconnect()
 
         self.assertIs(result, reconnect_stream)
         reconnect_conn.select.assert_called_once_with("localhost:15555")
-        reconnect_conn.forward.assert_called_once_with(port=8099)
+        reconnect_conn.connect_arthas_stream.assert_called_once_with(agent_port=9099, arthas_port=8099)
 
     def test_stop_selects_device_and_invokes_manager_stop(self) -> None:
         from scripts.tools.arthas import __main__ as arthas_main

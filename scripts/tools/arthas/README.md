@@ -7,7 +7,7 @@
 
 ## 职责
 
-- 生命周期：推送 JAR / 原生库 / 伴生文件 → `LOAD_AGENT` → 端口转发
+- 生命周期：connector daemon 按设备探活 → 推送 JAR / 原生库 / 伴生文件 → `LOAD_AGENT` → 透传连接
 - 交互：`shell` / `query`（`ArthasShell` 解析 prompt）
 - Android 适配：无 Netty bridge、MTS ClassLoader、线程 CPU `/proc` fallback、async-profiler、JFR `.jfc`
 
@@ -43,6 +43,17 @@ Bridge 后端设计为**长驻**：`ServerSocket` + accept 循环独立于 Artha
   「外部进程占用」（才算失败）。
 
 因此 `start` → `stop` → `start` 序列在同一 JVM 内是安全的，无需 force-stop 应用。
+
+### Connector daemon 自愈
+
+Arthas CLI 和 Python 客户端不维护设备端 bridge 状态。它们通过 connector 的
+`arthas_connect_stream` 请求会话；daemon 按设备 serial 维护独立健康状态并先探活
+`:8099`。bridge 可用时直接建立透传；bridge 失效而 game-probe `:9099` 可用时，daemon
+串行执行资源部署与幂等 attach 后重试。
+
+若游戏进程已退出、未以可用 debug 模式启动，或 game-probe 不可达，daemon 返回明确的
+健康错误，**不会自动启动或重启游戏**。因此开发机侧客户端保持无状态，重连后的流仍会经过
+同一设备的健康恢复路径。
 
 ### 会话回收
 
@@ -187,20 +198,14 @@ conn = ConnectorClient()
 conn.connect()
 conn.select("localhost:15555")
 
-conn.forward(port=9099)
-agent = AgentClient(connector=conn, port=9099)
-agent.connect()
+        mgr = ArthasManager(connector=conn, agent_client=None)
+        mgr.start(port=8099)
 
-mgr = ArthasManager(connector=conn, agent_client=agent)
-mgr.start(port=8099)
-agent.close()
-conn.unforward(port=9099)
-
-stream = conn.connect_stream(port=8099)
+        stream = conn.connect_arthas_stream(arthas_port=8099)
 shell = ArthasShell(stream=stream)
 print(shell.command("thread -n 3"))
 stream.close()
-mgr.stop(port=8099)       # reset only; backend stays alive
+        mgr.stop(port=8099)       # daemon reset only; backend stays alive
 conn.close()
 ```
 
@@ -343,7 +348,7 @@ game-probe 负责游戏语义；Arthas 负责通用 JVM 诊断。
 
 | 文件 | 职责 |
 |------|------|
-| `manager.py` | 推送资源 → LOAD_AGENT → forward；`stop` 只发 reset，`shutdown` 发 reset+stop 并等端口释放 |
+| `manager.py` | daemon RPC facade；请求 daemon 探活/恢复，`stop` 调用 reset，`shutdown` 调用完整销毁 |
 | `shell.py` | `ArthasShell`：prompt / 命令 / 输出；`TypeNotPresentException` 重连 |
 | `cli.py` | `run_shell` / `run_query` |
 | `__main__.py` | CLI：设备解析、`start`/`shell`/`query`/`stop`/`shutdown` |

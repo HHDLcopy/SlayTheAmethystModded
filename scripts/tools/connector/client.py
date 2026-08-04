@@ -218,14 +218,45 @@ class ConnectorClient:
             pass
 
     def connect_stream(self, port: int) -> "Stream":
-        resp = self.send_request({
-            "method": "connect_stream", "params": {"port": port}})
+        return self._connect_stream("connect_stream", {"port": port})
+
+    def arthas_status(self) -> dict[str, Any]:
+        return self.send_request_ok({"method": "arthas_status"})
+
+    def arthas_ensure(self, *, agent_port: int = 9099, arthas_port: int = 8099) -> dict[str, Any]:
+        return self.send_request_ok({
+            "method": "arthas_ensure",
+            "params": {"agent_port": agent_port, "arthas_port": arthas_port},
+        })
+
+    def arthas_reset(self, *, agent_port: int = 9099, arthas_port: int = 8099) -> dict[str, Any]:
+        return self.send_request_ok({
+            "method": "arthas_reset",
+            "params": {"agent_port": agent_port, "arthas_port": arthas_port},
+        })
+
+    def arthas_shutdown(self, *, arthas_port: int = 8099) -> dict[str, Any]:
+        return self.send_request_ok({
+            "method": "arthas_shutdown", "params": {"arthas_port": arthas_port},
+        })
+
+    def connect_arthas_stream(self, *, agent_port: int = 9099, arthas_port: int = 8099) -> "Stream":
+        return self._connect_stream(
+            "arthas_connect_stream",
+            {"agent_port": agent_port, "arthas_port": arthas_port},
+        )
+
+    def _connect_stream(self, method: str, params: dict[str, Any]) -> "Stream":
+        resp = self.send_request_ok({"method": method, "params": params})
         stream_id = resp.get("stream_id", "unknown")
         sock = self._sock
-        self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._sock.connect(("127.0.0.1", self._port))
         initial_data = self._recv_buffer
         self._recv_buffer = b""
+        # The daemon switches this request socket into raw passthrough mode
+        # after sending the handshake. Opening a second control connection
+        # would leave the actual passthrough socket orphaned.
+        self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._sock.connect(("127.0.0.1", self._port))
         return Stream(sock=sock, stream_id=stream_id, initial_data=initial_data)
 
 

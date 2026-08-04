@@ -40,6 +40,8 @@ class TestArthasIsolatedLoading(unittest.TestCase):
     """Verify Arthas loads without 'already bind' error."""
 
     def test_arthas_starts_without_already_bind_error(self):
+        if not get_test_device_serial() or get_test_device_serial() == "auto":
+            self.skipTest("set STS_TEST_DEVICE to run real-device Arthas integration")
         conn = _start_daemon()
         try:
             conn.select(get_test_device_serial())

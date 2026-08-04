@@ -43,47 +43,23 @@ class TestAutoplayController(unittest.TestCase):
 
 class TestArthasManager(unittest.TestCase):
 
-    def test_start_pushes_loads_and_forwards(self):
+    def test_start_delegates_health_and_recovery_to_connector(self):
         from scripts.tools.arthas.manager import ArthasManager
         mock_conn = MagicMock()
-        mock_agent = MagicMock(spec=AgentClient)
-        mock_conn.push.return_value = True
-        mock_conn.forward.return_value = {"ok": True, "port": 8563}
 
-        mgr = ArthasManager(connector=mock_conn, agent_client=mock_agent)
+        mgr = ArthasManager(connector=mock_conn, agent_client=None)
         mgr.start()
 
-        # The three JARs must be pushed: core + spy + bridge.  start() also
-        # pushes native libs and companion assets, so assert on the JARs
-        # themselves rather than a brittle total call count.
-        pushed = [
-            kwargs.get("remote", args[1] if len(args) > 1 else "")
-            for args, kwargs in mock_conn.push.call_args_list
-        ]
-        for jar in ("arthas-core.jar", "arthas-spy.jar", "arthas-bridge.jar"):
-            self.assertTrue(
-                any(p.endswith(jar) for p in pushed), f"{jar} was not pushed"
-            )
-        # load_agent with correct arg format
-        mock_agent.load_agent.assert_called_once()
-        args_call = mock_agent.load_agent.call_args
-        self.assertIn("arthas-bridge.jar", args_call[0][0])
-        # One port forwarded: telnet
-        self.assertEqual(mock_conn.forward.call_count, 1)
+        mock_conn.arthas_ensure.assert_called_once_with(agent_port=9099, arthas_port=8099)
 
-    def test_stop_unforwards_ports(self):
+    def test_stop_delegates_reset_to_connector(self):
         from scripts.tools.arthas.manager import ArthasManager
         mock_conn = MagicMock()
-        mock_agent = MagicMock(spec=AgentClient)
-        mock_conn.unforward.return_value = True
 
-        mgr = ArthasManager(connector=mock_conn, agent_client=mock_agent)
-        # ArthasShell must be stubbed: a bare MagicMock stream makes
-        # _drain_prompt() loop forever because read() never returns falsy.
-        with patch("scripts.tools.arthas.manager.ArthasShell", return_value=MagicMock()):
-            mgr.stop()
+        mgr = ArthasManager(connector=mock_conn, agent_client=None)
+        mgr.stop()
 
-        self.assertEqual(mock_conn.unforward.call_count, 1)
+        mock_conn.arthas_reset.assert_called_once_with(agent_port=9099, arthas_port=8099)
 
 
 if __name__ == "__main__":

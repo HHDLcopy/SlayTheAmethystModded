@@ -29,22 +29,31 @@ class ArthasShell:
         self._retried = False
 
     def command(self, cmd: str, timeout: float = 15, duration: float | None = None) -> str:
-        if cmd.strip().split(maxsplit=1)[0].lower() in _STREAMING_COMMANDS:
-            return self._streaming_command(cmd, duration if duration is not None else timeout)
-        self._drain_prompt()
-        self._stream.write((cmd + "\n").encode("utf-8"))
-        result = self._read_output(timeout)
+        try:
+            if cmd.strip().split(maxsplit=1)[0].lower() in _STREAMING_COMMANDS:
+                return self._streaming_command(cmd, duration if duration is not None else timeout)
+            self._drain_prompt()
+            self._stream.write((cmd + "\n").encode("utf-8"))
+            result = self._read_output(timeout)
+        except (ArthasQueryTimeout, OSError, RuntimeError):
+            if self._retried or self._reconnect_fn is None:
+                raise
+            self._reconnect()
+            return self.command(cmd, timeout, duration)
         if (
             not self._retried
             and self._reconnect_fn is not None
             and _TYPE_NOT_PRESENT in result
         ):
-            self._retried = True
-            self._stream.close()
-            self._stream = self._reconnect_fn()
-            self._sock = self._stream._sock
+            self._reconnect()
             return self.command(cmd, timeout)
         return result
+
+    def _reconnect(self) -> None:
+        self._retried = True
+        self._stream.close()
+        self._stream = self._reconnect_fn()
+        self._sock = self._stream._sock
 
     def _streaming_command(self, cmd: str, duration: float) -> str:
         if duration < 0:

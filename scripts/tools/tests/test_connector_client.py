@@ -85,6 +85,23 @@ class TestConnectorClient(unittest.TestCase):
         result = client.shell("echo hello")
         self.assertEqual(result["stdout"], "hello")
 
+    def test_arthas_health_methods_use_daemon_rpc(self):
+        from scripts.tools.connector.client import ConnectorClient
+
+        client = ConnectorClient(port=1)
+        client._sock = MagicMock()
+        client._sock.recv.side_effect = [
+            b'{"ok":true,"state":"ready"}\n',
+            b'{"ok":true,"state":"ready"}\n',
+            b'{"ok":true}\n',
+            b'{"ok":true}\n',
+        ]
+
+        self.assertEqual("ready", client.arthas_status()["state"])
+        self.assertTrue(client.arthas_ensure(arthas_port=18099)["ok"])
+        self.assertTrue(client.arthas_reset(arthas_port=18099)["ok"])
+        self.assertTrue(client.arthas_shutdown(arthas_port=18099)["ok"])
+
     def test_adb_install_logcat_helpers(self):
         from scripts.tools.connector.client import ConnectorClient
         client = ConnectorClient(port=1)
@@ -153,7 +170,8 @@ class TestConnectorClient(unittest.TestCase):
         stream.write(b"hello\n")
         self.assertEqual(mock_sock.sendall.call_count, 2)
         mock_sock.sendall.assert_any_call(b"hello\n")
-        # client socket was replaced with a fresh reconnected one
+        # The client keeps a fresh control socket for future requests while
+        # the request socket is owned by the returned stream.
         self.assertIs(client._sock, mock_new_sock)
 
 

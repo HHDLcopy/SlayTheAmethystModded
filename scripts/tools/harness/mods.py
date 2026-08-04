@@ -41,8 +41,13 @@ def run_set_mods(ctx: HarnessContext) -> None:
     adapter = _DeviceModsAdapter(ctx)
     before = device_mods.build_device_mod_snapshot(adapter)
     tokens = _requested_mod_tokens(ctx)
-    selection = device_mods.resolve_requested_mod_selection(before, tokens, ctx.options.enable_all_mods, ctx.options.disable_all_mods)
-    device_mods.write_enabled_mod_selection(adapter, before, selection["storagePaths"])
+    selection = device_mods.resolve_requested_mod_selection(
+        before,
+        tokens,
+        enable_all_mods=ctx.options.enable_all_mods,
+        disable_all_mods=ctx.options.disable_all_mods,
+    )
+    device_mods.write_enabled_mod_selection(adapter, before, selection["selectedStoragePaths"])
     after = device_mods.build_device_mod_snapshot(adapter)
     ctx.result["modSelection"] = {
         "beforeCounts": before["counts"],

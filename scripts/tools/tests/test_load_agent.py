@@ -47,6 +47,8 @@ class TestLoadAgentIntegration(unittest.TestCase):
         _stop_daemon(self._conn)
 
     def test_load_agent_success(self):
+        if not get_test_device_serial() or get_test_device_serial() == "auto":
+            self.skipTest("set STS_TEST_DEVICE to run real-device agent integration")
         """Verify LOAD_AGENT succeeds with a valid agent JAR on device."""
         test_jar_path = _build_test_agent_jar()
         self._conn.push(

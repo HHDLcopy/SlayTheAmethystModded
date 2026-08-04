@@ -4,9 +4,10 @@
 
 ## 职责
 
-- 常驻后台，管理设备连接生命周期
+- 常驻后台，管理设备连接与 Arthas bridge 健康生命周期
 - 设备发现与选择（adb devices）
 - **TCP 透传代理** — 模块不直接建 TCP 连接，通过 connector 的 TCP channel 收发
+- **Arthas 自愈** — 按设备探活 `:8099`；bridge 失效但 game-probe `:9099` 存活时自动重新加载 bridge，不重启游戏
 - adb 命令代理（shell, push, pull）
 - 供其他模块通过 TCP API 访问设备
 
@@ -142,6 +143,12 @@ stream.write(b"LIST\n")
 print(stream.readline())
 stream.close()
 ```
+
+### Arthas health RPC
+
+`arthas_connect_stream` 是 Arthas 客户端的标准入口。daemon 将设备选择状态保持在每个客户端连接内，并按 serial 维护独立的 Arthas runtime 状态。它先确认 bridge prompt 可用；不可用时经 game-probe 重新加载 Arthas，然后才进入透传模式。
+
+游戏进程或 game-probe 不可用时，daemon 返回 `-32010` 及诊断原因，**不会启动或重启游戏**。`arthas_ensure` 仅执行上述健康检查/修复，`arthas_status` 返回最近状态，`arthas_reset` 与 `arthas_shutdown` 分别执行轻量 reset 和完整销毁。
 
 ### shell / push / pull / install / adb
 

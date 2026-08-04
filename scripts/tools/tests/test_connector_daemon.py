@@ -124,6 +124,8 @@ class TestConnectorDaemonIntegration(unittest.TestCase):
             _stop_daemon(conn)
 
     def test_daemon_real_device_flow(self):
+        if not get_test_device_serial() or get_test_device_serial() == "auto":
+            self.skipTest("set STS_TEST_DEVICE to run real-device connector integration")
         import tempfile
 
         conn = _start_daemon()

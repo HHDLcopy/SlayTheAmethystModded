@@ -150,6 +150,11 @@ final class AutoplaySingleRoomRunner {
             AutoplayDungeonActions.tick();
             return;
         }
+        // Keep the configured room alive for diagnostics. Single-room is a setup harness, not
+        // an implicit autoplay turn loop; callers can inspect the live combat JVM before acting.
+        if (AutoplayConfig.isSingleRoomMode()) {
+            return;
+        }
         if (player.isDead || player.currentHealth <= 0 || AbstractDungeon.screen == AbstractDungeon.CurrentScreen.DEATH) {
             logResult("player_dead", player, room);
             return;

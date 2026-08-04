@@ -37,6 +37,8 @@ class ConnectorClient:
         self._port = resolve_connector_port(port)
         self._auto_start = auto_start
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._recv_buffer = b""
+        self._selected_serial: str | None = None
 
     @property
     def port(self) -> int:
@@ -101,7 +103,10 @@ class ConnectorClient:
             "method": "select",
             "params": {"serial": serial, "timeout_ms": timeout_ms},
         })
-        return resp.get("ok", False)
+        selected = resp.get("ok", False)
+        if selected:
+            self._selected_serial = serial
+        return selected
 
     def status(self) -> dict[str, Any]:
         return self.send_request({"method": "status"})
@@ -196,16 +201,17 @@ class ConnectorClient:
         self._sock.sendall((line + "\n").encode("utf-8"))
 
     def _recv_json(self) -> dict[str, Any]:
-        buffer = b""
+        buffer = self._recv_buffer
         while True:
+            if b"\n" in buffer:
+                line, self._recv_buffer = buffer.split(b"\n", 1)
+                return json.loads(line.decode("utf-8"))
             chunk = self._sock.recv(4096)
             if not chunk:
                 break
             buffer += chunk
-            if b"\n" in buffer:
-                line, _ = buffer.split(b"\n", 1)
-                return json.loads(line.decode("utf-8"))
         if buffer:
+            self._recv_buffer = b""
             return json.loads(buffer.decode("utf-8"))
         return {}
 
@@ -216,19 +222,55 @@ class ConnectorClient:
             pass
 
     def connect_stream(self, port: int) -> "Stream":
-        resp = self.send_request({
-            "method": "connect_stream", "params": {"port": port}})
+        return self._connect_stream("connect_stream", {"port": port})
+
+    def arthas_status(self) -> dict[str, Any]:
+        return self.send_request_ok({"method": "arthas_status"})
+
+    def arthas_ensure(self, *, agent_port: int = 9099, arthas_port: int = 8099) -> dict[str, Any]:
+        return self.send_request_ok({
+            "method": "arthas_ensure",
+            "params": {"agent_port": agent_port, "arthas_port": arthas_port},
+        })
+
+    def arthas_reset(self, *, agent_port: int = 9099, arthas_port: int = 8099) -> dict[str, Any]:
+        return self.send_request_ok({
+            "method": "arthas_reset",
+            "params": {"agent_port": agent_port, "arthas_port": arthas_port},
+        })
+
+    def arthas_shutdown(self, *, arthas_port: int = 8099) -> dict[str, Any]:
+        return self.send_request_ok({
+            "method": "arthas_shutdown", "params": {"arthas_port": arthas_port},
+        })
+
+    def connect_arthas_stream(self, *, agent_port: int = 9099, arthas_port: int = 8099) -> "Stream":
+        return self._connect_stream(
+            "arthas_connect_stream",
+            {"agent_port": agent_port, "arthas_port": arthas_port},
+        )
+
+    def _connect_stream(self, method: str, params: dict[str, Any]) -> "Stream":
+        resp = self.send_request_ok({"method": method, "params": params})
         stream_id = resp.get("stream_id", "unknown")
         sock = self._sock
+        initial_data = self._recv_buffer
+        self._recv_buffer = b""
+        # The daemon switches this request socket into raw passthrough mode
+        # after sending the handshake. Opening a second control connection
+        # would leave the actual passthrough socket orphaned.
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._sock.connect(("127.0.0.1", self._port))
-        return Stream(sock=sock, stream_id=stream_id)
+        if self._selected_serial:
+            self.select(self._selected_serial)
+        return Stream(sock=sock, stream_id=stream_id, initial_data=initial_data)
 
 
 class Stream:
-    def __init__(self, sock: socket.socket, stream_id: str) -> None:
+    def __init__(self, sock: socket.socket, stream_id: str, *, initial_data: bytes = b"") -> None:
         self._sock = sock
         self.stream_id = stream_id
+        self._buffer = initial_data
 
     def write(self, data: bytes) -> None:
         self._sock.sendall(data)
@@ -245,6 +287,10 @@ class Stream:
         return buffer
 
     def read(self, size: int = 4096) -> bytes:
+        if self._buffer:
+            data = self._buffer[:size]
+            self._buffer = self._buffer[size:]
+            return data
         return self._sock.recv(size)
 
     def close(self) -> None:

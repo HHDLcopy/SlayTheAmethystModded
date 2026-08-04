@@ -39,6 +39,8 @@ class TestConnectStreamIntegration(unittest.TestCase):
 
     def test_connect_stream_handshake(self):
         """Verify daemon responds to connect_stream with stream_id."""
+        if not get_test_device_serial() or get_test_device_serial() == "auto":
+            self.skipTest("set STS_TEST_DEVICE to run real-device stream integration")
         conn = _start_daemon()
         try:
             conn.select(get_test_device_serial())
@@ -52,6 +54,8 @@ class TestConnectStreamIntegration(unittest.TestCase):
             _stop_daemon(conn)
 
     def test_passthrough_game_probe_list(self):
+        if not get_test_device_serial() or get_test_device_serial() == "auto":
+            self.skipTest("set STS_TEST_DEVICE to run real-device stream integration")
         """connect_stream to game-probe :9099 and send LIST."""
         conn = _start_daemon()
         try:

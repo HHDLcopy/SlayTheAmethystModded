@@ -29,31 +29,29 @@ public class BridgeSession implements Runnable {
 
     @Override
     public void run() {
+        Shell shell = null;
         try {
             log("creating SocketTerm");
             SocketTerm term = new SocketTerm(socket);
             log("SocketTerm created, calling shellServer.createShell");
-            Shell shell = shellServer.createShell(term);
-            log("shellServer.createShell returned: " + shell);
             try {
-                java.lang.reflect.Method init = shell.getClass()
-                    .getDeclaredMethod("init");
-                init.setAccessible(true);
-                init.invoke(shell);
-                java.lang.reflect.Method rl = shell.getClass()
-                    .getDeclaredMethod("readline");
-                rl.setAccessible(true);
-                rl.invoke(shell);
-                log("shell.init()+readline() done");
-            } catch (Exception e) {
-                java.io.StringWriter sw = new java.io.StringWriter();
-                e.printStackTrace(new java.io.PrintWriter(sw));
-                log("init/readline FAILED: " + sw);
+                shell = shellServer.createShell(term);
+            } catch (IllegalStateException ise) {
+                if (ise.getMessage() != null && ise.getMessage().contains("Closed")) {
+                    log("shellServer already closed, dropping connection: " + ise);
+                } else {
+                    log("createShell failed: " + ise);
+                }
+                return;
             }
+            log("shellServer.createShell returned: " + shell);
+            java.lang.reflect.Method init = shell.getClass().getDeclaredMethod("init");
+            init.setAccessible(true);
+            init.invoke(shell);
+            java.lang.reflect.Method readline = shell.getClass().getDeclaredMethod("readline");
+            readline.setAccessible(true);
+            readline.invoke(shell);
             log("entering read loop");
-
-            socket.getOutputStream().write("arthas-bridge ready\n".getBytes("UTF-8"));
-            socket.getOutputStream().flush();
 
             InputStream in = socket.getInputStream();
             byte[] buf = new byte[8192];
@@ -65,7 +63,10 @@ public class BridgeSession implements Runnable {
                 if (n < 0) break;
                 for (int i = 0; i < n; i++) {
                     char c = (char) (buf[i] & 0xFF);
-                    if (c == '\n') {
+                    if (c == 3) {
+                        log("interrupt");
+                        term.interrupt();
+                    } else if (c == '\n') {
                         term.feed(lineBuf.toString());
                         lineBuf.setLength(0);
                     } else if (c != '\r') {
@@ -82,6 +83,9 @@ public class BridgeSession implements Runnable {
             t.printStackTrace(new PrintWriter(sw));
             log("THROWABLE: " + sw.toString());
         } finally {
+            if (shell != null) {
+                try { shell.close("session closed"); } catch (Exception ignored) {}
+            }
             try { socket.close(); } catch (Exception ignored) {}
         }
     }

@@ -49,6 +49,7 @@ class TestConnectorClient(unittest.TestCase):
         client._sock.recv.return_value = b'{"ok":true}\n'
         result = client.select(serial="abc", timeout_ms=5000)
         self.assertTrue(result)
+        self.assertEqual("abc", client._selected_serial)
 
     def test_status_returns_dict(self):
         from scripts.tools.connector.client import ConnectorClient
@@ -85,6 +86,23 @@ class TestConnectorClient(unittest.TestCase):
         result = client.shell("echo hello")
         self.assertEqual(result["stdout"], "hello")
 
+    def test_arthas_health_methods_use_daemon_rpc(self):
+        from scripts.tools.connector.client import ConnectorClient
+
+        client = ConnectorClient(port=1)
+        client._sock = MagicMock()
+        client._sock.recv.side_effect = [
+            b'{"ok":true,"state":"ready"}\n',
+            b'{"ok":true,"state":"ready"}\n',
+            b'{"ok":true}\n',
+            b'{"ok":true}\n',
+        ]
+
+        self.assertEqual("ready", client.arthas_status()["state"])
+        self.assertTrue(client.arthas_ensure(arthas_port=18099)["ok"])
+        self.assertTrue(client.arthas_reset(arthas_port=18099)["ok"])
+        self.assertTrue(client.arthas_shutdown(arthas_port=18099)["ok"])
+
     def test_adb_install_logcat_helpers(self):
         from scripts.tools.connector.client import ConnectorClient
         client = ConnectorClient(port=1)
@@ -106,12 +124,14 @@ class TestConnectorClient(unittest.TestCase):
     def test_connect_stream_sends_request_and_returns_stream_id(self, mock_socket_cls):
         from scripts.tools.connector.client import ConnectorClient
         mock_new_sock = MagicMock()
+        mock_new_sock.recv.return_value = b'{"ok":true}\n'
         mock_socket_cls.return_value = mock_new_sock
 
         client = ConnectorClient(port=1)
         mock_sock = MagicMock()
         mock_sock.recv.return_value = b'{"stream_id":"s1"}\n'
         client._sock = mock_sock
+        client._selected_serial = "device-a"
         stream = client.connect_stream(port=8099)
         sent = mock_sock.sendall.call_args[0][0]
         req = _json.loads(sent.decode("utf-8"))
@@ -120,6 +140,23 @@ class TestConnectorClient(unittest.TestCase):
         self.assertEqual(stream.stream_id, "s1")
         mock_new_sock.connect.assert_called_once_with(("127.0.0.1", 1))
         self.assertIs(client._sock, mock_new_sock)
+        mock_new_sock.sendall.assert_called()
+
+    @patch("socket.socket")
+    def test_connect_stream_preserves_handshake_remainder(self, mock_socket_cls):
+        from scripts.tools.connector.client import ConnectorClient
+
+        mock_new_sock = MagicMock()
+        mock_socket_cls.return_value = mock_new_sock
+        client = ConnectorClient(port=1)
+        mock_sock = MagicMock()
+        mock_sock.recv.return_value = b'{"stream_id":"s1"}\ninitial prompt'
+        client._sock = mock_sock
+
+        stream = client.connect_stream(port=8099)
+
+        self.assertEqual(stream.read(), b"initial prompt")
+        stream.close()
 
     @patch("socket.socket")
     def test_stream_raw_io(self, mock_socket_cls):
@@ -137,7 +174,8 @@ class TestConnectorClient(unittest.TestCase):
         stream.write(b"hello\n")
         self.assertEqual(mock_sock.sendall.call_count, 2)
         mock_sock.sendall.assert_any_call(b"hello\n")
-        # client socket was replaced with a fresh reconnected one
+        # The client keeps a fresh control socket for future requests while
+        # the request socket is owned by the returned stream.
         self.assertIs(client._sock, mock_new_sock)
 
 

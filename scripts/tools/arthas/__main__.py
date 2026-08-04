@@ -5,7 +5,6 @@ import sys
 from typing import Callable
 
 from scripts.tools.connector.client import ConnectorClient, Stream
-from scripts.tools.lib.agent_client import AgentClient
 from scripts.tools.lib.env_device import get_test_device_serial
 from scripts.tools.arthas.cli import run_query, run_shell
 from scripts.tools.arthas.manager import ArthasManager
@@ -13,19 +12,36 @@ from scripts.tools.arthas.manager import ArthasManager
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(list(sys.argv[1:] if argv is None else argv))
-    if args.command == "start":
-        return _cmd_start(args)
-    if args.command == "shell":
-        return _cmd_shell(args)
-    if args.command == "query":
-        return _cmd_query(args)
-    if args.command == "stop":
-        return _cmd_stop(args)
+    try:
+        if args.command == "start":
+            return _cmd_start(args)
+        if args.command == "shell":
+            return _cmd_shell(args)
+        if args.command == "query":
+            return _cmd_query(args)
+        if args.command == "stop":
+            return _cmd_stop(args)
+        if args.command == "shutdown":
+            return _cmd_shutdown(args)
+    except Exception as exc:
+        print(f"Arthas unavailable: {exc}", file=sys.stderr)
+        return 1
     _usage()
     return 1
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
+    duration = None
+    normalized_argv = list(argv)
+    if "--duration" in normalized_argv:
+        index = normalized_argv.index("--duration")
+        if index + 1 >= len(normalized_argv):
+            raise SystemExit("--duration requires a number")
+        try:
+            duration = float(normalized_argv[index + 1])
+        except ValueError:
+            raise SystemExit("--duration requires a number") from None
+        del normalized_argv[index:index + 2]
     parser = argparse.ArgumentParser(
         prog="python -m scripts.tools.arthas",
         description="Arthas lifecycle and query helper for SlayTheAmethyst Android JVMs.",
@@ -52,7 +68,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument(
         "command",
-        choices=("start", "shell", "query", "stop"),
+        choices=("start", "shell", "query", "stop", "shutdown"),
         help="Lifecycle or query command.",
     )
     parser.add_argument(
@@ -60,21 +76,29 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         nargs="*",
         help="Arthas command text for query mode.",
     )
+    parser.add_argument(
+        "--duration",
+        type=float,
+        default=None,
+        help="Seconds to collect monitor/watch/trace output before Ctrl-C.",
+    )
     if not argv:
         parser.print_help()
         raise SystemExit(1)
-    args = parser.parse_args(argv)
+    args = parser.parse_args(normalized_argv)
+    args.duration = duration
     if args.command == "query" and not args.query_parts:
         parser.error("query requires an Arthas command")
     return args
 
 
 def _usage() -> None:
-    print("Usage: python -m scripts.tools.arthas [--device SERIAL] <start|shell|query|stop> [query cmd...]")
+    print("Usage: python -m scripts.tools.arthas [--device SERIAL] <start|shell|query|stop|shutdown> [query cmd...]")
     print("  start      – push JARs, load agent, forward ports")
     print("  shell      – interactive Arthas shell via connect_stream(:8099)")
     print("  query CMD  – one-shot Arthas command")
-    print("  stop       – reset/stop Arthas service and unforward ports")
+    print("  stop       – reset enhancers and unforward ports (backend stays alive)")
+    print("  shutdown   – reset + stop Arthas, wait for port release, unforward")
 
 
 def resolve_device(conn: ConnectorClient, cli_device: str | None) -> str:
@@ -101,43 +125,31 @@ def resolve_device(conn: ConnectorClient, cli_device: str | None) -> str:
     )
 
 
-def _make_arthas_stream(device: str, port: int = 8099) -> Callable[[], Stream]:
+def _make_arthas_stream(
+    device: str, port: int = 8099, agent_port: int = 9099,
+) -> Callable[[], Stream]:
     def _open() -> Stream:
         c = ConnectorClient()
         c.connect()
         if not c.select(device):
             raise RuntimeError(f"Failed to select device: {device}")
-        c.forward(port=port)
-        return c.connect_stream(port=port)
+        return c.connect_arthas_stream(agent_port=agent_port, arthas_port=port)
 
     return _open
 
 
 def _cmd_start(args: argparse.Namespace) -> int:
     conn = ConnectorClient()
-    agent = None
     try:
         conn.connect()
         device = resolve_device(conn, args.device)
         if not conn.select(device):
             raise RuntimeError(f"Failed to select device: {device}")
-        conn.forward(port=args.agent_port)
-        agent = AgentClient(connector=conn, port=args.agent_port)
-        agent.connect()
-        mgr = ArthasManager(connector=conn, agent_client=agent)
+        mgr = ArthasManager(connector=conn, agent_client=None, agent_port=args.agent_port)
         mgr.start(port=args.arthas_port)
         print(f"Arthas started on {device}.  Use 'shell' or 'query' to interact.")
         return 0
     finally:
-        if agent is not None:
-            try:
-                agent.close()
-            except Exception:
-                pass
-        try:
-            conn.unforward(port=args.agent_port)
-        except Exception:
-            pass
         try:
             conn.close()
         except Exception:
@@ -147,28 +159,28 @@ def _cmd_start(args: argparse.Namespace) -> int:
 def _cmd_shell(args: argparse.Namespace) -> int:
     conn = ConnectorClient()
     stream = None
+    shell = None
     try:
         conn.connect()
         device = resolve_device(conn, args.device)
         if not conn.select(device):
             raise RuntimeError(f"Failed to select device: {device}")
-        conn.forward(port=args.arthas_port)
-        stream = conn.connect_stream(port=args.arthas_port)
-        run_shell(
+        stream = conn.connect_arthas_stream(
+            agent_port=args.agent_port, arthas_port=args.arthas_port,
+        )
+        shell = run_shell(
             stream,
-            reconnect_fn=_make_arthas_stream(device, args.arthas_port),
+            reconnect_fn=_make_arthas_stream(device, args.arthas_port, args.agent_port),
         )
         return 0
     finally:
-        if stream is not None:
+        if shell is not None:
             try:
-                stream.close()
+                shell.close()
             except Exception:
                 pass
-        try:
-            conn.unforward(port=args.arthas_port)
-        except Exception:
-            pass
+        elif stream is not None:
+            stream.close()
         try:
             conn.close()
         except Exception:
@@ -178,29 +190,33 @@ def _cmd_shell(args: argparse.Namespace) -> int:
 def _cmd_query(args: argparse.Namespace) -> int:
     conn = ConnectorClient()
     stream = None
+    shell = None
     try:
         conn.connect()
         device = resolve_device(conn, args.device)
         if not conn.select(device):
             raise RuntimeError(f"Failed to select device: {device}")
-        conn.forward(port=args.arthas_port)
-        stream = conn.connect_stream(port=args.arthas_port)
-        run_query(
-            stream,
-            " ".join(args.query_parts),
-            reconnect_fn=_make_arthas_stream(device, args.arthas_port),
+        stream = conn.connect_arthas_stream(
+            agent_port=args.agent_port, arthas_port=args.arthas_port,
         )
+        query_kwargs = {
+            "reconnect_fn": _make_arthas_stream(device, args.arthas_port, args.agent_port),
+        }
+        if args.duration is not None:
+            query_kwargs["duration"] = args.duration
+        shell = run_query(stream, " ".join(args.query_parts), **query_kwargs)
         return 0
     finally:
+        if shell is not None:
+            try:
+                shell.close()
+            except Exception:
+                pass
         if stream is not None:
             try:
                 stream.close()
             except Exception:
                 pass
-        try:
-            conn.unforward(port=args.arthas_port)
-        except Exception:
-            pass
         try:
             conn.close()
         except Exception:
@@ -216,7 +232,25 @@ def _cmd_stop(args: argparse.Namespace) -> int:
             raise RuntimeError(f"Failed to select device: {device}")
         mgr = ArthasManager(connector=conn, agent_client=None)
         mgr.stop(port=args.arthas_port)
-        print(f"Arthas stopped on {device}.")
+        print(f"Arthas reset on {device}; bridge backend still listening.")
+        return 0
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def _cmd_shutdown(args: argparse.Namespace) -> int:
+    conn = ConnectorClient()
+    try:
+        conn.connect()
+        device = resolve_device(conn, args.device)
+        if not conn.select(device):
+            raise RuntimeError(f"Failed to select device: {device}")
+        mgr = ArthasManager(connector=conn, agent_client=None)
+        mgr.shutdown(port=args.arthas_port)
+        print(f"Arthas shut down on {device}; bridge port released.")
         return 0
     finally:
         try:

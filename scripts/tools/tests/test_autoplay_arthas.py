@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from scripts.tools.lib.agent_client import AgentClient
 
@@ -43,35 +43,23 @@ class TestAutoplayController(unittest.TestCase):
 
 class TestArthasManager(unittest.TestCase):
 
-    def test_start_pushes_loads_and_forwards(self):
+    def test_start_delegates_health_and_recovery_to_connector(self):
         from scripts.tools.arthas.manager import ArthasManager
         mock_conn = MagicMock()
-        mock_agent = MagicMock(spec=AgentClient)
-        mock_conn.push.return_value = True
-        mock_conn.forward.return_value = {"ok": True, "port": 8563}
 
-        mgr = ArthasManager(connector=mock_conn, agent_client=mock_agent)
+        mgr = ArthasManager(connector=mock_conn, agent_client=None)
         mgr.start()
 
-        # Three JARs pushed: core + bootstrap spy + bridge
-        self.assertEqual(mock_conn.push.call_count, 3)
-        # load_agent with correct arg format
-        mock_agent.load_agent.assert_called_once()
-        args_call = mock_agent.load_agent.call_args
-        self.assertIn("arthas-bridge.jar", args_call[0][0])
-        # One port forwarded: telnet
-        self.assertEqual(mock_conn.forward.call_count, 1)
+        mock_conn.arthas_ensure.assert_called_once_with(agent_port=9099, arthas_port=8099)
 
-    def test_stop_unforwards_ports(self):
+    def test_stop_delegates_reset_to_connector(self):
         from scripts.tools.arthas.manager import ArthasManager
         mock_conn = MagicMock()
-        mock_agent = MagicMock(spec=AgentClient)
-        mock_conn.unforward.return_value = True
 
-        mgr = ArthasManager(connector=mock_conn, agent_client=mock_agent)
+        mgr = ArthasManager(connector=mock_conn, agent_client=None)
         mgr.stop()
 
-        self.assertEqual(mock_conn.unforward.call_count, 1)
+        mock_conn.arthas_reset.assert_called_once_with(agent_port=9099, arthas_port=8099)
 
 
 if __name__ == "__main__":

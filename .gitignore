@@ -49,7 +49,8 @@ scripts/tools/lib/cfr.jar
 hs_err_pid*.log
 replay_pid*.log
 logs/
-debug-artifacts/
+debug-artifacts
+/runtime-pack/
 
 # Harness jar-library cache
 debug-artifacts/harness/jar-library/

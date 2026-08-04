@@ -16,6 +16,16 @@ import java.util.Properties;
 public class ArthasCommandBridge {
     static PrintWriter logger;
 
+    /**
+     * Bridge listener state.  Static because {@code agentmain} may be invoked
+     * repeatedly on the same JVM (re-attach); the listener must survive an
+     * Arthas {@code stop} which destroys the bootstrap but cannot close this
+     * socket.
+     */
+    private static final Object LOCK = new Object();
+    private static java.net.ServerSocket serverSocket;
+    private static int listeningPort = -1;
+
     public static void agentmain(String args, final Instrumentation inst) {
         new Thread(new Runnable() {
             public void run() { new ArthasCommandBridge().start(args, inst); }
@@ -24,6 +34,74 @@ public class ArthasCommandBridge {
 
     static void log(String msg) {
         if (logger != null) { logger.println("[arthas-bridge] " + msg); logger.flush(); }
+    }
+
+    /** True when a usable listener for {@code port} already exists. */
+    private static boolean hasLiveListener(int port) {
+        synchronized (LOCK) {
+            return serverSocket != null
+                && !serverSocket.isClosed()
+                && listeningPort == port;
+        }
+    }
+
+    /** Outcome of {@link #bindOrReuse(int)}. */
+    public static final class Listener {
+        public final java.net.ServerSocket socket;
+        /** True when an earlier attach already owned this listener. */
+        public final boolean reused;
+
+        public Listener(java.net.ServerSocket socket, boolean reused) {
+            this.socket = socket;
+            this.reused = reused;
+        }
+    }
+
+    /**
+     * Bind the bridge listener, or hand back the one a previous attach left
+     * running.  Returns {@code null} only when the port is held by something
+     * outside this bridge, which is the sole genuine failure.
+     */
+    static Listener bindOrReuse(int port) {
+        synchronized (LOCK) {
+            if (hasLiveListener(port)) {
+                return new Listener(serverSocket, true);
+            }
+            try {
+                java.net.ServerSocket server = new java.net.ServerSocket(port);
+                serverSocket = server;
+                listeningPort = port;
+                return new Listener(server, false);
+            } catch (java.net.BindException be) {
+                log("port " + port + " held by another process: " + be);
+                return null;
+            } catch (java.io.IOException e) {
+                log("failed to bind " + port + ": " + e);
+                return null;
+            }
+        }
+    }
+
+    /**
+     * Close the bridge listener and drop static references.  Wakes a blocked
+     * {@code accept()} by closing the socket underneath it.  Called from the
+     * explicit shutdown path; Arthas {@code stop} alone does not reach here.
+     */
+    public static void shutdownBridge() {
+        java.net.ServerSocket toClose;
+        synchronized (LOCK) {
+            toClose = serverSocket;
+            serverSocket = null;
+            listeningPort = -1;
+        }
+        if (toClose != null) {
+            try {
+                toClose.close();
+                log("bridge listener closed");
+            } catch (Throwable e) {
+                log("shutdownBridge close failed: " + e);
+            }
+        }
     }
 
     void start(String args, Instrumentation inst) {
@@ -54,21 +132,72 @@ public class ArthasCommandBridge {
             shellServer.registerCommandResolver(resolver);
             log("bootstrap ready, shellServer=" + shellServer);
 
-            java.net.ServerSocket server = new java.net.ServerSocket(port);
-            log("listening on " + port);
+            Listener listener = bindOrReuse(port);
+            if (listener == null) {
+                log("START FAILED: cannot listen on " + port);
+                return;
+            }
 
             setupProcFSFallback();
             setupAsyncProfilerFlat();
 
-            while (true) {
-                java.net.Socket client = server.accept();
-                log("client connected");
-                retransformClassMetaClassWriter(inst);
-                new Thread(new BridgeSession(client, shellServer)).start();
+            // Idempotent attach: the bootstrap and resolver above were already
+            // refreshed, and the running accept loop resolves the shell server
+            // per connection, so it picks up the new bootstrap on its own.
+            if (listener.reused) {
+                log("listener already active on " + port + ", reusing (idempotent attach)");
+                return;
             }
+
+            log("listening on " + port);
+            acceptLoop(listener.socket, inst);
         } catch (Throwable e) {
             log("START FAILED: " + e);
             e.printStackTrace(logger);
+        }
+    }
+
+    /**
+     * Accept connections until the listener is closed.  The shell server is
+     * resolved per connection instead of being captured, so a bootstrap
+     * replaced by a later attach is picked up without restarting the loop.
+     */
+    private static void acceptLoop(java.net.ServerSocket server, Instrumentation inst) {
+        while (!server.isClosed()) {
+            java.net.Socket client;
+            try {
+                client = server.accept();
+            } catch (java.io.IOException e) {
+                if (server.isClosed()) {
+                    log("accept loop exiting: listener closed");
+                } else {
+                    log("accept failed: " + e);
+                }
+                return;
+            }
+            log("client connected");
+            retransformClassMetaClassWriter(inst);
+
+            com.taobao.arthas.core.server.ArthasBootstrap current;
+            try {
+                current = com.taobao.arthas.core.server.ArthasBootstrap.getInstance();
+            } catch (IllegalStateException ise) {
+                // Bootstrap was destroyed by an Arthas 'stop' command.
+                // Close this connection and shut down the listener so the port
+                // is released and the Python shutdown() polling loop can observe it.
+                log("bootstrap destroyed, shutting down bridge listener");
+                try { client.close(); } catch (Exception ignored) {}
+                shutdownBridge();
+                return;
+            }
+            ShellServer currentShellServer =
+                current == null ? null : current.getShellServer();
+            if (currentShellServer == null) {
+                log("no live shellServer; closing connection");
+                try { client.close(); } catch (Exception ignored) {}
+                continue;
+            }
+            new Thread(new BridgeSession(client, currentShellServer)).start();
         }
     }
 

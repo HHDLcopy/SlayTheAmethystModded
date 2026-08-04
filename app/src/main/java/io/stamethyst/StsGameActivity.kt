@@ -251,15 +251,28 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
             "game_activity_paused",
             buildMemoryEventExtras()
         )
+        // A multi-window session stays visible after onPause, so audio and the render surface are
+        // only torn down in onStop; the coordinator decides whether this pause means "hidden".
+        val stillVisible = isInMultiWindowMode
         inputHandler.resetGamepadState()
         inputHandler.hideSoftKeyboard()
-        gameAudioController.onPause()
+        if (!stillVisible) {
+            gameAudioController.onPause()
+        }
         sessionCoordinator.onPause()
-        renderSurfaceManager.onForegroundChanged(false)
+        if (!stillVisible) {
+            renderSurfaceManager.onForegroundChanged(false)
+        }
         DisplayPerformanceController.applySustainedPerformanceMode(this, false)
-        activityForeground = false
-        keepScreenOnHandler.removeCallbacks(keepScreenOnIdleRunnable)
-        updateKeepScreenOnFlag()
+        activityForeground = stillVisible
+        if (stillVisible) {
+            // Re-arm the idle timeout instead of cancelling it, otherwise a visible small window
+            // would hold FLAG_KEEP_SCREEN_ON forever while the user works in the other app.
+            resetKeepScreenOnIdleTimer()
+        } else {
+            keepScreenOnHandler.removeCallbacks(keepScreenOnIdleRunnable)
+            updateKeepScreenOnFlag()
+        }
         super.onPause()
     }
 
@@ -374,12 +387,30 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        if (::sessionCoordinator.isInitialized) {
+            sessionCoordinator.onStart()
+        }
+    }
+
     override fun onStop() {
         MemoryDiagnosticsLogger.logEvent(
             this,
             "game_activity_stopped",
             buildMemoryEventExtras()
         )
+        // Leaving the screen is the point where the runtime may stop rendering; onPause alone can
+        // mean "still visible beside another app" in multi-window.
+        if (::sessionCoordinator.isInitialized) {
+            sessionCoordinator.onStop()
+        }
+        if (::renderSurfaceManager.isInitialized) {
+            renderSurfaceManager.onForegroundChanged(false)
+        }
+        if (::gameAudioController.isInitialized) {
+            gameAudioController.onPause()
+        }
         super.onStop()
     }
 

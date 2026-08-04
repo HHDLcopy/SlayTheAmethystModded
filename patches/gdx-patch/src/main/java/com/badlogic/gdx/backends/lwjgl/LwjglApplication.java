@@ -516,23 +516,23 @@ public class LwjglApplication implements Application {
 	}
 
 	private static int resolvePhysicalDisplayWidth () {
-		int configured = LwjglHotLoopConfig.PHYSICAL_WIDTH_OVERRIDE;
+		int configured = LwjglHotLoopConfig.physicalWidth();
 		if (configured > 0) return configured;
 		return Math.max(1, (int)(Display.getWidth() * PixelScaleCompat.factor()));
 	}
 
 	private static int resolvePhysicalDisplayHeight () {
-		int configured = LwjglHotLoopConfig.PHYSICAL_HEIGHT_OVERRIDE;
+		int configured = LwjglHotLoopConfig.physicalHeight();
 		if (configured > 0) return configured;
 		return Math.max(1, (int)(Display.getHeight() * PixelScaleCompat.factor()));
 	}
 
 	private static int resolveConfiguredVirtualWidth () {
-		return LwjglHotLoopConfig.VIRTUAL_WIDTH_OVERRIDE;
+		return LwjglHotLoopConfig.virtualWidth();
 	}
 
 	private static int resolveConfiguredVirtualHeight () {
-		return LwjglHotLoopConfig.VIRTUAL_HEIGHT_OVERRIDE;
+		return LwjglHotLoopConfig.virtualHeight();
 	}
 
 	private static final class ScaledRenderPipeline {

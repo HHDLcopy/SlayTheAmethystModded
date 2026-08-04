@@ -18,6 +18,7 @@ import io.stamethyst.backend.launch.ExpectedGameExitNotice
 import io.stamethyst.backend.launch.ExpectedGameExitReturnPolicy
 import io.stamethyst.backend.render.AndroidGameModeSupport
 import io.stamethyst.backend.render.DisplayConfigSync
+import io.stamethyst.backend.render.GameWindowVisibilityPolicy
 import io.stamethyst.backend.launch.JvmLaunchController
 import io.stamethyst.backend.launch.LaunchPreparationFailureMessageResolver
 import io.stamethyst.backend.launch.LauncherReturnCoordinator
@@ -44,6 +45,7 @@ internal class GameSessionCoordinator(
     companion object {
         private const val BACK_FORCE_RESTART_DELAY_MS = 120L
         private const val BACK_FORCE_KILL_FALLBACK_MS = 1500L
+        private const val BACK_EXIT_CONFIRMATION_WINDOW_MS = 2000L
         private const val CRASH_LAUNCHER_RESTART_DELAY_MS = 320L
         private const val KEYBOARD_REQUEST_POLL_MS = 120L
         private const val LAN_GAME_STATE_REQUEST_POLL_MS = 300L
@@ -52,6 +54,7 @@ internal class GameSessionCoordinator(
         private const val HARNESS_EXIT_REQUEST_POLL_MS = 120L
         private const val EXPECTED_GAME_EXIT_PROCESS_KILL_DELAY_MS = 1500L
         private const val EXPECTED_GAME_EXIT_LAUNCHER_RESTART_DELAY_MS = 180L
+        private const val LANDSCAPE_WAIT_TIMEOUT_MS = 4000L
         private val FOREGROUND_AUDIO_RESTORE_DELAYS_MS = longArrayOf(150L, 400L, 1000L, 2200L)
     }
 
@@ -64,6 +67,8 @@ internal class GameSessionCoordinator(
     @Volatile
     private var backExitLauncherShown = false
 
+    private var backExitConfirmationDeadlineMs = 0L
+
     @Volatile
     private var crashReturnTriggered = false
 
@@ -72,6 +77,9 @@ internal class GameSessionCoordinator(
 
     @Volatile
     private var activityResumed = false
+
+    @Volatile
+    private var activityStopped = false
 
     private var waitingLandscapeSinceMs = -1L
     private var jvmLaunchStartedWallTimeMs = 0L
@@ -275,6 +283,7 @@ internal class GameSessionCoordinator(
             return
         }
         activityResumed = true
+        activityStopped = false
         foregroundAudioPolicy.markActivityResumed(true)
         performanceOverlayController?.onResume()
         syncRuntimeForegroundState(true)
@@ -287,12 +296,49 @@ internal class GameSessionCoordinator(
 
     fun onPause() {
         activityResumed = false
-        foregroundAudioPolicy.markActivityResumed(false)
+        // A paused-but-visible multi-window session must keep rendering and playing audio, so the
+        // runtime is only pushed into the background state once the window actually leaves screen.
+        val runtimeVisible = resolveRuntimeVisible()
+        foregroundAudioPolicy.markActivityResumed(runtimeVisible)
         performanceOverlayController?.onPause()
+        if (runtimeVisible) {
+            updateSystemGameState()
+            return
+        }
         cancelForegroundAudioRestoreRetries()
         syncRuntimeForegroundState(false)
         applyBackgroundWindowState()
         updateSystemGameState()
+    }
+
+    fun onStop() {
+        activityStopped = true
+        activityResumed = false
+        foregroundAudioPolicy.markActivityResumed(false)
+        cancelForegroundAudioRestoreRetries()
+        syncRuntimeForegroundState(false)
+        applyBackgroundWindowState()
+        updateSystemGameState()
+    }
+
+    fun onStart() {
+        activityStopped = false
+    }
+
+    private fun resolveRuntimeVisible(): Boolean {
+        return GameWindowVisibilityPolicy.resolveRuntimeVisible(
+            activityStopped = activityStopped,
+            activityResumed = activityResumed,
+            inMultiWindowMode = isActivityInMultiWindowMode()
+        )
+    }
+
+    private fun isActivityInMultiWindowMode(): Boolean {
+        return try {
+            activity.isInMultiWindowMode
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     fun onPlatformAudioFocusChanged(granted: Boolean) {
@@ -335,10 +381,25 @@ internal class GameSessionCoordinator(
 
     fun handleAndroidBackPressed() {
         when (config.backBehavior) {
-            BackBehavior.EXIT_TO_LAUNCHER -> requestBackExitToLauncher()
+            BackBehavior.EXIT_TO_LAUNCHER -> confirmBackExitToLauncher()
             BackBehavior.SEND_ESCAPE -> sendEscapeKeyToGame()
             BackBehavior.NONE -> Unit
         }
+    }
+
+    private fun confirmBackExitToLauncher() {
+        val now = SystemClock.uptimeMillis()
+        if (backExitConfirmationDeadlineMs != 0L && now <= backExitConfirmationDeadlineMs) {
+            backExitConfirmationDeadlineMs = 0L
+            requestBackExitToLauncher()
+            return
+        }
+        backExitConfirmationDeadlineMs = now + BACK_EXIT_CONFIRMATION_WINDOW_MS
+        Toast.makeText(
+            activity,
+            R.string.game_back_exit_confirmation,
+            Toast.LENGTH_SHORT
+        ).show()
     }
 
     fun handleAndroidBackKeyEvent(event: KeyEvent): Boolean {
@@ -367,13 +428,16 @@ internal class GameSessionCoordinator(
             return
         }
 
-        if (rawWidth < rawHeight) {
+        // Waiting for the requested landscape orientation only makes sense when the system still
+        // honours screenOrientation. In multi-window the requested orientation is ignored, so a
+        // portrait window would never turn landscape and this would just stall the launch.
+        if (rawWidth < rawHeight && !isActivityInMultiWindowMode()) {
             val now = SystemClock.uptimeMillis()
             if (waitingLandscapeSinceMs < 0L) {
                 waitingLandscapeSinceMs = now
             }
             val waitedMs = now - waitingLandscapeSinceMs
-            if (waitedMs < 4000L) {
+            if (waitedMs < LANDSCAPE_WAIT_TIMEOUT_MS) {
                 scheduleStartCheck()
                 return
             }
@@ -985,7 +1049,7 @@ internal class GameSessionCoordinator(
     }
 
     private fun updateSystemGameState() {
-        val inForeground = activityResumed && !backExitRequested
+        val inForeground = resolveRuntimeVisible() && !backExitRequested
         val isLoading = inForeground &&
             (!jvmLaunchController.runtimeLifecycleReady || !bootOverlayController.isDismissed)
         AndroidGameModeSupport.reportGameState(
@@ -1205,6 +1269,8 @@ internal class GameSessionCoordinator(
     }
 
     private fun shouldAllowForegroundAudio(): Boolean {
+        // markActivityResumed() is fed the resolved visibility, so a paused-but-visible small
+        // window still counts as foreground audio here.
         return foregroundAudioPolicy.shouldRestoreForegroundAudio(
             runtimeLifecycleReady = jvmLaunchController.runtimeLifecycleReady,
             backExitRequested = backExitRequested

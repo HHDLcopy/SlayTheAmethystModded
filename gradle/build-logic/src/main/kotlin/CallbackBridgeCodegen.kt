@@ -195,6 +195,20 @@ object CallbackBridgeCodegen {
             jvmVisibility = "public"
         ),
         CallbackBridgeMethod(
+            name = "nativeGetPhysicalWidth",
+            returnType = "int",
+            parameters = emptyList(),
+            androidVisibility = "public",
+            jvmVisibility = "public"
+        ),
+        CallbackBridgeMethod(
+            name = "nativeGetPhysicalHeight",
+            returnType = "int",
+            parameters = emptyList(),
+            androidVisibility = "public",
+            jvmVisibility = "public"
+        ),
+        CallbackBridgeMethod(
             name = "nativeSetGrabbing",
             returnType = "void",
             parameters = listOf(CallbackBridgeParameter("boolean", "grabbing")),

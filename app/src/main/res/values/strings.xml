@@ -1656,10 +1656,11 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_system_game_mode_dialog_panel">If your device supports a game panel, switch it while the game is running from the system panel. Different vendors may call it things like &quot;Game Assistant&quot; or &quot;Game Space&quot;.</string>
     <string name="settings_system_game_mode_dialog_support">The launcher currently declares support for Performance and Battery modes. Battery mode may still affect power and scheduling, but the launcher itself does not apply an extra FPS cap.</string>
     <string name="settings_back_behavior_title">Back button behavior</string>
-    <string name="settings_back_behavior_exit">Exit to launcher immediately</string>
+    <string name="settings_back_behavior_exit">Press twice to exit to launcher</string>
     <string name="settings_back_behavior_escape">Map to Esc, useful for pausing the game and similar actions</string>
     <string name="settings_back_behavior_none">No action</string>
     <string name="settings_back_behavior_desc">Controls what happens when you press the system Back button while the game is running.</string>
+    <string name="game_back_exit_confirmation">Press Back again within 2 seconds to return to the main menu</string>
     <string name="settings_boot_overlay_manual_enabled">Loading overlay: Manual close</string>
     <string name="settings_boot_overlay_manual_disabled">Loading overlay: Auto close</string>
     <string name="settings_boot_overlay_manual_desc">When enabled, the loading overlay no longer disappears automatically on launch. You must close it manually with the button on the overlay.</string>

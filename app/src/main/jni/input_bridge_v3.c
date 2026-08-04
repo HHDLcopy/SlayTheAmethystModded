@@ -754,6 +754,28 @@ JNIEXPORT jboolean JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeIsRuntimeFor
     return atomic_load_explicit(&pojav_environ->runtimeForeground, memory_order_relaxed) ? JNI_TRUE : JNI_FALSE;
 }
 
+// The JVM-side LWJGL shim has no way to query the real surface, so it reads the size the Android
+// side last published. This must stay live: multi-window resizes arrive long after JVM startup.
+JNIEXPORT jint JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeGetPhysicalWidth(
+        __attribute__((unused)) JNIEnv* env,
+        __attribute__((unused)) jclass clazz
+) {
+    if (pojav_environ == NULL) {
+        return 0;
+    }
+    return (jint) pojav_environ->savedWidth;
+}
+
+JNIEXPORT jint JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeGetPhysicalHeight(
+        __attribute__((unused)) JNIEnv* env,
+        __attribute__((unused)) jclass clazz
+) {
+    if (pojav_environ == NULL) {
+        return 0;
+    }
+    return (jint) pojav_environ->savedHeight;
+}
+
 JNIEXPORT void JNICALL Java_org_lwjgl_glfw_CallbackBridge_nativeSetGrabbing(__attribute__((unused)) JNIEnv* env, __attribute__((unused)) jclass clazz, jboolean grabbing) {
     TRY_ATTACH_ENV(dvm_env, pojav_environ->dalvikJavaVMPtr, "nativeSetGrabbing failed!\n", return;);
     (*dvm_env)->CallStaticVoidMethod(dvm_env, pojav_environ->bridgeClazz, pojav_environ->method_onGrabStateChanged, grabbing);

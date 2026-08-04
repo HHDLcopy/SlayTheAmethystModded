@@ -1951,10 +1951,11 @@
     <string name="settings_system_game_mode_dialog_panel">如果你的裝置支援遊戲面板，請在遊戲執行時透過系統面板切換。不同廠商可能會稱其為 &quot;遊戲助手&quot;、&quot;遊戲空間&quot; 等。</string>
     <string name="settings_system_game_mode_dialog_support">啟動器當前宣告支援效能模式和省電模式。省電模式仍可能影響功耗與排程，但啟動器本身不會再額外施加 FPS 上限。</string>
     <string name="settings_back_behavior_title">返回鍵行為</string>
-    <string name="settings_back_behavior_exit">立即退出到啟動器</string>
+    <string name="settings_back_behavior_exit">連續按兩次返回鍵退出到啟動器</string>
     <string name="settings_back_behavior_escape">對映為 Esc，適合暫停遊戲等操作</string>
     <string name="settings_back_behavior_none">不執行任何操作</string>
     <string name="settings_back_behavior_desc">控制遊戲執行時按下系統返回鍵後會發生什麼。</string>
+    <string name="game_back_exit_confirmation">2 秒內再次按返回鍵退出到主選單</string>
     <string name="settings_boot_overlay_manual_enabled">載入層：手動關閉</string>
     <string name="settings_boot_overlay_manual_disabled">載入層：自動關閉</string>
     <string name="settings_boot_overlay_manual_desc">開啟後，載入層在啟動完成後不會再自動消失。你需要手動點選載入層上的按鈕將其關閉。</string>

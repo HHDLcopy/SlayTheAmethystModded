@@ -48,9 +48,6 @@ import com.badlogic.gdx.utils.SharedLibraryLoader;
  * @author mzechner */
 public class LwjglGraphics implements Graphics {
 	private static final String RENDER_SCALE_PROP = "amethyst.gdx.render_scale";
-	private static final String VIRTUAL_WIDTH_PROP = "amethyst.gdx.virtual_width";
-	private static final String VIRTUAL_HEIGHT_PROP = "amethyst.gdx.virtual_height";
-
 
 	/** The suppored OpenGL extensions */
 	static Array<String> extensions;
@@ -98,7 +95,7 @@ public class LwjglGraphics implements Graphics {
 	public int getHeight () {
 		if (canvas != null)
 			return Math.max(1, canvas.getHeight());
-		int configured = readPositiveIntProperty(VIRTUAL_HEIGHT_PROP);
+		int configured = LwjglHotLoopConfig.virtualHeight();
 		if (configured > 0) return configured;
 		return scaledLogicalSize((int)(Display.getHeight() * PixelScaleCompat.factor()));
 	}
@@ -106,7 +103,7 @@ public class LwjglGraphics implements Graphics {
 	public int getWidth () {
 		if (canvas != null)
 			return Math.max(1, canvas.getWidth());
-		int configured = readPositiveIntProperty(VIRTUAL_WIDTH_PROP);
+		int configured = LwjglHotLoopConfig.virtualWidth();
 		if (configured > 0) return configured;
 		return scaledLogicalSize((int)(Display.getWidth() * PixelScaleCompat.factor()));
 	}
@@ -139,17 +136,6 @@ public class LwjglGraphics implements Graphics {
 			return parsed;
 		} catch (Throwable ignored) {
 			return 1f;
-		}
-	}
-
-	private static int readPositiveIntProperty (String property) {
-		String raw = System.getProperty(property);
-		if (raw == null) return 0;
-		try {
-			int value = Integer.parseInt(raw.trim());
-			return value > 0 ? value : 0;
-		} catch (Throwable ignored) {
-			return 0;
 		}
 	}
 

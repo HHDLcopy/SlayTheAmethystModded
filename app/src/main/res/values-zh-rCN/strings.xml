@@ -1954,10 +1954,11 @@
     <string name="settings_system_game_mode_dialog_panel">如果你的设备支持游戏面板，请在游戏运行时通过系统面板切换。不同厂商可能会称其为 &quot;游戏助手&quot;、&quot;游戏空间&quot; 等。</string>
     <string name="settings_system_game_mode_dialog_support">启动器当前声明支持性能模式和省电模式。省电模式仍可能影响功耗与调度，但启动器本身不会再额外施加 FPS 上限。</string>
     <string name="settings_back_behavior_title">返回键行为</string>
-    <string name="settings_back_behavior_exit">立即退出到启动器</string>
+    <string name="settings_back_behavior_exit">连续按两次返回键退出到启动器</string>
     <string name="settings_back_behavior_escape">映射为 Esc，适合暂停游戏等操作</string>
     <string name="settings_back_behavior_none">不执行任何操作</string>
     <string name="settings_back_behavior_desc">控制游戏运行时按下系统返回键后会发生什么。</string>
+    <string name="game_back_exit_confirmation">再次按返回键退出到主菜单</string>
     <string name="settings_boot_overlay_manual_enabled">加载层：手动关闭</string>
     <string name="settings_boot_overlay_manual_disabled">加载层：自动关闭</string>
     <string name="settings_boot_overlay_manual_desc">开启后，加载层在启动完成后不会再自动消失。你需要手动点击加载层上的按钮将其关闭。</string>

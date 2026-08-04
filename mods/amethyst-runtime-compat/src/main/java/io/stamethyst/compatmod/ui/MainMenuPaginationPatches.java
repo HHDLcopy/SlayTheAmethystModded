@@ -17,6 +17,7 @@ import com.megacrit.cardcrawl.screens.mainMenu.MainMenuScreen;
 import com.megacrit.cardcrawl.screens.mainMenu.MenuButton;
 
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.WeakHashMap;
 
 import javassist.CannotCompileException;
@@ -286,6 +287,8 @@ public final class MainMenuPaginationPatches {
         private boolean active;
         private final Hitbox leftArrow = new Hitbox(70.0f, 70.0f);
         private final Hitbox rightArrow = new Hitbox(70.0f, 70.0f);
+        private final IdentityHashMap<MenuButton, ButtonLayout> vanillaLayout =
+            new IdentityHashMap<MenuButton, ButtonLayout>();
 
         private boolean refresh(MainMenuScreen menu) {
             if (menu.bg == null
@@ -297,19 +300,31 @@ public final class MainMenuPaginationPatches {
             }
 
             ArrayList<MenuButton> buttons = menu.buttons;
+            if (buttons == null || buttons.isEmpty()) {
+                deactivate(menu);
+                clearInput();
+                return false;
+            }
+
+            if (active) {
+                captureMissingVanillaLayout(buttons);
+                restoreVanillaLayout(menu);
+            } else {
+                vanillaLayout.clear();
+                captureMissingVanillaLayout(buttons);
+            }
+
             boolean largeLayout = Settings.isTouchScreen || Settings.isMobile;
             float rowSpacing = MenuButton.SPACE_Y * (largeLayout ? 2.0f : 1.0f);
-            pageSize = Math.max(
-                1,
-                (int) ((Settings.HEIGHT - MenuButton.START_Y - 120.0f * Settings.scale) / rowSpacing)
-            );
-            if (buttons == null || buttons.size() <= pageSize) {
+            int firstOverflowIndex = findFirstOverflowIndex(buttons);
+            if (firstOverflowIndex < 0) {
                 deactivate(menu);
                 clearInput();
                 return false;
             }
 
             active = true;
+            pageSize = Math.max(1, firstOverflowIndex);
             pageCount = (buttons.size() + pageSize - 1) / pageSize;
             page = Math.min(page, pageCount - 1);
             arrowY = MenuButton.START_Y + pageSize * rowSpacing;
@@ -337,6 +352,30 @@ public final class MainMenuPaginationPatches {
             return true;
         }
 
+        private int findFirstOverflowIndex(ArrayList<MenuButton> buttons) {
+            float availableBottom = Settings.HEIGHT - 120.0f * Settings.scale;
+            for (int index = 0; index < buttons.size(); index++) {
+                MenuButton button = buttons.get(index);
+                ButtonLayout layout = vanillaLayout.get(button);
+                if (layout != null && layout.bottom() > availableBottom) {
+                    return index;
+                }
+            }
+            return -1;
+        }
+
+        private void captureMissingVanillaLayout(ArrayList<MenuButton> buttons) {
+            for (MenuButton button : buttons) {
+                if (button == null || button.hb == null || vanillaLayout.containsKey(button)) {
+                    continue;
+                }
+                vanillaLayout.put(
+                    button,
+                    new ButtonLayout(button.hb.cX, button.hb.cY, button.hb.y + button.hb.height)
+                );
+            }
+        }
+
         private void deactivate(MainMenuScreen menu) {
             if (active) {
                 restoreVanillaLayout(menu);
@@ -344,6 +383,7 @@ public final class MainMenuPaginationPatches {
             active = false;
             page = 0;
             pageCount = 0;
+            vanillaLayout.clear();
         }
 
         private void changePage(int offset) {
@@ -355,17 +395,14 @@ public final class MainMenuPaginationPatches {
             if (menu.buttons == null) {
                 return;
             }
-            boolean largeLayout = Settings.isTouchScreen || Settings.isMobile;
-            float rowSpacing = MenuButton.SPACE_Y * (largeLayout ? 2.0f : 1.0f);
             for (MenuButton button : menu.buttons) {
                 if (button == null || button.hb == null) {
                     continue;
                 }
-                int index = menu.buttons.indexOf(button);
-                button.hb.move(
-                    button.hb.width / 2.0f + 75.0f * Settings.scale,
-                    MenuButton.START_Y + index * rowSpacing
-                );
+                ButtonLayout layout = vanillaLayout.get(button);
+                if (layout != null) {
+                    button.hb.move(layout.centerX, layout.centerY);
+                }
             }
         }
 
@@ -379,6 +416,22 @@ public final class MainMenuPaginationPatches {
             hitbox.justHovered = false;
             hitbox.clickStarted = false;
             hitbox.clicked = false;
+        }
+
+        private static final class ButtonLayout {
+            private final float centerX;
+            private final float centerY;
+            private final float bottom;
+
+            private ButtonLayout(float centerX, float centerY, float bottom) {
+                this.centerX = centerX;
+                this.centerY = centerY;
+                this.bottom = bottom;
+            }
+
+            private float bottom() {
+                return bottom;
+            }
         }
     }
 }

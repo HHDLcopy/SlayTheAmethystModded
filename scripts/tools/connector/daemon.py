@@ -372,7 +372,14 @@ class Daemon:
         )
         if response != "OK":
             raise RuntimeError(f"game-probe rejected arthas bridge: {response or 'connection closed'}")
-        return self._probe_arthas(serial, arthas_port)
+        last_error: Exception | None = None
+        for _ in range(10):
+            try:
+                return self._probe_arthas(serial, arthas_port)
+            except Exception as exc:
+                last_error = exc
+                time.sleep(0.3)
+        raise RuntimeError(f"bridge did not become ready: {last_error}")
 
     def _ensure_arthas(self, serial: str, agent_port: int, arthas_port: int) -> dict[str, Any]:
         runtime = self._arthas_runtime(serial)

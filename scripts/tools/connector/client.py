@@ -38,6 +38,7 @@ class ConnectorClient:
         self._auto_start = auto_start
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._recv_buffer = b""
+        self._selected_serial: str | None = None
 
     @property
     def port(self) -> int:
@@ -102,7 +103,10 @@ class ConnectorClient:
             "method": "select",
             "params": {"serial": serial, "timeout_ms": timeout_ms},
         })
-        return resp.get("ok", False)
+        selected = resp.get("ok", False)
+        if selected:
+            self._selected_serial = serial
+        return selected
 
     def status(self) -> dict[str, Any]:
         return self.send_request({"method": "status"})
@@ -257,6 +261,8 @@ class ConnectorClient:
         # would leave the actual passthrough socket orphaned.
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._sock.connect(("127.0.0.1", self._port))
+        if self._selected_serial:
+            self.select(self._selected_serial)
         return Stream(sock=sock, stream_id=stream_id, initial_data=initial_data)
 
 

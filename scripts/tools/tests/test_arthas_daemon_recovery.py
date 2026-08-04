@@ -33,6 +33,23 @@ class TestDaemonArthasRecovery(unittest.TestCase):
         )
         recover.assert_called_once_with("device-a", 9099, 8099)
 
+    def test_recovery_retries_until_bridge_is_ready(self) -> None:
+        with patch.object(
+            self.daemon,
+            "_push_arthas_resources",
+        ), patch.object(
+            self.daemon,
+            "_agent_command",
+            side_effect=["OK", "OK"],
+        ), patch.object(
+            self.daemon,
+            "_probe_arthas",
+            side_effect=[OSError("starting"), OSError("starting"), "3456"],
+        ), patch("scripts.tools.connector.daemon.time.sleep"):
+            result = self.daemon._recover_arthas("device-a", 9099, 8099)
+
+        self.assertEqual("3456", result)
+
     def test_missing_game_probe_reports_error_without_relaunch(self) -> None:
         with patch.object(self.daemon, "_probe_arthas", side_effect=OSError("refused")), \
                 patch.object(self.daemon, "_recover_arthas", side_effect=OSError("probe refused")):

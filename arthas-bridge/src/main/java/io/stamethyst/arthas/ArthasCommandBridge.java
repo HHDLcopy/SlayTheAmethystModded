@@ -46,12 +46,12 @@ public class ArthasCommandBridge {
     }
 
     /** Outcome of {@link #bindOrReuse(int)}. */
-    static final class Listener {
-        final java.net.ServerSocket socket;
+    public static final class Listener {
+        public final java.net.ServerSocket socket;
         /** True when an earlier attach already owned this listener. */
-        final boolean reused;
+        public final boolean reused;
 
-        Listener(java.net.ServerSocket socket, boolean reused) {
+        public Listener(java.net.ServerSocket socket, boolean reused) {
             this.socket = socket;
             this.reused = reused;
         }

@@ -49,6 +49,7 @@ class TestConnectorClient(unittest.TestCase):
         client._sock.recv.return_value = b'{"ok":true}\n'
         result = client.select(serial="abc", timeout_ms=5000)
         self.assertTrue(result)
+        self.assertEqual("abc", client._selected_serial)
 
     def test_status_returns_dict(self):
         from scripts.tools.connector.client import ConnectorClient
@@ -123,12 +124,14 @@ class TestConnectorClient(unittest.TestCase):
     def test_connect_stream_sends_request_and_returns_stream_id(self, mock_socket_cls):
         from scripts.tools.connector.client import ConnectorClient
         mock_new_sock = MagicMock()
+        mock_new_sock.recv.return_value = b'{"ok":true}\n'
         mock_socket_cls.return_value = mock_new_sock
 
         client = ConnectorClient(port=1)
         mock_sock = MagicMock()
         mock_sock.recv.return_value = b'{"stream_id":"s1"}\n'
         client._sock = mock_sock
+        client._selected_serial = "device-a"
         stream = client.connect_stream(port=8099)
         sent = mock_sock.sendall.call_args[0][0]
         req = _json.loads(sent.decode("utf-8"))
@@ -137,6 +140,7 @@ class TestConnectorClient(unittest.TestCase):
         self.assertEqual(stream.stream_id, "s1")
         mock_new_sock.connect.assert_called_once_with(("127.0.0.1", 1))
         self.assertIs(client._sock, mock_new_sock)
+        mock_new_sock.sendall.assert_called()
 
     @patch("socket.socket")
     def test_connect_stream_preserves_handshake_remainder(self, mock_socket_cls):

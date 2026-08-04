@@ -9,7 +9,7 @@ import io.stamethyst.backend.mods.importing.ModImportItemStatus
 import io.stamethyst.backend.mods.importing.ModImportPlan
 import io.stamethyst.backend.mods.importing.ModImportSession
 import io.stamethyst.backend.mods.importing.PreparedImportSource
-import io.stamethyst.backend.mods.importing.resolveImportTargetFileName
+import io.stamethyst.backend.mods.importing.ModImportExecutor
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -78,7 +78,7 @@ class ModImportDecisionsTest {
 
         assertEquals(
             "old.jar",
-            resolveImportTargetFileName(
+            ModImportExecutor.resolveImportTargetFileName(
                 item,
                 reusedTargetFileName = "old.jar"
             )
@@ -91,7 +91,7 @@ class ModImportDecisionsTest {
 
         assertEquals(
             "new.jar",
-            resolveImportTargetFileName(item, reusedTargetFileName = null)
+            ModImportExecutor.resolveImportTargetFileName(item, reusedTargetFileName = null)
         )
     }
 

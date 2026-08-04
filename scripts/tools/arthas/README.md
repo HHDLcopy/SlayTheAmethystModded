@@ -378,7 +378,6 @@ game-probe 负责游戏语义；Arthas 负责通用 JVM 诊断。
 
 ## 参考
 
-- CrossSpire 维护者手册：`docs/development/android-arthas.md`（仓库 `docs/development/README.md` 为目录入口）
 - [Arthas 官方文档](https://arthas.aliyun.com/doc/commands.html)
 - [OGNL 语言指南](https://commons.apache.org/dormant/commons-ognl/language-guide.html)
 - [表达式核心变量](https://arthas.aliyun.com/doc/advice-class.html)

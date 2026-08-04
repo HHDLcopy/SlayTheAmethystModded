@@ -171,7 +171,7 @@ class ClearRuntimeSignalsTest(unittest.TestCase):
         mock_root.return_value = {"root": "/data/sts", "accessMode": "shell"}
         ctx = self._make_ctx()
         clear_runtime_signals(ctx)
-        self.assertEqual(mock_shell.call_count, 2)
+        self.assertEqual(mock_shell.call_count, 3)
 
     @patch("scripts.tools.harness._device.resolve_device_sts_root")
     @patch("scripts.tools.harness._device.adb")
@@ -179,7 +179,7 @@ class ClearRuntimeSignalsTest(unittest.TestCase):
         mock_root.return_value = {"root": "files/sts", "accessMode": "run-as"}
         ctx = self._make_ctx()
         clear_runtime_signals(ctx)
-        self.assertEqual(mock_adb.call_count, 2)
+        self.assertEqual(mock_adb.call_count, 3)
 
 
 class RemoteStsRootScriptTest(unittest.TestCase):

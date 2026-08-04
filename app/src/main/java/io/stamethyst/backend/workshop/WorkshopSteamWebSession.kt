@@ -57,7 +57,16 @@ enum class SteamLanguagePreference(
 
 internal class WorkshopSteamWebSession(
     context: Context,
-    private val baseClient: OkHttpClient,
+    /**
+     * Accelerated client for the Steam directory lookup.
+     *
+     * `ISteamDirectory/GetCMListForConnect` is plain HTTPS to api.steampowered.com,
+     * so it must keep acceleration. Passing the bare protocol client here left the
+     * request that gates every logged-in market load unaccelerated.
+     */
+    private val directoryClient: OkHttpClient,
+    /** Bare client for the CM websocket handshake, which must not be rewritten. */
+    private val protocolClient: OkHttpClient,
     private val identity: WorkshopSteamClientIdentity,
 ) {
     private val appContext = context.applicationContext
@@ -143,8 +152,8 @@ internal class WorkshopSteamWebSession(
         )
         val webAccessToken = cachedToken?.toWorkshopWebAccessToken() ?: withContext(Dispatchers.IO) {
             val accessToken = SteamAuthenticationClient(
-                directoryClient = SteamDirectoryClient(baseClient),
-                sessionFactory = { identity.createSession(baseClient) },
+                directoryClient = SteamDirectoryClient(directoryClient),
+                sessionFactory = { identity.createSession(protocolClient) },
             ).generateAccessTokenForApp(
                 account = account,
                 allowRenewal = false,

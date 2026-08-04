@@ -38,7 +38,8 @@ internal val SteamStoreWattToolkitRouteProfile = WattToolkitRouteProfile(
 
 internal val SteamImageCdnWattToolkitRouteProfile = WattToolkitRouteProfile(
     name = "steam-image-cdn",
-    cacheFileName = "watt-steam-image-cdn-route-cache-v2.json",
+    // v3 invalidates caches created before the suffix families were declared.
+    cacheFileName = "watt-steam-image-cdn-route-cache-v3.json",
     supportedHosts = setOf(
         "steamcdn-a.akamaihd.net",
         "steamuserimages-a.akamaihd.net",
@@ -51,6 +52,14 @@ internal val SteamImageCdnWattToolkitRouteProfile = WattToolkitRouteProfile(
         "avatars.fastly.steamstatic.com",
     ),
     bootstrapForwardTargets = listOf("steamimage.rmbgame.net"),
+    // Upstream publishes one rule per image CDN family. Enumerating hosts exactly left
+    // siblings such as avatars.steamstatic.com and avatars.cloudflare.steamstatic.com
+    // unaccelerated, which is precisely where logged-in profile avatars resolve to.
+    supportedHostSuffixes = setOf(
+        ".steamstatic.com",
+        ".akamaihd.net",
+        ".steamusercontent.com",
+    ),
 )
 
 internal val SteamMediaWattToolkitRouteProfile = WattToolkitRouteProfile(

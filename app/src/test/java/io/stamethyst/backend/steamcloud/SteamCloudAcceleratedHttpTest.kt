@@ -227,6 +227,48 @@ class SteamCloudAcceleratedHttpTest {
     }
 
     @Test
+    fun steamImageRouteProfile_acceleratesLoggedInAvatarSiblingHosts() {
+        val resolver = WattToolkitGithubRouteResolver(
+            routeProfile = SteamImageCdnWattToolkitRouteProfile,
+            client = OkHttpClient(),
+        )
+
+        // Logged-in profile avatars resolve to these hosts, which are not in the
+        // hand-written supportedHosts list and previously fell through unaccelerated.
+        listOf(
+            "avatars.steamstatic.com",
+            "avatars.cloudflare.steamstatic.com",
+            "shared.cloudflare.steamstatic.com",
+            "steamuserimages-a.akamaihd.net",
+        ).forEach { host ->
+            assertTrue(
+                "expected $host to be covered by the steam-image-cdn profile",
+                resolver.isProfileHost(host),
+            )
+        }
+    }
+
+    @Test
+    fun steamImageRouteProfile_doesNotClaimUnrelatedHosts() {
+        val resolver = WattToolkitGithubRouteResolver(
+            routeProfile = SteamImageCdnWattToolkitRouteProfile,
+            client = OkHttpClient(),
+        )
+
+        listOf(
+            "steamcommunity.com",
+            "api.steampowered.com",
+            "notsteamstatic.com",
+            "evil-steamstatic.com.attacker.test",
+        ).forEach { host ->
+            assertTrue(
+                "expected $host to stay outside the steam-image-cdn profile",
+                !resolver.isProfileHost(host),
+            )
+        }
+    }
+
+    @Test
     fun steamContentRouteProfile_supportsSteamPipeCdnHostsSeenOnDevice() {
         val expectedHosts = setOf(
             "st.dl.eccdnx.com",

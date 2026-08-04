@@ -80,7 +80,12 @@ internal class WorkshopService(
      * download unaccelerated.
      */
     private val directoryHttpClient = client
-    private val steamWebSession = WorkshopSteamWebSession(context, protocolClient, identity)
+    private val steamWebSession = WorkshopSteamWebSession(
+        context = context,
+        directoryClient = directoryHttpClient,
+        protocolClient = protocolClient,
+        identity = identity,
+    )
     private val steamLanguagePreference: SteamLanguagePreference
         get() = runCatching { LauncherPreferences.readWorkshopSteamLanguage(context) }
             .getOrDefault(SteamLanguagePreference.SimplifiedChinese)

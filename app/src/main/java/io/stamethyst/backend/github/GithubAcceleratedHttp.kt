@@ -738,7 +738,7 @@ internal class WattToolkitGithubRouteResolver(
      * resolver to a hand-written host list silently dropped siblings that the
      * upstream rule already covers.
      */
-    private fun isProfileHost(host: String): Boolean {
+    internal fun isProfileHost(host: String): Boolean {
         val normalizedHost = host.lowercase(Locale.ROOT)
         if (normalizedHost in normalizedSupportedHosts) {
             return true

@@ -180,11 +180,42 @@
 
 ### 已完成
 - 帧同步：删除开关、保留 sleep/park 最优路径（第一部分第 1 条）
+- 帧同步器丢失 clamp 导致周期性重复帧（v1.5.4 回归，详见下方"帧步进回归"）
 - 主循环属性提升：新增 `LwjglHotLoopConfig` 静态快照，保留 GLES 上下文运行时查询（第一部分第 2 条）
 - 纹理绑定路径无条件计时：`GLTexture` 与 `SpriteBatch` 两侧各加 `static final` 门控（第一部分第 3 条）
 - 启动器 logcat 抓取：开局停止 + 轮询 250 ms → 2 s（第二部分第 2 条）
 - EasyTier 隐藏浮层：删除 1 秒轮询，改用已有广播（第二部分第 3 条）
 - `-XX:+DisableExplicitGC`：ram-saver 启用时不再添加（第三部分第 2 条）
+- 显式 GC 改为并发周期：ram-saver 启用时补 `-XX:+ExplicitGCInvokesConcurrent`（见下）
+
+## 帧步进回归（v1.5.3 → v1.5.4）`[已修复]`
+
+玩家报告升级 1.5.4 后"很卡，有种时不时回退到上一帧的感觉"。根因在 `perf: unified Android/LWJGL frame pacer` 引入的 `syncSoftwareFrame`，由两个缺陷叠加造成，缺一不可复现：
+
+1. **推进 deadline 时没有钳制到当前时间**。LWJGL2 `Sync.sync()` 的对应实现是 `nextFrame = Math.max(nextFrame + period, getTime())`，其中 `max` 负责把超时帧欠下的时间一次性吸收。1.5.4 写成 `deadline + frameNanos`，欠账持续累积。
+2. **累积欠账超过两个周期后重新播种（drift resync）**，而重新播种本身就丢掉一帧。
+
+两者叠加在"目标帧率高于面板实际呈现速率"时产生固定节拍。以默认 `DEFAULT_TARGET_FPS = 90`（`LauncherConfig.kt:238`）配 60Hz 面板（每 16.7ms 一次 vblank）为例，present 间隔序列为 `16.7 / 16.7 / 16.7 / 27.81 ms` 循环：27.81ms 跨过了一次 vblank，面板只能把上一帧再扫出一次，即玩家看到的"回退到上一帧"。吞吐同时从 59.88 掉到 51.36 FPS。
+
+这条路径在 1.5.3 上不会触发：pacer 默认关闭（`DEFAULT_ANDROID_LWJGL_FRAME_PACING_COMPAT_ENABLED = false`），且 `shouldUseSoftwareSync()` 会在 `frameRate + 1 >= refreshRate` 时跳过软件限帧。1.5.4 把开关与该门禁一并删除，pacer 变为无条件执行。
+
+注意本后端没有第二道限帧：`setVSyncEnabled(false)`（`LwjglGraphics.java`）与 `FORCE_VSYNC=false`（`JREUtils.java:134`）都关掉了 swap-interval pacing，所以软件 pacer 的周期一旦与面板不一致就会直接打拍。
+
+**当前状态**：调度算术抽到 `LwjglFramePacerSchedule`（`patches/gdx-patch/.../LwjglFramePacerSchedule.java`）以便脱离 GL 上下文做单元测试。
+- `advance()` 恢复 `Math.max(deadline + frameNanos, afterWait)` 语义，与 `Sync.sync()` 对齐。
+- `shouldSeed()` 去掉 drift resync 分支：有了 clamp 之后 deadline 落后不会超过一帧的超时量，该分支只会误触发，并把 clamp 本该完成的追赶丢弃（实测 90 FPS 目标下周期性 35ms 尖峰场景：83.1 → 87.4 FPS）。
+- 新增 `capToRefreshRate()`：目标帧率钳到启动器上报的面板刷新率，让 pacer 与显示器同周期。刷新率未知时（`resolveActiveRefreshRate()` 返回 -1）保持调用方目标不变，不做猜测。这也让 1.5.4 新加的 `amethyst.gdx.active_refresh_rate` 真正参与限帧决策——此前它只被一处日志读取。
+
+回归测试见 `LwjglFramePacerScheduleTest`，其中 `shippedV154PresentIntervals` 保留了 1.5.4 的原始实现作为可执行的缺陷描述，并断言它确实重现该节拍，避免对照组失效后测试变成空断言。把两个缺陷同时还原会让该测试类 17 项中的 9 项失败。
+
+**打包注意**：gdx-patch 的类不是整包替换进 `desktop-1.0.jar`，而是由 `StsDesktopJarPatcher.shouldPatchStsEntry` 按显式白名单逐个筛选。`LwjglApplication` 走的是**前缀**规则（`LwjglApplication*`，覆盖内部类），所以新增的**同包平级类**匹配不到任何规则，会被静默丢弃——patch jar 里有该类，但补丁后的 `desktop-1.0.jar` 里没有，游戏第一帧即 `NoClassDefFoundError`。本次 `LwjglFramePacerSchedule` 就是这样漏掉的。新增类需要同时登记到 `ModRuntimeJarConstants.kt` 的常量、`REQUIRED_STS_PATCH_CLASSES` 与 `shouldPatchStsEntry`。
+
+`StsDesktopJarPatcherTest.shouldPatchStsEntry_coversEveryNewClassIntroducedIntoPatchedPackages` 扫描真实构建产物来兜住这类遗漏。它只针对**原版 jar 中不存在**的新增类：覆盖同名原版类时未拷贝只是补丁失效、不会崩溃（`SpriteBatch`、`FrameBuffer`、`HdpiUtils` 当前即属此列，是既有状态而非本次引入），而全新类没有回退目标，漏拷必崩。
+
+### 显式 GC 的停顿
+
+`f297b566` 为 ram-saver 放开 `System.gc()` 后，这些调用默认是 full stop-the-world，落在渲染线程上就是一次帧顿挫，会被上面的 pacer 缺陷进一步放大。现补 `-XX:+ExplicitGCInvokesConcurrent`（`StsLaunchSpec.resolveExplicitGcInvokesConcurrentEnabled`，仅在显式 GC 确实可达、即未加 `DisableExplicitGC` 时添加，且置于选择 G1 的 64 位分支内）。G1 并发周期同样会清除并入队弱引用，`RamSaver.update` 排空 `ReferenceQueue` 释放原生纹理的路径不受影响。
+
 ---
 两点说明：以上全部来自源码阅读，我没有在设备上运行过，所以没有实测的 mA 或核温数据；排序依据是唤醒频率、系统调用/binder 成本与屏幕/射频行为。唯一有实测数据的是第一部分第 1 条（已修复），数据来自代码注释里记录的对比。
 

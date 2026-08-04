@@ -99,7 +99,6 @@ public class LwjglApplication implements Application {
 	private static final String EXPECTED_EXIT_MARKER_PROP = "amethyst.expected_exit_marker";
 	private static final String NO_CONTEXT_DIAGNOSTICS_PROP = "amethyst.lwjgl.diag.no_context_stack";
 	private static final String STS_CARD_CRAWL_GAME_CLASS = "com.megacrit.cardcrawl.core.CardCrawlGame";
-	private static final long NANOS_PER_SECOND = 1000000000L;
 	private static final long ANDROID_FRAME_PACER_SLEEP_MARGIN_NANOS = 500000L;
 	private static final long ANDROID_FRAME_PACER_YIELD_THRESHOLD_NANOS = 1500000L;
 	private static final long ANDROID_FRAME_PACER_PARK_THRESHOLD_NANOS = 200000L;
@@ -164,6 +163,8 @@ public class LwjglApplication implements Application {
 	private boolean pendingNativeContextRebind;
 	private int androidFramePacerLastFrameRate;
 	private long androidFramePacerNextFrameNanos;
+	private int cachedActiveRefreshRate;
+	private boolean framePacerCapLogged;
 	private Boolean lastActiveState;
 	private Boolean coreFramebufferBindUsable;
 	private Boolean extFramebufferBindUsable;
@@ -634,24 +635,46 @@ public class LwjglApplication implements Application {
 	// Paces frames by sleeping/parking until the next frame deadline instead of busy-waiting.
 	// Measured on a 90Hz panel at a 90 FPS target: ~13% less process CPU and ~14% less render-thread
 	// CPU than LWJGL's Display.sync(), with presented FPS and frame jitter unchanged.
+	// The schedule arithmetic lives in LwjglFramePacerSchedule so it can be unit tested.
 	private void syncSoftwareFrame (int frameRate) {
 		if (frameRate <= 0) return;
-		long frameNanos = Math.max(1L, NANOS_PER_SECOND / frameRate);
-		long now = System.nanoTime();
-		if (androidFramePacerLastFrameRate != frameRate
-			|| androidFramePacerNextFrameNanos <= 0L
-			|| now - androidFramePacerNextFrameNanos > frameNanos * 2L) {
+		frameRate = capFrameRateToActiveRefreshRate(frameRate);
+		long frameNanos = LwjglFramePacerSchedule.frameNanos(frameRate);
+		if (LwjglFramePacerSchedule.shouldSeed(androidFramePacerLastFrameRate, frameRate,
+			androidFramePacerNextFrameNanos)) {
 			androidFramePacerLastFrameRate = frameRate;
-			androidFramePacerNextFrameNanos = now + frameNanos;
+			androidFramePacerNextFrameNanos = LwjglFramePacerSchedule.seed(System.nanoTime(), frameNanos);
 		}
 
 		long deadline = androidFramePacerNextFrameNanos;
 		sleepUntilFrameDeadline(deadline);
-		long afterWait = System.nanoTime();
-		androidFramePacerNextFrameNanos = deadline + frameNanos;
-		if (afterWait - androidFramePacerNextFrameNanos > frameNanos * 2L) {
-			androidFramePacerNextFrameNanos = afterWait + frameNanos;
+		androidFramePacerNextFrameNanos =
+			LwjglFramePacerSchedule.advance(deadline, System.nanoTime(), frameNanos);
+	}
+
+	/** The software pacer is the only frame limiter in this backend: the Android bridge runs with
+	 * swap-interval pacing disabled ({@code FORCE_VSYNC=false}, {@link LwjglGraphics#setVSync}). Pacing
+	 * above what the panel can present therefore does not add frames, it just puts the pacer's schedule
+	 * on a different period than the display, and the two beat against each other. Cap the target at the
+	 * refresh rate the launcher reported so both run on the same period. Only launcher-reported or
+	 * driver-reported rates reach here; {@link #resolveActiveRefreshRate()} returns -1 when nothing
+	 * trustworthy is known, in which case the caller's target is used unchanged.
+	 *
+	 * <p>The resolution is cached because this runs on the per-frame path and the fallbacks in
+	 * {@link #resolveActiveRefreshRate()} query Display state. */
+	private int capFrameRateToActiveRefreshRate (int frameRate) {
+		int refreshRate = cachedActiveRefreshRate;
+		if (refreshRate == 0) {
+			refreshRate = resolveActiveRefreshRate();
+			cachedActiveRefreshRate = refreshRate > 0 ? refreshRate : -1;
 		}
+		int capped = LwjglFramePacerSchedule.capToRefreshRate(frameRate, refreshRate);
+		if (capped != frameRate && !framePacerCapLogged) {
+			framePacerCapLogged = true;
+			System.out.println("[gdx-patch] Frame pacing: capping target " + frameRate + " FPS to active refresh rate "
+				+ refreshRate + "Hz to keep the pacer on the display period");
+		}
+		return capped;
 	}
 
 	private void sleepUntilFrameDeadline (long deadlineNanos) {

@@ -19,6 +19,31 @@ class StsDesktopJarPatcherTest {
     }
 
     @Test
+    fun requiredPatchClasses_includeLwjglFramePacerSchedule() {
+        assertTrue(REQUIRED_STS_PATCH_CLASSES.contains(STS_PATCH_LWJGL_FRAME_PACER_SCHEDULE_CLASS))
+    }
+
+    @Test
+    fun shouldPatchStsEntry_acceptsLwjglFramePacerSchedule() {
+        // LwjglApplication calls into this class from the per-frame pacing path. It is a separate
+        // top-level class, so it does not match the LwjglApplication prefix rule and has to be listed
+        // explicitly; otherwise the patched desktop jar ships a LwjglApplication that immediately
+        // throws NoClassDefFoundError on the first frame.
+        val method = StsDesktopJarPatcher::class.java.getDeclaredMethod(
+            "shouldPatchStsEntry",
+            String::class.java
+        )
+        method.isAccessible = true
+
+        val included = method.invoke(
+            StsDesktopJarPatcher,
+            STS_PATCH_LWJGL_FRAME_PACER_SCHEDULE_CLASS
+        ) as Boolean
+
+        assertTrue(included)
+    }
+
+    @Test
     fun requiredPatchClasses_includeTextureOwnerSummary() {
         assertTrue(REQUIRED_STS_PATCH_CLASSES.contains(STS_PATCH_TEXTURE_OWNER_SUMMARY_CLASS))
     }
@@ -294,5 +319,74 @@ class StsDesktopJarPatcherTest {
         assertEquals("patched", target.readText())
         assertTrue(!temp.exists())
         assertTrue(!backup.exists())
+    }
+
+    /**
+     * Every class gdx-patch *introduces* into a package it patches must be copied into the desktop jar.
+     *
+     * The per-class tests above only cover classes someone remembered to add. This one scans the real
+     * build output, so adding a new helper class to an already-patched package fails here rather than at
+     * runtime with NoClassDefFoundError on the first frame. That is exactly how `LwjglFramePacerSchedule`
+     * shipped broken: `shouldPatchStsEntry` matches `LwjglApplication` by prefix, and a new sibling
+     * class matched no rule at all.
+     *
+     * Scoped deliberately to classes that do **not** already exist in the vanilla jar. A patched
+     * override of an existing class (`SpriteBatch`, `FrameBuffer`, `HdpiUtils`) still resolves at
+     * runtime from the vanilla bytes when it is not copied — that costs the patch its effect but does
+     * not crash, and deciding which of those must be copied is a separate judgement. A class that
+     * exists only in gdx-patch has nothing to fall back to, so omitting it is always a crash.
+     *
+     * Skips when either jar is unavailable, so unit tests do not depend on build ordering or on the
+     * Steam depot being present.
+     */
+    @Test
+    fun shouldPatchStsEntry_coversEveryNewClassIntroducedIntoPatchedPackages() {
+        val patchJar = File("../patches/gdx-patch/build/libs/gdx-patch.jar")
+            .takeIf { it.isFile } ?: return
+        val vanillaJar = File("../build-deps/steamapps/common/SlayTheSpire/desktop-1.0.jar")
+            .takeIf { it.isFile } ?: return
+
+        val method = StsDesktopJarPatcher::class.java.getDeclaredMethod(
+            "shouldPatchStsEntry",
+            String::class.java
+        )
+        method.isAccessible = true
+
+        // Only packages the patcher already rewrites. A class in a package the patcher never touches is
+        // loaded from the patch jar itself, so it is out of scope here.
+        val patchedPackages = setOf(
+            "com/badlogic/gdx/backends/lwjgl/",
+            "com/badlogic/gdx/graphics/",
+            "com/badlogic/gdx/graphics/glutils/",
+            "com/badlogic/gdx/graphics/g2d/"
+        )
+
+        val vanillaEntries = java.util.zip.ZipFile(vanillaJar).use { zip ->
+            zip.entries().asSequence().map { it.name }.toHashSet()
+        }
+
+        val missing = mutableListOf<String>()
+        java.util.zip.ZipFile(patchJar).use { zip ->
+            for (entry in zip.entries()) {
+                if (entry.isDirectory) continue
+                val name = entry.name
+                if (!name.endsWith(".class")) continue
+                val packageName = name.substringBeforeLast('/', "") + "/"
+                if (packageName !in patchedPackages) continue
+                // Inner classes travel with their outer class, which the prefix rules already cover.
+                if (name.contains('$')) continue
+                // Overrides of vanilla classes still resolve at runtime; only new classes can crash.
+                if (name in vanillaEntries) continue
+                if (!(method.invoke(StsDesktopJarPatcher, name) as Boolean)) {
+                    missing.add(name)
+                }
+            }
+        }
+
+        assertTrue(
+            "gdx-patch introduces these classes into patched packages but never copies them into " +
+                "desktop-1.0.jar, so they will fail at runtime with NoClassDefFoundError: $missing",
+            missing.isEmpty()
+        )
     }
 }

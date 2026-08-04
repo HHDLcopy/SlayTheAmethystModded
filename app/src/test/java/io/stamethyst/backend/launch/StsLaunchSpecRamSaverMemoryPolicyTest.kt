@@ -51,6 +51,38 @@ class StsLaunchSpecRamSaverMemoryPolicyTest {
     }
 
     @Test
+    fun resolveExplicitGcInvokesConcurrentEnabled_redirectsReachableExplicitGcToAConcurrentCycle() {
+        // With Ram Saver active, System.gc() is reachable. Left at its default it is a full
+        // stop-the-world pause on the render thread, which is a visible frame hitch. The concurrent
+        // cycle still clears and enqueues the weak references RamSaver.update drains.
+        assertTrue(
+            StsLaunchSpec.resolveExplicitGcInvokesConcurrentEnabled(disableExplicitGc = false)
+        )
+    }
+
+    @Test
+    fun resolveExplicitGcInvokesConcurrentEnabled_skippedWhenExplicitGcIsAlreadySuppressed() {
+        // -XX:+DisableExplicitGC already turned those calls into no-ops, so the flag would be inert.
+        assertFalse(
+            StsLaunchSpec.resolveExplicitGcInvokesConcurrentEnabled(disableExplicitGc = true)
+        )
+    }
+
+    @Test
+    fun explicitGcPolicy_neverSuppressesAndRedirectsAtTheSameTime() {
+        // The two flags are complementary: exactly one of them applies for a given Ram Saver state.
+        for (ramSaverEnabled in listOf(true, false)) {
+            val disable = StsLaunchSpec.resolveDisableExplicitGcEnabled(ramSaverEnabled)
+            val concurrent =
+                StsLaunchSpec.resolveExplicitGcInvokesConcurrentEnabled(disableExplicitGc = disable)
+            assertFalse(
+                "ramSaverEnabled=$ramSaverEnabled applied both explicit-GC flags",
+                disable && concurrent
+            )
+        }
+    }
+
+    @Test
     fun resolveGpuResourceGuardianModeForLaunch_disablesWhenRamSaverEnabled() {
         assertEquals(
             GpuResourceGuardianMode.OFF,

@@ -166,7 +166,8 @@ object StsLaunchSpec {
         args.add(
             "-XX:ActiveProcessorCount=$DEFAULT_ACTIVE_PROCESSOR_COUNT"
         )
-        if (resolveDisableExplicitGcEnabled(ramSaverEnabled = ramSaverEnabled)) {
+        val disableExplicitGc = resolveDisableExplicitGcEnabled(ramSaverEnabled = ramSaverEnabled)
+        if (disableExplicitGc) {
             args.add("-XX:+DisableExplicitGC")
         }
         if (is64BitRuntime) {
@@ -174,6 +175,9 @@ object StsLaunchSpec {
             args.add("-XX:+UseG1GC")
             args.add("-XX:MaxGCPauseMillis=$DEFAULT_G1_MAX_PAUSE_MILLIS")
             args.add("-XX:+ParallelRefProcEnabled")
+            if (resolveExplicitGcInvokesConcurrentEnabled(disableExplicitGc = disableExplicitGc)) {
+                args.add("-XX:+ExplicitGCInvokesConcurrent")
+            }
             if (LauncherConfig.isJvmStringDeduplicationEnabled(context)) {
                 args.add("-XX:+UseStringDeduplication")
             } else {
@@ -825,6 +829,23 @@ object StsLaunchSpec {
      */
     internal fun resolveDisableExplicitGcEnabled(ramSaverEnabled: Boolean): Boolean {
         return !ramSaverEnabled
+    }
+
+    /**
+     * When explicit GC is left enabled for Ram Saver, run those collections concurrently instead of
+     * as a full stop-the-world pause.
+     *
+     * `System.gc()` defaults to a full STW collection, which is a frame hitch on the render thread.
+     * `-XX:+ExplicitGCInvokesConcurrent` redirects it to a G1 concurrent cycle, which still clears and
+     * enqueues the weak references that `RamSaver.update` drains — so the native texture release path
+     * this flag combination exists to protect keeps working — without stalling the frame.
+     *
+     * Only meaningful when explicit GC is actually reachable, so it is skipped whenever
+     * [resolveDisableExplicitGcEnabled] already turned those calls into no-ops. The flag is G1-only,
+     * so the caller applies it inside the 64-bit branch that selects `-XX:+UseG1GC`.
+     */
+    internal fun resolveExplicitGcInvokesConcurrentEnabled(disableExplicitGc: Boolean): Boolean {
+        return !disableExplicitGc
     }
 
     internal fun resolveGpuResourceGuardianModeForLaunch(

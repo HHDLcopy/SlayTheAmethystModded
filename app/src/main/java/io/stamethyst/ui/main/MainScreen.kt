@@ -2848,12 +2848,19 @@ internal fun EasyTierBottomSheetContent(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 12.dp)
                     .navigationBarsPadding()
                     // The create-room form lives inside this scroller, so the keyboard has to
                     // shrink the viewport instead of covering the description field.
                     .imePadding()
-                    .verticalScroll(rememberScrollState()),
+                    .verticalScroll(rememberScrollState())
+                    // Padding sits inside the scroller so the FAB clearance scrolls away with the
+                    // content instead of permanently inflating this wrap-content sheet.
+                    .padding(
+                        start = 20.dp,
+                        end = 20.dp,
+                        top = 12.dp,
+                        bottom = if (showConnectionFab) EASY_TIER_SHEET_FAB_CLEARANCE else 12.dp,
+                    ),
             ) {
             AnimatedContent(
             targetState = page,
@@ -3243,11 +3250,6 @@ internal fun EasyTierBottomSheetContent(
             }
         }
         }
-            // Reserve room below the scrolling content so the connection FAB floats over
-            // padding instead of the last room card.
-            if (showConnectionFab) {
-                Spacer(modifier = Modifier.height(EASY_TIER_SHEET_FAB_CLEARANCE))
-            }
         }
         }
         }

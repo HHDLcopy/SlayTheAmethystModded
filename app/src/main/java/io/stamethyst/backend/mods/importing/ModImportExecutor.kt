@@ -257,7 +257,7 @@ internal object ModImportExecutor {
             } else {
                 DuplicateReusePlan()
             }
-            val targetName = item.source.displayName.ifBlank { "${item.normalizedModId}.jar" }
+            val targetName = resolveImportTargetFileName(item, reuse.targetFileName)
             val target = ModManager.resolveStorageFileForImportedMod(context, targetName)
             progress.step(
                 item = item,
@@ -452,6 +452,15 @@ internal object ModImportExecutor {
         val assignedFolderId: String? = null,
         val sourceStoragePaths: List<String> = emptyList()
     )
+
+    internal fun resolveImportTargetFileName(
+        item: ModImportItemPlan,
+        reusedTargetFileName: String?
+    ): String {
+        return reusedTargetFileName
+            ?.takeIf { it.isNotBlank() }
+            ?: item.source.displayName.ifBlank { "${item.normalizedModId}.jar" }
+    }
 
     private fun buildReusePlan(
         plan: ModImportPlan,

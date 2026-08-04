@@ -9,6 +9,7 @@ import io.stamethyst.backend.mods.importing.ModImportItemStatus
 import io.stamethyst.backend.mods.importing.ModImportPlan
 import io.stamethyst.backend.mods.importing.ModImportSession
 import io.stamethyst.backend.mods.importing.PreparedImportSource
+import io.stamethyst.backend.mods.importing.resolveImportTargetFileName
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -71,6 +72,29 @@ class ModImportDecisionsTest {
         )
     }
 
+    @Test
+    fun resolveImportTargetFileName_reusesPreviousNameForReplacement() {
+        val item = duplicateItem()
+
+        assertEquals(
+            "old.jar",
+            resolveImportTargetFileName(
+                item,
+                reusedTargetFileName = "old.jar"
+            )
+        )
+    }
+
+    @Test
+    fun resolveImportTargetFileName_fallsBackToImportedNameWithoutReuse() {
+        val item = duplicateItem()
+
+        assertEquals(
+            "new.jar",
+            resolveImportTargetFileName(item, reusedTargetFileName = null)
+        )
+    }
+
     private fun duplicateItem(): ModImportItemPlan {
         return ModImportItemPlan(
             id = "item-0",
@@ -108,4 +132,5 @@ class ModImportDecisionsTest {
             )
         )
     }
+
 }

@@ -224,6 +224,9 @@ Observes Together in Spire's connected-game state after an owner has created a m
 63. `FirstPersonViewImportCompatPatcher` and `FirstPersonGyroBridge` (v1 import patch)
 Rewrites `FirstPersonView`'s `FirstPersonRenderer.update()` camera cursor reads to a centered virtual cursor driven by integrated phone gyroscope deltas. This addresses the mobile symptom where FirstPersonView uses desktop mouse coordinates for the first-person view, and where that camera input can conflict with the card-play touch optimization so an attack does not reach the tapped enemy. Normal click and touch events remain on the original input processor path; only the renderer's camera reads change. Type: mod-specific gameplay/input compatibility fix implemented at import time by `FirstPersonViewImportCompatPatcher`, with runtime gyro sampling in `FirstPersonGyroBridge`.
 
+64. `MainMenuPaginationPatches`
+Paginates root main-menu `MenuButton` entries whenever mod-added options exceed the available vertical menu area. Only buttons on the selected page are updated or rendered, so off-page entries cannot remain clickable outside the screen; each page reuses the base game's compact left/right arrow textures, `Hitbox` interaction, controller page bindings, hover/click sounds, and a page counter. This addresses the symptom where a large enabled-mod list pushes main-menu options beyond the top of the viewport. Type: UI compatibility workaround implemented by `MainMenuPaginationPatches`.
+
 The Together in Spire touch controls use the Lucide `feather`, `eraser`, `log-out`, and `keyboard` icons from <https://github.com/lucide-icons/lucide>, distributed under the ISC License. The packaged PNG files are rasterized from the upstream SVG sources without modifying their shapes.
 
 ## Maintenance rule

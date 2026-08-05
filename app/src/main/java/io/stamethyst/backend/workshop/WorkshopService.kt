@@ -676,6 +676,7 @@ internal class WorkshopService(
                 add("publishedfileids[$index]", publishedFileId.toString())
             }
             add("appid", appId.toString())
+            add("language", steamLanguagePreference.requestValue)
         }.build()
         val request = Request.Builder()
             .url("https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/".toHttpUrl())

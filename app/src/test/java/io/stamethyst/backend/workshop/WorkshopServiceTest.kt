@@ -251,6 +251,7 @@ class WorkshopServiceTest {
         assertTrue(requireNotNull(request.body).utf8().contains("itemcount=2"))
         assertTrue(requireNotNull(request.body).utf8().contains("publishedfileids%5B0%5D=1"))
         assertTrue(requireNotNull(request.body).utf8().contains("publishedfileids%5B1%5D=2"))
+        assertTrue(requireNotNull(request.body).utf8().contains("language=schinese"))
         assertEquals(0, browseServer.requestCount)
     }
 

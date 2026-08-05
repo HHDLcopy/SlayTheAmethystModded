@@ -88,6 +88,18 @@
 .\gradlew.bat :app:assembleDebug
 ```
 
+在 Linux/macOS 或 Git Bash 中，也可以直接打包并安装到已连接的 Android 设备：
+
+```bash
+./scripts/build-debug-install.sh
+```
+
+连接了多台设备时，传入目标设备序列号：
+
+```bash
+./scripts/build-debug-install.sh <设备序列号>
+```
+
 ### 3. 构建签名发布版 APK
 
 > [!IMPORTANT]

@@ -14,7 +14,8 @@ const DEFAULT_EASYTIER_CONNECT_TIMEOUT_SECONDS = 12;
 const DEFAULT_EASYTIER_STATUS_POLL_INTERVAL_SECONDS = 5;
 const DEFAULT_EASYTIER_DEFAULT_MODE = 'room';
 const DEFAULT_EASYTIER_SESSION_TTL_SECONDS = 90;
-const DEFAULT_EASYTIER_MINIMUM_ONLINE_LOBBY_COMPATIBLE_VERSION = '1.5.1';
+const DEFAULT_EASYTIER_OWNER_GRACE_SECONDS = 180;
+const DEFAULT_EASYTIER_MINIMUM_ONLINE_LOBBY_COMPATIBLE_VERSION = '1.5.5';
 const DEFAULT_EASYTIER_WEB_EMBED_API_SERVER_PORT = 11211;
 const DEFAULT_EASYTIER_WEB_EMBED_API_SERVER_ADDR = '127.0.0.1';
 const DEFAULT_EASYTIER_RUNTIME_DATA_DIR = './data/easytier-runtime';
@@ -33,6 +34,15 @@ function loadConfig(env = process.env) {
     host: firstNonEmpty(env.HOST, '0.0.0.0'),
     port: parsePositiveInteger(env.PORT, DEFAULT_PORT),
     trustProxy: parseBoolean(env.TRUST_PROXY, false),
+    // Rate limiting is opt-in. Behind a proxy chain that does not forward the client address
+    // (Sakura FRP -> nginx being the motivating case), every request appears to arrive from one
+    // IP, so an IP-keyed limiter throttles the whole player base instead of an abuser. Enable
+    // these only once TRUST_PROXY is on and X-Forwarded-For is known to carry the real client IP.
+    lanRateLimitEnabled: parseBoolean(env.LAN_RATE_LIMIT_ENABLED, false),
+    easyTierRoomPasswordThrottleEnabled: parseBoolean(
+      env.EASYTIER_ROOM_PASSWORD_THROTTLE_ENABLED,
+      false
+    ),
     publicBaseUrl: normalizeOptionalBaseUrl(env.PUBLIC_BASE_URL),
     dbPath: path.resolve(firstNonEmpty(env.PRESENCE_DB_PATH, './data/presence.sqlite')),
     presenceHeartbeatIntervalSeconds: heartbeatIntervalSeconds,
@@ -84,6 +94,10 @@ function loadConfig(env = process.env) {
     easyTierSessionTtlSeconds: parsePositiveInteger(
       env.EASYTIER_SESSION_TTL_SECONDS,
       DEFAULT_EASYTIER_SESSION_TTL_SECONDS
+    ),
+    easyTierOwnerGraceSeconds: parseNonNegativeInteger(
+      env.EASYTIER_OWNER_GRACE_SECONDS,
+      DEFAULT_EASYTIER_OWNER_GRACE_SECONDS
     ),
     easyTierMinimumOnlineLobbyCompatibleVersion: normalizeAppVersion(
       env.EASYTIER_MINIMUM_ONLINE_LOBBY_COMPATIBLE_VERSION,
@@ -159,6 +173,13 @@ function loadConfig(env = process.env) {
 function parsePositiveInteger(rawValue, fallbackValue) {
   const parsed = Number.parseInt(String(rawValue || '').trim(), 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallbackValue;
+}
+
+// Separate from parsePositiveInteger because 0 is a valid setting for the owner grace window:
+// it restores the previous behaviour of deleting a room the moment the owner's lease lapses.
+function parseNonNegativeInteger(rawValue, fallbackValue) {
+  const parsed = Number.parseInt(String(rawValue ?? '').trim(), 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallbackValue;
 }
 
 function firstNonEmpty(...values) {
@@ -270,6 +291,7 @@ module.exports = {
   DEFAULT_EASYTIER_STATUS_POLL_INTERVAL_SECONDS,
   DEFAULT_EASYTIER_DEFAULT_MODE,
   DEFAULT_EASYTIER_SESSION_TTL_SECONDS,
+  DEFAULT_EASYTIER_OWNER_GRACE_SECONDS,
   DEFAULT_EASYTIER_WEB_EMBED_API_SERVER_PORT,
   DEFAULT_EASYTIER_WEB_EMBED_API_SERVER_ADDR,
   DEFAULT_EASYTIER_RUNTIME_DATA_DIR,
@@ -279,6 +301,7 @@ module.exports = {
   DEFAULT_EASYTIER_SHARED_NODE_RPC_PORTAL,
   loadConfig,
   parsePositiveInteger,
+  parseNonNegativeInteger,
   firstNonEmpty,
   parseBoolean,
   normalizeQqGroupNumber,

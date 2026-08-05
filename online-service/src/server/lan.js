@@ -11,13 +11,28 @@ const { httpError } = require('./presence');
 const DEFAULT_EASYTIER_SESSION_TTL_SECONDS = 90;
 const MIN_EASYTIER_SESSION_TTL_SECONDS = 60;
 const MAX_EASYTIER_SESSION_TTL_SECONDS = 24 * 60 * 60;
+// How long a room survives after its owner's lease lapses. Mobile owners routinely lose their
+// lease for a while (background, doze, a one-tap task cleaner), and deleting the room instantly
+// dropped every other member with it.
+const DEFAULT_EASYTIER_OWNER_GRACE_SECONDS = 180;
+const MIN_EASYTIER_OWNER_GRACE_SECONDS = 0;
+const MAX_EASYTIER_OWNER_GRACE_SECONDS = 60 * 60;
 const DEFAULT_LAN_ROOM_LIST_LIMIT = 20;
 const MAX_LAN_ROOM_LIST_LIMIT = 50;
-const MAX_LAN_ROOM_MEMBERS = 16;
-const MAX_LAN_ROOM_MEMBERS_PER_SOURCE_IP = 8;
+const MAX_LAN_ROOM_MEMBERS = 64;
+// Matches the room cap on purpose. Behind a proxy chain that collapses every player to one source
+// address (Sakura FRP -> nginx), a lower per-source cap would silently become the real room limit.
+const MAX_LAN_ROOM_MEMBERS_PER_SOURCE_IP = 64;
 const MAX_ID_LENGTH = 128;
 const MAX_TEXT_LENGTH = 256;
 const MAX_LAN_ROOM_DESCRIPTION_LENGTH = 120;
+// Room passwords are typed on a phone, so the ceiling only exists to bound work in scryptSync.
+const MAX_LAN_ROOM_PASSWORD_LENGTH = 64;
+const ROOM_PASSWORD_KEY_LENGTH = 32;
+// A wrong password burns one attempt per room. This sits on top of the per-IP rate limit in
+// app.js, which an attacker can sidestep by rotating addresses; the counter here cannot be.
+const MAX_ROOM_PASSWORD_ATTEMPTS = 10;
+const ROOM_PASSWORD_ATTEMPT_WINDOW_MS = 5 * 60 * 1000;
 const MAX_LAN_KICK_MESSAGE_LENGTH = 160;
 const MAX_LAN_REPORTED_MODS = 128;
 const MAX_LAN_REPORTED_MOD_NAME_LENGTH = 160;
@@ -29,7 +44,7 @@ const LAN_STATIC_IPV4_MIN_HOST_OCTET = 2;
 const LAN_STATIC_IPV4_MAX_HOST_OCTET = 254;
 const GAME_STATE_HEARTBEAT_TIMEOUT_MS = 75 * 1000;
 const TERMINAL_SESSION_STATES = new Set(['expired', 'stopped', 'superseded', 'kicked']);
-const ROOM_MUTATION_ACTIONS = new Set(['lock', 'unlock', 'close', 'kick']);
+const ROOM_MUTATION_ACTIONS = new Set(['lock', 'unlock', 'close', 'kick', 'set-password', 'clear-password']);
 const GAME_SESSION_STATES = new Set(['online', 'game']);
 
 class LanStore {
@@ -85,6 +100,23 @@ class LanStore {
     if (!roomResult.created && request.playerId !== room.ownerPlayerId && activePriorSession &&
       !tokensEqual(activePriorSession.sessionTokenHash, request.sessionToken)) {
       throw httpError(403, 'Existing player credential is required');
+    }
+    // Password gate. Three parties skip it: the creator of a brand-new room (there is nothing to
+    // verify yet), the owner (already proven by ownerToken or a live owner session above), and a
+    // member reconnecting with a valid session token. That last exemption matters on mobile, where
+    // backgrounding and network changes force frequent reconnects.
+    if (!roomResult.created && roomRequiresPassword(room) &&
+      request.playerId !== room.ownerPlayerId && !activePriorSession) {
+      this.ensureRoomPasswordAttemptAllowed(room, nowMs);
+      if (!roomPasswordsEqual(room.passwordHash, request.password)) {
+        this.recordRoomPasswordFailure(room, nowMs);
+        throw httpError(
+          403,
+          'Incorrect room password',
+          request.password ? 'lan_room_password_invalid' : 'lan_room_password_required'
+        );
+      }
+      this.clearRoomPasswordFailures(room);
     }
     if (!room.allowNewJoins && request.playerId !== room.ownerPlayerId) {
       if (!activePriorSession ||
@@ -200,7 +232,7 @@ class LanStore {
 
     const room = this.findRoom(roomId);
     if (!room) {
-      throw httpError(404, 'LAN room not found');
+      throw httpError(404, 'LAN room not found', 'lan_room_not_found');
     }
     const ownerSession = request.sessionToken
       ? this.findLatestSessionForPlayer(room.roomId, room.ownerPlayerId)
@@ -221,7 +253,7 @@ class LanStore {
       }
       const targetSession = this.findLatestSessionForPlayer(roomId, request.targetPlayerId);
       if (!targetSession || !isSessionOnline(targetSession, nowMs)) {
-        throw httpError(404, 'LAN room member not found');
+        throw httpError(404, 'LAN room member not found', 'lan_room_member_not_found');
       }
       for (const session of this.sessionsForRoom(roomId)) {
         if (session.playerId === request.targetPlayerId && isSessionOnline(session, nowMs)) {
@@ -250,6 +282,16 @@ class LanStore {
     } else if (request.action === 'unlock') {
       allowNewJoins = true;
       closedAtMs = 0;
+    } else if (request.action === 'set-password' || request.action === 'clear-password') {
+      // Changing the password does not disturb anyone already in the room: existing members hold
+      // session tokens and are exempt from the gate. It only affects who can join from now on.
+      room.passwordHash = request.action === 'set-password'
+        ? hashRoomPassword(request.password)
+        : '';
+      // A fresh secret deserves a fresh budget, and clearing one should not leave a room throttled.
+      this.clearRoomPasswordFailures(room);
+      room.updatedAtMs = nowMs;
+      return this.getRoomInfo(roomId, { nowMs });
     } else if (request.action === 'close') {
       allowNewJoins = false;
       closedAtMs = nowMs;
@@ -305,7 +347,7 @@ class LanStore {
 
     const session = this.findSession(sessionId);
     if (!session) {
-      throw httpError(404, 'LAN session not found');
+      throw httpError(404, 'LAN session not found', 'lan_session_not_found');
     }
     ensureSessionAccess(session, request.sessionToken);
 
@@ -336,7 +378,7 @@ class LanStore {
 
     const session = this.findSession(request.sessionId);
     if (!session) {
-      throw httpError(404, 'LAN session not found');
+      throw httpError(404, 'LAN session not found', 'lan_session_not_found');
     }
     ensureSessionAccess(session, request.sessionToken);
 
@@ -378,7 +420,7 @@ class LanStore {
 
     const session = this.findSession(request.sessionId);
     if (!session) {
-      throw httpError(404, 'LAN session not found');
+      throw httpError(404, 'LAN session not found', 'lan_session_not_found');
     }
     ensureSessionAccess(session, request.sessionToken);
 
@@ -413,7 +455,7 @@ class LanStore {
 
     const session = this.findSession(request.sessionId);
     if (!session) {
-      throw httpError(404, 'LAN session not found');
+      throw httpError(404, 'LAN session not found', 'lan_session_not_found');
     }
     ensureSessionAccess(session, request.sessionToken);
 
@@ -444,7 +486,7 @@ class LanStore {
 
     const session = this.findSession(sessionId);
     if (!session) {
-      throw httpError(404, 'LAN session not found');
+      throw httpError(404, 'LAN session not found', 'lan_session_not_found');
     }
     ensureSessionAccess(session, request.sessionToken);
 
@@ -499,6 +541,9 @@ class LanStore {
         description: room.description,
         mode: room.mode,
         allowNewJoins: room.allowNewJoins,
+        // Only whether a password exists, never the hash. Lets the client show a lock and prompt
+        // before calling startSession instead of learning about it from a 403.
+        hasPassword: roomRequiresPassword(room),
         closedAtMs: room.closedAtMs,
         memberCount: members.length,
         onlineMemberCount,
@@ -538,10 +583,10 @@ class LanStore {
 
     const room = this.findRoom(roomId);
     if (!room) {
-      throw httpError(404, 'LAN room not found');
+      throw httpError(404, 'LAN room not found', 'lan_room_not_found');
     }
     if (isRoomClosed(room)) {
-      throw httpError(404, 'LAN room not found');
+      throw httpError(404, 'LAN room not found', 'lan_room_not_found');
     }
 
     const members = this.buildRoomMembers(room, nowMs);
@@ -553,6 +598,7 @@ class LanStore {
       description: room.description,
       mode: room.mode,
       allowNewJoins: room.allowNewJoins,
+      hasPassword: roomRequiresPassword(room),
       closedAtMs: room.closedAtMs,
       memberCount: members.length,
       inGameMemberCount,
@@ -593,6 +639,7 @@ class LanStore {
       displayName: request.displayName || request.playerId,
       description: request.description,
       allowNewJoins: request.allowNewJoins,
+      password: request.password,
       ownerToken
     }, nowMs);
 
@@ -625,22 +672,97 @@ class LanStore {
       networkSecret,
       ipv4SubnetOctet: deriveRoomIpv4SubnetOctet(request.roomId),
       ownerTokenHash: hashToken(request.ownerToken),
+      // Empty string means "no password". Stored salted+scrypt, never in plaintext, and never
+      // included in any room projection.
+      passwordHash: request.password ? hashRoomPassword(request.password) : '',
+      // Sliding window of failed password attempts for this room, so brute force is bounded even
+      // when the attacker rotates source IPs past the per-IP limiter.
+      passwordAttempts: [],
       createdAtMs: nowMs,
       updatedAtMs: nowMs,
-      lastSessionStartedAtMs: 0
+      lastSessionStartedAtMs: 0,
+      // Timestamp of the first sweep that found the owner offline, or 0 while the owner holds a
+      // live lease. Drives the reclaim grace window in deleteRoomsWithoutActiveOwner.
+      ownerMissingSinceMs: 0
     });
     this.ensureRoomSessionIds(request.roomId);
     return true;
   }
 
+  /**
+   * Rejects a join attempt once a room has accumulated too many wrong passwords.
+   *
+   * The per-IP limiter in app.js cannot stop a distributed guess, so the budget is tracked on the
+   * room itself. It is a sliding window rather than a hard lockout so a room recovers on its own
+   * and an attacker cannot permanently deny entry to legitimate players.
+   */
+  ensureRoomPasswordAttemptAllowed(room, nowMs) {
+    if (!this.config || !this.config.easyTierRoomPasswordThrottleEnabled) {
+      return;
+    }
+    const attempts = this.pruneRoomPasswordAttempts(room, nowMs);
+    if (attempts.length >= MAX_ROOM_PASSWORD_ATTEMPTS) {
+      const retryAfterMs = (attempts[0] + ROOM_PASSWORD_ATTEMPT_WINDOW_MS) - nowMs;
+      const retryAfterSeconds = Math.max(1, Math.ceil(retryAfterMs / 1000));
+      throw httpError(
+        429,
+        `Too many incorrect room password attempts. Try again in ${retryAfterSeconds} seconds.`,
+        'lan_room_password_throttled'
+      );
+    }
+  }
+
+  recordRoomPasswordFailure(room, nowMs) {
+    const attempts = this.pruneRoomPasswordAttempts(room, nowMs);
+    attempts.push(nowMs);
+    room.passwordAttempts = attempts;
+  }
+
+  clearRoomPasswordFailures(room) {
+    if (room.passwordAttempts && room.passwordAttempts.length > 0) {
+      room.passwordAttempts = [];
+    }
+  }
+
+  pruneRoomPasswordAttempts(room, nowMs) {
+    const windowStart = nowMs - ROOM_PASSWORD_ATTEMPT_WINDOW_MS;
+    const attempts = Array.isArray(room.passwordAttempts) ? room.passwordAttempts : [];
+    return attempts.filter((attemptAtMs) => attemptAtMs > windowStart);
+  }
+
   deleteRoomsWithoutActiveOwner(nowMs = Date.now()) {
+    const graceMs = resolveEasyTierOwnerGraceSeconds(this.config) * 1000;
     for (const room of Array.from(this.rooms.values())) {
       const activeSessions = this.sessionsForRoom(room.roomId)
         .filter((session) => isSessionOnline(session, nowMs));
       const ownerOnline = activeSessions.some(
         (session) => session.playerId === room.ownerPlayerId
       );
-      if (!ownerOnline || activeSessions.length === 0) {
+      if (ownerOnline) {
+        // The owner is back (or never left). Clear any pending grace window so a later
+        // outage starts from a full grace period instead of a stale deadline.
+        if (room.ownerMissingSinceMs) {
+          room.ownerMissingSinceMs = 0;
+          room.updatedAtMs = nowMs;
+        }
+        continue;
+      }
+
+      // An empty room has nobody left to wait for, so it is removed immediately. Keeping it
+      // alive would leak rooms whose members all vanished.
+      if (activeSessions.length === 0) {
+        this.deleteRoom(room.roomId);
+        continue;
+      }
+
+      // The owner is gone but other members are still connected. Deleting the room here would
+      // drop every remaining member's session in one step and make the room unreachable, so
+      // instead hold the room for a grace window and let the owner reclaim it.
+      if (!room.ownerMissingSinceMs) {
+        room.ownerMissingSinceMs = nowMs;
+        room.updatedAtMs = nowMs;
+      }
+      if (nowMs - room.ownerMissingSinceMs >= graceMs) {
         this.deleteRoom(room.roomId);
       }
     }
@@ -831,6 +953,9 @@ function parseStartSessionRequest(body) {
     ),
     sessionToken: normalizeOptionalAccessToken(firstNonEmpty(body.sessionToken, body.session_token)),
     ownerToken: normalizeOptionalAccessToken(firstNonEmpty(body.ownerToken, body.owner_token)),
+    // Deliberately not firstNonEmpty: that helper trims, and leading/trailing spaces are
+    // legitimate password characters that must survive to the hash.
+    password: normalizeRoomPassword(firstPresentValue(body.password, body.room_password, body.roomPassword)),
     allowNewJoins: body.allowNewJoins === undefined && body.allow_new_joins === undefined
       ? true
       : normalizeBoolean(
@@ -874,11 +999,20 @@ function parseUpdateRoomRequest(body) {
       'targetPlayerId'
     )
     : '';
+  const password = normalizeRoomPassword(
+    firstPresentValue(body.password, body.room_password, body.roomPassword)
+  );
+  // Rejecting an empty set-password here keeps the two actions unambiguous: clearing a password is
+  // always 'clear-password', never a 'set-password' that silently disables the gate.
+  if (action === 'set-password' && !password) {
+    throw httpError(400, 'A room password is required for this action');
+  }
   return {
     action,
     ownerToken,
     sessionToken,
     targetPlayerId,
+    password,
     kickMessage: action === 'kick'
       ? normalizeOptionalText(
         firstNonEmpty(body.message, body.kickMessage, body.kick_message),
@@ -977,6 +1111,35 @@ function normalizeRequiredIdentifier(value, fieldName) {
 function normalizeOptionalAccessToken(value) {
   const token = String(value || '').trim();
   return /^[A-Za-z0-9_-]{32,128}$/.test(token) ? token : '';
+}
+
+/**
+ * Bounds a room password without altering it.
+ *
+ * Whitespace is preserved: a player who typed a trailing space must be able to type it again, and
+ * silently trimming would make the stored hash unreachable from the UI. Only non-strings and
+ * over-long input are coerced.
+ */
+function normalizeRoomPassword(value) {
+  if (value === undefined || value === null) {
+    return '';
+  }
+  return String(value).slice(0, MAX_LAN_ROOM_PASSWORD_LENGTH);
+}
+
+/**
+ * Picks the first alias that was actually supplied, without trimming.
+ *
+ * `firstNonEmpty` normalizes with `.trim()`, which is right for identifiers but destroys
+ * significant whitespace in a password.
+ */
+function firstPresentValue(...values) {
+  for (const value of values) {
+    if (value !== undefined && value !== null && String(value) !== '') {
+      return value;
+    }
+  }
+  return '';
 }
 
 function normalizeOptionalMacAddress(value) {
@@ -1158,7 +1321,9 @@ function ensureEasyTierClientVersionSupported(clientVersion, minimumVersion) {
     throw httpError(
       426,
       `EasyTier 虚拟局域网需要客户端版本 ${minimumVersion} 或更高版本，请升级客户端后重试。 / ` +
-      `EasyTier virtual LAN requires app version ${minimumVersion} or newer. Please upgrade the app and try again.`
+      `EasyTier virtual LAN requires app version ${minimumVersion} or newer. Please upgrade the app and try again.`,
+      // Lets the client branch on a code instead of matching the bilingual message text.
+      'lan_client_version_unsupported'
     );
   }
 }
@@ -1234,6 +1399,20 @@ function resolveEasyTierSessionTtlSeconds(config) {
   );
 }
 
+function resolveEasyTierOwnerGraceSeconds(config) {
+  const rawValue = config && config.easyTierOwnerGraceSeconds;
+  // parsePositiveInteger treats 0 as absent, but 0 is meaningful here: it restores the previous
+  // delete-immediately behaviour for anyone who wants it.
+  const numericValue = Number.parseInt(String(rawValue === 0 ? '0' : (rawValue || '')).trim(), 10);
+  const parsed = Number.isFinite(numericValue) && numericValue >= 0
+    ? numericValue
+    : DEFAULT_EASYTIER_OWNER_GRACE_SECONDS;
+  return Math.max(
+    MIN_EASYTIER_OWNER_GRACE_SECONDS,
+    Math.min(MAX_EASYTIER_OWNER_GRACE_SECONDS, parsed)
+  );
+}
+
 function normalizeLanMode(value) {
   return String(value || '').trim().toLowerCase() === 'community' ? 'community' : 'room';
 }
@@ -1273,6 +1452,52 @@ function tokensEqual(expectedHash, token) {
   return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
 }
 
+/**
+ * Hashes a room password.
+ *
+ * Deliberately not `hashToken`. That helper is unsalted single-pass SHA-256, which is fine for the
+ * 32-byte random tokens it was written for but far too fast for a human-chosen password: an
+ * attacker who obtained the in-memory room table could brute-force short passwords trivially.
+ * scrypt with a per-room random salt makes each guess expensive and stops one leaked hash from
+ * revealing that two rooms share a password.
+ *
+ * Returned format is `scrypt$<saltBase64Url>$<derivedKeyBase64Url>` so the salt travels with the
+ * hash and the scheme is identifiable if it ever needs to change.
+ */
+function hashRoomPassword(password, salt = crypto.randomBytes(16)) {
+  const derivedKey = crypto.scryptSync(String(password || ''), salt, ROOM_PASSWORD_KEY_LENGTH);
+  return `scrypt$${salt.toString('base64url')}$${derivedKey.toString('base64url')}`;
+}
+
+/**
+ * Constant-time room password comparison.
+ *
+ * Returns false for a malformed or absent stored hash rather than throwing, so a corrupt record
+ * fails closed instead of taking down the join path.
+ */
+function roomPasswordsEqual(expectedHash, password) {
+  const parts = String(expectedHash || '').split('$');
+  if (parts.length !== 3 || parts[0] !== 'scrypt') {
+    return false;
+  }
+  let salt;
+  try {
+    salt = Buffer.from(parts[1], 'base64url');
+  } catch (_error) {
+    return false;
+  }
+  if (salt.length === 0) {
+    return false;
+  }
+  const expected = Buffer.from(String(expectedHash), 'utf8');
+  const actual = Buffer.from(hashRoomPassword(password, salt), 'utf8');
+  return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
+}
+
+function roomRequiresPassword(room) {
+  return Boolean(room && room.passwordHash);
+}
+
 function ensureSessionAccess(session, sessionToken) {
   if (!tokensEqual(session.sessionTokenHash, sessionToken)) {
     throw httpError(403, 'Invalid LAN session credential');
@@ -1302,5 +1527,12 @@ function normalizeNowMs(value) {
 module.exports = {
   LanStore,
   DEFAULT_EASYTIER_SESSION_TTL_SECONDS,
-  resolveEasyTierSessionTtlSeconds
+  DEFAULT_EASYTIER_OWNER_GRACE_SECONDS,
+  MAX_LAN_ROOM_MEMBERS,
+  MAX_LAN_ROOM_PASSWORD_LENGTH,
+  MAX_ROOM_PASSWORD_ATTEMPTS,
+  resolveEasyTierSessionTtlSeconds,
+  resolveEasyTierOwnerGraceSeconds,
+  hashRoomPassword,
+  roomPasswordsEqual
 };

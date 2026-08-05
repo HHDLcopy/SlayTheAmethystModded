@@ -159,10 +159,12 @@ private fun Project.configureApkOutput(appVersionName: String) {
                         "fullRelease" -> ApkOutputNaming(channelName = "release", suffix = "-full")
                         "fastSlimRelease" -> ApkOutputNaming(channelName = "fast-release")
                         "fastFullRelease" -> ApkOutputNaming(channelName = "fast-release", suffix = "-full")
-                        else -> ApkOutputNaming(channelName = buildTypeName)
+                        else -> null
                     }
-                    outputFileName =
-                        "SlayTheAmethyst-${naming.channelName}-$appVersionName${naming.suffix}.apk"
+                    naming?.let {
+                        outputFileName =
+                            "SlayTheAmethyst-${it.channelName}-$appVersionName${it.suffix}.apk"
+                    }
                 }
             }
         }

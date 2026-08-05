@@ -53,7 +53,8 @@ async function buildServer(config = loadConfig()) {
   });
 
   fastify.addHook('onRequest', async (request) => {
-    if (String(request.raw && request.raw.url || '').startsWith('/api/lan/')) {
+    if (config.lanRateLimitEnabled &&
+      String(request.raw && request.raw.url || '').startsWith('/api/lan/')) {
       enforceLanRateLimit(lanRateLimits, request);
     }
   });
@@ -860,6 +861,10 @@ function normalizeStatusCode(error) {
 }
 
 function normalizeErrorCode(error) {
+  // An explicit code always wins so callers can branch on the reason rather than the status.
+  if (error && error.errorCode) {
+    return String(error.errorCode);
+  }
   const statusCode = normalizeStatusCode(error);
   return statusCode >= 500 ? 'internal_error' : 'bad_request';
 }

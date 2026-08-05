@@ -68,6 +68,11 @@ http://localhost:3001/online?token=change-me
 HOST=0.0.0.0
 PORT=3001
 TRUST_PROXY=false
+# Rate limiting ships disabled by default. Behind Sakura FRP -> nginx without PROXY protocol,
+# every request arrives from one IP, so an IP-keyed bucket throttles the whole player base instead
+# of an abuser. Enable these only once TRUST_PROXY is on and X-Forwarded-For carries real client IPs.
+LAN_RATE_LIMIT_ENABLED=false
+EASYTIER_ROOM_PASSWORD_THROTTLE_ENABLED=false
 PUBLIC_BASE_URL=https://online.example.com
 PRESENCE_DB_PATH=./data/presence.sqlite
 PRESENCE_HEARTBEAT_INTERVAL_SECONDS=30
@@ -88,7 +93,8 @@ EASYTIER_ENTRY_NODE_URL=
 EASYTIER_CONNECT_TIMEOUT_SECONDS=12
 EASYTIER_STATUS_POLL_INTERVAL_SECONDS=5
 EASYTIER_SESSION_TTL_SECONDS=90
-EASYTIER_MINIMUM_ONLINE_LOBBY_COMPATIBLE_VERSION=1.5.1
+EASYTIER_OWNER_GRACE_SECONDS=180
+EASYTIER_MINIMUM_ONLINE_LOBBY_COMPATIBLE_VERSION=1.5.5
 EASYTIER_ALLOW_SHARED_COMMUNITY_NETWORK=false
 EASYTIER_DEFAULT_MODE=room
 EASYTIER_MANAGED=false
@@ -125,15 +131,37 @@ default to the same host with `udp://:22020` and `tcp://:11010`. You can
 override either address with `EASYTIER_CONFIG_SERVER_URL` or
 `EASYTIER_ENTRY_NODE_URL`. `EASYTIER_SESSION_TTL_SECONDS` is the runtime lease
 timeout: every active client renews it through `POST /api/lan/session/runtime`.
-The default is 90 seconds. If a client stops reporting before the timeout, the server expires the session
-and deletes the room when the missing session belongs to its owner. Rooms are
+The default is 90 seconds. If a client stops reporting before the timeout, the server expires the session.
+`EASYTIER_OWNER_GRACE_SECONDS` (default 180) then decides how long a room outlives
+its owner's lease. Mobile owners routinely lose a lease for a while — backgrounding,
+doze, a one-tap task cleaner — and deleting the room the moment the owner's lease
+lapsed dropped every other member with it and made the room unreachable. During the
+grace window the room stays put and the owner can reclaim it with its `ownerToken`;
+returning resets the window. Set it to `0` to restore the old delete-immediately
+behaviour. A room with no active members at all is still removed straight away.
+Rooms are
 created only for clients at or above `EASYTIER_MINIMUM_ONLINE_LOBBY_COMPATIBLE_VERSION`
-(default `1.5.1`). Older clients receive HTTP 426 with an upgrade instruction before
+(default `1.5.5`). Older clients receive HTTP 426 with an upgrade instruction before
 the service creates a room or issues a session credential. The same minimum version
 is exposed through `/cloud-control.json` so newer clients can block the workflow earlier.
 Rooms are
-created atomically by the owner's `POST /api/lan/session/start` request; a room
-with no active owner, or no active members, is removed with all of its sessions.
+created atomically by the owner's `POST /api/lan/session/start` request.
+
+Room passwords: when creating a room, the optional `password` field accepts a
+string ≤64 characters (spaces preserved). The server stores it as salted scrypt,
+never plaintext. `hasPassword` appears in room projections so clients can show a
+lock and prompt before joining. The owner, reconnecting members (with a valid
+`sessionToken`), and members without a password all skip the gate. Owners manage
+the password via `POST /api/lan/rooms/:roomId/action` with `action=set-password`
+or `action=clear-password`. Wrong passwords burn one attempt per room (10 per 5m
+window), on top of the per-IP limiter.
+
+
+LAN error responses carry a machine-readable `error` code alongside the HTTP status.
+`lan_session_not_found`, `lan_room_not_found`, and `lan_room_member_not_found`
+distinguish a missing resource from a route the server does not implement, which a
+bare 404 cannot express. Clients rely on this: reading "session expired" as
+"endpoint unsupported" made them stop renewing the lease permanently.
 The creation request may include an optional `description` (up to 120
 characters). It is immutable for the room lifetime and is returned by both the
 room list and room-info endpoints.

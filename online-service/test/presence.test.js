@@ -798,7 +798,7 @@ test('lan room limits active sessions from one source network', async () => {
     sourceIp: '198.51.100.7',
     easyTier
   });
-  for (let index = 0; index < 7; index += 1) {
+  for (let index = 0; index < 63; index += 1) {
     await lanStore.startSession({ roomId: 'quota-room', playerId: `member-${index}` }, {
       nowMs: 2_000 + index,
       sourceIp: '198.51.100.7',
@@ -1670,7 +1670,7 @@ test('cloud-control exposes websocket heartbeat settings', async (t) => {
       entryNodeUrl: '',
       connectTimeoutSeconds: 12,
       statusPollIntervalSeconds: 5,
-      minimumOnlineLobbyCompatibleVersion: '1.5.1',
+      minimumOnlineLobbyCompatibleVersion: '1.5.5',
       allowSharedCommunityNetwork: false,
       defaultMode: 'room'
     }
@@ -1704,7 +1704,7 @@ test('cloud-control derives easytier single-server addresses from public base ur
     entryNodeUrl: 'tcp://online.example.com:11010',
     connectTimeoutSeconds: 12,
     statusPollIntervalSeconds: 5,
-    minimumOnlineLobbyCompatibleVersion: '1.5.1',
+    minimumOnlineLobbyCompatibleVersion: '1.5.5',
     allowSharedCommunityNetwork: false,
     defaultMode: 'room'
   });

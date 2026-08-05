@@ -5,33 +5,39 @@ services:
     container_name: sts-online-service
     restart: unless-stopped
     ports:
-      - "3001:3001/tcp"
-      - "22020:22020/udp"
-      - "11010:11010/tcp"
-      - "11010:11010/udp"
+      - "0.0.0.0:3001:3001/tcp"
+      - "0.0.0.0:22020:22020/udp"
+      - "0.0.0.0:11010:11010/tcp"
+      - "0.0.0.0:11010:11010/udp"
     environment:
       HOST: 0.0.0.0
       PORT: 3001
       # Set to true only when every public request reaches this container through a trusted proxy
       # that rewrites X-Forwarded-For. Keep false for direct port forwarding.
       TRUST_PROXY: ${TRUST_PROXY:-false}
+      # Rate limiting is opt-in. It keys on the client IP, so it must stay off until TRUST_PROXY is
+      # on and the proxy chain actually forwards the real client address; otherwise every request
+      # shares one IP and the limiter throttles all players at once.
+      LAN_RATE_LIMIT_ENABLED: ${LAN_RATE_LIMIT_ENABLED:-false}
+      EASYTIER_ROOM_PASSWORD_THROTTLE_ENABLED: ${EASYTIER_ROOM_PASSWORD_THROTTLE_ENABLED:-false}
       PRESENCE_DB_PATH: /app/data/presence.sqlite
       PRESENCE_HEARTBEAT_INTERVAL_SECONDS: 30
       PRESENCE_OFFLINE_TIMEOUT_SECONDS: 90
       PRESENCE_PANEL_TOKEN: ${PRESENCE_PANEL_TOKEN:?Set PRESENCE_PANEL_TOKEN in .env}
-      PUBLIC_BASE_URL: https://heartbeat.nas.apricityx.top:23163
+      PUBLIC_BASE_URL: http://10.126.126.2:3001
       QQ_GROUP_NUMBER: 1051836431
       EASYTIER_ENABLED: "true"
-      EASYTIER_ROOM_API_BASE_URL: https://heartbeat.nas.apricityx.top:23163
-      EASYTIER_WEB_CONSOLE_API_BASE_URL: https://heartbeat.nas.apricityx.top:23163
-      EASYTIER_CONFIG_SERVER_URL: udp://frp-dry.com:12333
+      EASYTIER_ROOM_API_BASE_URL: http://10.126.126.2:3001
+      EASYTIER_WEB_CONSOLE_API_BASE_URL: http://10.126.126.2:3001
+      EASYTIER_CONFIG_SERVER_URL: udp://10.126.126.2:22020
       EASYTIER_CONFIG_SERVER_SCHEME: udp
       EASYTIER_CONFIG_SERVER_PORT: 22020
-      EASYTIER_ENTRY_NODE_URL: tcp://frp-dog.com:12332
+      EASYTIER_ENTRY_NODE_URL: tcp://10.126.126.2:11010
       EASYTIER_ENTRY_NODE_SCHEME: tcp
       EASYTIER_ENTRY_NODE_PORT: 11010
       EASYTIER_SESSION_TTL_SECONDS: 90
-      EASYTIER_MINIMUM_ONLINE_LOBBY_COMPATIBLE_VERSION: 1.5.1
+      EASYTIER_OWNER_GRACE_SECONDS: 180
+      EASYTIER_MINIMUM_ONLINE_LOBBY_COMPATIBLE_VERSION: 1.5.5
       EASYTIER_MANAGED: "true"
       EASYTIER_MANAGED_AUTO_START: "true"
       EASYTIER_MANAGED_RESTART_ON_EXIT: "true"

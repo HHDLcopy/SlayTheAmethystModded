@@ -514,9 +514,15 @@ function normalizeOptionalString(value) {
   return String(value || '').trim();
 }
 
-function httpError(statusCode, message) {
+function httpError(statusCode, message, errorCode = '') {
   const error = new Error(message);
   error.statusCode = statusCode;
+  // Machine-readable discriminator. A bare status code is ambiguous: clients cannot tell a
+  // missing route from a missing resource, and a 404 meant as "this session expired" must not
+  // be read as "this server does not implement the endpoint".
+  if (errorCode) {
+    error.errorCode = errorCode;
+  }
   return error;
 }
 

@@ -1,0 +1,25 @@
+{
+  "generated": "2026-08-05T07:11:49Z",
+  "sections": [
+    {
+      "id": "mockups",
+      "label": "Mockups",
+      "groups": []
+    },
+    {
+      "id": "design-systems",
+      "label": "Design Systems",
+      "groups": [
+        {
+          "slug": "launcher-product",
+          "files": [
+            { "label": "README.md", "path": "design-systems/launcher-product/README.md" },
+            { "label": "SKILL.md", "path": "design-systems/launcher-product/SKILL.md" },
+            { "label": "style-notes.md", "path": "design-systems/launcher-product/brand/style-notes.md" },
+            { "label": "colors_and_type.css", "path": "design-systems/launcher-product/tokens/colors_and_type.css" }
+          ]
+        }
+      ]
+    }
+  ]
+}

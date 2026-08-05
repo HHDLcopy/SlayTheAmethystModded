@@ -84,6 +84,18 @@ Dependency download sources:
 .\gradlew.bat :app:assembleDebug
 ```
 
+On Linux/macOS or Git Bash, build and install the debug APK to a connected Android device:
+
+```bash
+./scripts/build-debug-install.sh
+```
+
+When multiple devices are connected, pass the target device serial:
+
+```bash
+./scripts/build-debug-install.sh <device-serial>
+```
+
 ### 3. Build a signed release APK
 
 > [!IMPORTANT]

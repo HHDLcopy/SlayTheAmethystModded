@@ -42,6 +42,7 @@ import io.stamethyst.backend.easytier.EasyTierConnectionStatus
 import io.stamethyst.backend.easytier.EasyTierConfigRepository
 import io.stamethyst.backend.easytier.EasyTierCredentialStore
 import io.stamethyst.backend.easytier.EASY_TIER_ROOM_DESCRIPTION_MAX_LENGTH
+import io.stamethyst.backend.easytier.EASY_TIER_ROOM_PASSWORD_MAX_LENGTH
 import io.stamethyst.backend.easytier.EasyTierRoomApiClient
 import io.stamethyst.backend.easytier.EasyTierRoomApiHttpException
 import io.stamethyst.backend.easytier.EasyTierRoomInfo
@@ -133,6 +134,7 @@ class MainScreenViewModel : ViewModel() {
     private data class PendingEasyTierRoomCreation(
         val roomId: String,
         val description: String,
+        val password: String,
         val allowNewJoins: Boolean,
     )
 
@@ -678,7 +680,13 @@ class MainScreenViewModel : ViewModel() {
         if (granted && EasyTierPermissionCoordinator.hasVpnPermission(host)) {
             pendingEasyTierRoomCreation?.let { pending ->
                 pendingEasyTierRoomCreation = null
-                createEasyTierRoom(host, pending.roomId, pending.description, pending.allowNewJoins)
+                createEasyTierRoom(
+                    host,
+                    pending.roomId,
+                    pending.description,
+                    pending.password,
+                    pending.allowNewJoins,
+                )
             } ?: onConnectEasyTier(host)
             return
         }
@@ -704,12 +712,15 @@ class MainScreenViewModel : ViewModel() {
     fun queueEasyTierRoomCreation(
         roomId: String,
         description: String,
+        password: String,
         allowNewJoins: Boolean,
     ) {
         val normalizedRoomId = roomId.trim()
         pendingEasyTierRoomCreation = PendingEasyTierRoomCreation(
             roomId = normalizedRoomId,
             description = description.trim().take(EASY_TIER_ROOM_DESCRIPTION_MAX_LENGTH),
+            // Not trimmed: the server preserves whitespace in passwords.
+            password = password.take(EASY_TIER_ROOM_PASSWORD_MAX_LENGTH),
             allowNewJoins = allowNewJoins,
         )
         uiState = uiState.copy(
@@ -728,6 +739,7 @@ class MainScreenViewModel : ViewModel() {
         roomDescriptionWhenCreating: String = "",
         allowNewJoinsWhenCreating: Boolean? = null,
         createOnly: Boolean = false,
+        password: String? = null,
     ) {
         if (uiState.busy) {
             return
@@ -785,6 +797,10 @@ class MainScreenViewModel : ViewModel() {
             roomDescriptionWhenCreating = roomDescriptionWhenCreating,
             allowNewJoinsWhenCreating = allowNewJoinsWhenCreating,
             createOnly = createOnly,
+            // A null password means "use whatever was remembered for this room"; an explicit value
+            // comes from the prompt and takes precedence.
+            password = password
+                ?: EasyTierCredentialStore.roomPassword(host, requestedRoomId),
         )
     }
 
@@ -1023,6 +1039,7 @@ class MainScreenViewModel : ViewModel() {
         host: Activity,
         roomId: String,
         description: String = "",
+        password: String = "",
         allowNewJoins: Boolean = true,
     ) {
         val normalized = roomId.trim()
@@ -1074,6 +1091,7 @@ class MainScreenViewModel : ViewModel() {
                 .take(EASY_TIER_ROOM_DESCRIPTION_MAX_LENGTH),
             allowNewJoinsWhenCreating = allowNewJoins,
             createOnly = true,
+            password = password.take(EASY_TIER_ROOM_PASSWORD_MAX_LENGTH),
         )
     }
 
@@ -5311,6 +5329,16 @@ class MainScreenViewModel : ViewModel() {
     private fun easyTierRoomErrorMessage(host: Activity, error: Throwable): String {
         val apiError = error as? EasyTierRoomApiHttpException
         return when {
+            // Server error codes are checked before the message-substring fallbacks: they are
+            // stable, whereas the messages are prose that changes with translation.
+            apiError?.errorCode == "lan_room_password_required" ->
+                host.getString(R.string.main_easytier_error_room_password_required)
+            apiError?.errorCode == "lan_room_password_invalid" ->
+                host.getString(R.string.main_easytier_error_room_password_invalid)
+            apiError?.errorCode == "lan_room_password_throttled" ->
+                host.getString(R.string.main_easytier_error_room_password_throttled)
+            apiError?.errorCode == "lan_client_version_unsupported" || apiError?.statusCode == 426 ->
+                host.getString(R.string.main_easytier_error_client_version_unsupported)
             apiError?.statusCode == 403 &&
                 apiError.message.orEmpty().contains("Existing player credential", ignoreCase = true) ->
                 host.getString(R.string.main_easytier_error_existing_session)

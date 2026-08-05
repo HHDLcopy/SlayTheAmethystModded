@@ -323,13 +323,55 @@ class CloudControlConfigTest {
         val parsed = CloudControlConfig.parseSettings(readPackagedCloudControlPayload("cloud-control-test.json"))
 
         assertNotNull(parsed)
-        assertEquals("ws://192.168.31.137:3001/api/presence/ws", parsed?.heartbeatWsUrl)
+        assertEquals("ws://10.126.126.2:3001/api/presence/ws", parsed?.heartbeatWsUrl)
         assertTrue(parsed?.easyTier?.enabled == true)
-        assertEquals("1.5.1-dev1", parsed?.easyTier?.minimumOnlineLobbyCompatibleVersion)
-        assertEquals("http://192.168.31.137:3001", parsed?.easyTier?.roomApiBaseUrl)
-        assertEquals("http://192.168.31.137:3001", parsed?.easyTier?.webConsoleApiBaseUrl)
-        assertEquals("udp://192.168.31.137:22020", parsed?.easyTier?.configServerUrl)
-        assertEquals("tcp://192.168.31.137:11010", parsed?.easyTier?.entryNodeUrl)
+        assertEquals("1.5.5", parsed?.easyTier?.minimumOnlineLobbyCompatibleVersion)
+        assertEquals("http://10.126.126.2:3001", parsed?.easyTier?.roomApiBaseUrl)
+        assertEquals("http://10.126.126.2:3001", parsed?.easyTier?.webConsoleApiBaseUrl)
+        assertEquals("udp://10.126.126.2:22020", parsed?.easyTier?.configServerUrl)
+        assertEquals("tcp://10.126.126.2:11010", parsed?.easyTier?.entryNodeUrl)
+    }
+
+    @Test
+    fun normalizeLocalTestOnlineServiceBaseUrl_requiresCleanHttpNetworkBase() {
+        assertEquals(
+            "https://example.com:3001/service",
+            CloudControlConfig.normalizeLocalTestOnlineServiceBaseUrl(
+                " HTTPS://example.com:3001/service/ ",
+            ),
+        )
+        assertEquals(null, CloudControlConfig.normalizeLocalTestOnlineServiceBaseUrl("http:/missing-host"))
+        assertEquals(null, CloudControlConfig.normalizeLocalTestOnlineServiceBaseUrl("http://user@example.com"))
+        assertEquals(null, CloudControlConfig.normalizeLocalTestOnlineServiceBaseUrl("http://example.com?x=1"))
+        assertEquals(null, CloudControlConfig.normalizeLocalTestOnlineServiceBaseUrl("http://example.com#fragment"))
+    }
+
+    @Test
+    fun applyLocalTestEndpoints_replacesCachedServerEndpoints() {
+        val cached = CloudControlSettings(
+            heartbeatIntervalSeconds = 30,
+            heartbeatWsUrl = "ws://cached.example.com/api/presence/ws",
+            easyTier = CloudControlEasyTierSettings(
+                enabled = true,
+                roomApiBaseUrl = "http://cached.example.com",
+                webConsoleApiBaseUrl = "http://cached.example.com",
+                configServerUrl = "udp://cached.example.com:22020",
+                entryNodeUrl = "tcp://cached.example.com:11010",
+            ),
+        )
+
+        val restored = CloudControlConfig.applyLocalTestEndpoints(
+            settings = cached,
+            onlineServiceBaseUrl = "https://10.126.126.2:3001/service",
+            configServerUrl = "udp://10.126.126.2:22020",
+            entryNodeUrl = "tcp://10.126.126.2:11010",
+        )
+
+        assertEquals("wss://10.126.126.2:3001/service/api/presence/ws", restored.heartbeatWsUrl)
+        assertEquals("https://10.126.126.2:3001/service", restored.easyTier.roomApiBaseUrl)
+        assertEquals("https://10.126.126.2:3001/service", restored.easyTier.webConsoleApiBaseUrl)
+        assertEquals("udp://10.126.126.2:22020", restored.easyTier.configServerUrl)
+        assertEquals("tcp://10.126.126.2:11010", restored.easyTier.entryNodeUrl)
     }
 
     @Test

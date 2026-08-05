@@ -282,6 +282,27 @@ object LauncherPreferences {
         LauncherConfig.setLocalTestCloudControlEnabled(context, enabled)
     }
 
+    fun readLocalTestOnlineServiceBaseUrl(context: Context): String =
+        LauncherConfig.readLocalTestOnlineServiceBaseUrl(context)
+
+    fun saveLocalTestOnlineServiceBaseUrl(context: Context, value: String) {
+        LauncherConfig.saveLocalTestOnlineServiceBaseUrl(context, value)
+    }
+
+    fun readLocalTestConfigServerUrl(context: Context): String =
+        LauncherConfig.readLocalTestConfigServerUrl(context)
+
+    fun saveLocalTestConfigServerUrl(context: Context, value: String) {
+        LauncherConfig.saveLocalTestConfigServerUrl(context, value)
+    }
+
+    fun readLocalTestEntryNodeUrl(context: Context): String =
+        LauncherConfig.readLocalTestEntryNodeUrl(context)
+
+    fun saveLocalTestEntryNodeUrl(context: Context, value: String) {
+        LauncherConfig.saveLocalTestEntryNodeUrl(context, value)
+    }
+
     fun readSpecialKeyInputMode(context: Context): SpecialKeyInputMode {
         return LauncherConfig.readSpecialKeyInputMode(context)
     }

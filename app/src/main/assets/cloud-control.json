@@ -8,7 +8,7 @@
   },
   "easyTier": {
     "enabled": true,
-    "minimumOnlineLobbyCompatibleVersion": "1.5.1-dev1",
+    "minimumOnlineLobbyCompatibleVersion": "1.5.5",
     "roomApiBaseUrl": "https://slay.server.apricityx.top:55555/",
     "webConsoleApiBaseUrl": "https://slay.server.apricityx.top:55555/",
     "configServerUrl": "udp://frp-dry.com:12333",

@@ -64,6 +64,7 @@ object EasyTierSessionController {
         roomDescriptionWhenCreating: String = "",
         allowNewJoinsWhenCreating: Boolean? = null,
         createOnly: Boolean = false,
+        password: String = "",
     ): Boolean = EasyTierProcessService.startConnect(
         context,
         mode,
@@ -73,6 +74,7 @@ object EasyTierSessionController {
         roomDescriptionWhenCreating,
         allowNewJoinsWhenCreating,
         createOnly,
+        password,
     )
 
     fun requestDisconnect(

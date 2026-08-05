@@ -13,10 +13,33 @@ internal object EasyTierDiagnosticsStore {
     private const val SUMMARY_FILE_NAME = "last-session-summary.txt"
     private const val EVENT_HISTORY_DIR_NAME = "events"
     private const val EVENT_HISTORY_LIMIT = 5
-    private val HISTORY_STATES = setOf(EasyTierConnectionStatus.FAILED)
+    private const val EASYTIER_EXIT_RECORD_LIMIT = 5
+
+    /**
+     * States worth archiving as their own history slot.
+     *
+     * `FAILED` alone is not enough. A session that dies mid-game normally lands on `DISCONNECTED`
+     * (server-side terminal state, or the runtime going away), and a session fighting to stay up
+     * lands on `RECONNECTING`. Both were previously overwritten in `last-session-summary.txt` by the
+     * next transition, so a reported disconnect arrived with no history file at all and the summary
+     * only described the final resting state.
+     */
+    private val HISTORY_STATES = setOf(
+        EasyTierConnectionStatus.FAILED,
+        EasyTierConnectionStatus.DISCONNECTED,
+        EasyTierConnectionStatus.RECONNECTING,
+    )
 
     @JvmStatic
     fun summaryFile(context: Context): File = File(EasyTierStateStore.outputDir(context), SUMMARY_FILE_NAME)
+
+    /**
+     * Last status written to the history, used to archive transitions only. Process-local: after an
+     * `:easytier` restart this is null, so the first post-restart state is archived — which is
+     * exactly the record needed to spot a kill/restart cycle.
+     */
+    @Volatile
+    private var lastArchivedStatus: EasyTierConnectionStatus? = null
 
     fun eventHistoryDir(context: Context): File =
         File(EasyTierStateStore.outputDir(context), EVENT_HISTORY_DIR_NAME)
@@ -28,11 +51,30 @@ internal object EasyTierDiagnosticsStore {
         extraLines: List<String> = emptyList(),
         error: Throwable? = null,
     ) {
+        val previousStatus = lastArchivedStatus
         val text = buildSummaryText(context, snapshot, extraLines, error)
         EasyTierAtomicFileStore.writeText(summaryFile(context), text, Charsets.UTF_8)
-        if (snapshot.status in HISTORY_STATES) {
+        if (shouldArchive(previousStatus = previousStatus, status = snapshot.status)) {
             writeEventHistory(context, snapshot, text)
         }
+        lastArchivedStatus = snapshot.status
+    }
+
+    /**
+     * Archives only on entering a noteworthy state, never on staying in it.
+     *
+     * The status poll persists a snapshot on every iteration (default 5s), so archiving
+     * unconditionally would burn all [EVENT_HISTORY_LIMIT] slots within ~25 seconds of a single
+     * `RECONNECTING` stretch and evict the very transition that explains the disconnect.
+     */
+    internal fun shouldArchive(
+        previousStatus: EasyTierConnectionStatus?,
+        status: EasyTierConnectionStatus,
+    ): Boolean = status in HISTORY_STATES && previousStatus != status
+
+    /** Resets the transition filter. Exposed for tests, which reuse the singleton across cases. */
+    internal fun resetArchivedStatusForTest() {
+        lastArchivedStatus = null
     }
 
     fun clear(context: Context) {
@@ -79,6 +121,7 @@ internal object EasyTierDiagnosticsStore {
             )
             add("State File: ${EasyTierStateStore.stateFile(context).absolutePath}")
             add("Summary: ${summaryFile(context).absolutePath}")
+            addAll(buildProcessExitLines(context))
             if (extraLines.isNotEmpty()) {
                 add("")
                 add("Details:")
@@ -96,6 +139,41 @@ internal object EasyTierDiagnosticsStore {
             }
         }
         return lines.joinToString("\n") + "\n"
+    }
+
+    /**
+     * Renders recent `:easytier` process deaths.
+     *
+     * This is the section that distinguishes "the virtual network was killed underneath the game"
+     * from "the session ended on its own". Without it, a lowmemorykiller SIGKILL leaves no trace
+     * anywhere in the bundle — no crash report, no log line — and the disconnect is
+     * indistinguishable from a clean teardown.
+     */
+    internal fun buildProcessExitLines(context: Context): List<String> {
+        val exits = runCatching {
+            EasyTierProcessExitReader.readRecentExits(context, EASYTIER_EXIT_RECORD_LIMIT)
+        }.getOrDefault(emptyList())
+        return buildList {
+            add("")
+            add("Recent :easytier Process Exits:")
+            if (exits.isEmpty()) {
+                // Absence is not proof of survival, and saying so prevents the same wrong inference
+                // that a missing record previously invited.
+                add("  - <none recorded> (requires Android 11+; absence does not prove the process survived)")
+                return@buildList
+            }
+            exits.forEach { exit ->
+                add(
+                    "  - ${formatTimestamp(exit.timestamp)} pid=${exit.pid} ${exit.reasonName}" +
+                        " status=${exit.status}" +
+                        " involuntary=${if (EasyTierProcessExitReader.isInvoluntaryExit(exit)) "yes" else "no"}" +
+                        " memoryPressureKill=${
+                            if (EasyTierProcessExitReader.isMemoryPressureKill(exit)) "yes" else "no"
+                        }" +
+                        exit.description.takeIf { it.isNotBlank() }?.let { " description=$it" }.orEmpty()
+                )
+            }
+        }
     }
 
     @Throws(IOException::class)
@@ -136,11 +214,20 @@ internal object EasyTierDiagnosticsStore {
     }
 
     private fun pruneHistory(dir: File) {
-        val files = dir.listFiles { file -> file.isFile && file.name.startsWith("event-") }
+        // The atomic writer drops a sibling "<name>.bak" next to each event, and those also start
+        // with "event-". Counting them as slots would halve the effective history depth, so they are
+        // excluded here and removed alongside the event they belong to.
+        val files = dir.listFiles { file -> file.isFile && isEventHistoryFile(file.name) }
             ?.sortedByDescending { it.lastModified() }
             ?: return
-        files.drop(EVENT_HISTORY_LIMIT).forEach { it.delete() }
+        files.drop(EVENT_HISTORY_LIMIT).forEach { event ->
+            event.delete()
+            EasyTierAtomicFileStore.backupFile(event).delete()
+        }
     }
+
+    internal fun isEventHistoryFile(fileName: String): Boolean =
+        fileName.startsWith("event-") && fileName.endsWith(".txt")
 
     private fun formatTimestamp(timestampMs: Long?): String {
         if (timestampMs == null || timestampMs <= 0L) {

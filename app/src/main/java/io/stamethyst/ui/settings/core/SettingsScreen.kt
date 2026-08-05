@@ -363,6 +363,14 @@ fun LauncherDeveloperSettingsScreen(
         onLocalTestCloudControlEnabledChanged = { enabled ->
             viewModel.onLocalTestCloudControlEnabledChanged(activity, enabled)
         },
+        onLocalTestEndpointsChanged = { onlineServiceBaseUrl, configServerUrl, entryNodeUrl ->
+            viewModel.onLocalTestEndpointsChanged(
+                activity,
+                onlineServiceBaseUrl,
+                configServerUrl,
+                entryNodeUrl,
+            )
+        },
         onSaveSteamCloudPhase0Credentials = { accountName, refreshToken, proxyUrl ->
             viewModel.onSaveSteamCloudPhase0Credentials(activity, accountName, refreshToken, proxyUrl)
         },
@@ -424,5 +432,4 @@ fun LauncherDeveloperSettingsScreen(
         },
     )
 }
-
 

@@ -3,6 +3,7 @@ package io.stamethyst.ui.main
 import android.app.Activity
 import android.os.Build
 import android.view.HapticFeedbackConstants
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -124,6 +125,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
@@ -141,6 +143,8 @@ import io.stamethyst.backend.easytier.EasyTierRoomInfo
 import io.stamethyst.backend.easytier.EasyTierRoomListItem
 import io.stamethyst.backend.easytier.EasyTierRoomMember
 import io.stamethyst.backend.easytier.EASY_TIER_ROOM_DESCRIPTION_MAX_LENGTH
+import io.stamethyst.backend.easytier.EasyTierCredentialStore
+import io.stamethyst.backend.easytier.EASY_TIER_ROOM_PASSWORD_MAX_LENGTH
 import io.stamethyst.backend.easytier.EASY_TIER_KICK_MESSAGE_MAX_LENGTH
 import io.stamethyst.backend.render.RendererBackendResolver
 import io.stamethyst.backend.steamcloud.SteamCloudFailureCategory
@@ -1294,109 +1298,6 @@ internal fun easyTierTroubleshootingMessageResId(
     }
 }
 
-/** Recovery action offered directly on the EasyTier troubleshooting card. */
-internal enum class EasyTierTroubleshootingAction {
-    None,
-    GrantVpn,
-    Retry,
-    RefreshRooms,
-}
-
-/**
- * Maps a failure into the one recovery step the user can take from the sheet.
- *
- * Permission problems reopen the Android VPN consent dialog, transport/session failures retry
- * the connection, and stale room or runtime state re-reads the room list first.
- */
-internal fun easyTierTroubleshootingAction(
-    state: MainScreenViewModel.EasyTierIndicatorState,
-    failureCategory: EasyTierFailureCategory,
-    busy: Boolean = false,
-): EasyTierTroubleshootingAction {
-    if (busy) {
-        return EasyTierTroubleshootingAction.None
-    }
-    return when (failureCategory) {
-        EasyTierFailureCategory.VpnPermissionRequired,
-        EasyTierFailureCategory.VpnPermissionDenied,
-        EasyTierFailureCategory.VpnPermissionRevoked -> EasyTierTroubleshootingAction.GrantVpn
-        EasyTierFailureCategory.None -> {
-            if (state == MainScreenViewModel.EasyTierIndicatorState.PERMISSION_REQUIRED) {
-                EasyTierTroubleshootingAction.GrantVpn
-            } else {
-                EasyTierTroubleshootingAction.Retry
-            }
-        }
-        EasyTierFailureCategory.ConfigMissing,
-        EasyTierFailureCategory.RoomClosed,
-        EasyTierFailureCategory.RuntimeBridgePending,
-        EasyTierFailureCategory.RuntimeBridgeUnavailable -> EasyTierTroubleshootingAction.RefreshRooms
-        EasyTierFailureCategory.SessionClosed,
-        EasyTierFailureCategory.SessionExpired,
-        EasyTierFailureCategory.BackgroundStartBlocked,
-        EasyTierFailureCategory.Unknown -> EasyTierTroubleshootingAction.Retry
-        EasyTierFailureCategory.SessionKicked -> EasyTierTroubleshootingAction.None
-    }
-}
-
-@StringRes
-internal fun easyTierTroubleshootingActionLabelResId(
-    action: EasyTierTroubleshootingAction,
-): Int? = when (action) {
-    EasyTierTroubleshootingAction.GrantVpn -> R.string.main_easytier_action_grant_vpn
-    EasyTierTroubleshootingAction.Retry -> R.string.main_easytier_action_retry
-    EasyTierTroubleshootingAction.RefreshRooms -> R.string.main_easytier_action_refresh_rooms
-    EasyTierTroubleshootingAction.None -> null
-}
-
-@Composable
-private fun EasyTierTroubleshootingCard(
-    @StringRes messageResId: Int,
-    action: EasyTierTroubleshootingAction = EasyTierTroubleshootingAction.None,
-    onAction: () -> Unit = {},
-) {
-    Surface(
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.errorContainer,
-        border = BorderStroke(
-            width = 1.dp,
-            color = MaterialTheme.colorScheme.error.copy(alpha = 0.28f),
-        ),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text(
-                text = stringResource(R.string.main_easytier_troubleshooting_title),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onErrorContainer,
-            )
-            Text(
-                text = stringResource(messageResId),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onErrorContainer,
-            )
-            easyTierTroubleshootingActionLabelResId(action)?.let { labelResId ->
-                Button(
-                    onClick = onAction,
-                    modifier = Modifier.align(Alignment.End),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error,
-                        contentColor = MaterialTheme.colorScheme.onError,
-                    ),
-                    contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp),
-                ) {
-                    Text(stringResource(labelResId))
-                }
-            }
-        }
-    }
-}
-
 @Composable
 private fun easyTierIndicatorTint(
     state: MainScreenViewModel.EasyTierIndicatorState,
@@ -1770,6 +1671,17 @@ private fun EasyTierOnlineRoomsSection(
                                         MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
                                     },
                                 )
+                                if (room.hasPassword) {
+                                    // Tells the player a prompt is coming before they tap, rather
+                                    // than letting them discover it through a 403.
+                                    Text(
+                                        text = stringResource(
+                                            R.string.main_easytier_room_password_badge
+                                        ),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
                             }
                         }
                     }
@@ -2511,14 +2423,16 @@ private fun EasyTierTutorialImage(
 private fun EasyTierCreateRoomPanel(
     roomId: String,
     roomDescription: String,
+    roomPassword: String,
     allowNewJoins: Boolean,
     creating: Boolean,
     mutating: Boolean,
     connectionState: MainScreenViewModel.EasyTierIndicatorState,
     onRoomIdChange: (String) -> Unit,
     onRoomDescriptionChange: (String) -> Unit,
+    onRoomPasswordChange: (String) -> Unit,
     onAllowNewJoinsChange: (Boolean) -> Unit,
-    onCreateRoom: (String, String, Boolean) -> Unit,
+    onCreateRoom: (String, String, String, Boolean) -> Unit,
 ) {
     val uriHandler = LocalUriHandler.current
     val cloudControlSettings by rememberCloudControlSettings()
@@ -2551,6 +2465,16 @@ private fun EasyTierCreateRoomPanel(
                 maxLines = 3,
                 enabled = !creating,
             )
+            OutlinedTextField(
+                value = roomPassword,
+                onValueChange = { password ->
+                    onRoomPasswordChange(password.take(EASY_TIER_ROOM_PASSWORD_MAX_LENGTH))
+                },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(stringResource(R.string.main_easytier_room_password_optional_label)) },
+                visualTransformation = PasswordVisualTransformation(),
+                enabled = !creating,
+            )
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -2573,7 +2497,7 @@ private fun EasyTierCreateRoomPanel(
                 )
             }
             Button(
-                onClick = { onCreateRoom(roomId.trim(), roomDescription.trim(), allowNewJoins) },
+                onClick = { onCreateRoom(roomId.trim(), roomDescription.trim(), roomPassword, allowNewJoins) },
                 enabled = roomId.isNotBlank() && !creating && !mutating,
                 modifier = Modifier.fillMaxWidth(),
             ) {
@@ -2667,12 +2591,12 @@ internal fun EasyTierBottomSheetContent(
     roomBrowser: MainScreenViewModel.EasyTierRoomBrowserUi,
     onRefreshRooms: () -> Unit,
     onSelectRoom: (String) -> Unit,
-    onCreateRoom: (String, String, Boolean) -> Unit,
+    onCreateRoom: (String, String, String, Boolean) -> Unit,
     onLockRoom: () -> Unit,
     onUnlockRoom: () -> Unit,
     onCloseRoom: () -> Unit,
     onKickMember: (String, String) -> Unit,
-    onConnect: () -> Unit,
+    onConnect: (String?) -> Unit,
     onDisconnect: () -> Unit,
     tutorialWorkshopDownloadState: (WorkshopItemSummary) -> WorkshopModDownloadState = {
         WorkshopModDownloadState.NotDownloaded
@@ -2685,7 +2609,11 @@ internal fun EasyTierBottomSheetContent(
     var page by remember { mutableStateOf(EasyTierRoomSheetPage.Rooms) }
     var createRoomId by remember { mutableStateOf("") }
     var createRoomDescription by remember { mutableStateOf("") }
+    var createRoomPassword by remember { mutableStateOf("") }
     var createAllowNewJoins by remember { mutableStateOf(true) }
+    // Non-null while the password prompt is showing; holds the room awaiting a password.
+    var passwordPromptRoom by remember { mutableStateOf<EasyTierRoomInfo?>(null) }
+    var passwordPromptValue by remember { mutableStateOf("") }
     var submittedCreateRoomId by remember { mutableStateOf("") }
     var closeConfirmationRoom by remember { mutableStateOf<EasyTierRoomInfo?>(null) }
     var kickConfirmationMember by remember { mutableStateOf<EasyTierRoomMember?>(null) }
@@ -2765,11 +2693,9 @@ internal fun EasyTierBottomSheetContent(
         failureCategory = indicator.failureCategory,
         errorSummary = indicator.errorSummary,
     )
-    val troubleshootingAction = easyTierTroubleshootingAction(
-        state = indicator.state,
-        failureCategory = indicator.failureCategory,
-        busy = roomBrowser.loading || roomBrowser.creating || roomBrowser.mutating,
-    )
+    val troubleshootingToastMessageResId = troubleshootingMessageResId.takeIf {
+        page != EasyTierRoomSheetPage.Tutorial && page != EasyTierRoomSheetPage.MemberMods
+    }
     // Mirror launcher notices into the sheet. Room actions report success through the shared
     // notice bus, whose host is stacked below this sheet and therefore invisible while it is open.
     LaunchedEffect(Unit) {
@@ -2784,6 +2710,15 @@ internal fun EasyTierBottomSheetContent(
             sheetNotice = null
         }
     }
+    LaunchedEffect(troubleshootingToastMessageResId) {
+        if (troubleshootingToastMessageResId != null) {
+            Toast.makeText(
+                sheetView.context,
+                sheetView.context.getString(troubleshootingToastMessageResId),
+                Toast.LENGTH_LONG,
+            ).show()
+        }
+    }
     LaunchedEffect(roomBrowser.creating, selectedRoom?.roomId, roomBrowser.errorSummary) {
         if (roomBrowser.creating || submittedCreateRoomId.isBlank()) {
             return@LaunchedEffect
@@ -2795,6 +2730,7 @@ internal fun EasyTierBottomSheetContent(
         if (selectedRoom?.roomId == submittedCreateRoomId) {
             createRoomId = ""
             createRoomDescription = ""
+            createRoomPassword = ""
             createAllowNewJoins = true
             submittedCreateRoomId = ""
             page = EasyTierRoomSheetPage.Rooms
@@ -2958,37 +2894,6 @@ internal fun EasyTierBottomSheetContent(
             }
         }
 
-        AnimatedContent(
-            targetState = troubleshootingMessageResId.takeIf {
-                page != EasyTierRoomSheetPage.Tutorial && page != EasyTierRoomSheetPage.MemberMods
-            },
-            transitionSpec = {
-                (fadeIn(animationSpec = tween(durationMillis = 180)) +
-                    slideInVertically(
-                        initialOffsetY = { height -> height / 4 },
-                        animationSpec = tween(durationMillis = 220),
-                    )) togetherWith fadeOut(animationSpec = tween(durationMillis = 120))
-            },
-            label = "easyTierTroubleshooting",
-        ) { messageResId ->
-            if (messageResId != null) {
-                Box(modifier = Modifier.padding(top = 8.dp)) {
-                    EasyTierTroubleshootingCard(
-                        messageResId = messageResId,
-                        action = troubleshootingAction,
-                        onAction = {
-                            when (troubleshootingAction) {
-                                EasyTierTroubleshootingAction.GrantVpn,
-                                EasyTierTroubleshootingAction.Retry -> onConnect()
-                                EasyTierTroubleshootingAction.RefreshRooms -> onRefreshRooms()
-                                EasyTierTroubleshootingAction.None -> Unit
-                            }
-                        },
-                    )
-                }
-            }
-        }
-
         // Keep room-detail loading feedback above the content without shifting the panel layout.
         Box(
             modifier = Modifier
@@ -3142,16 +3047,18 @@ internal fun EasyTierBottomSheetContent(
                 EasyTierRoomContentMode.Create -> EasyTierCreateRoomPanel(
                     roomId = createRoomId,
                     roomDescription = createRoomDescription,
+                    roomPassword = createRoomPassword,
                     allowNewJoins = createAllowNewJoins,
                     creating = creatingRoom,
                     mutating = roomBrowser.mutating,
                     connectionState = indicator.state,
                     onRoomIdChange = { createRoomId = it },
                     onRoomDescriptionChange = { createRoomDescription = it },
+                    onRoomPasswordChange = { createRoomPassword = it },
                     onAllowNewJoinsChange = { createAllowNewJoins = it },
-                    onCreateRoom = { roomId, description, allowNewJoins ->
+                    onCreateRoom = { roomId, description, password, allowNewJoins ->
                         submittedCreateRoomId = roomId
-                        onCreateRoom(roomId, description, allowNewJoins)
+                        onCreateRoom(roomId, description, password, allowNewJoins)
                     },
                 )
                 EasyTierRoomContentMode.Unjoined,
@@ -3325,7 +3232,19 @@ internal fun EasyTierBottomSheetContent(
                             if (disconnectAction) {
                                 onDisconnect()
                             } else {
-                                onConnect()
+                                // Prompt only when the selected room needs a password and nothing
+                                // usable is stored; otherwise connect straight through and let the
+                                // service reuse the remembered value.
+                                if (selectedRoom != null && selectedRoom.hasPassword &&
+                                    EasyTierCredentialStore
+                                        .roomPassword(sheetView.context, selectedRoom.roomId)
+                                        .isEmpty()
+                                ) {
+                                    passwordPromptValue = ""
+                                    passwordPromptRoom = selectedRoom
+                                } else {
+                                    onConnect(null)
+                                }
                             }
                         }
                     },
@@ -3381,6 +3300,60 @@ internal fun EasyTierBottomSheetContent(
                     ),
                 ) {
                     Text(stringResource(R.string.main_easytier_action_close_room))
+                }
+            },
+        )
+    }
+    passwordPromptRoom?.let { promptRoom ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = {
+                passwordPromptRoom = null
+                passwordPromptValue = ""
+            },
+            title = { Text(stringResource(R.string.main_easytier_room_password_dialog_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        stringResource(
+                            R.string.main_easytier_room_password_dialog_message,
+                            promptRoom.roomId,
+                        )
+                    )
+                    OutlinedTextField(
+                        value = passwordPromptValue,
+                        onValueChange = { value ->
+                            passwordPromptValue = value.take(EASY_TIER_ROOM_PASSWORD_MAX_LENGTH)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = {
+                            Text(stringResource(R.string.main_easytier_room_password_label))
+                        },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        passwordPromptRoom = null
+                        passwordPromptValue = ""
+                    },
+                ) {
+                    Text(stringResource(R.string.main_easytier_action_cancel))
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val password = passwordPromptValue
+                        passwordPromptRoom = null
+                        passwordPromptValue = ""
+                        onConnect(password)
+                    },
+                    enabled = passwordPromptValue.isNotEmpty(),
+                ) {
+                    Text(stringResource(R.string.main_easytier_action_join))
                 }
             },
         )

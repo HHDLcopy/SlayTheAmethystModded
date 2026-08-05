@@ -51,6 +51,7 @@ class EasyTierProcessService : Service() {
         const val EXTRA_ROOM_DESCRIPTION = "io.stamethyst.extra.EASYTIER_ROOM_DESCRIPTION"
         const val EXTRA_ALLOW_NEW_JOINS = "io.stamethyst.extra.EASYTIER_ALLOW_NEW_JOINS"
         const val EXTRA_CREATE_ONLY = "io.stamethyst.extra.EASYTIER_CREATE_ONLY"
+        const val EXTRA_ROOM_PASSWORD = "io.stamethyst.extra.EASYTIER_ROOM_PASSWORD"
 
         const val RESULT_CONNECTING = 1
         const val RESULT_CONNECTED = 2
@@ -89,6 +90,7 @@ class EasyTierProcessService : Service() {
             roomDescriptionWhenCreating: String = "",
             allowNewJoinsWhenCreating: Boolean? = null,
             createOnly: Boolean = false,
+            password: String = "",
         ): Boolean {
             val appContext = context.applicationContext
             val intent = Intent(appContext, EasyTierProcessService::class.java).apply {
@@ -107,6 +109,9 @@ class EasyTierProcessService : Service() {
                 }
                 if (createOnly) {
                     putExtra(EXTRA_CREATE_ONLY, true)
+                }
+                if (password.isNotEmpty()) {
+                    putExtra(EXTRA_ROOM_PASSWORD, password)
                 }
             }
             return try {
@@ -322,6 +327,7 @@ class EasyTierProcessService : Service() {
                 null
             }
             val createOnly = intent.getBooleanExtra(EXTRA_CREATE_ONLY, false)
+            val roomPassword = intent.getStringExtra(EXTRA_ROOM_PASSWORD).orEmpty()
 
             if (!config.canConnect) {
                 val snapshot = EasyTierSessionController.persistSnapshot(
@@ -388,6 +394,7 @@ class EasyTierProcessService : Service() {
                         roomDescriptionWhenCreating = roomDescriptionWhenCreating,
                         allowNewJoinsWhenCreating = allowNewJoinsWhenCreating,
                         createOnly = createOnly,
+                        password = roomPassword,
                         sessionToken = EasyTierCredentialStore.sessionToken(
                             applicationContext,
                             roomId,
@@ -404,6 +411,14 @@ class EasyTierProcessService : Service() {
                         sessionToken = sessionConfig.sessionToken,
                         ownerToken = sessionConfig.ownerToken,
                     )
+                    if (roomPassword.isNotEmpty()) {
+                        // The server accepted it, so remember it and stop prompting on re-entry.
+                        EasyTierCredentialStore.saveRoomPassword(
+                            context = applicationContext,
+                            roomId = sessionConfig.roomId,
+                            password = roomPassword,
+                        )
+                    }
                     startedSessionConfig = sessionConfig
                     val sessionStatus = runCatching {
                         EasyTierRoomApiClient(applicationContext).fetchSessionStatus(
@@ -627,6 +642,15 @@ class EasyTierProcessService : Service() {
     private fun localizedRoomSessionStartFailure(error: Throwable): String {
         val apiError = error as? EasyTierRoomApiHttpException
         return when {
+            // Prefer the server's stable error code over matching prose, which varies by locale.
+            apiError?.errorCode == "lan_room_password_required" ->
+                getString(R.string.main_easytier_error_room_password_required)
+            apiError?.errorCode == "lan_room_password_invalid" ->
+                getString(R.string.main_easytier_error_room_password_invalid)
+            apiError?.errorCode == "lan_room_password_throttled" ->
+                getString(R.string.main_easytier_error_room_password_throttled)
+            apiError?.errorCode == "lan_client_version_unsupported" || apiError?.statusCode == 426 ->
+                getString(R.string.main_easytier_error_client_version_unsupported)
             apiError?.statusCode == 409 &&
                 apiError.message.orEmpty().contains("room already exists", ignoreCase = true) ->
                 getString(R.string.main_easytier_error_room_exists)
@@ -770,7 +794,10 @@ class EasyTierProcessService : Service() {
             notificationMessageForSnapshot(updatedSnapshot)?.let(::updateNotification)
             pollRuntimeInfo(updatedSnapshot, receiver)
         }.onFailure { error ->
-            if (error is EasyTierRoomApiHttpException && error.statusCode == 404) {
+            // Only tear the session down when the server actually said the session (or its room)
+            // is gone. Any other 404 is treated as a transient failure so the poll loop can retry
+            // instead of ending a session that may still be alive.
+            if (error is EasyTierRoomApiHttpException && isEasyTierSessionGone(error)) {
                 handleTerminalSessionState(
                     current = current,
                     sessionStatus = null,
@@ -832,7 +859,11 @@ class EasyTierProcessService : Service() {
             ),
             extraLines = listOf(
                 "terminal_session_state=true",
-                "terminal_session_state_value=$terminalSessionState",
+                // Distinguishes the two ways this path is reached. Without it, the Room API 404
+                // branch (sessionStatus == null) and a genuinely blank server state both render as
+                // an empty value, which makes a disconnect report unattributable after the fact.
+                "terminal_session_state_source=${if (sessionStatus == null) "room_api_session_missing" else "server_reported"}",
+                "terminal_session_state_value=${terminalSessionState.ifBlank { "<blank>" }}",
                 "removed_by_room_owner=$kicked",
             ),
         )
@@ -851,6 +882,10 @@ class EasyTierProcessService : Service() {
         }
         val runtimeResult = EasyTierJniBridge.collectNetworkInfo(applicationContext, instanceName)
         runtimeResult.exceptionOrNull()?.let { error ->
+            // The lease must outlive a transient runtime fault. Dropping it here is what turned a
+            // brief JNI hiccup into a permanent disconnect: the server swept the session after its
+            // TTL and every later request came back 404.
+            renewSessionLease(baseSnapshot)
             val summary = EasyTierJniBridge.failureSummary(error)
             val failedSnapshot = EasyTierSessionController.persistSnapshot(
                 context = applicationContext,
@@ -870,8 +905,16 @@ class EasyTierProcessService : Service() {
             return
         }
 
-        val runtimeInfo = runtimeResult.getOrNull() ?: return
+        val runtimeInfo = runtimeResult.getOrNull() ?: run {
+            // A success result with no payload still means the session is in use, so hold the lease
+            // rather than letting it lapse on an empty read.
+            renewSessionLease(baseSnapshot)
+            return
+        }
         if (!runtimeInfo.running) {
+            // Keep the server-side session alive while the runtime restarts itself. Without this
+            // the session expired after its TTL and the reconnect could never succeed.
+            renewSessionLease(baseSnapshot)
             val runtimeError = runtimeInfo.errorMessage.ifBlank {
                 getString(R.string.main_easytier_notification_reconnecting)
             }
@@ -885,6 +928,10 @@ class EasyTierProcessService : Service() {
                 extraLines = listOf(
                     "runtime_instance_running=false",
                     "runtime_instance_name=$instanceName",
+                    // The Rust runtime reporting "not running" while this process is alive means the
+                    // instance died in-process rather than the whole process being reclaimed. That
+                    // distinction is what separates a runtime fault from an LMK kill.
+                    "runtime_stopped_while_service_alive=true",
                     "runtime_error=${runtimeInfo.errorMessage.ifBlank { "<empty>" }}",
                 ),
             )
@@ -894,6 +941,9 @@ class EasyTierProcessService : Service() {
         }
 
         if (runtimeInfo.virtualIpv4Cidr.isBlank()) {
+            // No virtual IP yet. The session is still legitimately in use, so hold the lease while
+            // the runtime finishes negotiating an address.
+            renewSessionLease(baseSnapshot)
             if (hasEasyTierConnectionTimedOut(baseSnapshot, EasyTierConfigRepository.current())) {
                 handleConnectionTimeout(baseSnapshot, receiver)
             }
@@ -964,6 +1014,28 @@ class EasyTierProcessService : Service() {
         }.getOrNull()
     }
 
+    /**
+     * Renews the server-side session lease without requiring a healthy runtime.
+     *
+     * The Room API treats runtime reports as the only lease heartbeat, so a client that stops
+     * reporting loses its session once the TTL elapses. Reporting only on the happy path meant the
+     * lease lapsed exactly when the runtime was struggling, and the resulting 404 turned a
+     * recoverable hiccup into a permanent disconnect.
+     *
+     * The last known address is reused because the server rejects a mismatched CIDR for sessions
+     * with a static assignment; when nothing is known yet there is nothing to keep alive.
+     */
+    private fun renewSessionLease(snapshot: EasyTierConnectionSnapshot) {
+        val assignedIpv4Cidr = snapshot.assignedIpv4Cidr.trim()
+        if (assignedIpv4Cidr.isBlank()) {
+            return
+        }
+        reportSessionRuntimeOrNull(
+            snapshot = snapshot,
+            assignedIpv4Cidr = assignedIpv4Cidr,
+        )
+    }
+
     private fun reportSessionRuntimeOrNull(
         snapshot: EasyTierConnectionSnapshot,
         assignedIpv4Cidr: String,
@@ -990,9 +1062,18 @@ class EasyTierProcessService : Service() {
                 relayServerDescription = snapshot.relayServerDescription,
             )
         } catch (error: EasyTierRoomApiHttpException) {
-            if (error.statusCode == 404) {
+            if (error.isPossiblyUnimplementedEndpoint) {
+                // A 404 with no server error code is the only response that still looks like an
+                // older server without this endpoint. A labelled "session not found" must not land
+                // here: disabling renewal on it guaranteed the session stayed dead.
                 runtimeReportUnsupported = true
                 Log.i(TAG, "Room API does not support runtime reports; continuing with local connection state")
+            } else if (error.isSessionMissing) {
+                Log.w(
+                    TAG,
+                    "EasyTier session ${snapshot.sessionId} no longer exists on the server",
+                    error,
+                )
             } else {
                 Log.w(TAG, "Failed to report EasyTier runtime for session ${snapshot.sessionId}", error)
             }
@@ -1157,6 +1238,24 @@ internal fun shouldReportEasyTierRuntime(
     snapshot: EasyTierConnectionSnapshot,
     assignedIpv4Cidr: String,
 ): Boolean = snapshot.sessionId.isNotBlank() && assignedIpv4Cidr.isNotBlank()
+
+/**
+ * True when the server told us this session (or the room behind it) no longer exists.
+ *
+ * A bare 404 is deliberately not enough. The status alone cannot distinguish "your session is
+ * gone" from a proxy error or a server that never implemented the route, and tearing the session
+ * down on the latter is what made a recoverable stall look like a permanent disconnect. Older
+ * servers that predate the error codes still send an unlabelled 404, which is why that case is
+ * kept as a session-gone signal for the status endpoint.
+ */
+internal fun isEasyTierSessionGone(error: EasyTierRoomApiHttpException): Boolean {
+    if (error.statusCode != 404) {
+        return false
+    }
+    return error.errorCode.isBlank() ||
+        error.errorCode == EasyTierRoomApiHttpException.ERROR_CODE_SESSION_NOT_FOUND ||
+        error.errorCode == "lan_room_not_found"
+}
 
 internal fun easyTierNotificationMessage(
     snapshot: EasyTierConnectionSnapshot,

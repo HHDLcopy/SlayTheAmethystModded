@@ -228,15 +228,15 @@ private fun InGameEasyTierDialogHost(
                 onSelectRoom = { roomId ->
                     viewModel.selectEasyTierRoom(activity, roomId)
                 },
-                onCreateRoom = { roomId, description, allowNewJoins ->
+                onCreateRoom = { roomId, description, password, allowNewJoins ->
                     val permissionIntent =
                         EasyTierPermissionCoordinator.prepareVpnPermissionIntent(activity)
                     if (permissionIntent != null) {
-                        viewModel.queueEasyTierRoomCreation(roomId, description, allowNewJoins)
+                        viewModel.queueEasyTierRoomCreation(roomId, description, password, allowNewJoins)
                         viewModel.onEasyTierVpnPermissionRequired(activity)
                         permissionLauncher.launch(permissionIntent)
                     } else {
-                        viewModel.createEasyTierRoom(activity, roomId, description, allowNewJoins)
+                        viewModel.createEasyTierRoom(activity, roomId, description, password, allowNewJoins)
                     }
                 },
                 onLockRoom = { viewModel.lockEasyTierRoom(activity) },

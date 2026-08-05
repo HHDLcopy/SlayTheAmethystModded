@@ -22,6 +22,9 @@ enum class EasyTierNetworkMode(
 
 const val DEFAULT_EASYTIER_SHARED_ROOM_ID = "sts-public-lobby"
 const val EASY_TIER_ROOM_DESCRIPTION_MAX_LENGTH = 120
+
+/** Mirrors MAX_LAN_ROOM_PASSWORD_LENGTH on the server; longer input is truncated there anyway. */
+const val EASY_TIER_ROOM_PASSWORD_MAX_LENGTH = 64
 const val EASY_TIER_KICK_MESSAGE_MAX_LENGTH = 160
 
 data class EasyTierResolvedConfig(
@@ -83,6 +86,8 @@ data class EasyTierRoomInfo(
     val description: String = "",
     val mode: EasyTierNetworkMode,
     val allowNewJoins: Boolean,
+    /** Whether the room demands a password to join. The password itself never leaves the server. */
+    val hasPassword: Boolean = false,
     val closedAtMs: Long = 0L,
     val memberCount: Int,
     val inGameMemberCount: Int = 0,
@@ -98,6 +103,8 @@ data class EasyTierRoomListItem(
     val description: String = "",
     val mode: EasyTierNetworkMode,
     val allowNewJoins: Boolean,
+    /** Whether the room demands a password to join. The password itself never leaves the server. */
+    val hasPassword: Boolean = false,
     val closedAtMs: Long = 0L,
     val memberCount: Int,
     val onlineMemberCount: Int = 0,

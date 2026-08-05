@@ -31,7 +31,7 @@ private const val STEAM_DEPOT_KEY_BYTES = 32
 private const val DEFAULT_CLOUD_CONTROL_ASSET_NAME = "cloud-control.json"
 private const val LOCAL_TEST_CLOUD_CONTROL_ASSET_NAME = "cloud-control-test.json"
 private const val LOCAL_TEST_CLOUD_CONTROL_CONFIG_URL =
-    "http://192.168.31.137:3001/cloud-control.json"
+    "http://10.126.126.2:3001/cloud-control.json"
 private const val DEFAULT_EASYTIER_CONNECT_TIMEOUT_SECONDS = 12
 private const val DEFAULT_EASYTIER_STATUS_POLL_INTERVAL_SECONDS = 5
 private const val DEFAULT_EASYTIER_DEFAULT_MODE = "room"
@@ -249,7 +249,7 @@ object CloudControlConfig {
         currentSettings = readCachedSettings(
             cacheFile = selectedCacheFile(appContext),
             defaults = defaults,
-        ) ?: defaults
+        )?.withSelectedChannelEndpoints(appContext) ?: defaults
         startupRefreshCompleted = false
         refreshAsync(appContext)
     }
@@ -281,9 +281,30 @@ object CloudControlConfig {
         currentSettings = readCachedSettings(
             cacheFile = selectedCacheFile(appContext),
             defaults = defaults,
-        ) ?: defaults
+        )?.withSelectedChannelEndpoints(appContext) ?: defaults
         startupRefreshCompleted = false
         refreshAsync(appContext)
+    }
+
+    fun updateLocalTestEndpoints(
+        context: Context,
+        onlineServiceBaseUrl: String,
+        configServerUrl: String,
+        entryNodeUrl: String,
+    ): Boolean {
+        val normalizedOnlineServiceBaseUrl =
+            normalizeLocalTestOnlineServiceBaseUrl(onlineServiceBaseUrl) ?: return false
+        val normalizedConfigServerUrl = normalizeEndpointUrl(configServerUrl) ?: return false
+        val normalizedEntryNodeUrl = normalizeEndpointUrl(entryNodeUrl) ?: return false
+        val appContext = context.applicationContext
+        LauncherConfig.saveLocalTestOnlineServiceBaseUrl(appContext, normalizedOnlineServiceBaseUrl)
+        LauncherConfig.saveLocalTestConfigServerUrl(appContext, normalizedConfigServerUrl)
+        LauncherConfig.saveLocalTestEntryNodeUrl(appContext, normalizedEntryNodeUrl)
+        if (LauncherConfig.isLocalTestCloudControlEnabled(appContext)) {
+            currentSettings = currentSettings.withLocalTestEndpoints(appContext)
+            refreshAsync(appContext)
+        }
+        return true
     }
 
     private fun refreshSelectedChannel(context: Context, generation: Long): CloudControlSettings {
@@ -318,14 +339,17 @@ object CloudControlConfig {
 
     private fun selectedDefaultSettings(context: Context): CloudControlSettings =
         if (LauncherConfig.isLocalTestCloudControlEnabled(context)) {
-            localTestSettings(context)
+            localTestSettings(context).withLocalTestEndpoints(context)
         } else {
             defaultSettings(context)
         }
 
     private fun selectedConfigUrl(context: Context): String =
         if (LauncherConfig.isLocalTestCloudControlEnabled(context)) {
-            LOCAL_TEST_CLOUD_CONTROL_CONFIG_URL
+            LauncherConfig.readLocalTestOnlineServiceBaseUrl(context)
+                .trimEnd('/')
+                .ifBlank { LOCAL_TEST_CLOUD_CONTROL_CONFIG_URL.removeSuffix("/cloud-control.json") }
+                .let { "$it/cloud-control.json" }
         } else {
             BuildConfig.CLOUD_CONTROL_CONFIG_URL.trim()
         }
@@ -595,8 +619,53 @@ object CloudControlConfig {
         val responseText = fetchRemoteConfigText(context, configUrl).rawText
 
         val settings = parseSettings(responseText, defaults = selectedDefaultSettings(context))
+            ?.let { parsed ->
+                if (LauncherConfig.isLocalTestCloudControlEnabled(context)) {
+                    parsed.withLocalTestEndpoints(context)
+                } else {
+                    parsed
+                }
+            }
             ?: throw IOException("Cloud control response is not a JSON object.")
         return CachedCloudControlSettings(settings = settings, rawText = responseText)
+    }
+
+    private fun CloudControlSettings.withLocalTestEndpoints(context: Context): CloudControlSettings {
+        return applyLocalTestEndpoints(
+            settings = this,
+            onlineServiceBaseUrl = LauncherConfig.readLocalTestOnlineServiceBaseUrl(context),
+            configServerUrl = LauncherConfig.readLocalTestConfigServerUrl(context),
+            entryNodeUrl = LauncherConfig.readLocalTestEntryNodeUrl(context),
+        )
+    }
+
+    private fun CloudControlSettings.withSelectedChannelEndpoints(context: Context): CloudControlSettings =
+        if (LauncherConfig.isLocalTestCloudControlEnabled(context)) {
+            withLocalTestEndpoints(context)
+        } else {
+            this
+        }
+
+    internal fun applyLocalTestEndpoints(
+        settings: CloudControlSettings,
+        onlineServiceBaseUrl: String,
+        configServerUrl: String,
+        entryNodeUrl: String,
+    ): CloudControlSettings {
+        val normalizedBaseUrl = onlineServiceBaseUrl.trimEnd('/')
+        val parsedBaseUrl = URI(normalizedBaseUrl)
+        val heartbeatScheme = if (parsedBaseUrl.scheme.equals("https", ignoreCase = true)) "wss" else "ws"
+        val heartbeatAuthority = parsedBaseUrl.rawAuthority
+        val heartbeatPathPrefix = parsedBaseUrl.rawPath.trimEnd('/')
+        return settings.copy(
+            heartbeatWsUrl = "$heartbeatScheme://$heartbeatAuthority$heartbeatPathPrefix/api/presence/ws",
+            easyTier = settings.easyTier.copy(
+                roomApiBaseUrl = normalizedBaseUrl,
+                webConsoleApiBaseUrl = normalizedBaseUrl,
+                configServerUrl = configServerUrl,
+                entryNodeUrl = entryNodeUrl,
+            ),
+        )
     }
 
     internal fun readCachedSettings(
@@ -879,6 +948,34 @@ object CloudControlConfig {
             "http", "https" -> normalized
             else -> null
         }
+    }
+
+    internal fun normalizeLocalTestOnlineServiceBaseUrl(value: String?): String? {
+        val normalized = value?.trim().orEmpty()
+        if (normalized.isEmpty()) {
+            return null
+        }
+        val parsed = try {
+            URI(normalized)
+        } catch (_: Throwable) {
+            return null
+        }
+        val scheme = parsed.scheme?.lowercase(Locale.ROOT)
+        if (scheme !in setOf("http", "https") || parsed.host.isNullOrBlank()) {
+            return null
+        }
+        if (parsed.userInfo != null || parsed.query != null || parsed.fragment != null) {
+            return null
+        }
+        return URI(
+            scheme,
+            null,
+            parsed.host,
+            parsed.port,
+            parsed.path?.trimEnd('/').orEmpty(),
+            null,
+            null,
+        ).toString()
     }
 
     private fun normalizeEndpointUrl(value: String?): String? {

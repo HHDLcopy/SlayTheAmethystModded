@@ -229,6 +229,12 @@ object LauncherConfig {
         "developer_settings_warning_dismissed"
     private const val PREF_KEY_USE_LOCAL_TEST_CLOUD_CONTROL =
         "use_local_test_cloud_control"
+    private const val PREF_KEY_LOCAL_TEST_ONLINE_SERVICE_BASE_URL =
+        "local_test_online_service_base_url"
+    private const val PREF_KEY_LOCAL_TEST_CONFIG_SERVER_URL =
+        "local_test_config_server_url"
+    private const val PREF_KEY_LOCAL_TEST_ENTRY_NODE_URL =
+        "local_test_entry_node_url"
     private const val PREF_KEY_EXPECTED_BACK_EXIT_AT_MS = "expected_back_exit_at_ms"
     private const val PREF_KEY_EXPECTED_BACK_EXIT_RESTART_AT_MS = "expected_back_exit_restart_at_ms"
     private const val EXPECTED_BACK_EXIT_VALID_WINDOW_MS = 30_000L
@@ -582,6 +588,33 @@ object LauncherConfig {
         prefs(context).edit {
             putBoolean(PREF_KEY_USE_LOCAL_TEST_CLOUD_CONTROL, enabled)
         }
+    }
+
+    fun readLocalTestOnlineServiceBaseUrl(context: Context): String {
+        return prefs(context).getString(PREF_KEY_LOCAL_TEST_ONLINE_SERVICE_BASE_URL, null)
+            ?: "http://10.126.126.2:3001"
+    }
+
+    fun saveLocalTestOnlineServiceBaseUrl(context: Context, value: String) {
+        prefs(context).edit { putString(PREF_KEY_LOCAL_TEST_ONLINE_SERVICE_BASE_URL, value.trim()) }
+    }
+
+    fun readLocalTestConfigServerUrl(context: Context): String {
+        return prefs(context).getString(PREF_KEY_LOCAL_TEST_CONFIG_SERVER_URL, null)
+            ?: "udp://10.126.126.2:22020"
+    }
+
+    fun saveLocalTestConfigServerUrl(context: Context, value: String) {
+        prefs(context).edit { putString(PREF_KEY_LOCAL_TEST_CONFIG_SERVER_URL, value.trim()) }
+    }
+
+    fun readLocalTestEntryNodeUrl(context: Context): String {
+        return prefs(context).getString(PREF_KEY_LOCAL_TEST_ENTRY_NODE_URL, null)
+            ?: "tcp://10.126.126.2:11010"
+    }
+
+    fun saveLocalTestEntryNodeUrl(context: Context, value: String) {
+        prefs(context).edit { putString(PREF_KEY_LOCAL_TEST_ENTRY_NODE_URL, value.trim()) }
     }
 
     fun readSpecialKeyInputMode(context: Context): SpecialKeyInputMode {

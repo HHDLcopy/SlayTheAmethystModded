@@ -16,6 +16,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -101,6 +104,7 @@ internal fun LauncherDeveloperSettingsScreenContent(
     onTogetherInSpireRouteLockEnabledChanged: (Boolean) -> Unit = {},
     onTogetherInSpireEasyTierAutofillEnabledChanged: (Boolean) -> Unit = {},
     onLocalTestCloudControlEnabledChanged: (Boolean) -> Unit = {},
+    onLocalTestEndpointsChanged: (String, String, String) -> Boolean = { _, _, _ -> false },
     onSaveSteamCloudPhase0Credentials: (String, String, String) -> Boolean = { _, _, _ -> false },
     onRunSteamCloudPhase0Probe: () -> Unit = {},
     onClearSteamCloudPhase0Credentials: () -> Unit = {},
@@ -130,6 +134,16 @@ internal fun LauncherDeveloperSettingsScreenContent(
         mutableStateOf(!LauncherPreferences.isDeveloperSettingsWarningDismissed(context))
     }
     var warningRemainingSeconds by rememberSaveable { mutableIntStateOf(5) }
+    var localTestOnlineServiceBaseUrl by rememberSaveable(uiState.localTestOnlineServiceBaseUrl) {
+        mutableStateOf(uiState.localTestOnlineServiceBaseUrl)
+    }
+    var localTestConfigServerUrl by rememberSaveable(uiState.localTestConfigServerUrl) {
+        mutableStateOf(uiState.localTestConfigServerUrl)
+    }
+    var localTestEntryNodeUrl by rememberSaveable(uiState.localTestEntryNodeUrl) {
+        mutableStateOf(uiState.localTestEntryNodeUrl)
+    }
+    var localTestEndpointInputInvalid by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(showWarningDialog) {
         if (showWarningDialog) {
@@ -195,6 +209,72 @@ internal fun LauncherDeveloperSettingsScreenContent(
                         onCheckedChange = onLocalTestCloudControlEnabledChanged,
                     )
                 )
+                AnimatedVisibility(
+                    visible = uiState.localTestCloudControlEnabled,
+                    enter = fadeIn(),
+                    exit = fadeOut(),
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        OutlinedTextField(
+                            modifier = Modifier.fillMaxWidth(),
+                            value = localTestOnlineServiceBaseUrl,
+                            onValueChange = {
+                                localTestOnlineServiceBaseUrl = it
+                                localTestEndpointInputInvalid = false
+                            },
+                            singleLine = true,
+                            enabled = !uiState.busy,
+                            isError = localTestEndpointInputInvalid,
+                            label = { Text(stringResource(R.string.settings_cloud_control_test_online_service_label)) },
+                        )
+                        OutlinedTextField(
+                            modifier = Modifier.fillMaxWidth(),
+                            value = localTestConfigServerUrl,
+                            onValueChange = {
+                                localTestConfigServerUrl = it
+                                localTestEndpointInputInvalid = false
+                            },
+                            singleLine = true,
+                            enabled = !uiState.busy,
+                            isError = localTestEndpointInputInvalid,
+                            label = { Text(stringResource(R.string.settings_cloud_control_test_config_server_label)) },
+                        )
+                        OutlinedTextField(
+                            modifier = Modifier.fillMaxWidth(),
+                            value = localTestEntryNodeUrl,
+                            onValueChange = {
+                                localTestEntryNodeUrl = it
+                                localTestEndpointInputInvalid = false
+                            },
+                            singleLine = true,
+                            enabled = !uiState.busy,
+                            isError = localTestEndpointInputInvalid,
+                            label = { Text(stringResource(R.string.settings_cloud_control_test_entry_node_label)) },
+                            supportingText = if (localTestEndpointInputInvalid) {
+                                { Text(stringResource(R.string.settings_cloud_control_test_endpoint_error)) }
+                            } else {
+                                null
+                            },
+                        )
+                        HapticTextButton(
+                            enabled = !uiState.busy,
+                            onClick = {
+                                localTestEndpointInputInvalid = !onLocalTestEndpointsChanged(
+                                    localTestOnlineServiceBaseUrl,
+                                    localTestConfigServerUrl,
+                                    localTestEntryNodeUrl,
+                                )
+                            },
+                        ) {
+                            Text(stringResource(R.string.settings_cloud_control_test_save_endpoints))
+                        }
+                    }
+                }
             }
         }
 
@@ -1077,5 +1157,4 @@ internal fun RendererBackend.briefProsCons(context: Context): String {
             context.getString(R.string.settings_renderer_pros_cons_vulkan_zink)
     }
 }
-
 

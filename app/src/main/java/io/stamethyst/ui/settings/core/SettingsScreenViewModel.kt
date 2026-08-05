@@ -379,6 +379,9 @@ class SettingsScreenViewModel : ViewModel() {
         val togetherInSpireEasyTierAutofillEnabled: Boolean =
             LauncherPreferences.DEFAULT_TOGETHER_IN_SPIRE_EASYTIER_AUTOFILL_ENABLED,
         val localTestCloudControlEnabled: Boolean = false,
+        val localTestOnlineServiceBaseUrl: String = "http://10.126.126.2:3001",
+        val localTestConfigServerUrl: String = "udp://10.126.126.2:22020",
+        val localTestEntryNodeUrl: String = "tcp://10.126.126.2:11010",
         val avoidDisplayCutout: Boolean = LauncherPreferences.DEFAULT_AVOID_DISPLAY_CUTOUT,
         val cropScreenBottom: Boolean = LauncherPreferences.DEFAULT_CROP_SCREEN_BOTTOM,
         val ramSaverEnabled: Boolean = LauncherPreferences.DEFAULT_RAM_SAVER_ENABLED,
@@ -3211,6 +3214,32 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(host)
     }
 
+    fun onLocalTestEndpointsChanged(
+        host: Activity,
+        onlineServiceBaseUrl: String,
+        configServerUrl: String,
+        entryNodeUrl: String,
+    ): Boolean {
+        if (uiState.busy) {
+            return false
+        }
+        val saved = CloudControlConfig.updateLocalTestEndpoints(
+            context = host,
+            onlineServiceBaseUrl = onlineServiceBaseUrl,
+            configServerUrl = configServerUrl,
+            entryNodeUrl = entryNodeUrl,
+        )
+        if (saved) {
+            uiState = uiState.copy(
+                localTestOnlineServiceBaseUrl = LauncherPreferences.readLocalTestOnlineServiceBaseUrl(host),
+                localTestConfigServerUrl = LauncherPreferences.readLocalTestConfigServerUrl(host),
+                localTestEntryNodeUrl = LauncherPreferences.readLocalTestEntryNodeUrl(host),
+            )
+            refreshStatus(host)
+        }
+        return saved
+    }
+
     fun onDisplayCutoutAvoidanceChanged(host: Activity, enabled: Boolean) {
         if (uiState.busy) {
             return
@@ -3828,6 +3857,9 @@ class SettingsScreenViewModel : ViewModel() {
             togetherInSpireEasyTierAutofillEnabled =
                 input.togetherInSpireEasyTierAutofillEnabled,
             localTestCloudControlEnabled = LauncherPreferences.isLocalTestCloudControlEnabled(host),
+            localTestOnlineServiceBaseUrl = LauncherPreferences.readLocalTestOnlineServiceBaseUrl(host),
+            localTestConfigServerUrl = LauncherPreferences.readLocalTestConfigServerUrl(host),
+            localTestEntryNodeUrl = LauncherPreferences.readLocalTestEntryNodeUrl(host),
             avoidDisplayCutout = input.avoidDisplayCutout,
             cropScreenBottom = input.cropScreenBottom,
             ramSaverEnabled = input.ramSaverEnabled,
@@ -5864,5 +5896,4 @@ class SettingsScreenViewModel : ViewModel() {
         }
     }
 }
-
 

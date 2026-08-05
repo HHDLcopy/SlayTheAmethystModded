@@ -80,12 +80,12 @@ internal data class MainScreenActions(
     val onUseCloudSteamCloudProgress: () -> Unit = {},
     val shouldPromptSteamCloudDirectMode: () -> Boolean = { false },
     val onSwitchSteamCloudDirectMode: () -> Unit = {},
-    val onConnectEasyTier: () -> Unit = {},
+    val onConnectEasyTier: (String?) -> Unit = {},
     val onDisconnectEasyTier: () -> Unit = {},
     val onRefreshEasyTierRooms: () -> Unit = {},
     val onRefreshEasyTierRoomsSilently: () -> Unit = {},
     val onSelectEasyTierRoom: (String) -> Unit = {},
-    val onCreateEasyTierRoom: (String, String, Boolean) -> Unit = { _, _, _ -> },
+    val onCreateEasyTierRoom: (String, String, String, Boolean) -> Unit = { _, _, _, _ -> },
     val onLockEasyTierRoom: () -> Unit = {},
     val onUnlockEasyTierRoom: () -> Unit = {},
     val onCloseEasyTierRoom: () -> Unit = {},
@@ -220,13 +220,14 @@ internal fun rememberMainScreenActions(
                 onSwitchSteamCloudDirectMode = {
                     viewModel.switchSteamCloudDirectMode(activity)
                 },
-                onConnectEasyTier = {
+                onConnectEasyTier = { password ->
                     val permissionIntent = EasyTierPermissionCoordinator.prepareVpnPermissionIntent(activity)
                     if (permissionIntent != null) {
                         viewModel.onEasyTierVpnPermissionRequired(activity)
                         easyTierVpnPermissionLauncher.launch(permissionIntent)
                     } else {
-                        viewModel.onConnectEasyTier(activity)
+                        // null means "reuse whatever password was remembered for this room".
+                        viewModel.onConnectEasyTier(activity, password = password)
                     }
                 },
                 onDisconnectEasyTier = {
@@ -245,14 +246,14 @@ internal fun rememberMainScreenActions(
                 onSelectEasyTierRoom = { roomId ->
                     viewModel.selectEasyTierRoom(activity, roomId)
                 },
-                onCreateEasyTierRoom = { roomId, description, allowNewJoins ->
+                onCreateEasyTierRoom = { roomId, description, password, allowNewJoins ->
                     val permissionIntent = EasyTierPermissionCoordinator.prepareVpnPermissionIntent(activity)
                     if (permissionIntent != null) {
-                        viewModel.queueEasyTierRoomCreation(roomId, description, allowNewJoins)
+                        viewModel.queueEasyTierRoomCreation(roomId, description, password, allowNewJoins)
                         viewModel.onEasyTierVpnPermissionRequired(activity)
                         easyTierVpnPermissionLauncher.launch(permissionIntent)
                     } else {
-                        viewModel.createEasyTierRoom(activity, roomId, description, allowNewJoins)
+                        viewModel.createEasyTierRoom(activity, roomId, description, password, allowNewJoins)
                     }
                 },
                 onLockEasyTierRoom = {

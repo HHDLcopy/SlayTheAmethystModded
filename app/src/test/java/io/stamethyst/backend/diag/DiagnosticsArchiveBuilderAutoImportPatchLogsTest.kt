@@ -127,6 +127,52 @@ class DiagnosticsArchiveBuilderAutoImportPatchLogsTest {
         }
     }
 
+    @Test
+    fun writeEasyTierDiagnosticsForArchive_includesDisconnectEventsNotOnlyFailures() {
+        // A mid-game drop lands on DISCONNECTED. The export filter used to match "-failed-" only, so
+        // these records were archived on disk and then silently omitted from the bundle.
+        val roots = TestRoots.create("diag-easytier-disconnect")
+        EasyTierDiagnosticsStore.resetArchivedStatusForTest()
+        val snapshot = EasyTierConnectionSnapshot(
+            enabled = true,
+            canConnect = true,
+            status = EasyTierConnectionStatus.DISCONNECTED,
+            mode = EasyTierNetworkMode.Room,
+            failureCategory = EasyTierFailureCategory.None,
+            roomId = "room-drop",
+            entryNodeUrl = "tcp://online.example.com:11010",
+            lastUpdatedAtMs = 12_000L,
+        )
+        EasyTierStateStore.writeSnapshot(roots.context, snapshot)
+        EasyTierDiagnosticsStore.recordStateTransition(
+            context = roots.context,
+            snapshot = snapshot,
+            extraLines = listOf("terminal_session_state_source=room_api_session_missing"),
+        )
+        val archive = File(roots.rootDir, "diagnostics-easytier-disconnect.zip")
+
+        FileOutputStream(archive, false).use { output ->
+            ZipOutputStream(output).use { zipOutput ->
+                DiagnosticsArchiveBuilder.writeEasyTierDiagnosticsForArchive(zipOutput, roots.context)
+            }
+        }
+
+        ZipFile(archive).use { zipFile ->
+            val eventEntry = zipFile.entries().asSequence()
+                .firstOrNull { it.name.startsWith("sts/easytier/event-disconnected-") }
+            assertNotNull("Disconnect events must reach the exported bundle", eventEntry)
+
+            val summaryEntry = zipFile.getEntry("sts/easytier/last-session-summary.txt")
+            assertNotNull(summaryEntry)
+            val summaryText = zipFile.getInputStream(summaryEntry)
+                .bufferedReader(Charsets.UTF_8)
+                .use { it.readText() }
+            // The section that tells a reader whether :easytier was killed must always be present.
+            assertTrue(summaryText.contains("Recent :easytier Process Exits:"))
+            assertTrue(summaryText.contains("terminal_session_state_source=room_api_session_missing"))
+        }
+    }
+
     private class TestRoots private constructor(
         val rootDir: File,
         val context: Context,

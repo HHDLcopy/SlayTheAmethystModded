@@ -261,7 +261,7 @@ internal object DiagnosticsArchiveBuilder {
         Slay the Amethyst 诊断日志包
 
         目录说明：
-        - easytier/：EasyTier 配置、当前状态，以及最近 5 条失败连接记录。
+        - easytier/：EasyTier 配置、当前状态，以及最近 5 条断开/重连/失败记录（含 :easytier 进程退出原因）。
         - feedback/：反馈提交所需的 issue 内容、请求信息和日志摘要；该目录保持反馈包原结构。
         - info/：设备信息和启动器设置。
         - logs/：JVM 日志及启动桥接、GC、堆快照、信号转储等启动器日志，JVM 日志最多保留 5 槽位。
@@ -459,7 +459,10 @@ internal object DiagnosticsArchiveBuilder {
             EasyTierDiagnosticsStore.eventHistoryDir(context),
             "sts/easytier",
             limit = 5,
-            predicate = { it.name.contains("-failed-") }
+            // Must match every archived event, not just "-failed-". A mid-game drop lands on
+            // DISCONNECTED/RECONNECTING, so a "-failed-" filter would write those records to disk
+            // and then silently omit them from the bundle the diagnosis is actually run against.
+            predicate = { EasyTierDiagnosticsStore.isEventHistoryFile(it.name) }
         )
         return exportedConfigEntry + stateCount + summaryCount + historyCount
     }

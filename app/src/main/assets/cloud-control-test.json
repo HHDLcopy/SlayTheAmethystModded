@@ -1,18 +1,18 @@
 {
   "heartbeat": {
     "intervalSeconds": 30,
-    "wsUrl": "ws://192.168.31.137:3001/api/presence/ws"
+    "wsUrl": "ws://10.126.126.2:3001/api/presence/ws"
   },
   "qqGroup": {
     "number": "1051836431"
   },
   "easyTier": {
     "enabled": true,
-    "minimumOnlineLobbyCompatibleVersion": "1.5.1-dev1",
-    "roomApiBaseUrl": "http://192.168.31.137:3001",
-    "webConsoleApiBaseUrl": "http://192.168.31.137:3001",
-    "configServerUrl": "udp://192.168.31.137:22020",
-    "entryNodeUrl": "tcp://192.168.31.137:11010",
+    "minimumOnlineLobbyCompatibleVersion": "1.5.5",
+    "roomApiBaseUrl": "http://10.126.126.2:3001",
+    "webConsoleApiBaseUrl": "http://10.126.126.2:3001",
+    "configServerUrl": "udp://10.126.126.2:22020",
+    "entryNodeUrl": "tcp://10.126.126.2:11010",
     "connectTimeoutSeconds": 12,
     "statusPollIntervalSeconds": 5,
     "allowSharedCommunityNetwork": false,

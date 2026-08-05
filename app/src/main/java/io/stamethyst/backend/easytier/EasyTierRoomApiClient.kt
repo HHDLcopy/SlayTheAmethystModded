@@ -19,7 +19,30 @@ import okhttp3.RequestBody.Companion.toRequestBody
 internal class EasyTierRoomApiHttpException(
     val statusCode: Int,
     message: String,
-) : IOException(message)
+    /**
+     * Machine-readable reason from the server's error body, when present.
+     *
+     * A bare 404 is ambiguous: it can mean "this server does not implement the endpoint" or "the
+     * session you are renewing is gone". Treating the second case as the first permanently disabled
+     * lease renewal, which guaranteed the session would then expire for real.
+     */
+    val errorCode: String = "",
+) : IOException(message) {
+    /** True when the server explicitly said the session no longer exists. */
+    val isSessionMissing: Boolean
+        get() = errorCode == ERROR_CODE_SESSION_NOT_FOUND
+
+    /**
+     * True when a 404 carries no server error code at all, which is the only case that still looks
+     * like an endpoint the server does not implement.
+     */
+    val isPossiblyUnimplementedEndpoint: Boolean
+        get() = statusCode == 404 && errorCode.isBlank()
+
+    internal companion object {
+        const val ERROR_CODE_SESSION_NOT_FOUND = "lan_session_not_found"
+    }
+}
 
 internal class EasyTierRoomApiClient(
     private val context: Context,
@@ -38,6 +61,7 @@ internal class EasyTierRoomApiClient(
         ownerToken: String = "",
         macAddress: String = "",
         mods: List<EasyTierRoomMod> = emptyList(),
+        password: String = "",
     ): EasyTierRoomSessionConfig {
         val config = EasyTierConfigRepository.current()
         val baseUrl = config.roomApiBaseUrl.trim()
@@ -59,6 +83,9 @@ internal class EasyTierRoomApiClient(
                 createOnly = createOnly,
                 macAddress = macAddress.trim(),
                 mods = mods,
+                // Deliberately not trimmed: the server preserves whitespace in passwords, so
+                // trimming here would make a password containing spaces impossible to send.
+                password = password.take(EASY_TIER_ROOM_PASSWORD_MAX_LENGTH),
             )
         )
         val request = Request.Builder()
@@ -80,6 +107,7 @@ internal class EasyTierRoomApiClient(
                         responseMessage = response.message,
                         responseText = responseText,
                     ),
+                    errorCode = parseServerErrorCode(responseText),
                 )
             }
             return parseStartSessionResponse(responseText)
@@ -114,6 +142,7 @@ internal class EasyTierRoomApiClient(
                         responseMessage = response.message,
                         responseText = responseText,
                     ),
+                    errorCode = parseServerErrorCode(responseText),
                 )
             }
         }
@@ -154,6 +183,7 @@ internal class EasyTierRoomApiClient(
                         responseMessage = response.message,
                         responseText = responseText,
                     ),
+                    errorCode = parseServerErrorCode(responseText),
                 )
             }
             return parseSessionStatusResponse(responseText)
@@ -198,6 +228,7 @@ internal class EasyTierRoomApiClient(
                         responseMessage = response.message,
                         responseText = responseText,
                     ),
+                    errorCode = parseServerErrorCode(responseText),
                 )
             }
             return parseSessionStatusResponse(responseText)
@@ -241,6 +272,7 @@ internal class EasyTierRoomApiClient(
                         responseMessage = response.message,
                         responseText = responseText,
                     ),
+                    errorCode = parseServerErrorCode(responseText),
                 )
             }
         }
@@ -282,6 +314,7 @@ internal class EasyTierRoomApiClient(
                         responseMessage = response.message,
                         responseText = responseText,
                     ),
+                    errorCode = parseServerErrorCode(responseText),
                 )
             }
         }
@@ -310,6 +343,7 @@ internal class EasyTierRoomApiClient(
                         responseMessage = response.message,
                         responseText = responseText,
                     ),
+                    errorCode = parseServerErrorCode(responseText),
                 )
             }
             return parseRoomInfoResponse(responseText)
@@ -371,6 +405,7 @@ internal class EasyTierRoomApiClient(
                         responseMessage = response.message,
                         responseText = responseText,
                     ),
+                    errorCode = parseServerErrorCode(responseText),
                 )
             }
             return parseRoomListPage(responseText)
@@ -406,6 +441,23 @@ internal class EasyTierRoomApiClient(
         return (structured?.message?.trim().takeUnless { it.isNullOrBlank() }
             ?: structured?.error?.trim().takeUnless { it.isNullOrBlank() }
             ?: normalized).take(240)
+    }
+
+    /**
+     * Extracts the server's machine-readable error code, or an empty string when the body is
+     * missing, unparseable, or carries only the generic placeholder codes.
+     */
+    private fun parseServerErrorCode(responseText: String): String {
+        if (responseText.isBlank()) {
+            return ""
+        }
+        val structured = runCatching {
+            json.decodeFromString(ApiErrorResponse.serializer(), responseText)
+        }.getOrNull() ?: return ""
+        val code = structured.error?.trim().orEmpty()
+        // These are the fallbacks the server emits when it has nothing specific to say, so they
+        // carry no more information than the status code itself.
+        return if (code == "bad_request" || code == "internal_error") "" else code
     }
 
     fun lockRoom(
@@ -487,6 +539,7 @@ internal class EasyTierRoomApiClient(
                         responseMessage = response.message,
                         responseText = responseText,
                     ),
+                    errorCode = parseServerErrorCode(responseText),
                 )
             }
             return parseRoomInfoResponse(responseText)
@@ -535,6 +588,7 @@ internal class EasyTierRoomApiClient(
             description = payload.description.trim(),
             mode = EasyTierNetworkMode.fromCloudControl(payload.mode),
             allowNewJoins = payload.allowNewJoins,
+            hasPassword = payload.hasPassword,
             closedAtMs = payload.closedAtMs,
             memberCount = payload.memberCount,
             inGameMemberCount = payload.inGameMemberCount,
@@ -573,6 +627,7 @@ internal class EasyTierRoomApiClient(
                 description = room.description.trim(),
                 mode = EasyTierNetworkMode.fromCloudControl(room.mode),
                 allowNewJoins = room.allowNewJoins,
+                hasPassword = room.hasPassword,
                 closedAtMs = room.closedAtMs,
                 memberCount = room.memberCount,
                 onlineMemberCount = room.onlineMemberCount,
@@ -641,6 +696,7 @@ internal class EasyTierRoomApiClient(
         val createOnly: Boolean = false,
         val macAddress: String = "",
         val mods: List<EasyTierRoomMod> = emptyList(),
+        val password: String = "",
     )
 
     @Serializable
@@ -718,6 +774,7 @@ internal class EasyTierRoomApiClient(
         val description: String = "",
         val mode: String = "room",
         val allowNewJoins: Boolean = false,
+        val hasPassword: Boolean = false,
         val closedAtMs: Long = 0L,
         val memberCount: Int = 0,
         val inGameMemberCount: Int = 0,
@@ -739,6 +796,7 @@ internal class EasyTierRoomApiClient(
         val description: String = "",
         val mode: String = "room",
         val allowNewJoins: Boolean = false,
+        val hasPassword: Boolean = false,
         val closedAtMs: Long = 0L,
         val memberCount: Int = 0,
         val onlineMemberCount: Int = 0,

@@ -1,14 +1,11 @@
 package io.stamethyst.ui.main
 
-import io.stamethyst.backend.easytier.EasyTierFailureCategory
 import io.stamethyst.backend.easytier.EasyTierRoomMember
 import io.stamethyst.backend.easytier.EasyTierNetworkMode
 import io.stamethyst.backend.easytier.EasyTierRoomInfo
 import io.stamethyst.backend.easytier.EasyTierRoomListItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -333,68 +330,6 @@ class MainScreenEasyTierCardTest {
                 creating = true,
             )
         )
-    }
-
-    @Test
-    fun easyTierTroubleshootingAction_mapsFailureToRecoveryStep() {
-        assertEquals(
-            EasyTierTroubleshootingAction.GrantVpn,
-            easyTierTroubleshootingAction(
-                state = MainScreenViewModel.EasyTierIndicatorState.PERMISSION_REQUIRED,
-                failureCategory = EasyTierFailureCategory.VpnPermissionRequired,
-            )
-        )
-        assertEquals(
-            EasyTierTroubleshootingAction.GrantVpn,
-            easyTierTroubleshootingAction(
-                state = MainScreenViewModel.EasyTierIndicatorState.PERMISSION_REQUIRED,
-                failureCategory = EasyTierFailureCategory.None,
-            )
-        )
-        assertEquals(
-            EasyTierTroubleshootingAction.Retry,
-            easyTierTroubleshootingAction(
-                state = MainScreenViewModel.EasyTierIndicatorState.CONNECTION_FAILED,
-                failureCategory = EasyTierFailureCategory.Unknown,
-            )
-        )
-        assertEquals(
-            EasyTierTroubleshootingAction.RefreshRooms,
-            easyTierTroubleshootingAction(
-                state = MainScreenViewModel.EasyTierIndicatorState.DISCONNECTED,
-                failureCategory = EasyTierFailureCategory.RoomClosed,
-            )
-        )
-        // Being kicked is not something the user can retry their way out of.
-        assertEquals(
-            EasyTierTroubleshootingAction.None,
-            easyTierTroubleshootingAction(
-                state = MainScreenViewModel.EasyTierIndicatorState.DISCONNECTED,
-                failureCategory = EasyTierFailureCategory.SessionKicked,
-            )
-        )
-    }
-
-    @Test
-    fun easyTierTroubleshootingAction_hidesActionWhileBusy() {
-        assertEquals(
-            EasyTierTroubleshootingAction.None,
-            easyTierTroubleshootingAction(
-                state = MainScreenViewModel.EasyTierIndicatorState.CONNECTION_FAILED,
-                failureCategory = EasyTierFailureCategory.Unknown,
-                busy = true,
-            )
-        )
-    }
-
-    @Test
-    fun easyTierTroubleshootingActionLabel_isPresentForEveryActionableCase() {
-        assertNull(easyTierTroubleshootingActionLabelResId(EasyTierTroubleshootingAction.None))
-        EasyTierTroubleshootingAction.entries
-            .filter { it != EasyTierTroubleshootingAction.None }
-            .forEach { action ->
-                assertNotNull(easyTierTroubleshootingActionLabelResId(action))
-            }
     }
 
     @Test

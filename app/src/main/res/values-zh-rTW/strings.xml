@@ -2631,8 +2631,8 @@
     <string name="main_easytier_room_input_label">目前選擇的房間</string>
     <string name="main_easytier_room_input_hint">可手動輸入房間 ID，也可點選下方的線上房間。</string>
     <string name="main_easytier_room_owner_summary">房主：%1$s · 成員數：%2$d</string>
-    <string name="main_easytier_room_joinable">允許新玩家加入</string>
-    <string name="main_easytier_room_locked">房間已鎖定</string>
+    <string name="main_easytier_room_joinable">+ 允許新玩家加入</string>
+    <string name="main_easytier_room_locked">- 房間已鎖定</string>
     <string name="main_easytier_room_closed">房間已關閉</string>
     <string name="main_easytier_room_list_title">線上房間</string>
     <string name="main_easytier_room_list_empty">目前沒有可加入的房間。可以建立一個房間，其他玩家會在這裡看到。</string>

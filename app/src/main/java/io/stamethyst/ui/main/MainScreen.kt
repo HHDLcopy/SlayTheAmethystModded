@@ -1650,39 +1650,43 @@ private fun EasyTierOnlineRoomsSection(
                                     }
                                 }
                             }
-                            AnimatedContent(
-                                targetState = room.allowNewJoins,
-                                transitionSpec = {
-                                    fadeIn(animationSpec = tween(durationMillis = 160)) togetherWith
-                                        fadeOut(animationSpec = tween(durationMillis = 100))
-                                },
-                                label = "easyTierRoomJoinPolicy",
-                            ) { allowNewJoins ->
-                                Text(
-                                    text = if (allowNewJoins) {
-                                        stringResource(R.string.main_easytier_room_joinable)
-                                    } else {
-                                        stringResource(R.string.main_easytier_room_locked)
-                                    },
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = if (allowNewJoins) {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    } else {
-                                        MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
-                                    },
-                                )
-                                if (room.hasPassword) {
-                                    // Tells the player a prompt is coming before they tap, rather
-                                    // than letting them discover it through a 403.
-                                    Text(
-                                        text = stringResource(
-                                            R.string.main_easytier_room_password_badge
-                                        ),
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            }
+                             Column(
+                                 verticalArrangement = Arrangement.spacedBy(2.dp),
+                             ) {
+                                 AnimatedContent(
+                                     targetState = room.allowNewJoins,
+                                     transitionSpec = {
+                                         fadeIn(animationSpec = tween(durationMillis = 160)) togetherWith
+                                             fadeOut(animationSpec = tween(durationMillis = 100))
+                                     },
+                                     label = "easyTierRoomJoinPolicy",
+                                 ) { allowNewJoins ->
+                                     Text(
+                                         text = if (allowNewJoins) {
+                                             stringResource(R.string.main_easytier_room_joinable)
+                                         } else {
+                                             stringResource(R.string.main_easytier_room_locked)
+                                         },
+                                         style = MaterialTheme.typography.labelMedium,
+                                         color = if (allowNewJoins) {
+                                             Color(0xFF2E7D32)
+                                         } else {
+                                             MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
+                                         },
+                                     )
+                                 }
+                                 if (room.hasPassword) {
+                                     // Tells the player a prompt is coming before they tap, rather
+                                     // than letting them discover it through a 403.
+                                     Text(
+                                          text = stringResource(
+                                              R.string.main_easytier_room_password_badge
+                                          ),
+                                          style = MaterialTheme.typography.labelMedium,
+                                          color = MaterialTheme.colorScheme.error,
+                                      )
+                                 }
+                             }
                         }
                     }
                 }

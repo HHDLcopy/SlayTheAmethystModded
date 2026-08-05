@@ -2637,8 +2637,8 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="main_easytier_room_input_label">Selected room</string>
     <string name="main_easytier_room_input_hint">Enter a room ID or tap a room below.</string>
     <string name="main_easytier_room_owner_summary">Owner: %1$s · Members: %2$d</string>
-    <string name="main_easytier_room_joinable">New players can join</string>
-    <string name="main_easytier_room_locked">Room is locked</string>
+    <string name="main_easytier_room_joinable">+ New players can join</string>
+    <string name="main_easytier_room_locked">- Room is locked</string>
     <string name="main_easytier_room_closed">Room is closed</string>
     <string name="main_easytier_room_list_title">Online rooms</string>
     <string name="main_easytier_room_list_empty">No open rooms right now. Create one and other players will see it here.</string>
@@ -2724,7 +2724,7 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="main_easytier_room_password_dialog_message">\"%1$s\" requires a password to join.</string>
     <string name="main_easytier_room_password_label">Password</string>
     <string name="main_easytier_room_password_optional_label">Room password (optional)</string>
-    <string name="main_easytier_room_password_badge">Password required</string>
+    <string name="main_easytier_room_password_badge">- Password required</string>
     <string name="main_easytier_action_join">Join</string>
     <string name="main_easytier_close_room_confirm_title">Close this room?</string>
     <string name="main_easytier_close_room_confirm_message">Room %1$s currently has %2$d players. Closing it will disconnect everyone.</string>

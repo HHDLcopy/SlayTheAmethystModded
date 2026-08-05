@@ -1,7 +1,7 @@
 {
   "heartbeat": {
     "intervalSeconds": 30,
-    "wsUrl": "wss://slay.server.apricityx.top:55555/api/presence/ws"
+    "wsUrl": "wss://slay.apricityx.top:12334/api/presence/ws"
   },
   "qqGroup": {
     "number": "1051836431"
@@ -9,8 +9,8 @@
   "easyTier": {
     "enabled": true,
     "minimumOnlineLobbyCompatibleVersion": "1.5.5",
-    "roomApiBaseUrl": "https://slay.server.apricityx.top:55555/",
-    "webConsoleApiBaseUrl": "https://slay.server.apricityx.top:55555/",
+    "roomApiBaseUrl": "https://slay.apricityx.top:12334/",
+    "webConsoleApiBaseUrl": "https://slay.apricityx.top:12334/",
     "configServerUrl": "udp://frp-dry.com:12333",
     "entryNodeUrl": "tcp://frp-dog.com:12332",
     "connectTimeoutSeconds": 12,

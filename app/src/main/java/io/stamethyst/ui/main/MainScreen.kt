@@ -2694,7 +2694,9 @@ internal fun EasyTierBottomSheetContent(
         errorSummary = indicator.errorSummary,
     )
     val troubleshootingToastMessageResId = troubleshootingMessageResId.takeIf {
-        page != EasyTierRoomSheetPage.Tutorial && page != EasyTierRoomSheetPage.MemberMods
+        page != EasyTierRoomSheetPage.Tutorial &&
+            page != EasyTierRoomSheetPage.MemberMods &&
+            memberWorkshopDetailItem == null
     }
     // Mirror launcher notices into the sheet. Room actions report success through the shared
     // notice bus, whose host is stacked below this sheet and therefore invisible while it is open.

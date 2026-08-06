@@ -1125,6 +1125,7 @@ class MainScreenViewModel : ViewModel() {
         action: String,
         targetPlayerId: String = "",
         kickMessage: String = "",
+        fallbackToLocalDisconnectWhenUnauthorized: Boolean = false,
     ) {
         val selectedRoom = uiState.easyTierRoomBrowser.selectedRoom ?: return
         val currentPlayerId = resolveEasyTierCurrentPlayerId(host)
@@ -1155,6 +1156,21 @@ class MainScreenViewModel : ViewModel() {
                     selectedRoom.roomId,
                     currentPlayerId,
                 )
+                if (action == "close" &&
+                    fallbackToLocalDisconnectWhenUnauthorized &&
+                    !hasEasyTierRoomOwnerCredential(ownerToken, sessionToken)
+                ) {
+                    host.runOnUiThread {
+                        uiState = uiState.copy(
+                            easyTierRoomBrowser = uiState.easyTierRoomBrowser.copy(
+                                mutating = false,
+                                errorSummary = "",
+                            )
+                        )
+                        disconnectEasyTierLocally(host)
+                    }
+                    return@execute
+                }
                 when (action) {
                     "lock" -> client.lockRoom(
                         selectedRoom.roomId,
@@ -1293,6 +1309,16 @@ class MainScreenViewModel : ViewModel() {
         }
         val selectedRoom = uiState.easyTierRoomBrowser.selectedRoom
         val currentPlayerId = resolveEasyTierCurrentPlayerId(host)
+        val canCloseSelectedRoom = selectedRoom?.let { room ->
+            hasEasyTierRoomOwnerCredential(
+                ownerToken = EasyTierCredentialStore.ownerToken(host, room.roomId),
+                sessionToken = EasyTierCredentialStore.sessionToken(
+                    host,
+                    room.roomId,
+                    currentPlayerId,
+                ),
+            )
+        } == true
         if (!uiState.easyTierRoomBrowser.mutating &&
             shouldCloseEasyTierRoomWhenOwnerLeaves(
                 state = current.status,
@@ -1300,9 +1326,13 @@ class MainScreenViewModel : ViewModel() {
                 selectedRoomId = selectedRoom?.roomId.orEmpty(),
                 ownerPlayerId = selectedRoom?.ownerPlayerId.orEmpty(),
                 currentPlayerId = currentPlayerId,
-            )
+            ) && canCloseSelectedRoom
         ) {
-            mutateEasyTierRoom(host, "close")
+            mutateEasyTierRoom(
+                host = host,
+                action = "close",
+                fallbackToLocalDisconnectWhenUnauthorized = true,
+            )
             return
         }
         disconnectEasyTierLocally(host)
@@ -5486,6 +5516,13 @@ internal fun shouldCloseEasyTierRoomWhenOwnerLeaves(
         state != EasyTierConnectionStatus.PERMISSION_REQUIRED &&
         state != EasyTierConnectionStatus.DISCONNECTED &&
         state != EasyTierConnectionStatus.FAILED
+}
+
+internal fun hasEasyTierRoomOwnerCredential(
+    ownerToken: String,
+    sessionToken: String,
+): Boolean {
+    return ownerToken.isNotBlank() || sessionToken.isNotBlank()
 }
 
 internal fun shouldPreserveEasyTierRoomSelection(

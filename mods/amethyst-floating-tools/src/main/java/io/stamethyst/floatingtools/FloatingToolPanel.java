@@ -77,10 +77,10 @@ final class FloatingToolPanel {
         enabled = Boolean.parseBoolean(System.getProperty(PROP_ENABLED, "false"));
         if (!enabled && wasEnabled) {
             releaseAllHeldKeys();
+            releaseRightSurface();
             expanded = false;
             locked = false;
             rightMode = false;
-            rightSurfaceDown = false;
             uiLeftPressActive = false;
             lastHoveredAction = null;
             clearButtonPressState();
@@ -151,14 +151,14 @@ final class FloatingToolPanel {
             return;
         }
         if (locked) {
-            rightSurfaceDown = false;
+            releaseRightSurface();
             consumePointerInput();
             return;
         }
         if (rightMode) {
             transformLeftClickToRightClick();
         } else {
-            rightSurfaceDown = false;
+            releaseRightSurface();
         }
     }
 
@@ -202,14 +202,14 @@ final class FloatingToolPanel {
                 break;
             case LOCK:
                 locked = !locked;
-                rightSurfaceDown = false;
+                releaseRightSurface();
                 break;
             case WHEEL:
                 wheel.begin(wheelOffset(button));
                 break;
             case MOUSE_MODE:
                 rightMode = !rightMode;
-                rightSurfaceDown = false;
+                releaseRightSurface();
                 break;
             case KEYBOARD:
                 expanded = false;
@@ -305,6 +305,10 @@ final class FloatingToolPanel {
     private void transformLeftClickToRightClick() {
         if (InputHelper.justClickedLeft) {
             rightSurfaceDown = true;
+            FloatingToolInputBridge.sendMouseButton(
+                FloatingToolInputBridge.MOUSE_RIGHT,
+                true
+            );
             clearLeftFields();
             InputHelper.justClickedRight = true;
             InputHelper.isMouseDown_R = true;
@@ -314,7 +318,7 @@ final class FloatingToolPanel {
             return;
         }
         if (InputHelper.justReleasedClickLeft || !InputHelper.isMouseDown) {
-            rightSurfaceDown = false;
+            releaseRightSurface();
             clearLeftFields();
             InputHelper.justReleasedClickRight = true;
             InputHelper.isMouseDown_R = false;
@@ -322,6 +326,17 @@ final class FloatingToolPanel {
             clearLeftFields();
             InputHelper.isMouseDown_R = true;
         }
+    }
+
+    private void releaseRightSurface() {
+        if (!rightSurfaceDown) {
+            return;
+        }
+        FloatingToolInputBridge.sendMouseButton(
+            FloatingToolInputBridge.MOUSE_RIGHT,
+            false
+        );
+        rightSurfaceDown = false;
     }
 
     private void layout() {
@@ -671,6 +686,7 @@ final class FloatingToolPanel {
     }
 
     private void consumePointerInput() {
+        releaseRightSurface();
         consumeLeftInput();
         InputHelper.justClickedRight = false;
         InputHelper.justReleasedClickRight = false;

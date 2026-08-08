@@ -1834,7 +1834,8 @@ public final class SteamCloudClient implements AutoCloseable {
 
     private static boolean isRetryableBeginHttpUploadResult(EResult result) {
         return isRetryableSteamCloudResult(result)
-            || result == EResult.TooManyPending;
+            || result == EResult.TooManyPending
+            || result == EResult.DuplicateRequest;
     }
 
     private static boolean isRetryableBeginAppUploadBatchResult(EResult result, long batchId) {
@@ -1858,17 +1859,21 @@ public final class SteamCloudClient implements AutoCloseable {
     }
 
     private static long beginHttpUploadRetryDelayMs(EResult result, int attempt) {
-        long[] delays = result == EResult.TooManyPending
+        long[] delays = isPendingUploadSlotResult(result)
             ? BEGIN_HTTP_UPLOAD_PENDING_RETRY_DELAYS_MS
             : BEGIN_HTTP_UPLOAD_RETRY_DELAYS_MS;
         return delays[Math.min(attempt - 1, delays.length - 1)];
     }
 
     private static String beginHttpUploadRetryHint(EResult result) {
-        if (result != EResult.TooManyPending) {
+        if (!isPendingUploadSlotResult(result)) {
             return "";
         }
         return " Steam may still be clearing an earlier unfinished upload batch.";
+    }
+
+    private static boolean isPendingUploadSlotResult(EResult result) {
+        return result == EResult.TooManyPending || result == EResult.DuplicateRequest;
     }
 
     private static void sleepBeforeRetry(long delayMs) throws InterruptedException {

@@ -50,6 +50,11 @@ internal object SteamCloudFailureClassifier {
             causes.any { it is SteamCloudCredentialsMissingException } ->
                 SteamCloudFailureCategory.MISSING_AUTH
 
+            containsAny(
+                description,
+                "BeginHTTPUpload failed: DuplicateRequest",
+            ) -> SteamCloudFailureCategory.TRANSIENT_NETWORK
+
             causes.any { cause ->
                 cause is SocketTimeoutException ||
                     cause is ConnectException ||

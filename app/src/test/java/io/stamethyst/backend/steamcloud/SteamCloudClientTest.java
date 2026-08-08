@@ -93,6 +93,7 @@ public final class SteamCloudClientTest {
     @Test
     public void isRetryableBeginHttpUploadResult_retriesTooManyPending() throws Exception {
         Assert.assertTrue(invokeIsRetryableBeginHttpUploadResult(EResult.TooManyPending));
+        Assert.assertTrue(invokeIsRetryableBeginHttpUploadResult(EResult.DuplicateRequest));
         Assert.assertTrue(invokeIsRetryableBeginHttpUploadResult(EResult.Timeout));
         Assert.assertFalse(invokeIsRetryableBeginHttpUploadResult(EResult.AccessDenied));
     }
@@ -120,6 +121,8 @@ public final class SteamCloudClientTest {
         Assert.assertEquals(10_000L, invokeBeginHttpUploadRetryDelayMs(EResult.TooManyPending, 1));
         Assert.assertEquals(20_000L, invokeBeginHttpUploadRetryDelayMs(EResult.TooManyPending, 2));
         Assert.assertEquals(120_000L, invokeBeginHttpUploadRetryDelayMs(EResult.TooManyPending, 7));
+        Assert.assertEquals(10_000L, invokeBeginHttpUploadRetryDelayMs(EResult.DuplicateRequest, 1));
+        Assert.assertEquals(20_000L, invokeBeginHttpUploadRetryDelayMs(EResult.DuplicateRequest, 2));
         Assert.assertEquals(2_000L, invokeBeginHttpUploadRetryDelayMs(EResult.Timeout, 1));
         Assert.assertEquals(10_000L, invokeBeginHttpUploadRetryDelayMs(EResult.Timeout, 4));
     }

@@ -400,7 +400,9 @@ public final class SteamCloudClientTest {
                 String.class,
                 String.class,
                 long.class,
-                long.class
+                long.class,
+                boolean.class,
+                int.class
             );
         constructor.setAccessible(true);
         return constructor.newInstance(
@@ -425,7 +427,9 @@ public final class SteamCloudClientTest {
             "76561198883607238",
             "76561198883607238",
             1L,
-            1L
+            1L,
+            false,
+            0
         );
     }
 

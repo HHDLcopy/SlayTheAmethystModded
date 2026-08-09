@@ -1290,6 +1290,11 @@
     <string name="settings_steam_cloud_watt_acceleration_desc">通过转发规则访问 Steam，速度会更快。如果出现无法正常访问 Steam，请关闭此项并开启加速器。</string>
     <string name="settings_steam_cloud_auto_launch_after_sync_title">同步后自动进入游戏</string>
     <string name="settings_steam_cloud_auto_launch_after_sync_desc">当一次启动正在等待 Steam Cloud 结果时，如果云端已是最新，或剩余上传可以转到后台继续执行，就自动进入游戏。</string>
+    <string name="settings_steam_game_presence_title">Steam 游戏状态</string>
+    <string name="settings_steam_game_presence_enabled_title">报告正在游玩 Slay the Spire</string>
+    <string name="settings_steam_game_presence_disabled_title">关闭 Steam 游戏状态</string>
+    <string name="settings_steam_game_presence_desc">实验性且非官方功能。游戏运行时通过私有 Steam CM 消息发送 AppID 646570。Steam 好友可能会看到你正在游玩，Steam 也可能累计时长。Valve 可能更改或拒绝此协议。本功能不会抢占电脑上的 Steam 会话。</string>
+    <string name="settings_steam_game_presence_notification">实验性 Steam 游戏状态已启用</string>
     <string name="settings_steam_cloud_clear_network_cache_title">清除 Steam Cloud 网络缓存</string>
     <string name="settings_steam_cloud_clear_network_cache_desc">删除缓存的 Steam CM 节点和服务器列表，不清除登录、存档配置或同步基线。</string>
     <string name="settings_easytier_title">虚拟局域网</string>

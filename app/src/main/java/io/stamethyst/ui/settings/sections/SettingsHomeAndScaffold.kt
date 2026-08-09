@@ -526,6 +526,7 @@ internal fun LauncherSettingsMarketCloudScreenContent(
     onOpenSteamCloudLogin: () -> Unit = {},
     onSteamCloudWattAccelerationChanged: (Boolean) -> Unit = {},
     onSteamCloudAutoLaunchAfterSyncChanged: (Boolean) -> Unit = {},
+    onSteamGamePresenceChanged: (Boolean) -> Unit = {},
     onOpenSteamCloudSaveSettings: () -> Unit = {},
     onClearSteamCloudCredentials: () -> Unit = {},
     onClearSteamCloudNetworkCache: () -> Unit = {},
@@ -552,6 +553,7 @@ internal fun LauncherSettingsMarketCloudScreenContent(
                         onOpenSteamCloudLogin = onOpenSteamCloudLogin,
                         onSteamCloudWattAccelerationChanged = onSteamCloudWattAccelerationChanged,
                         onSteamCloudAutoLaunchAfterSyncChanged = onSteamCloudAutoLaunchAfterSyncChanged,
+                        onSteamGamePresenceChanged = onSteamGamePresenceChanged,
                         onOpenSteamCloudSaveSettings = onOpenSteamCloudSaveSettings,
                         onClearSteamCloudCredentials = onClearSteamCloudCredentials,
                         onClearSteamCloudNetworkCache = onClearSteamCloudNetworkCache,
@@ -732,5 +734,4 @@ internal fun LauncherSettingsAboutScreenContent(
         }
     }
 }
-
 

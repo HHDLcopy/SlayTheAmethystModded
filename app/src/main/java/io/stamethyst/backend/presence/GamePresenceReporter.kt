@@ -1,6 +1,7 @@
 package io.stamethyst.backend.presence
 
 import android.app.Activity
+import android.app.ActivityManager
 import android.app.Application
 import android.content.Context
 import android.os.Bundle
@@ -295,8 +296,18 @@ object GamePresenceReporter {
 
         override fun onActivityResumed(activity: Activity) {
             if (activity is LauncherActivity) {
-                GamePresenceStateMarker.markLauncherActive(activity)
+                if (!isGameProcessRunning()) {
+                    GamePresenceStateMarker.markLauncherActive(activity)
+                }
                 sendHeartbeat(force = true)
+            }
+        }
+
+        private fun isGameProcessRunning(): Boolean {
+            val expectedProcessName = "${context.packageName}:game"
+            val activityManager = context.getSystemService(ActivityManager::class.java) ?: return false
+            return activityManager.runningAppProcesses.orEmpty().any { process ->
+                process.processName == expectedProcessName
             }
         }
 

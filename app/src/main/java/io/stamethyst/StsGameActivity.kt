@@ -30,6 +30,7 @@ import io.stamethyst.backend.easytier.EasyTierGameProcessPriorityBinding
 import io.stamethyst.backend.launch.GameProcessLaunchGuard
 import io.stamethyst.backend.launch.StartupTraceEvents
 import io.stamethyst.backend.presence.GamePresenceStateMarker
+import io.stamethyst.backend.steamcloud.SteamGamePresenceService
 import io.stamethyst.backend.render.DisplayPerformanceController
 import io.stamethyst.backend.launch.AutoplayMode
 import io.stamethyst.backend.launch.AutoplaySaveMode
@@ -115,6 +116,7 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
     private var bootOverlayKeepScreenOn = false
     private var keepScreenOnActive = false
     private var activityForeground = false
+    private var gameSessionFinished = false
     private val launchGuardToken: String = UUID.randomUUID().toString()
     private val launchGuardLock = Any()
     private var launchGuardAcquired = false
@@ -171,6 +173,7 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
 
         sessionConfig = GameSessionConfig.fromActivityIntent(this, intent)
         GamePresenceStateMarker.markGameActive(this, sessionConfig.launchMode)
+        SteamGamePresenceService.startIfEnabled(this)
         MemoryDiagnosticsLogger.logEvent(
             this,
             "game_activity_created",
@@ -183,6 +186,7 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
     }
 
     override fun onDestroy() {
+        val jvmWasStarted = ::sessionCoordinator.isInitialized && sessionCoordinator.jvmLaunchStarted
         unregisterGyroscope()
         MemoryDiagnosticsLogger.logEvent(
             this,
@@ -204,8 +208,10 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
             sessionCoordinator.onDestroy()
         }
         EasyTierGameProcessPriorityBinding.detach(this)
-        GamePresenceStateMarker.markLauncherActive(this)
-        if (launchGuardAcquired && (!::sessionCoordinator.isInitialized || !sessionCoordinator.jvmLaunchStarted)) {
+        if (!jvmWasStarted || gameSessionFinished) {
+            markGameSessionFinished()
+        }
+        if (launchGuardAcquired && !jvmWasStarted) {
             releaseLaunchGuard()
         }
         super.onDestroy()
@@ -241,6 +247,7 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
         sessionCoordinator.onResume()
         activityForeground = true
         GamePresenceStateMarker.markGameActive(this, sessionConfig.launchMode)
+        SteamGamePresenceService.startIfEnabled(this)
         resetKeepScreenOnIdleTimer()
     }
 
@@ -523,7 +530,10 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
             config = sessionConfig,
             renderSurfaceManager = renderSurfaceManager,
             inputHandler = inputHandler,
-            onJvmLaunchFinished = { releaseLaunchGuard() }
+            onJvmLaunchFinished = {
+                markGameSessionFinished()
+                releaseLaunchGuard()
+            }
         )
         gameAudioController = GameAudioController(
             activity = this,
@@ -534,6 +544,13 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
                 sessionCoordinator.onAudioOutputRouteChanged()
             }
         )
+    }
+
+    private fun markGameSessionFinished() {
+        if (gameSessionFinished) return
+        gameSessionFinished = true
+        GamePresenceStateMarker.markLauncherActive(this)
+        SteamGamePresenceService.stop(this)
     }
 
     private fun initViews() {

@@ -57,6 +57,7 @@ import io.stamethyst.backend.steamcloud.SteamCloudPushCoordinator
 import io.stamethyst.backend.steamcloud.SteamCloudRootKind
 import io.stamethyst.backend.steamcloud.SteamCloudSaveProfileManager
 import io.stamethyst.backend.steamcloud.SteamCloudSyncBlacklist
+import io.stamethyst.backend.steamcloud.SteamGamePresenceService
 import io.stamethyst.backend.steamcloud.SteamCloudSyncBaseline
 import io.stamethyst.backend.steamcloud.SteamCloudUploadPlan
 import io.stamethyst.backend.steamcloud.reusableGuardDataForCredentials
@@ -442,6 +443,8 @@ class SettingsScreenViewModel : ViewModel() {
             LauncherPreferences.DEFAULT_STEAM_CLOUD_WATT_ACCELERATION_ENABLED,
         val steamCloudAutoLaunchAfterSyncEnabled: Boolean =
             LauncherPreferences.DEFAULT_STEAM_CLOUD_AUTO_LAUNCH_AFTER_SYNC_ENABLED,
+        val steamGamePresenceEnabled: Boolean =
+            LauncherPreferences.DEFAULT_STEAM_GAME_PRESENCE_ENABLED,
         val workshopMaxConcurrentDownloads: Int =
             LauncherPreferences.DEFAULT_WORKSHOP_MAX_CONCURRENT_DOWNLOADS,
         val workshopDownloadThreads: Int = LauncherPreferences.DEFAULT_WORKSHOP_DOWNLOAD_THREADS,
@@ -1346,6 +1349,7 @@ class SettingsScreenViewModel : ViewModel() {
                             LauncherPreferences.isSteamCloudWattAccelerationEnabled(host),
                         steamCloudAutoLaunchAfterSyncEnabled =
                             LauncherPreferences.isSteamCloudAutoLaunchAfterSyncEnabled(host),
+                        steamGamePresenceEnabled = LauncherPreferences.isSteamGamePresenceEnabled(host),
                         workshopMaxConcurrentDownloads = LauncherPreferences.readWorkshopMaxConcurrentDownloads(host),
                         workshopDownloadThreads = LauncherPreferences.readWorkshopDownloadThreads(host),
                         workshopWattAccelerationEnabled = LauncherPreferences.isWorkshopWattAccelerationEnabled(host),
@@ -1901,6 +1905,16 @@ class SettingsScreenViewModel : ViewModel() {
 
     fun onSteamCloudAutoLaunchAfterSyncChanged(host: Activity, enabled: Boolean) {
         LauncherPreferences.setSteamCloudAutoLaunchAfterSyncEnabled(host, enabled)
+        refreshStatus(host)
+    }
+
+    fun onSteamGamePresenceChanged(host: Activity, enabled: Boolean) {
+        LauncherPreferences.setSteamGamePresenceEnabled(host, enabled)
+        if (enabled) {
+            SteamGamePresenceService.startIfEnabled(host)
+        } else {
+            SteamGamePresenceService.stop(host)
+        }
         refreshStatus(host)
     }
 
@@ -5896,4 +5910,3 @@ class SettingsScreenViewModel : ViewModel() {
         }
     }
 }
-

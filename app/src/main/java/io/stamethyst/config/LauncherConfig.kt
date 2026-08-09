@@ -196,6 +196,8 @@ object LauncherConfig {
         "steam_cloud_watt_acceleration_enabled"
     private const val PREF_KEY_STEAM_CLOUD_AUTO_LAUNCH_AFTER_SYNC_ENABLED =
         "steam_cloud_auto_launch_after_sync_enabled"
+    private const val PREF_KEY_STEAM_GAME_PRESENCE_ENABLED =
+        "steam_game_presence_enabled"
     private const val PREF_KEY_WORKSHOP_MAX_CONCURRENT_DOWNLOADS =
         "workshop_max_concurrent_downloads"
     private const val PREF_KEY_WORKSHOP_DOWNLOAD_THREADS = "workshop_download_threads"
@@ -317,6 +319,7 @@ object LauncherConfig {
     const val DEFAULT_WATT_ACCELERATION_ENABLED = true
     const val DEFAULT_STEAM_CLOUD_WATT_ACCELERATION_ENABLED = DEFAULT_WATT_ACCELERATION_ENABLED
     const val DEFAULT_STEAM_CLOUD_AUTO_LAUNCH_AFTER_SYNC_ENABLED = false
+    const val DEFAULT_STEAM_GAME_PRESENCE_ENABLED = false
     const val DEFAULT_WORKSHOP_MAX_CONCURRENT_DOWNLOADS = 1
     const val MIN_WORKSHOP_MAX_CONCURRENT_DOWNLOADS = 1
     const val MAX_WORKSHOP_MAX_CONCURRENT_DOWNLOADS = 4
@@ -1949,6 +1952,19 @@ object LauncherConfig {
     fun setSteamCloudAutoLaunchAfterSyncEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_STEAM_CLOUD_AUTO_LAUNCH_AFTER_SYNC_ENABLED, enabled)
+        }
+    }
+
+    fun isSteamGamePresenceEnabled(context: Context): Boolean {
+        return prefs(context, crossProcess = true).getBoolean(
+            PREF_KEY_STEAM_GAME_PRESENCE_ENABLED,
+            DEFAULT_STEAM_GAME_PRESENCE_ENABLED,
+        )
+    }
+
+    fun setSteamGamePresenceEnabled(context: Context, enabled: Boolean) {
+        prefs(context, crossProcess = true).edit(commit = true) {
+            putBoolean(PREF_KEY_STEAM_GAME_PRESENCE_ENABLED, enabled)
         }
     }
 

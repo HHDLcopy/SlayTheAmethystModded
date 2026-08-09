@@ -75,6 +75,7 @@ internal data class SteamCloudSettingsActions(
     val onOpenSteamCloudLogin: () -> Unit,
     val onSteamCloudWattAccelerationChanged: (Boolean) -> Unit,
     val onSteamCloudAutoLaunchAfterSyncChanged: (Boolean) -> Unit,
+    val onSteamGamePresenceChanged: (Boolean) -> Unit,
     val onOpenSteamCloudSaveSettings: () -> Unit,
     val onClearSteamCloudCredentials: () -> Unit,
     val onClearSteamCloudNetworkCache: () -> Unit,
@@ -245,6 +246,18 @@ internal fun SettingsSteamCloudSection(
             disabledText = stringResource(R.string.settings_steam_cloud_watt_acceleration_disabled_title),
             description = stringResource(R.string.settings_steam_cloud_watt_acceleration_desc),
             onCheckedChange = actions.onSteamCloudWattAccelerationChanged,
+        )
+    )
+
+    Spacer(modifier = Modifier.size(8.dp))
+    SettingsSwitchItem(
+        SettingsSwitchSpec(
+            checked = uiState.steamGamePresenceEnabled,
+            enabled = !uiState.busy && uiState.steamCloudRefreshTokenConfigured,
+            enabledText = stringResource(R.string.settings_steam_game_presence_enabled_title),
+            disabledText = stringResource(R.string.settings_steam_game_presence_disabled_title),
+            description = stringResource(R.string.settings_steam_game_presence_desc),
+            onCheckedChange = actions.onSteamGamePresenceChanged,
         )
     )
 
@@ -707,5 +720,4 @@ internal fun formatSteamCloudBytes(bytes: Long): String {
         else -> "$bytes B"
     }
 }
-
 

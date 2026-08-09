@@ -43,6 +43,10 @@ import java.util.zip.ZipInputStream;
 import java.security.MessageDigest;
 
 import in.dragonbra.javasteam.enums.EResult;
+import in.dragonbra.javasteam.enums.EMsg;
+import in.dragonbra.javasteam.enums.EOSType;
+import in.dragonbra.javasteam.base.ClientMsgProtobuf;
+import in.dragonbra.javasteam.protobufs.steamclient.SteammessagesClientserver;
 import in.dragonbra.javasteam.protobufs.steamclient.SteammessagesCloudSteamclient;
 import in.dragonbra.javasteam.networking.steam3.ProtocolTypes;
 import in.dragonbra.javasteam.rpc.service.Cloud;
@@ -60,11 +64,14 @@ import in.dragonbra.javasteam.steam.handlers.steamcloud.AppFileInfo;
 import in.dragonbra.javasteam.steam.handlers.steamcloud.FileDownloadInfo;
 import in.dragonbra.javasteam.steam.handlers.steamcloud.HttpHeaders;
 import in.dragonbra.javasteam.steam.handlers.steamcloud.SteamCloud;
+import in.dragonbra.javasteam.steam.handlers.steamfriends.SteamFriends;
 import in.dragonbra.javasteam.steam.handlers.steamuser.LogOnDetails;
 import in.dragonbra.javasteam.steam.handlers.steamuser.SteamUser;
 import in.dragonbra.javasteam.steam.handlers.steamunifiedmessages.SteamUnifiedMessages;
 import in.dragonbra.javasteam.steam.handlers.steamunifiedmessages.callback.ServiceMethodResponse;
 import in.dragonbra.javasteam.steam.handlers.steamuser.callback.LoggedOnCallback;
+import in.dragonbra.javasteam.steam.handlers.steamuser.callback.PlayingSessionStateCallback;
+import in.dragonbra.javasteam.enums.EPersonaState;
 import in.dragonbra.javasteam.steam.steamclient.SteamClient;
 import in.dragonbra.javasteam.steam.steamclient.callbackmgr.CallbackManager;
 import in.dragonbra.javasteam.steam.steamclient.callbacks.ConnectedCallback;
@@ -108,6 +115,7 @@ public final class SteamCloudClient implements AutoCloseable {
     private final SteamClient steamClient;
     private final CallbackManager callbackManager;
     private final SteamUser steamUser;
+    private final SteamFriends steamFriends;
     private final SteamCloud steamCloud;
     private final Cloud cloudService;
     private final OkHttpClient httpClient;
@@ -137,6 +145,8 @@ public final class SteamCloudClient implements AutoCloseable {
     private volatile String steamClientSteamId64 = "";
     private volatile long cmServerSelectionMs = -1L;
     private volatile long cmConnectWaitMs = -1L;
+    private volatile boolean playingSessionBlocked;
+    private volatile int playingSessionAppId;
     private final Object diagnosticEventsLock = new Object();
     private final ArrayDeque<String> diagnosticEvents = new ArrayDeque<>();
     private Thread callbackThread;
@@ -199,6 +209,7 @@ public final class SteamCloudClient implements AutoCloseable {
         steamClient = new SteamClient(steamConfiguration);
         callbackManager = new CallbackManager(steamClient);
         steamUser = requireNonNull(steamClient.getHandler(SteamUser.class), "SteamUser handler");
+        steamFriends = requireNonNull(steamClient.getHandler(SteamFriends.class), "SteamFriends handler");
         steamCloud = requireNonNull(steamClient.getHandler(SteamCloud.class), "SteamCloud handler");
         SteamUnifiedMessages unifiedMessages = requireNonNull(
             steamClient.getHandler(SteamUnifiedMessages.class),
@@ -242,6 +253,23 @@ public final class SteamCloudClient implements AutoCloseable {
             Log.i(TAG, "Steam logon result: " + callback.getResult());
             loggedOnFuture.complete(callback);
         });
+        callbackManager.subscribe(PlayingSessionStateCallback.class, callback -> {
+            playingSessionBlocked = callback.isPlayingBlocked();
+            playingSessionAppId = callback.getPlayingAppID();
+            recordDiagnosticEvent(
+                "playing_session_state blocked="
+                    + playingSessionBlocked
+                    + " appId="
+                    + playingSessionAppId
+            );
+            Log.i(
+                TAG,
+                "Steam playing session state: blocked="
+                    + playingSessionBlocked
+                    + ", appId="
+                    + playingSessionAppId
+            );
+        });
     }
 
     public void beginOperationDiagnostics(String operation, String accountName, boolean hasGuardData) {
@@ -258,6 +286,8 @@ public final class SteamCloudClient implements AutoCloseable {
         disconnectedDescription = "<not observed>";
         cmServerSelectionMs = -1L;
         cmConnectWaitMs = -1L;
+        playingSessionBlocked = false;
+        playingSessionAppId = 0;
         synchronized (diagnosticEventsLock) {
             diagnosticEvents.clear();
         }
@@ -342,7 +372,7 @@ public final class SteamCloudClient implements AutoCloseable {
             );
             long connectStartedAtNs = System.nanoTime();
             try {
-                steamClient.connect(serverRecord);
+                startSteamConnection(serverRecord);
                 waitForStage(connectedFuture, CONNECT_TIMEOUT_MS, "Steam connect");
             } finally {
                 cmConnectWaitMs = elapsedMillis(connectStartedAtNs);
@@ -355,6 +385,21 @@ public final class SteamCloudClient implements AutoCloseable {
             Log.e(TAG, "Steam connect failed during " + currentStage + '.', error);
             throw error;
         }
+    }
+
+    private void startSteamConnection(ServerRecord serverRecord) {
+        Thread connectThread = new Thread(() -> {
+            try {
+                steamClient.connect(serverRecord);
+                recordDiagnosticEvent("cm_connect invocation_returned");
+            } catch (Throwable error) {
+                recordDiagnosticEvent("cm_connect invocation_failed " + describeThrowable(error));
+                connectedFuture.completeExceptionally(error);
+            }
+        }, "steam-cloud-client-connect");
+        connectThread.setDaemon(true);
+        connectThread.start();
+        recordDiagnosticEvent("cm_connect invocation_started");
     }
 
     public AuthMaterial authenticateWithCredentials(
@@ -503,6 +548,51 @@ public final class SteamCloudClient implements AutoCloseable {
 
     public String getCurrentSteamId64() {
         return currentSteamId64;
+    }
+
+    /**
+     * Sends the undocumented CM game-state message used by third-party Steam clients.
+     * A zero AppID clears the current game state.
+     */
+    public void setGamePlayedAppId(long appId) {
+        ClientMsgProtobuf<SteammessagesClientserver.CMsgClientGamesPlayed.Builder> message =
+            new ClientMsgProtobuf<>(
+                SteammessagesClientserver.CMsgClientGamesPlayed.class,
+                EMsg.ClientGamesPlayedWithDataBlob
+            );
+        message.getBody().setClientOsType(androidOsType().code());
+        if (appId > 0L) {
+            message.getBody().addGamesPlayed(
+                SteammessagesClientserver.CMsgClientGamesPlayed.GamePlayed.newBuilder()
+                    .setGameId(appId)
+            );
+        }
+        steamClient.send(message);
+    }
+
+    public void setPersonaOnline() {
+        if (!steamClient.isConnected()) {
+            throw new IllegalStateException("Steam CM is not connected.");
+        }
+        steamFriends.setPersonaState(EPersonaState.Online);
+        recordDiagnosticEvent("persona_state_sent state=Online");
+        Log.i(TAG, "Published Steam persona state Online.");
+    }
+
+    private static EOSType androidOsType() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            return EOSType.Android9;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            return EOSType.Android8;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            return EOSType.Android7;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            return EOSType.Android6;
+        }
+        return EOSType.AndroidUnknown;
     }
 
     static String resolveSteamId64FromAuthSession(Object authSession) {
@@ -947,19 +1037,17 @@ public final class SteamCloudClient implements AutoCloseable {
         if (thread != null) {
             thread.interrupt();
         }
-        try {
-            steamClient.disconnect();
-        } catch (Throwable ignored) {
-            // Best effort.
-        }
-        LogManager.removeListener(javaSteamLogCollector);
-        if (thread != null) {
+        Thread disconnectThread = new Thread(() -> {
             try {
-                thread.join(1000L);
-            } catch (InterruptedException error) {
-                Thread.currentThread().interrupt();
+                steamClient.disconnect();
+            } catch (Throwable ignored) {
+                // Best effort. JavaSteam can block while closing a stalled websocket transport.
             }
-        }
+        }, "steam-cloud-client-disconnect");
+        disconnectThread.setDaemon(true);
+        disconnectThread.start();
+        recordDiagnosticEvent("cm_disconnect scheduled");
+        LogManager.removeListener(javaSteamLogCollector);
         applyProxySystemProperties();
     }
 
@@ -986,7 +1074,9 @@ public final class SteamCloudClient implements AutoCloseable {
             loggedOnCallbackSteamId64,
             steamClientSteamId64,
             cmServerSelectionMs,
-            cmConnectWaitMs
+            cmConnectWaitMs,
+            playingSessionBlocked,
+            playingSessionAppId
         );
     }
 
@@ -1049,21 +1139,12 @@ public final class SteamCloudClient implements AutoCloseable {
     private PreparedServerRecord selectWebSocketServerRecord() throws IOException {
         List<PreparedServerRecord> candidates = new ArrayList<>();
 
-        if (wattAccelerationEnabled) {
-            boolean refreshed = steamClient.getServers().forceRefreshServerList();
-            recordDiagnosticEvent("cm_server_list_refresh result=" + (refreshed ? "completed" : "failed"));
-        }
-
-        ServerRecord serverListRecord = steamClient.getServers().getNextServerCandidate(protocolTypes);
-        if (serverListRecord != null) {
-            candidates.add(new PreparedServerRecord(serverListRecord, "Steam server list"));
-        }
+        String defaultAddress = SmartCMServerList.getDefaultServerWebSocket();
+        addWebSocketAddressCandidate(candidates, defaultAddress, "JavaSteam default websocket CM");
 
         String cachedAddress = readOptionalTextFile(lastCmEndpointFile);
         addWebSocketAddressCandidate(candidates, cachedAddress, "Cached websocket CM fallback");
-
-        String defaultAddress = SmartCMServerList.getDefaultServerWebSocket();
-        addWebSocketAddressCandidate(candidates, defaultAddress, "JavaSteam default websocket CM");
+        recordDiagnosticEvent("cm_server_list skipped using_cached_or_default_websocket");
 
         IOException lastResolutionError = null;
         List<String> attemptedKeys = new ArrayList<>();
@@ -1318,8 +1399,26 @@ public final class SteamCloudClient implements AutoCloseable {
             });
         }
 
+        long deadlineNs = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs);
+        while (!combined.isDone()) {
+            long remainingNs = deadlineNs - System.nanoTime();
+            if (remainingNs <= 0L) {
+                throw new TimeoutException(stage + " timed out after " + (timeoutMs / 1000L) + "s.");
+            }
+            long sleepMs = Math.min(
+                250L,
+                Math.max(1L, TimeUnit.NANOSECONDS.toMillis(remainingNs))
+            );
+            try {
+                Thread.sleep(sleepMs);
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                throw error;
+            }
+        }
+
         try {
-            return (T) combined.get(timeoutMs, TimeUnit.MILLISECONDS);
+            return (T) combined.get();
         } catch (ExecutionException error) {
             Throwable cause = unwrapAsyncThrowable(error);
             if (cause instanceof Exception) {
@@ -1329,8 +1428,6 @@ public final class SteamCloudClient implements AutoCloseable {
                 throw (Error) cause;
             }
             throw new IllegalStateException(stage + " failed.", cause);
-        } catch (TimeoutException error) {
-            throw new TimeoutException(stage + " timed out after " + (timeoutMs / 1000L) + "s.");
         }
     }
 
@@ -2192,6 +2289,8 @@ public final class SteamCloudClient implements AutoCloseable {
         private final String steamClientSteamId64;
         private final long cmServerSelectionMs;
         private final long cmConnectWaitMs;
+        private final boolean playingSessionBlocked;
+        private final int playingSessionAppId;
 
         private DiagnosticsSnapshot(
             String currentStage,
@@ -2215,7 +2314,9 @@ public final class SteamCloudClient implements AutoCloseable {
             String loggedOnCallbackSteamId64,
             String steamClientSteamId64,
             long cmServerSelectionMs,
-            long cmConnectWaitMs
+            long cmConnectWaitMs,
+            boolean playingSessionBlocked,
+            int playingSessionAppId
         ) {
             this.currentStage = currentStage;
             this.protocolTypesDescription = protocolTypesDescription;
@@ -2239,6 +2340,8 @@ public final class SteamCloudClient implements AutoCloseable {
             this.steamClientSteamId64 = steamClientSteamId64;
             this.cmServerSelectionMs = cmServerSelectionMs;
             this.cmConnectWaitMs = cmConnectWaitMs;
+            this.playingSessionBlocked = playingSessionBlocked;
+            this.playingSessionAppId = playingSessionAppId;
         }
 
         public String getCurrentStage() {
@@ -2327,6 +2430,14 @@ public final class SteamCloudClient implements AutoCloseable {
 
         public long getCmConnectWaitMs() {
             return cmConnectWaitMs;
+        }
+
+        public boolean getPlayingSessionBlocked() {
+            return playingSessionBlocked;
+        }
+
+        public int getPlayingSessionAppId() {
+            return playingSessionAppId;
         }
     }
 

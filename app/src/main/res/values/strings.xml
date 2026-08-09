@@ -1291,6 +1291,11 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_steam_cloud_watt_acceleration_desc">Access Steam through forwarding rules for better speed. If Steam cannot be accessed normally, turn this off and enable an accelerator.</string>
     <string name="settings_steam_cloud_auto_launch_after_sync_title">Auto-launch game after sync</string>
     <string name="settings_steam_cloud_auto_launch_after_sync_desc">When a launch is waiting on Steam Cloud, automatically enter the game after sync if the cloud is already up to date or the remaining upload can continue in the background.</string>
+    <string name="settings_steam_game_presence_title">Steam game presence</string>
+    <string name="settings_steam_game_presence_enabled_title">Report Slay the Spire as being played</string>
+    <string name="settings_steam_game_presence_disabled_title">Steam game presence off</string>
+    <string name="settings_steam_game_presence_desc">Experimental and unofficial. While the game is active, sends a private Steam CM message for AppID 646570. Steam friends may see you playing and Steam may count time. Valve can change or reject this protocol. It never takes over a PC Steam session.</string>
+    <string name="settings_steam_game_presence_notification">Experimental Steam game presence is active</string>
     <string name="settings_steam_cloud_clear_network_cache_title">Clear Steam Cloud network cache</string>
     <string name="settings_steam_cloud_clear_network_cache_desc">Remove cached Steam CM endpoints and server list without clearing login, saves, or sync baseline.</string>
     <string name="settings_easytier_title">Virtual LAN</string>

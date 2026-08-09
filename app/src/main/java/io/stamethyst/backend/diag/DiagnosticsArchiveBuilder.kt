@@ -12,6 +12,7 @@ import io.stamethyst.backend.crash.SignalCrashDumpReader
 import io.stamethyst.backend.launch.JvmLogRotationManager
 import io.stamethyst.backend.steamcloud.SteamCloudDiagnosticsStore
 import io.stamethyst.backend.steamcloud.SteamCloudManifestStore
+import io.stamethyst.backend.steamcloud.SteamGamePresenceDiagnosticsStore
 import io.stamethyst.backend.workshop.WorkshopAutoImportPatchLogStore
 import io.stamethyst.backend.workshop.WorkshopBrowseFailureLogStore
 import io.stamethyst.backend.workshop.WorkshopDownloadLogService
@@ -131,6 +132,11 @@ internal object DiagnosticsArchiveBuilder {
                 zipOutput,
                 SteamCloudDiagnosticsStore.summaryFile(context),
                 "sts/steam_cloud/phase1/${SteamCloudDiagnosticsStore.summaryFile(context).name}"
+            )
+            exportedCount += writeOptionalFile(
+                zipOutput,
+                SteamGamePresenceDiagnosticsStore.summaryFile(context),
+                "sts/steam-game-presence/${SteamGamePresenceDiagnosticsStore.summaryFile(context).name}"
             )
             exportedCount += writeOptionalFile(
                 zipOutput,

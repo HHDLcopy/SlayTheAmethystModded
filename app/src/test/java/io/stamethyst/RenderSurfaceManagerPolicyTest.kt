@@ -1,5 +1,6 @@
 package io.stamethyst
 
+import android.content.pm.ActivityInfo
 import android.view.WindowManager
 import io.stamethyst.backend.render.VirtualResolutionMode
 import org.junit.Assert.assertEquals
@@ -178,46 +179,83 @@ class RenderSurfaceManagerPolicyTest {
     }
 
     @Test
-    fun resolveScreenBottomCropInsets_usesWindowGapBeforeInsets() {
+    fun resolveScreenBottomCropInsets_usesReliableInsetsOnly() {
         assertEquals(
-            RenderViewportInsets(left = 96),
+            RenderViewportInsets(right = 48),
             RenderSurfaceManager.resolveScreenBottomCropInsets(
                 cropScreenBottom = true,
                 gestureInsets = RenderViewportInsets(right = 48),
                 cameraInsets = RenderViewportInsets(),
-                fallbackInset = 24,
-                windowCropHint = RenderViewportCropHint(
-                    side = HorizontalCropSide.LEFT,
-                    inset = 96
-                )
+                fallbackInset = 24
             )
         )
     }
 
     @Test
-    fun resolveWindowConstrainedCropHint_cropsOppositeExistingSystemGap() {
+    fun resolveViewportLayout_keepsHalfScreenWindowUsable() {
         assertEquals(
-            RenderViewportCropHint(side = HorizontalCropSide.LEFT, inset = 96),
-            RenderSurfaceManager.resolveWindowConstrainedCropHint(
-                rootLeft = 0,
-                rootWidth = 2304,
-                displayWidth = 2400
+            RenderViewportLayout(
+                width = 1200,
+                height = 675,
+                leftMargin = 0,
+                topMargin = 202,
+                rightMargin = 0,
+                bottomMargin = 203
+            ),
+            RenderSurfaceManager.resolveViewportLayout(
+                rootWidth = 1200,
+                rootHeight = 1080,
+                cropInsets = RenderViewportInsets(),
+                virtualResolutionMode = VirtualResolutionMode.RATIO_16_9
             )
         )
+    }
+
+    @Test
+    fun resolveFixedVirtualViewportLayout_letterboxesFreeformWindow() {
         assertEquals(
-            RenderViewportCropHint(side = HorizontalCropSide.RIGHT, inset = 96),
-            RenderSurfaceManager.resolveWindowConstrainedCropHint(
-                rootLeft = 96,
-                rootWidth = 2304,
-                displayWidth = 2400
+            RenderViewportLayout(
+                width = 1200,
+                height = 675,
+                leftMargin = 0,
+                topMargin = 202,
+                rightMargin = 0,
+                bottomMargin = 203
+            ),
+            RenderSurfaceManager.resolveFixedVirtualViewportLayout(
+                rootWidth = 1200,
+                rootHeight = 1080,
+                cropInsets = RenderViewportInsets(),
+                virtualWidth = 960,
+                virtualHeight = 540
             )
         )
-        assertEquals(
-            null,
-            RenderSurfaceManager.resolveWindowConstrainedCropHint(
-                rootLeft = 0,
+    }
+
+    @Test
+    fun shouldDeferPortraitLandscapeTransition_onlyDefersLockedLandscapeWindow() {
+        assertTrue(
+            RenderSurfaceManager.shouldDeferPortraitLandscapeTransition(
+                rootWidth = 1080,
+                rootHeight = 2400,
+                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
+                multiWindow = false
+            )
+        )
+        assertFalse(
+            RenderSurfaceManager.shouldDeferPortraitLandscapeTransition(
+                rootWidth = 1080,
+                rootHeight = 2400,
+                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
+                multiWindow = true
+            )
+        )
+        assertFalse(
+            RenderSurfaceManager.shouldDeferPortraitLandscapeTransition(
                 rootWidth = 2400,
-                displayWidth = 2400
+                rootHeight = 1080,
+                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
+                multiWindow = false
             )
         )
     }
@@ -279,23 +317,15 @@ class RenderSurfaceManagerPolicyTest {
     }
 
     @Test
-    fun shouldApplyManualDisplayCutoutAvoidance_onlyWhileWindowIsUnconstrained() {
+    fun shouldApplyManualDisplayCutoutAvoidance_followsPreference() {
         assertTrue(
             RenderSurfaceManager.shouldApplyManualDisplayCutoutAvoidance(
-                avoidDisplayCutout = true,
-                windowConstrained = false
+                avoidDisplayCutout = true
             )
         )
         assertFalse(
             RenderSurfaceManager.shouldApplyManualDisplayCutoutAvoidance(
-                avoidDisplayCutout = true,
-                windowConstrained = true
-            )
-        )
-        assertFalse(
-            RenderSurfaceManager.shouldApplyManualDisplayCutoutAvoidance(
-                avoidDisplayCutout = false,
-                windowConstrained = false
+                avoidDisplayCutout = false
             )
         )
     }

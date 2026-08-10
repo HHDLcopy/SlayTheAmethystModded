@@ -13,7 +13,9 @@ import io.stamethyst.backend.mods.ModManager
 import io.stamethyst.backend.mods.importing.patches.ImportPatchRegistry
 import io.stamethyst.backend.mods.importing.patches.texture.AtlasFilterPatchModule
 import io.stamethyst.backend.render.AndroidGameModeSupport
+import io.stamethyst.backend.render.DisplayConfigSync
 import io.stamethyst.backend.render.DisplayRefreshRateController
+import io.stamethyst.backend.render.FullscreenCanvasResolution
 import io.stamethyst.backend.render.RendererBackendResolver
 import io.stamethyst.backend.render.RendererDecision
 import io.stamethyst.backend.render.RendererBackend
@@ -410,15 +412,15 @@ object StsLaunchSpec {
         val virtualResolutionMode = LauncherConfig.readVirtualResolutionMode(context)
         val physicalWidth = Math.max(1, CallbackBridge.physicalWidth)
         val physicalHeight = Math.max(1, CallbackBridge.physicalHeight)
+        val fullscreenCanvas = FullscreenCanvasResolution.resolve(context)
         val virtualResolution = VirtualResolutionPolicy.resolve(
-            physicalWidth = physicalWidth,
-            physicalHeight = physicalHeight,
+            physicalWidth = fullscreenCanvas.width,
+            physicalHeight = fullscreenCanvas.height,
             renderScale = renderScale,
             mode = virtualResolutionMode
         )
         val virtualWidth = virtualResolution.width
         val virtualHeight = virtualResolution.height
-        args.add("-Damethyst.gdx.render_scale=$renderScale")
         val effectiveTargetFps = AndroidGameModeSupport.resolveTargetFps(
             LauncherConfig.readTargetFps(context),
             AndroidGameModeSupport.readCurrentMode(context)
@@ -431,6 +433,22 @@ object StsLaunchSpec {
         )
         if (expectedRefreshRateHz > 0f) {
             args.add("-Damethyst.gdx.active_refresh_rate=${Math.round(expectedRefreshRateHz)}")
+        }
+        try {
+            // DesktopLauncher reads this file before LibGDX starts. Keep its first Settings
+            // initialization aligned with the fixed fullscreen-priority logical canvas.
+            DisplayConfigSync.syncToCurrentResolution(
+                context = context,
+                width = virtualWidth,
+                height = virtualHeight,
+                targetFpsLimitOverride = effectiveTargetFps
+            )
+        } catch (error: Throwable) {
+            Log.w(
+                TAG,
+                "Failed to prepare startup display config ${virtualWidth}x${virtualHeight}",
+                error
+            )
         }
         args.add(
             "-Damethyst.gdx.native_dir=" +
@@ -447,8 +465,8 @@ object StsLaunchSpec {
                 "targetFps=$effectiveTargetFps, " +
                 "activeRefreshRate=$expectedRefreshRateHz"
         )
-        args.add("-Dglfwstub.windowWidth=$physicalWidth")
-        args.add("-Dglfwstub.windowHeight=$physicalHeight")
+        args.add("-Dglfwstub.windowWidth=$virtualWidth")
+        args.add("-Dglfwstub.windowHeight=$virtualHeight")
         args.add("-Dglfwstub.physicalWidth=$physicalWidth")
         args.add("-Dglfwstub.physicalHeight=$physicalHeight")
         args.add("-Damethyst.gdx.virtual_width=$virtualWidth")

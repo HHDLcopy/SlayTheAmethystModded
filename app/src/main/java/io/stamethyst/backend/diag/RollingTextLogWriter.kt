@@ -40,6 +40,14 @@ internal class RollingTextLogWriter(
     }
 
     @Synchronized
+    fun flush() {
+        if (isClosed) {
+            return
+        }
+        output?.flush()
+    }
+
+    @Synchronized
     override fun close() {
         if (isClosed) {
             return

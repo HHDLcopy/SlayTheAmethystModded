@@ -71,19 +71,16 @@ internal class WorkshopService(
 
     private val json = Json { ignoreUnknownKeys = true }
     private val identity = WorkshopSteamClientIdentity(context)
-    private val protocolClient = SteamCloudAcceleratedHttp.createProtocolClient(client)
-
     /**
      * Steam directory lookups are plain HTTPS to api.steampowered.com, so they keep
-     * acceleration. Only the CM websocket handshake needs the bare [protocolClient];
-     * routing these calls through it left the requests that gate every login and
-     * download unaccelerated.
+     * acceleration. CM websocket sessions use the same client so WATT can route
+     * steamserver.net endpoints too.
      */
     private val directoryHttpClient = client
     private val steamWebSession = WorkshopSteamWebSession(
         context = context,
         directoryClient = directoryHttpClient,
-        protocolClient = protocolClient,
+        cmHttpClient = client,
         identity = identity,
     )
     private val steamLanguagePreference: SteamLanguagePreference
@@ -111,7 +108,7 @@ internal class WorkshopService(
     fun hasSteamAuth(): Boolean = SteamCloudAuthStore.readSnapshot(context).isComplete
 
     fun cancelActiveCalls() {
-        listOf(client, protocolClient, workshopClient, browseDetailClient).forEach { httpClient ->
+        listOf(client, workshopClient, browseDetailClient).forEach { httpClient ->
             httpClient.dispatcher.queuedCalls().forEach { it.cancel() }
             httpClient.dispatcher.runningCalls().forEach { it.cancel() }
         }
@@ -162,7 +159,7 @@ internal class WorkshopService(
                 .append(" pageSize=").append(pageSize)
             val protocolResult = SteamPublishedFileClient(
                 directoryClient = SteamDirectoryClient(directoryHttpClient),
-                sessionFactory = { identity.createSession(protocolClient) },
+                sessionFactory = { identity.createSession(client) },
             ).getUserFiles(
                 account = account,
                 appId = appId,
@@ -196,7 +193,7 @@ internal class WorkshopService(
             ?: throw WorkshopSteamLoginRequiredException()
         val publishedFileClient = SteamPublishedFileClient(
             directoryClient = SteamDirectoryClient(directoryHttpClient),
-            sessionFactory = { identity.createSession(protocolClient) },
+            sessionFactory = { identity.createSession(client) },
         )
         runCatching {
             publishedFileClient.areFilesInSubscriptionList(
@@ -296,7 +293,7 @@ internal class WorkshopService(
         runCatching {
             val publishedFileClient = SteamPublishedFileClient(
                 directoryClient = SteamDirectoryClient(directoryHttpClient),
-                sessionFactory = { identity.createSession(protocolClient) },
+                sessionFactory = { identity.createSession(client) },
             )
             publishedFileClient.subscribe(
                 account = account,
@@ -392,7 +389,7 @@ internal class WorkshopService(
         runCatching {
             val publishedFileClient = SteamPublishedFileClient(
                 directoryClient = SteamDirectoryClient(directoryHttpClient),
-                sessionFactory = { identity.createSession(protocolClient) },
+                sessionFactory = { identity.createSession(client) },
             )
             publishedFileClient.unsubscribe(
                 account = account,
@@ -1010,7 +1007,7 @@ internal class WorkshopService(
         val account = readSteamAccountSession(identity)
         return WorkshopDownloadEngine.createDefault(
             client = workshopClient,
-            sessionFactory = { identity.createSession(protocolClient) },
+            sessionFactory = { identity.createSession(client) },
             sessionConnector = buildSessionConnector(account),
             maxConcurrentChunks = LauncherPreferences.readWorkshopDownloadThreads(context),
             allowPublicCdnFallbackOnSessionFailure = true,
@@ -1190,7 +1187,7 @@ internal class WorkshopService(
         return runCatching {
             SteamPublishedFileClient(
                 directoryClient = SteamDirectoryClient(directoryHttpClient),
-                sessionFactory = { identity.createSession(protocolClient) },
+                sessionFactory = { identity.createSession(client) },
             ).queryFiles(
                 account = account,
                 query = SteamPublishedFileQuery(

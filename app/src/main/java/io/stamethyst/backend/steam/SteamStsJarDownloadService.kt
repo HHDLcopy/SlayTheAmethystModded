@@ -52,8 +52,6 @@ internal class SteamStsJarDownloadService(
         enabledProvider = { LauncherPreferences.isWorkshopWattAccelerationEnabled(context) },
     ),
 ) {
-    private val protocolClient = SteamCloudAcceleratedHttp.createProtocolClient(client)
-
     fun downloadDesktopJar(
         onProgress: (SteamStsJarDownloadProgress) -> Unit,
         waitIfPaused: suspend () -> Unit = {},
@@ -86,12 +84,12 @@ internal class SteamStsJarDownloadService(
         val identity = WorkshopSteamClientIdentity(context)
         val account = if (authenticated) readSteamAccountSession(identity) else null
         // Directory lookups are plain HTTPS to api.steampowered.com and gate every
-        // download, so they use the accelerated client. Only the CM websocket
-        // handshake below needs the bare protocol client.
+        // download, so they use the accelerated client. CM websocket sessions use
+        // it too, allowing WATT to route steamserver.net endpoints.
         val directoryClient = SteamDirectoryClient(client)
         val outputFile = prepareOutputFile()
 
-        identity.createSession(protocolClient).use { session ->
+        identity.createSession(client).use { session ->
             waitIfPaused()
             val cmServers = directoryClient.loadServers()
             waitIfPaused()
@@ -118,7 +116,7 @@ internal class SteamStsJarDownloadService(
             val downloader = SteamDepotSingleFileDownloader(
                 client = client,
                 directoryClient = directoryClient,
-                sessionFactory = { identity.createSession(protocolClient) },
+                sessionFactory = { identity.createSession(client) },
                 sessionConnector = { downloadSession, servers ->
                     connectSession(downloadSession, servers, account)
                 },

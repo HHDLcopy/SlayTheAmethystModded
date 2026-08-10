@@ -48,6 +48,38 @@ class DiagnosticsArchiveBuilderAutoImportPatchLogsTest {
     }
 
     @Test
+    fun writeWindowDiagnosticsForArchive_includesCurrentAndRotatedLogs() {
+        val roots = TestRoots.create("diag-window")
+        val windowDir = RuntimePaths.windowDiagnosticsDir(roots.context).apply { mkdirs() }
+        File(windowDir, "window_diagnostics.log").writeText(
+            "RenderSurfaceDiag: resync, windowBounds=0,0,2400,1080",
+            Charsets.UTF_8
+        )
+        File(windowDir, "window_diagnostics.log.1").writeText(
+            "RenderSurfaceInput: raw=120.0,80.0",
+            Charsets.UTF_8
+        )
+        File(windowDir, "unrelated.log").writeText("ignored", Charsets.UTF_8)
+        val archive = File(roots.rootDir, "diagnostics-window.zip")
+
+        FileOutputStream(archive, false).use { output ->
+            ZipOutputStream(output).use { zipOutput ->
+                DiagnosticsArchiveBuilder.writeWindowDiagnosticsForArchive(zipOutput, roots.context)
+            }
+        }
+
+        ZipFile(archive).use { zipFile ->
+            val current = zipFile.getEntry("sts/window/window_diagnostics.log")
+            val rotated = zipFile.getEntry("sts/window/window_diagnostics.log.1")
+            assertNotNull(current)
+            assertNotNull(rotated)
+            assertNull(zipFile.getEntry("sts/window/unrelated.log"))
+            val text = zipFile.getInputStream(current).bufferedReader(Charsets.UTF_8).use { it.readText() }
+            assertTrue(text.contains("windowBounds=0,0,2400,1080"))
+        }
+    }
+
+    @Test
     fun writeLauncherCrashReportsForArchive_includesCrashReportsFromAndroidDirectory() {
         val roots = TestRoots.create("diag-launcher-crash-reports")
         val reportDir = RuntimePaths.launcherCrashReportsDir(roots.context).apply { mkdirs() }

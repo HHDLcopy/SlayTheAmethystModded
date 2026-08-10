@@ -338,6 +338,13 @@ class JvmLaunchController(
                     JREUtils.chdir(RuntimePaths.stsRoot(activity).absolutePath)
                 }
 
+                // ModTheSpire can load Settings before LWJGL enters its main loop. Rewrite the
+                // fixed fullscreen-priority canvas after chdir, immediately before JVM launch, so
+                // DisplayConfig.readConfig cannot observe an old/default window size.
+                measureStartupStep("sync_display_config_before_jvm") {
+                    onSurfaceSizeSync()
+                }
+
                 throwIfCancelled()
                 measureStartupStep("input_bridge_ready") {
                     CallbackBridge.nativeSetUseInputStackQueue(true)

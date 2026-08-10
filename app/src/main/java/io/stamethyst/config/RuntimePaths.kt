@@ -40,6 +40,8 @@ object RuntimePaths {
     private const val HARNESS_EXIT_REQUEST_FILE_NAME = ".harness_exit_request"
     private const val JVM_HISTOGRAM_DIR_NAME = "jvm_histograms"
     private const val LOGCAT_DIR_NAME = "logcat"
+    private const val WINDOW_DIAGNOSTICS_DIR_NAME = "window"
+    private const val WINDOW_DIAGNOSTICS_LOG_FILE_NAME = "window_diagnostics.log"
     private const val LEGACY_LOGCAT_CAPTURE_FILE_NAME = "logcat_capture.log"
     private const val LOGCAT_APP_CAPTURE_FILE_NAME = "logcat_app_capture.log"
     private const val LOGCAT_SYSTEM_CAPTURE_FILE_NAME = "logcat_system_capture.log"
@@ -276,6 +278,30 @@ object RuntimePaths {
 
     @JvmStatic
     fun logcatDir(context: Context): File = File(stsRoot(context), LOGCAT_DIR_NAME)
+
+    @JvmStatic
+    fun windowDiagnosticsDir(context: Context): File = File(stsRoot(context), WINDOW_DIAGNOSTICS_DIR_NAME)
+
+    @JvmStatic
+    fun windowDiagnosticsLog(context: Context): File =
+        File(windowDiagnosticsDir(context), WINDOW_DIAGNOSTICS_LOG_FILE_NAME)
+
+    @JvmStatic
+    fun listWindowDiagnosticsFiles(context: Context): List<File> {
+        val directory = windowDiagnosticsDir(context)
+        if (!directory.isDirectory) {
+            return listOf(windowDiagnosticsLog(context))
+        }
+        return directory.listFiles()
+            ?.asSequence()
+            ?.filter { file -> file.isFile && isWindowDiagnosticsFileName(file.name) }
+            ?.sortedWith { left, right ->
+                compareWindowDiagnosticsFileNames(left.name, right.name)
+            }
+            ?.toList()
+            .orEmpty()
+            .ifEmpty { listOf(windowDiagnosticsLog(context)) }
+    }
 
     @JvmStatic
     fun logcatCaptureLog(context: Context): File = logcatAppCaptureLog(context)
@@ -710,6 +736,7 @@ object RuntimePaths {
         jvmLogsDir(context).mkdirs()
         jvmHistogramsDir(context).mkdirs()
         logcatDir(context).mkdirs()
+        windowDiagnosticsDir(context).mkdirs()
         launcherCrashReportsDir(context).mkdirs()
         bootOverlayImagesDir(context).mkdirs()
         mtsPatchCacheDir(context).mkdirs()
@@ -738,6 +765,11 @@ object RuntimePaths {
             name.startsWith("$MEMORY_DIAGNOSTICS_LOG_FILE_NAME.")
     }
 
+    internal fun isWindowDiagnosticsFileName(name: String): Boolean {
+        return name == WINDOW_DIAGNOSTICS_LOG_FILE_NAME ||
+            name.startsWith("$WINDOW_DIAGNOSTICS_LOG_FILE_NAME.")
+    }
+
     internal fun isLauncherCrashReportFileName(name: String): Boolean {
         return name.startsWith(LAUNCHER_CRASH_REPORT_PREFIX) &&
             name.endsWith(".txt", ignoreCase = true)
@@ -764,6 +796,15 @@ object RuntimePaths {
     internal fun compareMemoryDiagnosticsFileNames(left: String, right: String): Int {
         val byRotationIndex = rotationIndexForMemoryDiagnosticsFile(left)
             .compareTo(rotationIndexForMemoryDiagnosticsFile(right))
+        if (byRotationIndex != 0) {
+            return byRotationIndex
+        }
+        return left.compareTo(right)
+    }
+
+    internal fun compareWindowDiagnosticsFileNames(left: String, right: String): Int {
+        val byRotationIndex = rotationIndexForWindowDiagnosticsFile(left)
+            .compareTo(rotationIndexForWindowDiagnosticsFile(right))
         if (byRotationIndex != 0) {
             return byRotationIndex
         }
@@ -829,6 +870,18 @@ object RuntimePaths {
             return 0
         }
         return name.substringAfter("$MEMORY_DIAGNOSTICS_LOG_FILE_NAME.", "")
+            .toIntOrNull()
+            ?: Int.MAX_VALUE
+    }
+
+    private fun rotationIndexForWindowDiagnosticsFile(name: String): Int {
+        if (!isWindowDiagnosticsFileName(name)) {
+            return Int.MAX_VALUE
+        }
+        if (name == WINDOW_DIAGNOSTICS_LOG_FILE_NAME) {
+            return 0
+        }
+        return name.substringAfter("$WINDOW_DIAGNOSTICS_LOG_FILE_NAME.", "")
             .toIntOrNull()
             ?: Int.MAX_VALUE
     }

@@ -222,6 +222,7 @@ internal object DiagnosticsArchiveBuilder {
                     "sts/memory_diagnostics/${memoryLogFile.name}"
                 )
             }
+            exportedCount += writeWindowDiagnosticsForArchive(zipOutput, context)
             RuntimePaths.listLogcatCaptureFiles(context)
                 .groupBy { if (it.name.contains("system")) "system" else "app" }
                 .values
@@ -271,7 +272,8 @@ internal object DiagnosticsArchiveBuilder {
         - feedback/：反馈提交所需的 issue 内容、请求信息和日志摘要；该目录保持反馈包原结构。
         - info/：设备信息和启动器设置。
         - logs/：JVM 日志及启动桥接、GC、堆快照、信号转储等启动器日志，JVM 日志最多保留 5 槽位。
-        - memory_diagnostics/：内存压力和内存诊断日志，最多保留 5 槽位。
+         - memory_diagnostics/：内存压力和内存诊断日志，最多保留 5 槽位。
+         - window/：游戏窗口、viewport、Surface、尺寸同步和触控坐标映射诊断日志，最多保留 3 槽位。
         - logcat/app/：应用进程 logcat，最多 5 槽位。
         - logcat/system/：系统进程 logcat，最多 5 槽位。
         - launcher_crash_reports/：启动器崩溃报告，最多 5 槽位。
@@ -564,6 +566,19 @@ internal object DiagnosticsArchiveBuilder {
             context.filesDir,
             "workshop/${task.details.summary.appId}/${task.publishedFileId}/download.log"
         )
+    }
+
+    @Throws(IOException::class)
+    internal fun writeWindowDiagnosticsForArchive(zipOutput: ZipOutputStream, context: Context): Int {
+        var exportedCount = 0
+        RuntimePaths.listWindowDiagnosticsFiles(context).forEach { windowLogFile ->
+            exportedCount += writeOptionalFile(
+                zipOutput,
+                windowLogFile,
+                "sts/window/${windowLogFile.name}"
+            )
+        }
+        return exportedCount
     }
 
     private fun rawWorkshopDownloadLogArchiveName(task: WorkshopDownloadTaskRecord): String {

@@ -80,6 +80,8 @@ internal data class MainScreenActions(
     val onUseCloudSteamCloudProgress: () -> Unit = {},
     val shouldPromptSteamCloudDirectMode: () -> Boolean = { false },
     val onSwitchSteamCloudDirectMode: () -> Unit = {},
+    val onRefreshSteamAchievements: () -> Unit = {},
+    val onUnlockShrugItOffSteamAchievement: () -> Unit = {},
     val onConnectEasyTier: (String?) -> Unit = {},
     val onDisconnectEasyTier: () -> Unit = {},
     val onRefreshEasyTierRooms: () -> Unit = {},
@@ -219,6 +221,12 @@ internal fun rememberMainScreenActions(
                 },
                 onSwitchSteamCloudDirectMode = {
                     viewModel.switchSteamCloudDirectMode(activity)
+                },
+                onRefreshSteamAchievements = {
+                    viewModel.refreshSteamAchievements(activity)
+                },
+                onUnlockShrugItOffSteamAchievement = {
+                    viewModel.unlockShrugItOffSteamAchievement(activity)
                 },
                 onConnectEasyTier = { password ->
                     val permissionIntent = EasyTierPermissionCoordinator.prepareVpnPermissionIntent(activity)

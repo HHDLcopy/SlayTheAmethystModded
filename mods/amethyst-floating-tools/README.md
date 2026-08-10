@@ -17,7 +17,7 @@ Implements the virtual scroll wheel row in the drawer. Holding the upper or lowe
 Consumes clicks that hit the floating tools UI before the base game sees them, implements lock mode by swallowing game clicks while still allowing cursor movement, and emulates right-click touch mode by swallowing the Android left-click stream and injecting right-button events. This addresses the symptom where a game-drawn overlay would otherwise click underlying cards, buttons, or screens while using the tools.
 
 5. `FloatingToolPanel` right-button drag bridge
-  When the in-game right mouse mode transforms a touch-generated left-button stream, it now also sends a held GLFW right-button event through `FloatingToolInputBridge` until the touch is released. This addresses the symptom where mods that query `Gdx.input.isButtonPressed(1)` directly, such as Slay the Perk Tree's skill-tree panning, did not receive a real right-button drag even though `InputHelper.isMouseDown_R` was set. The fix is implemented by `FloatingToolPanel.transformLeftClickToRightClick` and `FloatingToolPanel.releaseRightSurface`.
+  When the in-game right mouse mode transforms a touch-generated left-button stream, it sends a held GLFW right-button event through `FloatingToolInputBridge` until the touch is released and lets the game's normal `InputHelper` update generate the corresponding click edges. This addresses the symptom where mods that query `Gdx.input.isButtonPressed(1)` directly, such as Slay the Perk Tree's skill-tree panning, did not receive a real right-button drag, while avoiding duplicate right-click edges from the bridge and game input loop. The fix is implemented by `FloatingToolPanel.transformLeftClickToRightClick` and `FloatingToolPanel.releaseRightSurface`.
 
 ## Icon assets
 

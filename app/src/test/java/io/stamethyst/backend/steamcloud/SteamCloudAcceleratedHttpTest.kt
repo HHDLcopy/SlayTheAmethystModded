@@ -113,6 +113,19 @@ class SteamCloudAcceleratedHttpTest {
     }
 
     @Test
+    fun steamCmRouteProfile_coversDirectoryWebsocketHosts() {
+        val resolver = WattToolkitGithubRouteResolver(
+            routeProfile = SteamCmWattToolkitRouteProfile,
+            client = OkHttpClient(),
+        )
+
+        listOf("steamserver.net", "cm0-ord.steamserver.net").forEach { host ->
+            assertTrue("expected $host to be covered by the steam-cm profile", resolver.isProfileHost(host))
+        }
+        assertTrue(!resolver.isProfileHost("steamserver.net.attacker.test"))
+    }
+
+    @Test
     fun interceptor_refreshesCachedRouteAfterStaleHttpErrorAndRetriesOnce() {
         apiServer.enqueue(
             MockResponse.Builder()
@@ -409,24 +422,6 @@ class SteamCloudAcceleratedHttpTest {
             "https://steamcommunity.rmbgame.net",
             SteamCommunityWattToolkitRouteProfile.bootstrapForwardTargets.single(),
         )
-    }
-
-    @Test
-    fun protocolClient_removesWattRoutingInterceptors() {
-        val acceleratedClient = OkHttpClient.Builder()
-            .addInterceptor(
-                ExperimentalGithubDirectAccessInterceptor(
-                    routeResolvers = emptyList(),
-                    directCallFactory = OkHttpClient(),
-                ),
-            )
-            .build()
-
-        val protocolClient = SteamCloudAcceleratedHttp.createProtocolClient(acceleratedClient)
-
-        assertEquals(1, acceleratedClient.interceptors.size)
-        assertTrue(protocolClient.interceptors.isEmpty())
-        assertTrue(protocolClient.networkInterceptors.isEmpty())
     }
 
     @Test

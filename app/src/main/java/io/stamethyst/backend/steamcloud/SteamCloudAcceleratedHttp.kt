@@ -10,7 +10,6 @@ import io.stamethyst.backend.github.createWattToolkitRuntime
 import io.stamethyst.backend.network.NetworkAccelerationPolicy
 import io.stamethyst.config.LauncherConfig
 import java.io.File
-import javax.net.ssl.HttpsURLConnection
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import okhttp3.OkHttpClient
@@ -92,12 +91,21 @@ internal val SteamContentCdnWattToolkitRouteProfile = WattToolkitRouteProfile(
     allowUncheckedRoutes = true,
 )
 
+internal val SteamCmWattToolkitRouteProfile = WattToolkitRouteProfile(
+    name = "steam-cm",
+    cacheFileName = "watt-steam-cm-route-cache-v1.json",
+    supportedHosts = setOf("steamserver.net"),
+    bootstrapForwardTargets = emptyList(),
+    supportedHostSuffixes = setOf(".steamserver.net"),
+)
+
 private val defaultSteamCloudWattToolkitRouteProfiles = listOf(
     SteamCommunityWattToolkitRouteProfile,
     SteamStoreWattToolkitRouteProfile,
     SteamImageCdnWattToolkitRouteProfile,
     SteamMediaWattToolkitRouteProfile,
     SteamContentCdnWattToolkitRouteProfile,
+    SteamCmWattToolkitRouteProfile,
 )
 
 object SteamCloudAcceleratedHttp {
@@ -153,22 +161,6 @@ object SteamCloudAcceleratedHttp {
             )
             .build()
     }
-
-    /**
-     * Builds the official Steam protocol client from a shared HTTP client.
-     *
-     * Steam CM directory responses determine the websocket endpoint used by
-     * JavaSteam and the protocol module. They must not be rewritten by Watt
-     * forwarding rules intended for Steam web/CDN traffic.
-     */
-    @JvmStatic
-    fun createProtocolClient(baseClient: OkHttpClient): OkHttpClient = baseClient.newBuilder()
-        .apply {
-            interceptors().clear()
-            networkInterceptors().clear()
-            hostnameVerifier(HttpsURLConnection.getDefaultHostnameVerifier())
-        }
-        .build()
 
     @JvmStatic
     fun clearRuntimeCacheForTests() {

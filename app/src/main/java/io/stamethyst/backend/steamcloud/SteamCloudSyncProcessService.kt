@@ -253,6 +253,9 @@ class SteamCloudSyncProcessService : Service() {
                 putLong(EXTRA_CHECKED_AT_MS, System.currentTimeMillis())
             })
             updateNotification(summary)
+            if (action == ACTION_CHECK_AND_SYNC && category != SteamCloudFailureCategory.CANCELLED) {
+                maybeShowBackgroundCheckToast(R.string.main_steam_cloud_background_check_failed_toast)
+            }
         } finally {
             running = false
             workerThread = null
@@ -288,6 +291,9 @@ class SteamCloudSyncProcessService : Service() {
                         getString(R.string.main_steam_cloud_bar_title_up_to_date)
                     }
                 )
+                if (plan.conflicts.isNotEmpty()) {
+                    maybeShowBackgroundCheckToast(R.string.main_steam_cloud_background_check_conflict_toast)
+                }
                 false
             } else {
                 val direction = resolveAutomaticSyncDirection(plan)
@@ -458,13 +464,19 @@ class SteamCloudSyncProcessService : Service() {
     }
 
     private fun maybeShowCompletionToastInGame() {
-        if (!GameLaunchReturnTracker.isGameProcessRunning(applicationContext)) {
-            return
-        }
+        maybeShowToastInGame(R.string.main_steam_cloud_sync_completed_toast)
+    }
+
+    private fun maybeShowBackgroundCheckToast(messageRes: Int) {
+        maybeShowToastInGame(messageRes)
+    }
+
+    private fun maybeShowToastInGame(messageRes: Int) {
+        if (!GameLaunchReturnTracker.isGameProcessRunning(applicationContext)) return
         Handler(Looper.getMainLooper()).post {
             Toast.makeText(
                 applicationContext,
-                getString(R.string.main_steam_cloud_sync_completed_toast),
+                getString(messageRes),
                 Toast.LENGTH_SHORT,
             ).show()
         }

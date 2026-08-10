@@ -380,6 +380,67 @@ class OkHttpSteamCmSession(
         }
     }
 
+    override suspend fun <T : MessageLite> sendClientMessage(
+        emsg: Int,
+        request: MessageLite,
+        responseEmsg: Int,
+        parser: Parser<T>,
+    ): T = sendClientMessage(emsg, request, responseEmsg, parser, null)
+
+    override suspend fun <T : MessageLite> sendClientMessage(
+        emsg: Int,
+        request: MessageLite,
+        responseEmsg: Int,
+        parser: Parser<T>,
+        routingAppId: UInt?,
+    ): T = retryRecoverableRequest {
+        val session = currentSession.value
+            ?: throw SteamProtocolException("Steam CM session is not logged on")
+        val sourceJobId = nextJobId.getAndIncrement()
+        val response = CompletableDeferred<T>()
+        pendingRequests[sourceJobId] = PendingRequest(
+            methodName = "EMsg.$emsg",
+            expectedEmsg = responseEmsg,
+            parser = parser,
+            deferred = response,
+        )
+        val header = CMsgProtoBufHeader.newBuilder()
+            .setClientSessionid(session.sessionId)
+            .setSteamid(session.steamId)
+            .setJobidSource(sourceJobId)
+            .apply { routingAppId?.let { setRoutingAppid(it.toInt()) } }
+            .build()
+        val packet = SteamPacketCodec.encode(
+            emsg = emsg,
+            header = header,
+            body = request,
+        )
+        if (webSocket?.send(packet.toByteString()) != true) {
+            pendingRequests.remove(sourceJobId)
+            throw SteamProtocolException("Failed to send EMsg.$emsg")
+        }
+        try {
+            withTimeout(REQUEST_TIMEOUT_MS) { response.await() }
+        } catch (error: Throwable) {
+            pendingRequests.remove(sourceJobId)
+            throw error
+        }
+    }
+
+    override suspend fun sendClientMessage(emsg: Int, request: MessageLite) {
+        val session = currentSession.value
+            ?: throw SteamProtocolException("Steam CM session is not logged on")
+        val packet = SteamPacketCodec.encode(
+            emsg = emsg,
+            header = CMsgProtoBufHeader.newBuilder()
+                .setClientSessionid(session.sessionId)
+                .setSteamid(session.steamId)
+                .build(),
+            body = request,
+        )
+        check(webSocket?.send(packet.toByteString()) == true) { "Failed to send EMsg.$emsg" }
+    }
+
     override suspend fun requestDepotDecryptionKey(appId: UInt, depotId: UInt): ByteArray = retryRecoverableRequest {
         val session = currentSession.value
             ?: throw SteamProtocolException("Steam CM session is not connected")

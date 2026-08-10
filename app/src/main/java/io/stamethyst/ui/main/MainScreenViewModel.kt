@@ -73,6 +73,7 @@ import io.stamethyst.backend.mods.importing.patches.ImportPatchRegistry
 import io.stamethyst.backend.steam.SteamAccountLogoutCoordinator
 import io.stamethyst.backend.steamcloud.SteamAuthenticationCircuitBreaker
 import io.stamethyst.backend.steamcloud.SteamCloudAuthStore
+import io.stamethyst.backend.steamcloud.SteamAchievementService
 import io.stamethyst.backend.steamcloud.SteamCloudFailureCategory
 import io.stamethyst.backend.steamcloud.SteamCloudNetworkEnvironment
 import io.stamethyst.backend.steamcloud.SteamCloudSyncDirection
@@ -283,6 +284,17 @@ class MainScreenViewModel : ViewModel() {
         val message: String,
     )
 
+    data class SteamAchievementUi(
+        val accountName: String = "",
+        val achievements: List<SteamAchievementService.Achievement> = emptyList(),
+        val loading: Boolean = false,
+        val errorSummary: String = "",
+        val fromCache: Boolean = false,
+        val lastLoadedAtMs: Long? = null,
+    ) {
+        val unlockedCount: Int get() = achievements.count { it.unlocked }
+    }
+
     private data class ImportedStsJarFingerprint(
         val absolutePath: String,
         val exists: Boolean,
@@ -322,6 +334,7 @@ class MainScreenViewModel : ViewModel() {
         val modAssociationState: ModAssociationState = ModAssociationState(),
         val showModFileNameRemovalNotice: Boolean = false,
         val steamCloudIndicator: SteamCloudIndicatorUi = SteamCloudIndicatorUi(),
+        val steamAchievements: SteamAchievementUi = SteamAchievementUi(),
         val easyTierIndicator: EasyTierIndicatorUi = EasyTierIndicatorUi(),
         val easyTierRoomBrowser: EasyTierRoomBrowserUi = EasyTierRoomBrowserUi(),
         val pendingEasyTierKickDialog: EasyTierKickDialogUi? = null,
@@ -363,6 +376,7 @@ class MainScreenViewModel : ViewModel() {
     val effects = _effects.asSharedFlow()
     private val suggestionExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val diagnosticsExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val steamAchievementExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val launchExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val importedStsJarValidationExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val workshopUpdateExecutor: ExecutorService = Executors.newSingleThreadExecutor()
@@ -431,6 +445,8 @@ class MainScreenViewModel : ViewModel() {
     @Volatile
     private var easyTierRoomBrowserReloadPendingShowLoading = false
     private var lastQueuedEasyTierKickKey = ""
+    @Volatile
+    private var steamAchievementLoadInFlight = false
 
     var uiState by mutableStateOf(UiState())
         private set
@@ -978,6 +994,156 @@ class MainScreenViewModel : ViewModel() {
         }
     }
 
+    fun refreshSteamAchievements(host: Activity) {
+        if (steamAchievementLoadInFlight) return
+        val auth = SteamCloudAuthStore.readAuthMaterial(host)
+        if (auth == null || auth.steamId64.isBlank()) {
+            uiState = uiState.copy(
+                steamAchievements = uiState.steamAchievements.copy(
+                    accountName = "",
+                    loading = false,
+                    errorSummary = host.getString(R.string.main_steam_achievements_sign_in_required),
+                )
+            )
+            return
+        }
+        val previous = uiState.steamAchievements
+        steamAchievementLoadInFlight = true
+        uiState = uiState.copy(
+            steamAchievements = previous.copy(
+                accountName = auth.accountName,
+                loading = true,
+                errorSummary = "",
+            )
+        )
+        steamAchievementExecutor.execute {
+            val cmResult = runCatching {
+                SteamAchievementService.fetchViaCm(
+                    context = host.applicationContext,
+                    accountName = auth.accountName,
+                    refreshToken = auth.refreshToken,
+                    steamId64 = auth.steamId64,
+                )
+            }
+            val cached = if (cmResult.isFailure) {
+                SteamAchievementService.readCached(host.applicationContext, auth.steamId64)
+            } else {
+                null
+            }
+            host.runOnUiThread {
+                steamAchievementLoadInFlight = false
+                val current = uiState.steamAchievements
+                cmResult.onSuccess { snapshot ->
+                    uiState = uiState.copy(
+                        steamAchievements = current.copy(
+                            accountName = auth.accountName,
+                            achievements = snapshot.achievements,
+                            loading = false,
+                            errorSummary = "",
+                            fromCache = false,
+                            lastLoadedAtMs = snapshot.fetchedAtMs,
+                        )
+                    )
+                }.onFailure { error ->
+                    if (cached != null) {
+                        uiState = uiState.copy(
+                            steamAchievements = current.copy(
+                                accountName = auth.accountName,
+                                achievements = cached.achievements,
+                                loading = false,
+                                errorSummary = host.getString(
+                                    R.string.main_steam_achievements_cache_refresh_failed,
+                                    steamAchievementErrorMessage(error),
+                                ),
+                                fromCache = true,
+                                lastLoadedAtMs = cached.fetchedAtMs,
+                            )
+                        )
+                    } else {
+                        uiState = uiState.copy(
+                            steamAchievements = current.copy(
+                                accountName = auth.accountName,
+                                loading = false,
+                                errorSummary = error.message ?: host.getString(R.string.main_steam_achievements_load_failed),
+                                fromCache = false,
+                            )
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    fun unlockShrugItOffSteamAchievement(host: Activity) {
+        if (steamAchievementLoadInFlight) return
+        val auth = SteamCloudAuthStore.readAuthMaterial(host)
+        if (
+            auth == null ||
+            auth.accountName.isBlank() ||
+            auth.refreshToken.isBlank() ||
+            auth.steamId64.isBlank()
+        ) {
+            uiState = uiState.copy(
+                steamAchievements = uiState.steamAchievements.copy(
+                    accountName = "",
+                    loading = false,
+                    errorSummary = host.getString(R.string.main_steam_achievements_sign_in_required),
+                ),
+            )
+            return
+        }
+        val previous = uiState.steamAchievements
+        steamAchievementLoadInFlight = true
+        uiState = uiState.copy(
+            steamAchievements = previous.copy(
+                accountName = auth.accountName,
+                loading = true,
+                errorSummary = "",
+            ),
+        )
+        steamAchievementExecutor.execute {
+            val result = runCatching {
+                SteamAchievementService.unlockShrugItOffViaCm(
+                    context = host.applicationContext,
+                    accountName = auth.accountName,
+                    refreshToken = auth.refreshToken,
+                    steamId64 = auth.steamId64,
+                )
+            }
+            host.runOnUiThread {
+                steamAchievementLoadInFlight = false
+                val current = uiState.steamAchievements
+                result.onSuccess { snapshot ->
+                    uiState = uiState.copy(
+                        steamAchievements = current.copy(
+                            accountName = auth.accountName,
+                            achievements = snapshot.achievements,
+                            loading = false,
+                            errorSummary = host.getString(R.string.main_steam_achievements_test_unlock_succeeded),
+                            fromCache = false,
+                            lastLoadedAtMs = snapshot.fetchedAtMs,
+                        ),
+                    )
+                }.onFailure { error ->
+                    uiState = uiState.copy(
+                        steamAchievements = current.copy(
+                            accountName = auth.accountName,
+                            loading = false,
+                            errorSummary = error.message
+                                ?: host.getString(R.string.main_steam_achievements_test_unlock_failed),
+                            fromCache = false,
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
+    private fun steamAchievementErrorMessage(error: Throwable): String {
+        val message = error.message?.trim().orEmpty()
+        return message.ifBlank { error::class.java.simpleName }
+    }
+
     fun selectEasyTierRoom(host: Activity, roomId: String) {
         val normalized = roomId.trim()
         persistEasyTierRoomSelection(host, normalized)
@@ -1391,7 +1557,7 @@ class MainScreenViewModel : ViewModel() {
         if (uiState.busy || launchInFlight) {
             return LaunchRequestAction.NONE
         }
-        if (steamCloudCheckInFlight || steamCloudSyncInFlight) {
+        if (steamCloudSyncInFlight) {
             pendingSteamCloudAutoLaunchAfterSync =
                 LauncherPreferences.isSteamCloudAutoLaunchAfterSyncEnabled(host)
             return LaunchRequestAction.OPEN_STEAM_CLOUD_SHEET
@@ -2520,7 +2686,7 @@ class MainScreenViewModel : ViewModel() {
     }
 
     fun onLaunch(host: Activity) {
-        if (uiState.steamCloudIndicator.operationInFlight) {
+        if (steamCloudSyncInFlight) {
             return
         }
         if (!tryBeginLaunchRequest()) {

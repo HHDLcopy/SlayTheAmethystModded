@@ -162,12 +162,9 @@ internal object SteamCloudAuthCoordinator {
             readTimeoutMs = 60_000L,
             callTimeoutMs = 60_000L,
         )
-        val protocolClient = SteamCloudAcceleratedHttp.createProtocolClient(httpClient)
         val authenticationClient = SteamAuthenticationClient(
-            // Directory lookups are plain HTTPS and benefit from acceleration;
-            // only the CM websocket session needs the bare protocol client.
             directoryClient = SteamDirectoryClient(httpClient),
-            sessionFactory = { OkHttpSteamCmSession(protocolClient) },
+            sessionFactory = { OkHttpSteamCmSession(httpClient) },
         )
         val protocolEvents = mutableListOf<String>()
         val debugLogger: (String) -> Unit = { line ->

@@ -310,8 +310,6 @@ final class FloatingToolPanel {
                 true
             );
             clearLeftFields();
-            InputHelper.justClickedRight = true;
-            InputHelper.isMouseDown_R = true;
             return;
         }
         if (!rightSurfaceDown) {
@@ -320,11 +318,8 @@ final class FloatingToolPanel {
         if (InputHelper.justReleasedClickLeft || !InputHelper.isMouseDown) {
             releaseRightSurface();
             clearLeftFields();
-            InputHelper.justReleasedClickRight = true;
-            InputHelper.isMouseDown_R = false;
         } else {
             clearLeftFields();
-            InputHelper.isMouseDown_R = true;
         }
     }
 

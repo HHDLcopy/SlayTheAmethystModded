@@ -107,7 +107,7 @@ public final class SteamCloudPhase0ManifestProbe {
         try {
             proxySettings = ProxySettings.parse(proxyUrl);
             stage = "Create Steam client";
-            runner = new Runner(proxySettings, lastCmEndpointFile);
+            runner = new Runner(context, proxySettings, lastCmEndpointFile);
             stage = "Steam connect";
             runner.start();
             stage = "Steam logon";
@@ -759,6 +759,7 @@ public final class SteamCloudPhase0ManifestProbe {
         private final CallbackManager callbackManager;
         private final SteamUser steamUser;
         private final SteamCloud steamCloud;
+        private final SteamCloudProtocolClient protocolClient;
         private final ProxySettings proxySettings;
         private final File lastCmEndpointFile;
         private final EnumSet<ProtocolTypes> protocolTypes;
@@ -778,149 +779,78 @@ public final class SteamCloudPhase0ManifestProbe {
         private volatile String webSocketPreflightDescription = "<not run>";
         private Thread callbackThread;
 
-        private Runner(ProxySettings proxySettings, File lastCmEndpointFile) {
+        private Runner(Context context, ProxySettings proxySettings, File lastCmEndpointFile) {
             this.proxySettings = proxySettings;
             this.lastCmEndpointFile = lastCmEndpointFile;
             this.protocolTypes = resolveProtocolTypes(proxySettings);
             applyProxySystemProperties(proxySettings);
 
-            OkHttpClient.Builder httpClientBuilder = new OkHttpClient.Builder()
-                .connectTimeout(HTTP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-                .readTimeout(HTTP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-                .writeTimeout(HTTP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-                .callTimeout(HTTP_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-                .retryOnConnectionFailure(true);
+            OkHttpClient.Builder httpClientBuilder = SteamCloudAcceleratedHttp.createClient(
+                context,
+                HTTP_TIMEOUT_MS,
+                HTTP_TIMEOUT_MS,
+                HTTP_TIMEOUT_MS
+            ).newBuilder();
             if (proxySettings != null) {
                 httpClientBuilder.proxy(proxySettings.proxy);
             }
             httpClient = httpClientBuilder.build();
-            steamConfiguration = SteamConfiguration.create(builder -> {
-                builder.withHttpClient(httpClient);
-                builder.withConnectionTimeout(CONNECT_TIMEOUT_MS);
-                builder.withProtocolTypes(protocolTypes);
-            });
-            javaSteamLogCollector = new JavaSteamLogCollector();
-            LogManager.addListener(javaSteamLogCollector);
-            steamClient = new SteamClient(steamConfiguration);
-            callbackManager = new CallbackManager(steamClient);
-            steamUser = Objects.requireNonNull(steamClient.getHandler(SteamUser.class), "SteamUser handler");
-            steamCloud = Objects.requireNonNull(steamClient.getHandler(SteamCloud.class), "SteamCloud handler");
-
-            callbackManager.subscribe(ConnectedCallback.class, callback -> {
-                connectedCallbackReceived = true;
-                Log.i(TAG, "Connected to Steam.");
-                connectedFuture.complete(null);
-            });
-            callbackManager.subscribe(DisconnectedCallback.class, callback -> {
-                String reason = callback.isUserInitiated() ? "user initiated" : "unexpected";
-                disconnectedDescription = reason;
-                Log.i(TAG, "Disconnected from Steam (" + reason + ").");
-                if (!shuttingDown.get()) {
-                    IllegalStateException error = new IllegalStateException(
-                        "Steam disconnected (" + reason + ") during " + currentStage + "."
-                    );
-                    disconnectedFuture.completeExceptionally(error);
-                    connectedFuture.completeExceptionally(error);
-                    loggedOnFuture.completeExceptionally(error);
-                }
-            });
-            callbackManager.subscribe(LoggedOnCallback.class, callback -> {
-                loggedOnResult = callback.getResult();
-                Log.i(TAG, "Steam logon result: " + callback.getResult());
-                loggedOnFuture.complete(callback);
-            });
-            callbackManager.subscribe(LoggedOffCallback.class, callback -> {
-                Log.i(TAG, "Steam logged off: " + callback.getResult());
-                loggedOffFuture.complete(callback);
-            });
+            protocolClient = new SteamCloudProtocolClient(httpClient);
+            steamConfiguration = null;
+            steamClient = null;
+            callbackManager = null;
+            steamUser = null;
+            steamCloud = null;
+            javaSteamLogCollector = null;
         }
 
         private void start() throws Exception {
             running.set(true);
-            callbackThread = new Thread(() -> {
-                while (running.get()) {
-                    try {
-                        callbackManager.runWaitCallbacks(CALLBACK_POLL_TIMEOUT_MS);
-                    } catch (Throwable error) {
-                        if (shuttingDown.get() || !running.get()) {
-                            break;
-                        }
-                        Log.e(TAG, "Steam callback loop failed unexpectedly.", error);
-                        connectedFuture.completeExceptionally(error);
-                        loggedOnFuture.completeExceptionally(error);
-                        disconnectedFuture.completeExceptionally(error);
-                        break;
-                    }
-                }
-            }, "steam-cloud-phase0-callbacks");
-            callbackThread.setDaemon(true);
-            callbackThread.start();
-
             Log.i(
                 TAG,
-                "Connecting to Steam for Phase 0 manifest probe. protocol="
-                    + "websocket"
+                "Preparing accelerated Steam CM transport for Phase 0 manifest probe. protocol="
+                    + "OkHttp websocket"
                     + ", proxy="
                     + (proxySettings == null ? "none" : proxySettings.describe())
             );
-            ServerRecord serverRecord = selectWebSocketServerRecord();
-            if (serverRecord == null) {
-                throw new IllegalStateException(
-                    "Steam server list returned no websocket CM candidate, and no fallback websocket endpoint was available."
-                );
-            }
-            resolvedServerDescription = describeServerRecord(serverRecord);
-            if (serverRecord.getProtocolTypes().contains(ProtocolTypes.WEB_SOCKET)) {
-                webSocketPreflightDescription = runWebSocketPreflight(serverRecord);
-            } else {
-                webSocketPreflightDescription = "skipped (candidate is not websocket)";
-            }
-            steamClient.connect(serverRecord);
-            waitForStage(connectedFuture, CONNECT_TIMEOUT_MS, "Steam connect");
-            persistResolvedWebSocketEndpoint(serverRecord);
+            connectedCallbackReceived = true;
+            candidateSourceDescription = "Steam directory via accelerated OkHttp";
+            resolvedServerDescription = "Steam directory websocket CM";
+            webSocketPreflightDescription = "not separately run (protocol session validates CM connection)";
         }
 
         private void logOn(String accountName, String refreshToken) throws Exception {
-            LogOnDetails details = new LogOnDetails();
-            details.setUsername(accountName);
-            details.setAccessToken(refreshToken);
-            details.setShouldRememberPassword(true);
-            details.setLoginID(149);
-            steamUser.logOn(details);
-            LoggedOnCallback callback = waitForStage(loggedOnFuture, LOGON_TIMEOUT_MS, "Steam logon");
-            if (callback.getResult() != EResult.OK) {
-                throw new IllegalStateException("Steam logon failed: " + callback.getResult());
-            }
+            currentStage = "Steam logon";
+            protocolClient.logOn(accountName, refreshToken, "");
+            loggedOnResult = EResult.OK;
         }
 
         private List<RemoteFileEntry> listFiles(int appId) throws Exception {
-            AppFileChangeList changeList = waitForStage(
-                steamCloud.getAppFileListChange(appId),
-                RPC_TIMEOUT_MS,
-                "GetAppFileChangelist"
-            );
+            currentStage = "GetAppFileChangelist";
+            in.dragonbra.javasteam.protobufs.steamclient.SteammessagesCloudSteamclient.CCloud_GetAppFileChangelist_Response changeList =
+                protocolClient.getAppFileChangelist(appId);
 
             List<RemoteFileEntry> entries = new ArrayList<>();
-            for (AppFileInfo file : changeList.getFiles()) {
+            for (in.dragonbra.javasteam.protobufs.steamclient.SteammessagesCloudSteamclient.CCloud_AppFileInfo file : changeList.getFilesList()) {
                 String pathPrefix = "";
-                if (file.getPathPrefixIndex() >= 0 && file.getPathPrefixIndex() < changeList.getPathPrefixes().size()) {
-                    pathPrefix = changeList.getPathPrefixes().get(file.getPathPrefixIndex());
+                if (file.getPathPrefixIndex() < changeList.getPathPrefixesCount()) {
+                    pathPrefix = changeList.getPathPrefixes(file.getPathPrefixIndex());
                 }
                 String machineName = "";
-                if (file.getMachineNameIndex() >= 0 && file.getMachineNameIndex() < changeList.getMachineNames().size()) {
-                    machineName = changeList.getMachineNames().get(file.getMachineNameIndex());
+                if (file.getMachineNameIndex() < changeList.getMachineNamesCount()) {
+                    machineName = changeList.getMachineNames(file.getMachineNameIndex());
                 }
-                String remotePath = joinRemotePath(pathPrefix, file.getFilename());
+                String remotePath = joinRemotePath(pathPrefix, file.getFileName());
                 entries.add(
                     new RemoteFileEntry(
                         -1,
                         remotePath,
                         remotePath.replace('\\', '/'),
-                        file.getFilename(),
+                        file.getFileName(),
                         pathPrefix,
                         machineName,
                         file.getRawFileSize(),
-                        file.getTimestamp().toInstant(),
+                        Instant.ofEpochSecond(file.getTimeStamp()),
                         file.getPersistState().name()
                     )
                 );
@@ -969,11 +899,11 @@ public final class SteamCloudPhase0ManifestProbe {
         }
 
         private String getJavaSteamLastLogDescription() {
-            return javaSteamLogCollector.describeLastLog();
+            return "<not applicable: accelerated protocol CM>";
         }
 
         private String getJavaSteamLastErrorDescription() {
-            return javaSteamLogCollector.describeLastError();
+            return "<not applicable: accelerated protocol CM>";
         }
 
         private ServerRecord selectWebSocketServerRecord() throws IOException {
@@ -1020,7 +950,7 @@ public final class SteamCloudPhase0ManifestProbe {
         }
 
         private void appendJavaSteamDiagnostics(List<String> lines) {
-            javaSteamLogCollector.appendSummaryLines(lines);
+            lines.add("JavaSteam Diagnostics: <not applicable: accelerated protocol CM>");
         }
 
         private String describeServerRecord(ServerRecord serverRecord) {
@@ -1284,26 +1214,7 @@ public final class SteamCloudPhase0ManifestProbe {
         public void close() {
             shuttingDown.set(true);
             running.set(false);
-            LogManager.removeListener(javaSteamLogCollector);
-
-            Thread thread = callbackThread;
-            if (thread != null) {
-                thread.interrupt();
-            }
-
-            try {
-                steamClient.disconnect();
-            } catch (Throwable ignored) {
-                // Best effort.
-            }
-
-            if (thread != null) {
-                try {
-                    thread.join(1_000L);
-                } catch (InterruptedException error) {
-                    Thread.currentThread().interrupt();
-                }
-            }
+            protocolClient.close();
             applyProxySystemProperties(null);
         }
 

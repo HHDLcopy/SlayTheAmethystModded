@@ -233,6 +233,7 @@ private fun LauncherGamePage(
     onModSizeClick: () -> Unit,
     onSteamCloudClick: () -> Unit,
     onEasyTierClick: () -> Unit,
+    onSteamAchievementsClick: () -> Unit,
     onLaunch: () -> Unit,
 ) {
     val steamCloudIndicator = uiState.steamCloudIndicator
@@ -321,6 +322,11 @@ private fun LauncherGamePage(
                 EasyTierOverviewCard(
                     indicator = easyTierIndicator,
                     onClick = onEasyTierClick,
+                )
+
+                SteamAchievementOverviewCard(
+                    state = uiState.steamAchievements,
+                    onClick = onSteamAchievementsClick,
                 )
             }
         }
@@ -4312,6 +4318,7 @@ private fun LauncherMainScreenContent(
         minimumCompatibleVersion = minimumOnlineLobbyCompatibleVersion,
     )
     var showEasyTierBottomSheet by remember { mutableStateOf(false) }
+    var showSteamAchievementsBottomSheet by remember { mutableStateOf(false) }
     var showEasyTierCompatibilityUpdateDialog by remember { mutableStateOf(false) }
     var easyTierRoomLoadBaselineAtOpen by remember { mutableStateOf<Long?>(null) }
     var steamCloudAutoRetryAttemptIndex by remember { mutableIntStateOf(0) }
@@ -4340,6 +4347,7 @@ private fun LauncherMainScreenContent(
     val easyTierInitialLoadPending = easyTierBottomSheetVisible &&
         easyTierRoomBrowser.lastLoadedAtMs == easyTierRoomLoadBaselineAtOpen
     val easyTierBottomSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val steamAchievementsBottomSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var batchEditBarState by remember { mutableStateOf<BatchEditBarState?>(null) }
     var batchEditBarHeightPx by remember { mutableIntStateOf(0) }
     val batchSelectionMode = batchEditBarState != null
@@ -4426,6 +4434,12 @@ private fun LauncherMainScreenContent(
     LaunchedEffect(uiState.easyTierIndicator.visible) {
         if (!uiState.easyTierIndicator.visible) {
             showEasyTierBottomSheet = false
+        }
+    }
+
+    LaunchedEffect(showSteamAchievementsBottomSheet) {
+        if (showSteamAchievementsBottomSheet) {
+            actions.onRefreshSteamAchievements()
         }
     }
 
@@ -4552,14 +4566,17 @@ private fun LauncherMainScreenContent(
                             onSteamCloudClick = {
                                 showSteamCloudBottomSheet = true
                             },
-                            onEasyTierClick = {
+                             onEasyTierClick = {
                                 if (easyTierLauncherUpdateRequired) {
                                     showEasyTierCompatibilityUpdateDialog = true
                                 } else {
                                     easyTierRoomLoadBaselineAtOpen = easyTierRoomBrowser.lastLoadedAtMs
                                     showEasyTierBottomSheet = true
-                                }
-                            },
+                                 }
+                             },
+                             onSteamAchievementsClick = {
+                                 showSteamAchievementsBottomSheet = true
+                             },
                             onLaunch = {
                                 if (actions.onLaunch() == LaunchRequestAction.OPEN_STEAM_CLOUD_SHEET) {
                                     showSteamCloudBottomSheet = true
@@ -4733,6 +4750,20 @@ private fun LauncherMainScreenContent(
                 onOpenTutorialWorkshopDetails = onOpenTutorialWorkshopDetails,
                 onDownloadTutorialWorkshopItem = onDownloadTutorialWorkshopItem,
                 initialLoading = easyTierInitialLoadPending,
+            )
+        }
+    }
+
+    if (showSteamAchievementsBottomSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showSteamAchievementsBottomSheet = false },
+            sheetState = steamAchievementsBottomSheetState,
+            sheetGesturesEnabled = false,
+        ) {
+            SteamAchievementBottomSheetContent(
+                state = uiState.steamAchievements,
+                onRefresh = actions.onRefreshSteamAchievements,
+                onUnlockShrugItOff = actions.onUnlockShrugItOffSteamAchievement,
             )
         }
     }

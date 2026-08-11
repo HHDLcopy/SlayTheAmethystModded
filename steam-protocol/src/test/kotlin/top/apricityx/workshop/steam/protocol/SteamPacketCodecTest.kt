@@ -16,6 +16,19 @@ class SteamPacketCodecTest {
     }
 
     @Test
+    fun clientGamesPlayedUsesSteamCmMessageId() {
+        assertEquals(5410, SteamPacketCodec.emsgClientGamesPlayedWithDataBlob)
+
+        val packet = SteamPacketCodec.encode(
+            emsg = SteamPacketCodec.emsgClientGamesPlayedWithDataBlob,
+            header = CMsgProtoBufHeader.getDefaultInstance(),
+            body = Empty.getDefaultInstance(),
+        )
+
+        assertEquals(5410, SteamPacketCodec.peekBaseMessageId(packet))
+    }
+
+    @Test
     fun clientLogonUsesCurrentSteamProtocolVersion() {
         assertEquals(65580, SteamPacketCodec.clientLogonProtocol)
     }

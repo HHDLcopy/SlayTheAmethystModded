@@ -366,6 +366,9 @@ fun LauncherDeveloperSettingsScreen(
         onLocalTestCloudControlEnabledChanged = { enabled ->
             viewModel.onLocalTestCloudControlEnabledChanged(activity, enabled)
         },
+        onSteamAchievementDebugModeEnabledChanged = { enabled ->
+            viewModel.onSteamAchievementDebugModeEnabledChanged(activity, enabled)
+        },
         onLocalTestEndpointsChanged = { onlineServiceBaseUrl, configServerUrl, entryNodeUrl ->
             viewModel.onLocalTestEndpointsChanged(
                 activity,

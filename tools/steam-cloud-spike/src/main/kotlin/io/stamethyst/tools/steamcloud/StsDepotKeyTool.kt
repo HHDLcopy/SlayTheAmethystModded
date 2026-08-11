@@ -46,7 +46,8 @@ fun main(args: Array<String>) {
             when (parsed.command) {
                 ToolCommand.DepotKey -> StsDepotKeyTool(parsed).run()
                 ToolCommand.RefreshToken -> SteamRefreshTokenTool(parsed).run()
-                ToolCommand.AchievementUnlock -> SteamAchievementUnlockTool(parsed).run()
+                ToolCommand.AchievementUnlock -> SteamAchievementMutationTool(parsed, AchievementMutation.Unlock).run()
+                ToolCommand.AchievementLock -> SteamAchievementMutationTool(parsed, AchievementMutation.Lock).run()
             }
         }
     }.onFailure { error ->
@@ -64,6 +65,7 @@ private enum class ToolCommand(
     DepotKey("fetch Steam depot key"),
     RefreshToken("retrieve Steam refresh token"),
     AchievementUnlock("run the restricted Steam achievement test"),
+    AchievementLock("run the restricted Steam achievement lock test"),
 }
 
 private class StsDepotKeyTool(
@@ -146,12 +148,22 @@ private class SteamRefreshTokenTool(
     }
 }
 
-private class SteamAchievementUnlockTool(
+private enum class AchievementMutation(
+    val commandLabel: String,
+    val confirmationFlag: String,
+    val targetBitSet: Boolean,
+) {
+    Unlock("achievementUnlock", "--confirm-shrug-it-off", true),
+    Lock("achievementLock", "--confirm-lock-shrug-it-off", false),
+}
+
+private class SteamAchievementMutationTool(
     private val args: ParsedArgs,
+    private val mutation: AchievementMutation,
 ) {
     suspend fun run() {
-        require(args.confirmShrugItOff || args.inspectAchievementSchema) {
-            "Refusing achievement mutation without --confirm-shrug-it-off."
+        require(args.isConfirmed(mutation) || args.inspectAchievementSchema) {
+            "Refusing achievement mutation without ${mutation.confirmationFlag}."
         }
         val envFileValues = readCredentialEnvFiles(args)
         val merged = MergedConfig(args, envFileValues)
@@ -161,7 +173,7 @@ private class SteamAchievementUnlockTool(
 
         OkHttpSteamCmSession(client).use { session ->
             session.connectWithRefreshToken(directoryClient.loadServers(), account)
-            println("achievementUnlock.stage=initial_read")
+            println("${mutation.commandLabel}.stage=initial_read")
             val initial = getUserStats(session, account.steamId)
             if (args.inspectAchievementSchema) {
                 println("achievementSchemaInspection=completed steamId64=${account.steamId}")
@@ -173,17 +185,22 @@ private class SteamAchievementUnlockTool(
                         "Re-run with --inspect-achievement-schema to perform a read-only schema inspection.",
                 )
 
-            // Steam omits untouched/default-valued stats from GetUserStats. For a bitfield stat,
-            // the protocol default is zero; preserve any returned bits and set only the target bit.
+            // Steam omits untouched/default-valued stats from GetUserStats. Preserve all unrelated
+            // bits and modify only the explicitly confirmed achievement bit.
             val currentValue = initial.statValues[target.statId] ?: 0
-            val requestedValue = currentValue or target.mask
+            val requestedValue = if (mutation.targetBitSet) {
+                currentValue or target.mask
+            } else {
+                currentValue and target.mask.inv()
+            }
             if (requestedValue == currentValue) {
-                println("achievement=$SHRUG_IT_OFF_API_NAME status=target_bit_already_set steamId64=${account.steamId}")
+                val status = if (mutation.targetBitSet) "target_bit_already_set" else "target_bit_already_clear"
+                println("achievement=$SHRUG_IT_OFF_API_NAME status=$status steamId64=${account.steamId}")
                 return
             }
 
             println(
-                "achievementUnlock.stage=store_request statId=${target.statId} " +
+                "${mutation.commandLabel}.stage=store_request statId=${target.statId} " +
                     "previousValue=$currentValue requestedValue=$requestedValue",
             )
             val storeResponse = storeUserStat(
@@ -193,7 +210,7 @@ private class SteamAchievementUnlockTool(
                 statId = target.statId,
                 statValue = requestedValue,
             )
-            println("achievementUnlock.stage=store_response")
+            println("${mutation.commandLabel}.stage=store_response")
             require(!storeResponse.hasEresult() || storeResponse.eresult == EResult.OK.code()) {
                 "Steam CM StoreUserStats failed: ${storeResponse.eresult}"
             }
@@ -204,12 +221,14 @@ private class SteamAchievementUnlockTool(
                 "Steam CM StoreUserStats validation failed for stat ${storeResponse.getStatsFailedValidation(0).statId}."
             }
 
-            println("achievementUnlock.stage=verification_read")
+            println("${mutation.commandLabel}.stage=verification_read")
             val verified = getUserStats(session, account.steamId)
-            require((verified.statValues[target.statId] ?: 0) and target.mask != 0) {
-                "Steam CM accepted the write but did not confirm the $SHRUG_IT_OFF_API_NAME stat bit."
+            val targetBitSet = (verified.statValues[target.statId] ?: 0) and target.mask != 0
+            require(targetBitSet == mutation.targetBitSet) {
+                "Steam CM accepted the write but did not confirm the $SHRUG_IT_OFF_API_NAME stat bit state."
             }
-            println("achievement=$SHRUG_IT_OFF_API_NAME status=target_bit_confirmed steamId64=${account.steamId}")
+            val status = if (targetBitSet) "target_bit_confirmed" else "target_bit_clear_confirmed"
+            println("achievement=$SHRUG_IT_OFF_API_NAME status=$status steamId64=${account.steamId}")
         }
     }
 
@@ -466,6 +485,7 @@ private data class ParsedArgs(
     val printKey: Boolean,
     val printToken: Boolean,
     val confirmShrugItOff: Boolean,
+    val confirmLockShrugItOff: Boolean,
     val inspectAchievementSchema: Boolean,
     val reauthenticate: Boolean,
     val noOutput: Boolean,
@@ -484,6 +504,7 @@ private data class ParsedArgs(
                     "depotKey" -> ToolCommand.DepotKey
                     "refreshToken" -> ToolCommand.RefreshToken
                     "achievementUnlock" -> ToolCommand.AchievementUnlock
+                    "achievementLock" -> ToolCommand.AchievementLock
                     else -> throw IllegalArgumentException("Unknown command: ${args[0]}")
                 }
                 1
@@ -522,6 +543,7 @@ private data class ParsedArgs(
                 printKey = "print-key" in flags,
                 printToken = "print-token" in flags,
                 confirmShrugItOff = "confirm-shrug-it-off" in flags,
+                confirmLockShrugItOff = "confirm-lock-shrug-it-off" in flags,
                 inspectAchievementSchema = "inspect-achievement-schema" in flags,
                 reauthenticate = "reauthenticate" in flags,
                 noOutput = "no-output" in flags,
@@ -538,10 +560,16 @@ private data class ParsedArgs(
             "print-key",
             "print-token",
             "confirm-shrug-it-off",
+            "confirm-lock-shrug-it-off",
             "inspect-achievement-schema",
             "reauthenticate",
             "no-output",
         )
+    }
+
+    fun isConfirmed(mutation: AchievementMutation): Boolean = when (mutation) {
+        AchievementMutation.Unlock -> confirmShrugItOff
+        AchievementMutation.Lock -> confirmLockShrugItOff
     }
 }
 
@@ -748,6 +776,7 @@ private fun printUsage() {
           .\gradlew.bat :tools:steam-cloud-spike:depotKey --args="--app-id 646570 --depot-id 877621"
           .\gradlew.bat :tools:steam-cloud-spike:refreshToken
           .\gradlew.bat :tools:steam-cloud-spike:achievementUnlock --args="--confirm-shrug-it-off"
+          .\gradlew.bat :tools:steam-cloud-spike:achievementLock --args="--confirm-lock-shrug-it-off"
 
         Defaults:
           --app-id 646570
@@ -771,10 +800,12 @@ private fun printUsage() {
         Output options:
           --output <path>
           --proxy-url <url>              or STEAM_PROXY_URL / HTTPS_PROXY / HTTP_PROXY
+          --no-proxy                     force direct connections and ignore proxy environment variables
           --print-key                    also print depot key to terminal
           --print-token                  also print refresh token to terminal
-          --reauthenticate               ignore the saved desktop session and sign in again
-          --confirm-shrug-it-off         required for the one experimental achievement mutation
+           --reauthenticate               ignore the saved desktop session and sign in again
+           --confirm-shrug-it-off         required for the one experimental achievement mutation
+           --confirm-lock-shrug-it-off    required to clear the one experimental achievement bit
           --inspect-achievement-schema   print read-only schema paths containing shrug_it_off
           --no-output                    do not write the env file
           --debug                        print protocol debug logs

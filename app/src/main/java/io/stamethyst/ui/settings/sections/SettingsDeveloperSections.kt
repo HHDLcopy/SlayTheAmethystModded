@@ -104,6 +104,7 @@ internal fun LauncherDeveloperSettingsScreenContent(
     onTogetherInSpireRouteLockEnabledChanged: (Boolean) -> Unit = {},
     onTogetherInSpireEasyTierAutofillEnabledChanged: (Boolean) -> Unit = {},
     onLocalTestCloudControlEnabledChanged: (Boolean) -> Unit = {},
+    onSteamAchievementDebugModeEnabledChanged: (Boolean) -> Unit = {},
     onLocalTestEndpointsChanged: (String, String, String) -> Boolean = { _, _, _ -> false },
     onSaveSteamCloudPhase0Credentials: (String, String, String) -> Boolean = { _, _, _ -> false },
     onRunSteamCloudPhase0Probe: () -> Unit = {},
@@ -333,6 +334,21 @@ internal fun LauncherDeveloperSettingsScreenContent(
                         onGlBridgeSwapHeartbeatDebugChanged = onGlBridgeSwapHeartbeatDebugChanged,
                         onClearJunkFiles = onClearJunkFiles,
                     ),
+                )
+            }
+        }
+
+        item {
+            SettingsSectionCard(title = stringResource(R.string.settings_steam_achievement_debug_mode_title)) {
+                SettingsSwitchItem(
+                    SettingsSwitchSpec(
+                        checked = uiState.steamAchievementDebugModeEnabled,
+                        enabled = !uiState.busy,
+                        enabledText = stringResource(R.string.settings_steam_achievement_debug_mode_enabled),
+                        disabledText = stringResource(R.string.settings_steam_achievement_debug_mode_disabled),
+                        description = stringResource(R.string.settings_steam_achievement_debug_mode_desc),
+                        onCheckedChange = onSteamAchievementDebugModeEnabledChanged,
+                    )
                 )
             }
         }
@@ -1157,4 +1173,3 @@ internal fun RendererBackend.briefProsCons(context: Context): String {
             context.getString(R.string.settings_renderer_pros_cons_vulkan_zink)
     }
 }
-

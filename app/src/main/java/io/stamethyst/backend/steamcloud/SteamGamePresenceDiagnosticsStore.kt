@@ -2,6 +2,7 @@ package io.stamethyst.backend.steamcloud
 
 import android.content.Context
 import android.util.Log
+import io.stamethyst.backend.diag.RollingTextLogWriter
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -11,9 +12,56 @@ internal object SteamGamePresenceDiagnosticsStore {
     private const val TAG = "SteamGamePresenceDiag"
     private const val DIRECTORY_NAME = "steam-game-presence"
     private const val SUMMARY_FILE_NAME = "last-operation-summary.txt"
+    private const val EVENT_LOG_FILE_NAME = "events.log"
+    private const val EVENT_LOG_MAX_BYTES = 256L * 1024L
+    private const val EVENT_LOG_MAX_FILES = 3
+    private val eventLogLock = Any()
+    private var eventLogWriter: RollingTextLogWriter? = null
+    private var eventLogFile: File? = null
 
     fun summaryFile(context: Context): File =
         File(File(context.filesDir, DIRECTORY_NAME), SUMMARY_FILE_NAME)
+
+    fun eventLogFile(context: Context): File =
+        File(File(context.filesDir, DIRECTORY_NAME), EVENT_LOG_FILE_NAME)
+
+    fun listEventLogFiles(context: Context): List<File> {
+        val baseFile = eventLogFile(context)
+        return listOf(baseFile) + (1 until EVENT_LOG_MAX_FILES).map { index ->
+            File(baseFile.parentFile, "${baseFile.name}.$index")
+        }
+    }
+
+    fun appendEvent(context: Context, event: String, detail: String = "") {
+        val line = buildString {
+            append(formatTime(System.currentTimeMillis()))
+            append(" event=").append(event)
+            if (detail.isNotBlank()) append(" detail=").append(detail)
+        }
+        Log.i(TAG, line)
+        runCatching {
+            synchronized(eventLogLock) {
+                val file = eventLogFile(context)
+                val writer = if (eventLogFile == file) {
+                    eventLogWriter
+                } else {
+                    eventLogWriter?.close()
+                    RollingTextLogWriter(
+                        baseFile = file,
+                        maxBytesPerFile = EVENT_LOG_MAX_BYTES,
+                        maxFiles = EVENT_LOG_MAX_FILES,
+                    ).also {
+                        eventLogWriter = it
+                        eventLogFile = file
+                    }
+                } ?: return
+                writer.appendLine(line)
+                writer.flush()
+            }
+        }.onFailure { error ->
+            Log.e(TAG, "Unable to append Steam game presence event log", error)
+        }
+    }
 
     fun writeSummary(
         context: Context,
@@ -28,6 +76,19 @@ internal object SteamGamePresenceDiagnosticsStore {
         detail: String = "",
     ) {
         val target = summaryFile(context)
+        appendEvent(
+            context,
+            "summary",
+            buildString {
+                append("outcome=").append(outcome)
+                append("; startedAtMs=").append(startedAtMs)
+                append("; completedAtMs=").append(completedAtMs)
+                append("; appIdSent=").append(appIdSent)
+                append("; clearStateSent=").append(clearStateSent)
+                if (detail.isNotBlank()) append("; detail=").append(detail)
+                error?.let { append("; error=").append(it.javaClass.simpleName) }
+            },
+        )
         runCatching {
             val directory = target.parentFile!!
             check(directory.mkdirs() || directory.isDirectory) {

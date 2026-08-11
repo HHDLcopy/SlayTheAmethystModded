@@ -24,6 +24,7 @@ import io.stamethyst.backend.launch.LaunchPreparationFailureMessageResolver
 import io.stamethyst.backend.launch.LauncherReturnCoordinator
 import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.backend.runtime.RuntimePackInstaller
+import io.stamethyst.backend.steamcloud.SteamAchievementSyncService
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.config.SpecialKeyInputMode
@@ -51,6 +52,7 @@ internal class GameSessionCoordinator(
         private const val LAN_GAME_STATE_REQUEST_POLL_MS = 300L
         private const val FILE_PICKER_REQUEST_POLL_MS = 120L
         private const val RESCUE_TOAST_REQUEST_POLL_MS = 120L
+        private const val ACHIEVEMENT_REQUEST_POLL_MS = 120L
         private const val HARNESS_EXIT_REQUEST_POLL_MS = 120L
         private const val EXPECTED_GAME_EXIT_PROCESS_KILL_DELAY_MS = 1500L
         private const val EXPECTED_GAME_EXIT_LAUNCHER_RESTART_DELAY_MS = 180L
@@ -92,6 +94,8 @@ internal class GameSessionCoordinator(
     private var lanGameStateRequestPollStarted = false
     private var filePickerRequestPollStarted = false
     private var rescueToastRequestPollStarted = false
+    private var achievementRequestPollStarted = false
+    private var lastAchievementRequestKey = ""
     private var harnessExitRequestPollStarted = false
     private var rescueToastShown = false
     @Volatile
@@ -106,6 +110,9 @@ internal class GameSessionCoordinator(
             activity = activity,
             viewModel = ViewModelProvider(activity)[MainScreenViewModel::class.java],
         )
+    }
+    private val inGameAchievementOverlayController by lazy {
+        InGameAchievementOverlayController(activity)
     }
     private val startCheckRunnable = Runnable {
         startCheckPosted = false
@@ -158,6 +165,14 @@ internal class GameSessionCoordinator(
             pollHarnessExitRequest()
             if (!destroyed && harnessExitRequestPollStarted) {
                 mainHandler.postDelayed(this, HARNESS_EXIT_REQUEST_POLL_MS)
+            }
+        }
+    }
+    private val achievementRequestPollRunnable = object : Runnable {
+        override fun run() {
+            pollAchievementRequest()
+            if (!destroyed && achievementRequestPollStarted) {
+                mainHandler.postDelayed(this, ACHIEVEMENT_REQUEST_POLL_MS)
             }
         }
     }
@@ -214,6 +229,7 @@ internal class GameSessionCoordinator(
                 startLanGameStateRequestPolling()
                 startFilePickerRequestPolling()
                 startRescueToastRequestPolling()
+                startAchievementRequestPolling()
                 updatePerformanceOverlayVisibility()
                 updateSystemGameState()
                 trySchedulePostBootSurfaceSoftRefresh("runtime_ready")
@@ -235,7 +251,10 @@ internal class GameSessionCoordinator(
 
     fun initSessionUi(overlayView: TextView) {
         bootOverlayController.init()
-        inGameEasyTierOverlayController.attachToHost(activity.findViewById(R.id.gameHost))
+        activity.findViewById<android.widget.FrameLayout>(R.id.gameHost).let { host ->
+            inGameEasyTierOverlayController.attachToHost(host)
+            inGameAchievementOverlayController.attachToHost(host)
+        }
         if (performanceOverlayController == null) {
             performanceOverlayController = GamePerformanceOverlayController(
                 activity = activity,
@@ -262,8 +281,10 @@ internal class GameSessionCoordinator(
         stopLanGameStateRequestPolling()
         stopFilePickerRequestPolling()
         stopRescueToastRequestPolling()
+        stopAchievementRequestPolling()
         stopHarnessExitRequestPolling()
         inGameEasyTierOverlayController.onDestroy()
+        inGameAchievementOverlayController.onDestroy()
         RuntimePaths.touchscreenCardHoldStateFile(activity).delete()
         reportEasyTierInGameState(EasyTierInGameSessionState.Online)
         cancelForegroundAudioRestoreRetries()
@@ -1128,6 +1149,36 @@ internal class GameSessionCoordinator(
     private fun stopRescueToastRequestPolling() {
         rescueToastRequestPollStarted = false
         mainHandler.removeCallbacks(rescueToastRequestPollRunnable)
+    }
+
+    private fun startAchievementRequestPolling() {
+        if (achievementRequestPollStarted) return
+        achievementRequestPollStarted = true
+        lastAchievementRequestKey = ""
+        mainHandler.post(achievementRequestPollRunnable)
+    }
+
+    private fun stopAchievementRequestPolling() {
+        achievementRequestPollStarted = false
+        mainHandler.removeCallbacks(achievementRequestPollRunnable)
+    }
+
+    private fun pollAchievementRequest() {
+        if (!jvmLaunchController.runtimeLifecycleReady || backExitRequested) return
+        val requestFile = RuntimePaths.achievementRequestFile(activity)
+        val payload = runCatching { if (requestFile.isFile) requestFile.readText().trim() else "" }.getOrDefault("")
+        val request = SteamAchievementSyncService.parseRequest(payload) ?: return
+        if (request.dedupeKey == lastAchievementRequestKey) return
+        lastAchievementRequestKey = request.dedupeKey
+        requestFile.delete()
+        inGameAchievementOverlayController.enqueue(request.achievementIds)
+        SteamAchievementSyncService.syncRequestAsync(activity.applicationContext, request) { error ->
+            if (error != null) {
+                activity.runOnUiThread {
+                    Toast.makeText(activity, R.string.achievement_sync_failed, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
     }
 
     private fun stopHarnessExitRequestPolling() {

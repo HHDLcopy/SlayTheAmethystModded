@@ -79,35 +79,6 @@ message CMsgMulti {
   optional bytes message_body = 2;
 }
 
-// Undocumented authenticated Steam client service used only to read the server's
-// stat-bit unlock timestamps. Field numbers mirror the current Steam client schema.
-message CPlayer_GetUserStats_Request {
-  optional uint64 steamid = 1;
-  optional uint32 appid = 2;
-  optional bytes sha_schema = 3;
-  optional uint32 crc_stats = 4;
-  optional uint32 crc_schema = 5;
-}
-
-message CPlayer_GetUserStats_Response {
-  message Unlock_Time {
-    optional uint32 achievement_bit = 1;
-    optional fixed32 unlock_time = 2;
-  }
-
-  message Stats {
-    optional uint32 stat_id = 1;
-    optional uint32 stat_value = 2;
-    repeated Unlock_Time unlock_times = 3;
-  }
-
-  optional bytes sha_schema = 1;
-  optional uint32 crc_stats = 2;
-  optional bytes schema = 3;
-  repeated Stats stats = 4;
-  optional uint32 crc_schema = 5;
-}
-
 message CContentServerDirectory_GetServersForSteamPipe_Request {
   optional uint32 cell_id = 1;
   optional uint32 max_servers = 2 [default = 20];

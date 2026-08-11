@@ -69,11 +69,16 @@ class SteamGamePresenceService : Service() {
             )
             val intent = Intent(appContext, SteamGamePresenceService::class.java).setAction(ACTION_START)
             runCatching {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val component = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     appContext.startForegroundService(intent)
                 } else {
                     appContext.startService(intent)
                 }
+                SteamGamePresenceDiagnosticsStore.appendEvent(
+                    appContext,
+                    "service_start_dispatched",
+                    "component=${component?.flattenToShortString().orEmpty()}",
+                )
             }.onFailure { error ->
                 Log.w(TAG, "Unable to start experimental Steam presence service.", error)
                 SteamGamePresenceDiagnosticsStore.writeSummary(
@@ -112,8 +117,29 @@ class SteamGamePresenceService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onCreate() {
+        super.onCreate()
+        SteamGamePresenceDiagnosticsStore.appendEvent(
+            applicationContext,
+            "service_created",
+            "process=:game",
+        )
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action != ACTION_START) return START_NOT_STICKY
+        SteamGamePresenceDiagnosticsStore.appendEvent(
+            applicationContext,
+            "service_start_command",
+            "action=${intent?.action.orEmpty()}; startId=$startId; flags=$flags",
+        )
+        if (intent?.action != ACTION_START) {
+            SteamGamePresenceDiagnosticsStore.appendEvent(
+                applicationContext,
+                "service_start_ignored",
+                "reason=unexpected_action",
+            )
+            return START_NOT_STICKY
+        }
 
         val acceptedAtMs = System.currentTimeMillis()
         try {
@@ -136,6 +162,11 @@ class SteamGamePresenceService : Service() {
             return START_NOT_STICKY
         }
         if (workerThread?.isAlive == true) {
+            SteamGamePresenceDiagnosticsStore.appendEvent(
+                applicationContext,
+                "service_start_ignored",
+                "reason=already_running",
+            )
             return START_NOT_STICKY
         }
         stopRequested.set(false)

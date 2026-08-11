@@ -2,7 +2,6 @@ package io.stamethyst.backend.steamcloud;
 
 import static org.junit.Assert.assertEquals;
 
-import top.apricityx.workshop.steam.proto.CPlayer_GetUserStats_Response;
 import in.dragonbra.javasteam.types.KeyValue;
 import java.util.List;
 import org.junit.Test;
@@ -110,23 +109,4 @@ public final class SteamCloudClientAchievementSchemaTest {
         assertEquals(0, SteamCloudClient.parseAchievementStatTargets(root).size());
     }
 
-    @Test
-    public void parsesPlayerStatsUnlockTimeByStatAndAchievementBit() {
-        CPlayer_GetUserStats_Response response = CPlayer_GetUserStats_Response.newBuilder()
-            .addStats(CPlayer_GetUserStats_Response.Stats.newBuilder()
-                .setStatId(1)
-                .addUnlockTimes(CPlayer_GetUserStats_Response.Unlock_Time.newBuilder()
-                    .setAchievementBit(1)
-                    .setUnlockTime(1_700_000_000)
-                )
-            )
-            .build();
-
-        SteamCloudClient.UserStatsResult.AchievementUnlockTime unlockTime =
-            SteamCloudClient.parseAchievementUnlockTimes(response).get(0);
-
-        assertEquals(1, unlockTime.statId);
-        assertEquals(1, unlockTime.bitIndex);
-        assertEquals(1_700_000_000L, unlockTime.unlockTimeSeconds);
-    }
 }

@@ -74,6 +74,7 @@ import io.stamethyst.backend.steam.SteamAccountLogoutCoordinator
 import io.stamethyst.backend.steamcloud.SteamAuthenticationCircuitBreaker
 import io.stamethyst.backend.steamcloud.SteamCloudAuthStore
 import io.stamethyst.backend.steamcloud.SteamAchievementService
+import io.stamethyst.backend.steamcloud.SteamAchievementSyncService
 import io.stamethyst.backend.steamcloud.SteamCloudFailureCategory
 import io.stamethyst.backend.steamcloud.SteamCloudNetworkEnvironment
 import io.stamethyst.backend.steamcloud.SteamCloudSyncDirection
@@ -97,6 +98,7 @@ import io.stamethyst.backend.workshop.WorkshopInstalledModRecord
 import io.stamethyst.backend.workshop.WorkshopItemDetails
 import io.stamethyst.backend.workshop.WorkshopItemSummary
 import io.stamethyst.backend.workshop.WorkshopDownloadProcessService
+import io.stamethyst.ui.LauncherTransientNoticeBus
 import io.stamethyst.backend.workshop.WorkshopMetadataStore
 import io.stamethyst.backend.workshop.WorkshopModCardState
 import io.stamethyst.backend.workshop.WorkshopService
@@ -291,6 +293,8 @@ class MainScreenViewModel : ViewModel() {
         val errorSummary: String = "",
         val fromCache: Boolean = false,
         val lastLoadedAtMs: Long? = null,
+        val pendingUploadCount: Int = 0,
+        val localUploadCount: Int = 0,
     ) {
         val unlockedCount: Int get() = achievements.count { it.unlocked }
     }
@@ -1003,6 +1007,7 @@ class MainScreenViewModel : ViewModel() {
                     accountName = "",
                     loading = false,
                     errorSummary = host.getString(R.string.main_steam_achievements_sign_in_required),
+                    localUploadCount = 0,
                 )
             )
             return
@@ -1014,6 +1019,7 @@ class MainScreenViewModel : ViewModel() {
                 accountName = auth.accountName,
                 loading = true,
                 errorSummary = "",
+                pendingUploadCount = SteamAchievementSyncService.pendingIds(host).size,
             )
         )
         steamAchievementExecutor.execute {
@@ -1030,6 +1036,17 @@ class MainScreenViewModel : ViewModel() {
             } else {
                 null
             }
+            val localUploadCount = cmResult.getOrNull()?.let { snapshot ->
+                val remoteUnlocked = snapshot.achievements
+                    .asSequence()
+                    .filter { it.unlocked }
+                    .map { it.apiName }
+                    .toSet()
+                SteamAchievementSyncService.localAchievementsMissingFromSteam(
+                    host.applicationContext,
+                    remoteUnlocked,
+                ).size
+            } ?: 0
             host.runOnUiThread {
                 steamAchievementLoadInFlight = false
                 val current = uiState.steamAchievements
@@ -1042,6 +1059,8 @@ class MainScreenViewModel : ViewModel() {
                             errorSummary = "",
                             fromCache = false,
                             lastLoadedAtMs = snapshot.fetchedAtMs,
+                            pendingUploadCount = SteamAchievementSyncService.pendingIds(host).size,
+                            localUploadCount = localUploadCount,
                         )
                     )
                 }.onFailure { error ->
@@ -1057,6 +1076,8 @@ class MainScreenViewModel : ViewModel() {
                                 ),
                                 fromCache = true,
                                 lastLoadedAtMs = cached.fetchedAtMs,
+                                pendingUploadCount = SteamAchievementSyncService.pendingIds(host).size,
+                                localUploadCount = 0,
                             )
                         )
                     } else {
@@ -1066,6 +1087,8 @@ class MainScreenViewModel : ViewModel() {
                                 loading = false,
                                 errorSummary = error.message ?: host.getString(R.string.main_steam_achievements_load_failed),
                                 fromCache = false,
+                                pendingUploadCount = SteamAchievementSyncService.pendingIds(host).size,
+                                localUploadCount = 0,
                             )
                         )
                     }
@@ -1074,7 +1097,32 @@ class MainScreenViewModel : ViewModel() {
         }
     }
 
-    fun unlockShrugItOffSteamAchievement(host: Activity) {
+    fun syncSteamAchievements(host: Activity) {
+        if (steamAchievementLoadInFlight) return
+        steamAchievementLoadInFlight = true
+        uiState = uiState.copy(steamAchievements = uiState.steamAchievements.copy(loading = true, errorSummary = ""))
+        SteamAchievementSyncService.syncAllLocalAchievementsAsync(host.applicationContext) { error ->
+            host.runOnUiThread {
+                steamAchievementLoadInFlight = false
+                if (error != null) {
+                    LauncherTransientNoticeBus.show(
+                        host,
+                        R.string.achievement_sync_failed,
+                        Toast.LENGTH_LONG,
+                    )
+                }
+                uiState = uiState.copy(
+                    steamAchievements = uiState.steamAchievements.copy(
+                        loading = false,
+                        pendingUploadCount = SteamAchievementSyncService.pendingIds(host).size,
+                    )
+                )
+                refreshSteamAchievements(host)
+            }
+        }
+    }
+
+    fun setSteamAchievementUnlocked(host: Activity, apiName: String, unlocked: Boolean) {
         if (steamAchievementLoadInFlight) return
         val auth = SteamCloudAuthStore.readAuthMaterial(host)
         if (
@@ -1103,12 +1151,21 @@ class MainScreenViewModel : ViewModel() {
         )
         steamAchievementExecutor.execute {
             val result = runCatching {
-                SteamAchievementService.unlockShrugItOffViaCm(
+                val snapshot = SteamAchievementService.setAchievementUnlockedViaCm(
                     context = host.applicationContext,
                     accountName = auth.accountName,
                     refreshToken = auth.refreshToken,
                     steamId64 = auth.steamId64,
+                    apiName = apiName,
+                    unlocked = unlocked,
                 )
+                if (!unlocked) {
+                    SteamAchievementSyncService.lockAchievementInAllLocalSaves(
+                        host.applicationContext,
+                        apiName,
+                    )
+                }
+                snapshot
             }
             host.runOnUiThread {
                 steamAchievementLoadInFlight = false
@@ -1119,7 +1176,13 @@ class MainScreenViewModel : ViewModel() {
                             accountName = auth.accountName,
                             achievements = snapshot.achievements,
                             loading = false,
-                            errorSummary = host.getString(R.string.main_steam_achievements_test_unlock_succeeded),
+                            errorSummary = host.getString(
+                                if (unlocked) {
+                                    R.string.main_steam_achievements_debug_unlock_succeeded
+                                } else {
+                                    R.string.main_steam_achievements_debug_lock_succeeded
+                                },
+                            ),
                             fromCache = false,
                             lastLoadedAtMs = snapshot.fetchedAtMs,
                         ),
@@ -1130,7 +1193,7 @@ class MainScreenViewModel : ViewModel() {
                             accountName = auth.accountName,
                             loading = false,
                             errorSummary = error.message
-                                ?: host.getString(R.string.main_steam_achievements_test_unlock_failed),
+                                ?: host.getString(R.string.main_steam_achievements_debug_mutation_failed),
                             fromCache = false,
                         ),
                     )
@@ -5651,6 +5714,7 @@ class MainScreenViewModel : ViewModel() {
         workshopUpdateExecutor.shutdownNow()
         modNameMigrationExecutor.shutdownNow()
         mtsComponentUpdateExecutor.shutdownNow()
+        steamAchievementExecutor.shutdownNow()
         modManagementController.shutdown()
         super.onCleared()
     }

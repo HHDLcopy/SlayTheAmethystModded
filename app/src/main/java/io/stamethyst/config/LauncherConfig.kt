@@ -229,6 +229,8 @@ object LauncherConfig {
     private const val PREF_KEY_BASIC_TUTORIAL_NOTICE_DISMISSED = "basic_tutorial_notice_dismissed"
     private const val PREF_KEY_DEVELOPER_SETTINGS_WARNING_DISMISSED =
         "developer_settings_warning_dismissed"
+    private const val PREF_KEY_STEAM_ACHIEVEMENT_DEBUG_MODE =
+        "steam_achievement_debug_mode"
     private const val PREF_KEY_USE_LOCAL_TEST_CLOUD_CONTROL =
         "use_local_test_cloud_control"
     private const val PREF_KEY_LOCAL_TEST_ONLINE_SERVICE_BASE_URL =
@@ -580,6 +582,16 @@ object LauncherConfig {
     fun setDeveloperSettingsWarningDismissed(context: Context, dismissed: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_DEVELOPER_SETTINGS_WARNING_DISMISSED, dismissed)
+        }
+    }
+
+    fun isSteamAchievementDebugModeEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(PREF_KEY_STEAM_ACHIEVEMENT_DEBUG_MODE, false)
+    }
+
+    fun setSteamAchievementDebugModeEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_STEAM_ACHIEVEMENT_DEBUG_MODE, enabled)
         }
     }
 

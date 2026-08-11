@@ -138,6 +138,13 @@ internal object DiagnosticsArchiveBuilder {
                 SteamGamePresenceDiagnosticsStore.summaryFile(context),
                 "sts/steam-game-presence/${SteamGamePresenceDiagnosticsStore.summaryFile(context).name}"
             )
+            SteamGamePresenceDiagnosticsStore.listEventLogFiles(context).forEach { file ->
+                exportedCount += writeOptionalFile(
+                    zipOutput,
+                    file,
+                    "sts/steam-game-presence/${file.name}"
+                )
+            }
             exportedCount += writeOptionalFile(
                 zipOutput,
                 SteamCloudManifestStore.manifestFile(context),
@@ -278,7 +285,8 @@ internal object DiagnosticsArchiveBuilder {
         - logcat/system/：系统进程 logcat，最多 5 槽位。
         - launcher_crash_reports/：启动器崩溃报告，最多 5 槽位。
         - steam_login/：Steam credentials 登录失败记录，最多 5 槽位。
-        - steam_cloud/：Steam Cloud 操作、失败历史和协议诊断信息。
+         - steam_cloud/：Steam Cloud 操作、失败历史和协议诊断信息。
+         - steam-game-presence/：Steam 在线状态上报的最后摘要和连续事件日志，最多保留 3 槽位。
         - workshop/market_failed/：Workshop 市场查询失败日志，最多 5 槽位。
         - workshop/download_tasks/：最近 10 条 Workshop 下载任务日志。
         - workshop/auto_import_patch_logs/：自动导入补丁日志，最多 10 槽位。

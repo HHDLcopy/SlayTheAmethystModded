@@ -17,11 +17,12 @@
 
 ## 成就协议实验
 
-`achievementUnlock` 只面向 `Slay the Spire` 的 `shrug_it_off`，且必须提供
-`--confirm-shrug-it-off`。它先读取用户统计和 schema，保留返回的 `crc_stats`，
-再发送 `ClientStoreUserStats2`（EMsg `5466`），并等待
+`achievementUnlock` 与 `achievementLock` 只面向 `Slay the Spire` 的 `shrug_it_off`。
+前者必须提供 `--confirm-shrug-it-off`，后者必须提供
+`--confirm-lock-shrug-it-off`。两者都会先读取用户统计和 schema，保留返回的 `crc_stats`，
+只设置或清除该成就的单个 stat bit，再发送 `ClientStoreUserStats2`（EMsg `5466`），并等待
 `ClientStoreUserStatsResponse`（EMsg `821`）的 Job 响应。仅当响应为 `EResult.OK`、
-没有验证错误且重新读取确认对应 bit 后，命令才报告成功。
+没有验证错误且重新读取确认对应 bit 状态后，命令才报告成功。它们不会重置整个 stat 或其他成就 bit。
 
 这不是 Steam 官方面向普通用户的 API。请只在你拥有权限的账号和游戏上进行实验；
 联网、反作弊或服务器权威游戏可能拒绝写入或出现进度不一致。Android app 不会调用这个
@@ -44,7 +45,17 @@ agent-tmp/steam-desktop-session.env
 ```powershell
 .\gradlew.bat :tools:steam-cloud-spike:depotKey --args="--no-output"
 .\gradlew.bat :tools:steam-cloud-spike:achievementUnlock --args="--confirm-shrug-it-off --no-output"
+.\gradlew.bat :tools:steam-cloud-spike:achievementLock --args="--confirm-lock-shrug-it-off --no-output"
 ```
+
+如果环境变量中的代理导致 Steam CM TLS/WebSocket 握手失败，可以对单次命令强制直连：
+
+```powershell
+.\gradlew.bat :tools:steam-cloud-spike:achievementLock --args="--confirm-lock-shrug-it-off --no-output --no-proxy"
+```
+
+`--no-proxy` 会覆盖 `STEAM_PROXY_URL`、`HTTPS_PROXY` 和 `HTTP_PROXY`；命令启动时会输出
+`steamTransport=direct` 或所选代理地址，方便确认实际连接路径。
 
 如果需要重新授权或更换账号，使用 `--reauthenticate`。它会忽略现有 refresh token，重新请求账号密码和 Steam Guard/授权确认，然后覆盖本机会话文件：
 

@@ -4762,8 +4762,10 @@ private fun LauncherMainScreenContent(
         ) {
             SteamAchievementBottomSheetContent(
                 state = uiState.steamAchievements,
+                debugModeEnabled = LauncherPreferences.isSteamAchievementDebugModeEnabled(LocalContext.current),
                 onRefresh = actions.onRefreshSteamAchievements,
-                onUnlockShrugItOff = actions.onUnlockShrugItOffSteamAchievement,
+                onSetAchievementUnlocked = actions.onSetSteamAchievementUnlocked,
+                 onSyncAchievements = actions.onSyncSteamAchievements,
             )
         }
     }

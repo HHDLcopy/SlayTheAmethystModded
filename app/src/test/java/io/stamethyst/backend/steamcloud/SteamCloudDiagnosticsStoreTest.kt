@@ -121,6 +121,11 @@ class SteamCloudDiagnosticsStoreTest {
             assertTrue(text.contains("Outcome: STARTED"))
             assertTrue(text.contains("Summary file: ${summary.absolutePath}"))
             assertFalse(text.contains("Outcome: START_REQUESTED"))
+
+            val events = SteamGamePresenceDiagnosticsStore.eventLogFile(roots.context)
+                .readText(StandardCharsets.UTF_8)
+            assertTrue(events.contains("outcome=START_REQUESTED"))
+            assertTrue(events.contains("outcome=STARTED"))
         } finally {
             roots.rootDir.deleteRecursively()
         }

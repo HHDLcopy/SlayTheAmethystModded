@@ -380,6 +380,7 @@ class SettingsScreenViewModel : ViewModel() {
         val togetherInSpireEasyTierAutofillEnabled: Boolean =
             LauncherPreferences.DEFAULT_TOGETHER_IN_SPIRE_EASYTIER_AUTOFILL_ENABLED,
         val localTestCloudControlEnabled: Boolean = false,
+        val steamAchievementDebugModeEnabled: Boolean = false,
         val localTestOnlineServiceBaseUrl: String = "http://10.126.126.2:3001",
         val localTestConfigServerUrl: String = "udp://10.126.126.2:22020",
         val localTestEntryNodeUrl: String = "tcp://10.126.126.2:11010",
@@ -3228,6 +3229,15 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(host)
     }
 
+    fun onSteamAchievementDebugModeEnabledChanged(host: Activity, enabled: Boolean) {
+        if (uiState.busy) {
+            return
+        }
+        uiState = uiState.copy(steamAchievementDebugModeEnabled = enabled)
+        LauncherPreferences.setSteamAchievementDebugModeEnabled(host, enabled)
+        refreshStatus(host)
+    }
+
     fun onLocalTestEndpointsChanged(
         host: Activity,
         onlineServiceBaseUrl: String,
@@ -3871,6 +3881,7 @@ class SettingsScreenViewModel : ViewModel() {
             togetherInSpireEasyTierAutofillEnabled =
                 input.togetherInSpireEasyTierAutofillEnabled,
             localTestCloudControlEnabled = LauncherPreferences.isLocalTestCloudControlEnabled(host),
+            steamAchievementDebugModeEnabled = LauncherPreferences.isSteamAchievementDebugModeEnabled(host),
             localTestOnlineServiceBaseUrl = LauncherPreferences.readLocalTestOnlineServiceBaseUrl(host),
             localTestConfigServerUrl = LauncherPreferences.readLocalTestConfigServerUrl(host),
             localTestEntryNodeUrl = LauncherPreferences.readLocalTestEntryNodeUrl(host),

@@ -28,7 +28,7 @@ class SteamAchievementServiceTest {
     }
 
     @Test
-    fun testCmUnlockTarget_isRestrictedToShrugItOff() {
+    fun bundledCatalog_containsKnownShrugItOffApiName() {
         assertEquals("shrug_it_off", SteamAchievementService.SHRUG_IT_OFF_API_NAME)
         assertEquals(
             1,
@@ -42,10 +42,7 @@ class SteamAchievementServiceTest {
     fun stateSnapshot_usesBundledMetadataAndIgnoresUnknownAchievements() {
         val snapshot = SteamAchievementService.buildSnapshot(
             steamId64 = "76561198000000000",
-            unlockTimes = mapOf(
-                "guardian" to 123L,
-                "unknown_achievement" to 456L,
-            ),
+            unlockedApiNames = setOf("guardian", "unknown_achievement"),
             fetchedAtMs = 789L,
             fromCache = false,
         )
@@ -56,39 +53,21 @@ class SteamAchievementServiceTest {
         assertEquals(R.string.steam_achievement_guardian_title, guardian.titleResId)
         assertEquals(R.string.steam_achievement_guardian_description, guardian.descriptionResId)
         assertTrue(guardian.unlocked)
-        assertEquals(123L, guardian.unlockTimeSeconds)
         assertTrue(guardian.unlockedIconResId != guardian.lockedIconResId)
         assertFalse(snapshot.achievements.any { it.apiName == "unknown_achievement" })
     }
 
     @Test
-    fun bitfieldConfirmedUnlockIsRenderedAsUnlockedWithoutTimestamp() {
+    fun bitfieldConfirmedUnlockIsRenderedAsUnlocked() {
         val snapshot = SteamAchievementService.buildSnapshot(
             steamId64 = "76561198000000000",
-            unlockTimes = mapOf("shrug_it_off" to 1L),
+            unlockedApiNames = setOf("shrug_it_off"),
             fetchedAtMs = 789L,
             fromCache = false,
         )
 
         val achievement = snapshot.achievements.first { it.apiName == "shrug_it_off" }
         assertTrue(achievement.unlocked)
-        assertEquals(1L, achievement.unlockTimeSeconds)
-    }
-
-    @Test
-    fun bitfieldUnlockTime_usesSteamTimeOrTimestampUnavailableSentinel() {
-        assertEquals(
-            456L,
-            SteamAchievementService.preferredBitfieldUnlockTimeSeconds(
-                steamUnlockTimeSeconds = 456L,
-            ),
-        )
-        assertEquals(
-            1L,
-            SteamAchievementService.preferredBitfieldUnlockTimeSeconds(
-                steamUnlockTimeSeconds = null,
-            ),
-        )
     }
 
 }

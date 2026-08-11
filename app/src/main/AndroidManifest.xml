@@ -100,7 +100,7 @@
             android:name="io.stamethyst.backend.steamcloud.SteamGamePresenceService"
             android:exported="false"
             android:foregroundServiceType="dataSync"
-            android:process=":steamgamepresence" />
+            android:process=":game" />
 
         <service
             android:name="io.stamethyst.backend.easytier.EasyTierProcessService"

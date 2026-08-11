@@ -86,7 +86,6 @@ import in.dragonbra.javasteam.types.SteamID;
 import in.dragonbra.javasteam.types.JobID;
 import in.dragonbra.javasteam.types.KeyValue;
 import in.dragonbra.javasteam.protobufs.steamclient.SteammessagesClientserverUserstats;
-import top.apricityx.workshop.steam.proto.CPlayer_GetUserStats_Response;
 import in.dragonbra.javasteam.util.log.LogListener;
 import in.dragonbra.javasteam.util.log.LogManager;
 import io.stamethyst.config.RuntimePaths;
@@ -334,28 +333,6 @@ public final class SteamCloudClient implements AutoCloseable {
     }
 
     public static final class UserStatsResult {
-        public static final class AchievementState {
-            public final int achievementId;
-            public final long unlockTimeSeconds;
-
-            AchievementState(int achievementId, long unlockTimeSeconds) {
-                this.achievementId = achievementId;
-                this.unlockTimeSeconds = unlockTimeSeconds;
-            }
-        }
-
-        public static final class AchievementUnlockTime {
-            public final int statId;
-            public final int bitIndex;
-            public final long unlockTimeSeconds;
-
-            AchievementUnlockTime(int statId, int bitIndex, long unlockTimeSeconds) {
-                this.statId = statId;
-                this.bitIndex = bitIndex;
-                this.unlockTimeSeconds = unlockTimeSeconds;
-            }
-        }
-
         public static final class AchievementDefinition {
             public final int achievementId;
             public final String apiName;
@@ -393,27 +370,21 @@ public final class SteamCloudClient implements AutoCloseable {
             }
         }
 
-        public final List<AchievementState> states;
         public final List<AchievementDefinition> definitions;
         public final int crcStats;
         public final Map<Integer, Integer> statValues;
         public final Map<String, AchievementStatTarget> achievementStatTargets;
-        public final List<AchievementUnlockTime> achievementUnlockTimes;
 
         UserStatsResult(
-            List<AchievementState> states,
             List<AchievementDefinition> definitions,
             int crcStats,
             Map<Integer, Integer> statValues,
-            Map<String, AchievementStatTarget> achievementStatTargets,
-            List<AchievementUnlockTime> achievementUnlockTimes
+            Map<String, AchievementStatTarget> achievementStatTargets
         ) {
-            this.states = states;
             this.definitions = definitions;
             this.crcStats = crcStats;
             this.statValues = statValues;
             this.achievementStatTargets = achievementStatTargets;
-            this.achievementUnlockTimes = achievementUnlockTimes;
         }
     }
 
@@ -425,54 +396,18 @@ public final class SteamCloudClient implements AutoCloseable {
             if (response.hasEresult() && response.getEresult() != EResult.OK.code()) {
                 throw new IllegalStateException("Steam CM GetUserStats failed: " + response.getEresult());
             }
-            List<UserStatsResult.AchievementState> states = new ArrayList<>();
-            for (SteammessagesClientserverUserstats.CMsgClientGetUserStatsResponse.Achievement_Blocks block :
-                response.getAchievementBlocksList()) {
-                long unlockTime = block.getUnlockTimeCount() == 0 ? 0L : block.getUnlockTime(0);
-                states.add(new UserStatsResult.AchievementState(block.getAchievementId(), unlockTime));
-            }
             KeyValue schema = parseSchema(response.hasSchema() ? response.getSchema().toByteArray() : null);
             Map<Integer, Integer> statValues = new LinkedHashMap<>();
             for (SteammessagesClientserverUserstats.CMsgClientGetUserStatsResponse.Stats stat : response.getStatsList()) {
                 statValues.put(stat.getStatId(), stat.getStatValue());
             }
-            List<UserStatsResult.AchievementUnlockTime> unlockTimes = Collections.emptyList();
-            try {
-                unlockTimes = parseAchievementUnlockTimes(
-                    protocolClient.getPlayerUserStats(appId, steamId64, response.getCrcStats(), timeoutMs)
-                );
-            } catch (Exception error) {
-                recordDiagnosticEvent("player_user_stats_timestamp_read_failed " + describeThrowable(error));
-                Log.w(TAG, "Steam Player.GetUserStats did not return achievement timestamps.", error);
-            }
             return new UserStatsResult(
-                states,
                 schema == null ? Collections.emptyList() : parseAchievementSchema(schema),
                 response.getCrcStats(),
                 Collections.unmodifiableMap(statValues),
-                schema == null ? Collections.emptyMap() : parseAchievementStatTargets(schema),
-                unlockTimes
+                schema == null ? Collections.emptyMap() : parseAchievementStatTargets(schema)
             );
         } catch (Exception error) { throw error; }
-    }
-
-    static List<UserStatsResult.AchievementUnlockTime> parseAchievementUnlockTimes(
-        CPlayer_GetUserStats_Response response
-    ) {
-        List<UserStatsResult.AchievementUnlockTime> result = new ArrayList<>();
-        for (CPlayer_GetUserStats_Response.Stats stat : response.getStatsList()) {
-            for (CPlayer_GetUserStats_Response.Unlock_Time unlockTime : stat.getUnlockTimesList()) {
-                long unlockTimeSeconds = Integer.toUnsignedLong(unlockTime.getUnlockTime());
-                if (unlockTimeSeconds > 1L) {
-                    result.add(new UserStatsResult.AchievementUnlockTime(
-                        stat.getStatId(),
-                        unlockTime.getAchievementBit(),
-                        unlockTimeSeconds
-                    ));
-                }
-            }
-        }
-        return Collections.unmodifiableList(result);
     }
 
     /**
@@ -636,6 +571,9 @@ public final class SteamCloudClient implements AutoCloseable {
      */
     public void setGamePlayedAppId(long appId) {
         protocolClient.sendGamesPlayed(appId);
+        playingSessionAppId = (int) appId;
+        recordDiagnosticEvent("games_played_sent appId=" + appId + " emsg=5410");
+        Log.i(TAG, "Published Steam games-played state AppID=" + appId + ".");
     }
 
     public void setPersonaOnline() {

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -19,12 +20,16 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,10 +40,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import io.stamethyst.R
 import io.stamethyst.backend.steamcloud.SteamAchievementService
-import java.text.DateFormat
-import java.util.Date
 
 @Composable
 internal fun SteamAchievementOverviewCard(
@@ -69,7 +73,7 @@ internal fun SteamAchievementOverviewCard(
                     if (state.loading) {
                         CircularProgressIndicator(modifier = Modifier.size(21.dp), strokeWidth = 2.dp)
                     } else {
-                        Icon(painterResource(R.drawable.ic_workshop_rating_star), null, Modifier.size(24.dp))
+                        Icon(painterResource(R.drawable.ic_achievement), null, Modifier.size(24.dp))
                     }
                 }
             }
@@ -103,90 +107,107 @@ internal fun SteamAchievementOverviewCard(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SteamAchievementBottomSheetContent(
     state: MainScreenViewModel.SteamAchievementUi,
+    debugModeEnabled: Boolean,
     onRefresh: () -> Unit,
-    onUnlockShrugItOff: () -> Unit,
+    onSetAchievementUnlocked: (String, Boolean) -> Unit,
+    onSyncAchievements: () -> Unit,
 ) {
-    Column(
+    val pullToRefreshState = rememberPullToRefreshState()
+    PullToRefreshBox(
+        isRefreshing = state.loading,
+        onRefresh = onRefresh,
+        state = pullToRefreshState,
+        indicator = {
+            PullToRefreshDefaults.Indicator(
+                modifier = Modifier.align(Alignment.TopCenter).zIndex(2f),
+                isRefreshing = state.loading,
+                state = pullToRefreshState,
+            )
+        },
         modifier = Modifier
             .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Text(
-            text = stringResource(R.string.main_steam_achievements_title),
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.SemiBold,
-        )
-        Text(
-            text = stringResource(R.string.main_steam_achievements_test_operation),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        if (state.achievements.isNotEmpty()) {
-            Text(
-                text = stringResource(
-                    R.string.main_steam_achievements_progress,
-                    state.unlockedCount,
-                    state.achievements.size,
-                ),
-                style = MaterialTheme.typography.titleMedium,
-            )
-        }
-        if (state.fromCache) {
-            Text(
-                text = stringResource(R.string.main_steam_achievements_cache_notice),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.tertiary,
-            )
-        }
-        if (state.errorSummary.isNotBlank()) {
-            Text(
-                text = state.errorSummary,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-            )
-        }
-        OutlinedButton(
-            onClick = onRefresh,
-            enabled = !state.loading,
-            modifier = Modifier.fillMaxWidth(),
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text(stringResource(R.string.main_steam_achievements_refresh))
-        }
-        Button(
-            onClick = onUnlockShrugItOff,
-            enabled = !state.loading,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(stringResource(R.string.main_steam_achievements_unlock_shrug_it_off))
-        }
-        if (state.loading && state.achievements.isEmpty()) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 28.dp),
-                horizontalArrangement = Arrangement.Center,
-            ) { CircularProgressIndicator() }
-        }
-        state.achievements.forEachIndexed { index, achievement ->
-            if (index > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-            SteamAchievementRow(achievement)
-        }
-        if (!state.loading && state.achievements.isEmpty() && state.errorSummary.isBlank()) {
             Text(
-                text = stringResource(R.string.main_steam_achievements_empty),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                text = stringResource(R.string.main_steam_achievements_title),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold,
             )
+            if (debugModeEnabled) {
+                Text(
+                    text = stringResource(R.string.main_steam_achievements_debug_operation),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            if (state.achievements.isNotEmpty()) {
+                Text(
+                    text = stringResource(
+                        R.string.main_steam_achievements_progress,
+                        state.unlockedCount,
+                        state.achievements.size,
+                    ),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+            }
+            if (state.fromCache) {
+                Text(
+                    text = stringResource(R.string.main_steam_achievements_cache_notice),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.tertiary,
+                )
+            }
+            if (state.errorSummary.isNotBlank()) {
+                Text(
+                    text = state.errorSummary,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            if (state.localUploadCount > 0) {
+                Button(onClick = onSyncAchievements, enabled = !state.loading, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.main_steam_achievements_sync_local))
+                }
+            }
+            state.achievements.forEachIndexed { index, achievement ->
+                if (index > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                SteamAchievementRow(
+                    achievement = achievement,
+                    debugModeEnabled = debugModeEnabled,
+                    controlsEnabled = !state.loading,
+                    onSetAchievementUnlocked = onSetAchievementUnlocked,
+                )
+            }
+            if (!state.loading && state.achievements.isEmpty() && state.errorSummary.isBlank()) {
+                Text(
+                    text = stringResource(R.string.main_steam_achievements_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(Modifier.height(24.dp))
         }
-        Spacer(Modifier.height(24.dp))
     }
 }
 
 @Composable
-private fun SteamAchievementRow(achievement: SteamAchievementService.Achievement) {
+private fun SteamAchievementRow(
+    achievement: SteamAchievementService.Achievement,
+    debugModeEnabled: Boolean,
+    controlsEnabled: Boolean,
+    onSetAchievementUnlocked: (String, Boolean) -> Unit,
+) {
     val iconResId = if (achievement.unlocked) achievement.unlockedIconResId else achievement.lockedIconResId
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
@@ -207,22 +228,27 @@ private fun SteamAchievementRow(achievement: SteamAchievementService.Achievement
             if (description.isNotBlank()) {
                 Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
-            Text(
-                text = when {
-                    !achievement.unlocked -> stringResource(R.string.main_steam_achievements_locked)
-                    achievement.unlockTimeSeconds > 1L -> stringResource(
-                        R.string.main_steam_achievements_unlock_time,
-                        formatAchievementUnlockTime(achievement.unlockTimeSeconds),
-                    )
-                    else -> stringResource(R.string.main_steam_achievements_unlock_time_unavailable)
-                },
-                style = MaterialTheme.typography.labelSmall,
-                color = if (achievement.unlocked) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (debugModeEnabled) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 5.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    OutlinedButton(
+                        onClick = { onSetAchievementUnlocked(achievement.apiName, true) },
+                        enabled = controlsEnabled && !achievement.unlocked,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(stringResource(R.string.main_steam_achievements_debug_unlock))
+                    }
+                    Button(
+                        onClick = { onSetAchievementUnlocked(achievement.apiName, false) },
+                        enabled = controlsEnabled && achievement.unlocked,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(stringResource(R.string.main_steam_achievements_debug_lock))
+                    }
+                }
+            }
         }
     }
 }
-
-private fun formatAchievementUnlockTime(unlockTimeSeconds: Long): String =
-    DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
-        .format(Date(unlockTimeSeconds * 1_000L))

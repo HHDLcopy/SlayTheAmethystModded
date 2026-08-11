@@ -49,6 +49,16 @@ tasks.register<JavaExec>("achievementUnlock") {
     workingDir = rootProject.projectDir
 }
 
+tasks.register<JavaExec>("achievementLock") {
+    group = "steam"
+    description = "Experimentally lock only Slay the Spire's Shrug It Off achievement through Steam CM."
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("io.stamethyst.tools.steamcloud.StsDepotKeyToolKt")
+    prependToolCommand("achievementLock")
+    standardInput = System.`in`
+    workingDir = rootProject.projectDir
+}
+
 private fun JavaExec.prependToolCommand(command: String) {
     doFirst {
         val suppliedArgs = args?.toList().orEmpty()

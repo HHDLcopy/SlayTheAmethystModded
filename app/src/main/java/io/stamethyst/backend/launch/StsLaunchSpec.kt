@@ -235,6 +235,11 @@ object StsLaunchSpec {
         args.add("-Damethyst.in_game_file_picker_request=${RuntimePaths.inGameFilePickerRequestFile(context).absolutePath}")
         args.add("-Damethyst.in_game_file_picker_result=${RuntimePaths.inGameFilePickerResultFile(context).absolutePath}")
         args.add("-Damethyst.runtime_rescue_toast_request=${RuntimePaths.runtimeRescueToastRequestFile(context).absolutePath}")
+        args.add("-Damethyst.achievement.request_path=${RuntimePaths.achievementRequestFile(context).absolutePath}")
+        args.add(
+            "-Damethyst.achievement.lock_command_path=" +
+                RuntimePaths.achievementLockCommandFile(context).absolutePath
+        )
         args.add("-Damethyst.touchscreen_card_hold_state=${RuntimePaths.touchscreenCardHoldStateFile(context).absolutePath}")
         args.add("-Damethyst.easytier.runtime_state_file=${EasyTierStateStore.stateFile(context).absolutePath}")
         args.add(

@@ -8,8 +8,6 @@ import top.apricityx.workshop.steam.protocol.SteamAccountSession
 import top.apricityx.workshop.steam.protocol.SteamDirectoryClient
 import top.apricityx.workshop.steam.protocol.SteamCmSession
 import top.apricityx.workshop.steam.protocol.SteamPacketCodec
-import top.apricityx.workshop.steam.proto.CPlayer_GetUserStats_Request
-import top.apricityx.workshop.steam.proto.CPlayer_GetUserStats_Response
 import `in`.dragonbra.javasteam.protobufs.steamclient.SteammessagesCloudSteamclient
 import `in`.dragonbra.javasteam.protobufs.steamclient.SteammessagesClientserver
 import `in`.dragonbra.javasteam.protobufs.steamclient.SteammessagesClientserverUserstats
@@ -52,25 +50,6 @@ internal class SteamCloudProtocolClient(
                 )
             }
         }
-
-    fun getPlayerUserStats(
-        appId: Long,
-        steamId64: Long,
-        crcStats: Int,
-        timeoutMs: Long,
-    ): CPlayer_GetUserStats_Response = runBlocking {
-        withTimeout(timeoutMs) {
-            session.callServiceMethod(
-                "Player.GetUserStats#1",
-                CPlayer_GetUserStats_Request.newBuilder()
-                    .setSteamid(steamId64)
-                    .setAppid(appId.toInt())
-                    .setCrcStats(crcStats)
-                    .build(),
-                CPlayer_GetUserStats_Response.parser(),
-            )
-        }
-    }
 
     fun storeUserStat(
         appId: Long,

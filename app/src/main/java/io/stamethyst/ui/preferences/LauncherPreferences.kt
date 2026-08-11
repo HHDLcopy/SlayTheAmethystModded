@@ -276,6 +276,14 @@ object LauncherPreferences {
         LauncherConfig.setDeveloperSettingsWarningDismissed(context, dismissed)
     }
 
+    fun isSteamAchievementDebugModeEnabled(context: Context): Boolean {
+        return LauncherConfig.isSteamAchievementDebugModeEnabled(context)
+    }
+
+    fun setSteamAchievementDebugModeEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setSteamAchievementDebugModeEnabled(context, enabled)
+    }
+
     fun isLocalTestCloudControlEnabled(context: Context): Boolean {
         return LauncherConfig.isLocalTestCloudControlEnabled(context)
     }

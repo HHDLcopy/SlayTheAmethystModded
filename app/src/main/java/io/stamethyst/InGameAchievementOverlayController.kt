@@ -8,14 +8,17 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -47,6 +50,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.stamethyst.backend.steamcloud.SteamAchievementCatalog
+import io.stamethyst.backend.steamcloud.AchievementSyncLogStore
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.ui.theme.LauncherTheme
 import kotlinx.coroutines.delay
@@ -74,7 +78,7 @@ internal class InGameAchievementOverlayController(
                 LauncherTheme(themeMode = themeMode, themeColor = themeColor) {
                     AchievementNotificationHost(
                         activeApiName = activeApiName,
-                        onDisplayed = ::showNext,
+                        onDismissed = ::finishActive,
                     )
                 }
             }
@@ -90,11 +94,18 @@ internal class InGameAchievementOverlayController(
     }
 
     fun enqueue(apiNames: Collection<String>) {
+        val accepted = mutableListOf<String>()
         apiNames.forEach { apiName ->
             if (apiName in SteamAchievementCatalog.apiNames && displayedApiNames.add(apiName)) {
                 queuedApiNames += apiName
+                accepted += apiName
             }
         }
+        AchievementSyncLogStore.append(
+            activity,
+            "overlay_queued",
+            "count=${accepted.size} ids=${accepted.sorted().joinToString(",")}",
+        )
         showNext()
     }
 
@@ -108,6 +119,7 @@ internal class InGameAchievementOverlayController(
     private fun showNext() {
         if (activeApiName != null || queuedApiNames.isEmpty()) return
         activeApiName = queuedApiNames.removeAt(0)
+        AchievementSyncLogStore.append(activity, "overlay_shown", "id=$activeApiName")
         runCatching {
             ToneGenerator(AudioManager.STREAM_NOTIFICATION, TONE_VOLUME).apply {
                 startTone(ToneGenerator.TONE_PROP_ACK, TONE_DURATION_MS)
@@ -116,7 +128,8 @@ internal class InGameAchievementOverlayController(
         }
     }
 
-    private fun dismissActive() {
+    private fun finishActive() {
+        AchievementSyncLogStore.append(activity, "overlay_dismissed", "id=$activeApiName")
         activeApiName = null
         showNext()
     }
@@ -131,29 +144,46 @@ internal class InGameAchievementOverlayController(
     @Composable
     private fun AchievementNotificationHost(
         activeApiName: String?,
-        onDisplayed: () -> Unit,
+        onDismissed: () -> Unit,
     ) {
         val entry = SteamAchievementCatalog.entries.firstOrNull { it.apiName == activeApiName }
+        var visible by androidx.compose.runtime.remember(activeApiName) {
+            mutableStateOf(activeApiName != null)
+        }
         LaunchedEffect(activeApiName) {
             if (activeApiName == null) return@LaunchedEffect
             delay(DISPLAY_DURATION_MS)
-            dismissActive()
+            visible = false
+            delay(EXIT_DURATION_MS.toLong())
+            onDismissed()
         }
         Box(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.BottomEnd,
         ) {
             AnimatedVisibility(
-                visible = entry != null,
-                enter = fadeIn(tween(ENTER_DURATION_MS)) + slideInHorizontally(
-                    initialOffsetX = { it },
-                    animationSpec = tween(ENTER_DURATION_MS),
-                ),
-                exit = fadeOut(tween(EXIT_DURATION_MS)) + slideOutHorizontally(
-                    targetOffsetX = { it },
-                    animationSpec = tween(EXIT_DURATION_MS),
-                ),
-                modifier = Modifier.padding(PaddingValues(end = 20.dp, bottom = 26.dp)),
+                visible = visible && entry != null,
+                enter = fadeIn(tween(ENTER_DURATION_MS)) +
+                    scaleIn(
+                        initialScale = 0.86f,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioMediumBouncy,
+                            stiffness = Spring.StiffnessLow,
+                        ),
+                    ) +
+                    slideInVertically(
+                        initialOffsetY = { it / 2 },
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioMediumBouncy,
+                            stiffness = Spring.StiffnessLow,
+                        ),
+                    ),
+                exit = fadeOut(tween(EXIT_DURATION_MS)) +
+                    scaleOut(targetScale = 0.94f, animationSpec = tween(EXIT_DURATION_MS)) +
+                    slideOutVertically(
+                        targetOffsetY = { it / 3 },
+                        animationSpec = tween(EXIT_DURATION_MS),
+                    ),
             ) {
                 entry?.let { SteamAchievementNotification(it) }
             }
@@ -212,7 +242,7 @@ internal class InGameAchievementOverlayController(
     }
 
     private companion object {
-        const val DISPLAY_DURATION_MS = 4_000L
+        const val DISPLAY_DURATION_MS = 10_000L
         const val ENTER_DURATION_MS = 220
         const val EXIT_DURATION_MS = 260
         const val TONE_DURATION_MS = 120

@@ -25,6 +25,7 @@ import io.stamethyst.backend.launch.LauncherReturnCoordinator
 import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.backend.runtime.RuntimePackInstaller
 import io.stamethyst.backend.steamcloud.SteamAchievementSyncService
+import io.stamethyst.backend.steamcloud.AchievementSyncLogStore
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.config.SpecialKeyInputMode
@@ -96,6 +97,7 @@ internal class GameSessionCoordinator(
     private var rescueToastRequestPollStarted = false
     private var achievementRequestPollStarted = false
     private var lastAchievementRequestKey = ""
+    private var lastInvalidAchievementPayload = ""
     private var harnessExitRequestPollStarted = false
     private var rescueToastShown = false
     @Volatile
@@ -1155,22 +1157,59 @@ internal class GameSessionCoordinator(
         if (achievementRequestPollStarted) return
         achievementRequestPollStarted = true
         lastAchievementRequestKey = ""
+        lastInvalidAchievementPayload = ""
+        AchievementSyncLogStore.append(activity, "polling_started")
         mainHandler.post(achievementRequestPollRunnable)
     }
 
     private fun stopAchievementRequestPolling() {
         achievementRequestPollStarted = false
         mainHandler.removeCallbacks(achievementRequestPollRunnable)
+        AchievementSyncLogStore.append(activity, "polling_stopped")
     }
 
     private fun pollAchievementRequest() {
         if (!jvmLaunchController.runtimeLifecycleReady || backExitRequested) return
         val requestFile = RuntimePaths.achievementRequestFile(activity)
-        val payload = runCatching { if (requestFile.isFile) requestFile.readText().trim() else "" }.getOrDefault("")
-        val request = SteamAchievementSyncService.parseRequest(payload) ?: return
+        val payload = try {
+            if (requestFile.isFile) requestFile.readText().trim() else ""
+        } catch (error: Throwable) {
+            AchievementSyncLogStore.append(
+                activity,
+                "request_read_failed",
+                "error=${AchievementSyncLogStore.errorType(error)}",
+            )
+            return
+        }
+        if (payload.isBlank()) return
+        val request = SteamAchievementSyncService.parseRequest(payload)
+        if (request == null) {
+            if (payload != lastInvalidAchievementPayload) {
+                lastInvalidAchievementPayload = payload
+                AchievementSyncLogStore.append(
+                    activity,
+                    "request_rejected",
+                    "bytes=${payload.toByteArray().size}",
+                )
+            }
+            return
+        }
+        lastInvalidAchievementPayload = ""
         if (request.dedupeKey == lastAchievementRequestKey) return
         lastAchievementRequestKey = request.dedupeKey
-        requestFile.delete()
+        AchievementSyncLogStore.append(
+            activity,
+            "request_parsed",
+            "request=${request.id} slot=${request.saveSlot ?: "none"} ids=${request.achievementIds.sorted().joinToString(",")}",
+        )
+        val requestUnchanged = runCatching {
+            requestFile.isFile && requestFile.readText().trim() == payload
+        }.getOrDefault(false)
+        if (requestUnchanged && !requestFile.delete()) {
+            AchievementSyncLogStore.append(activity, "request_delete_failed", "request=${request.id}")
+        } else if (!requestUnchanged) {
+            AchievementSyncLogStore.append(activity, "request_delete_deferred", "request=${request.id}")
+        }
         inGameAchievementOverlayController.enqueue(request.achievementIds)
         SteamAchievementSyncService.syncRequestAsync(activity.applicationContext, request) { error ->
             if (error != null) {

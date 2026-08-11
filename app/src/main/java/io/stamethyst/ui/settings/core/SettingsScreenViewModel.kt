@@ -446,6 +446,7 @@ class SettingsScreenViewModel : ViewModel() {
             LauncherPreferences.DEFAULT_STEAM_CLOUD_AUTO_LAUNCH_AFTER_SYNC_ENABLED,
         val steamGamePresenceEnabled: Boolean =
             LauncherPreferences.DEFAULT_STEAM_GAME_PRESENCE_ENABLED,
+        val steamAchievementSyncEnabled: Boolean = false,
         val workshopMaxConcurrentDownloads: Int =
             LauncherPreferences.DEFAULT_WORKSHOP_MAX_CONCURRENT_DOWNLOADS,
         val workshopDownloadThreads: Int = LauncherPreferences.DEFAULT_WORKSHOP_DOWNLOAD_THREADS,
@@ -1351,6 +1352,7 @@ class SettingsScreenViewModel : ViewModel() {
                         steamCloudAutoLaunchAfterSyncEnabled =
                             LauncherPreferences.isSteamCloudAutoLaunchAfterSyncEnabled(host),
                         steamGamePresenceEnabled = LauncherPreferences.isSteamGamePresenceEnabled(host),
+                        steamAchievementSyncEnabled = LauncherPreferences.isSteamAchievementSyncEnabled(host),
                         workshopMaxConcurrentDownloads = LauncherPreferences.readWorkshopMaxConcurrentDownloads(host),
                         workshopDownloadThreads = LauncherPreferences.readWorkshopDownloadThreads(host),
                         workshopWattAccelerationEnabled = LauncherPreferences.isWorkshopWattAccelerationEnabled(host),
@@ -1916,6 +1918,11 @@ class SettingsScreenViewModel : ViewModel() {
         } else {
             SteamGamePresenceService.stop(host)
         }
+        refreshStatus(host)
+    }
+
+    fun onSteamAchievementSyncChanged(host: Activity, enabled: Boolean) {
+        LauncherPreferences.setSteamAchievementSyncEnabled(host, enabled)
         refreshStatus(host)
     }
 

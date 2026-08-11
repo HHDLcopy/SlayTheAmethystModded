@@ -80,6 +80,29 @@ class DiagnosticsArchiveBuilderAutoImportPatchLogsTest {
     }
 
     @Test
+    fun writeAchievementSyncLogsForArchive_includesAchievementSyncLogs() {
+        val roots = TestRoots.create("diag-achievement-sync")
+        RuntimePaths.achievementSyncLog(roots.context).apply {
+            parentFile?.mkdirs()
+            writeText("event=request_parsed detail=ids=shrug_it_off", Charsets.UTF_8)
+        }
+        val archive = File(roots.rootDir, "diagnostics-achievement.zip")
+
+        FileOutputStream(archive, false).use { output ->
+            ZipOutputStream(output).use { zipOutput ->
+                DiagnosticsArchiveBuilder.writeAchievementSyncLogsForArchive(zipOutput, roots.context)
+            }
+        }
+
+        ZipFile(archive).use { zipFile ->
+            val entry = zipFile.getEntry("sts/achievement_sync/achievement_sync.log")
+            assertNotNull(entry)
+            val text = zipFile.getInputStream(entry).bufferedReader(Charsets.UTF_8).use { it.readText() }
+            assertTrue(text.contains("shrug_it_off"))
+        }
+    }
+
+    @Test
     fun writeLauncherCrashReportsForArchive_includesCrashReportsFromAndroidDirectory() {
         val roots = TestRoots.create("diag-launcher-crash-reports")
         val reportDir = RuntimePaths.launcherCrashReportsDir(roots.context).apply { mkdirs() }

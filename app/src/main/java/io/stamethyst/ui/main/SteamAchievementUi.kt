@@ -34,6 +34,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -44,17 +45,25 @@ import androidx.compose.ui.zIndex
 import io.stamethyst.R
 import io.stamethyst.backend.steamcloud.SteamAchievementService
 
+private val AchievementBadgeBackground = Color(0xFFFFF8E1)
+private val AchievementBadgeContent = Color(0xFF8A6A1F)
+
 @Composable
 internal fun SteamAchievementOverviewCard(
     state: MainScreenViewModel.SteamAchievementUi,
     onClick: () -> Unit,
 ) {
     val hasAchievements = state.achievements.isNotEmpty()
+    val unavailable = !state.loading && !hasAchievements && state.errorSummary.isNotBlank()
     Card(
         modifier = Modifier.fillMaxWidth(),
         onClick = onClick,
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f)),
+        colors = CardDefaults.cardColors(
+            containerColor = if (unavailable) MaterialTheme.colorScheme.surfaceContainerLow
+                             else MaterialTheme.colorScheme.surface,
+        ),
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -63,8 +72,8 @@ internal fun SteamAchievementOverviewCard(
         ) {
             Surface(
                 shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.tertiaryContainer,
-                contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+                contentColor = MaterialTheme.colorScheme.primary,
             ) {
                 Box(
                     modifier = Modifier.padding(10.dp).size(24.dp),

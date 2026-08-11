@@ -1013,12 +1013,27 @@ class MainScreenViewModel : ViewModel() {
             return
         }
         val previous = uiState.steamAchievements
+        val cached = SteamAchievementService.readCached(host.applicationContext, auth.steamId64)
+        val initialAchievements = when {
+            previous.accountName == auth.accountName && previous.achievements.isNotEmpty() ->
+                previous.achievements
+            cached != null -> cached.achievements
+            else -> SteamAchievementService.buildSnapshot(
+                steamId64 = auth.steamId64,
+                unlockedApiNames = emptySet(),
+                fetchedAtMs = 0L,
+                fromCache = false,
+            ).achievements
+        }
         steamAchievementLoadInFlight = true
         uiState = uiState.copy(
             steamAchievements = previous.copy(
                 accountName = auth.accountName,
+                achievements = initialAchievements,
                 loading = true,
                 errorSummary = "",
+                fromCache = cached != null && previous.achievements.isEmpty(),
+                lastLoadedAtMs = cached?.fetchedAtMs ?: previous.lastLoadedAtMs,
                 pendingUploadCount = SteamAchievementSyncService.pendingIds(host).size,
             )
         )
@@ -1033,9 +1048,7 @@ class MainScreenViewModel : ViewModel() {
             }
             val cached = if (cmResult.isFailure) {
                 SteamAchievementService.readCached(host.applicationContext, auth.steamId64)
-            } else {
-                null
-            }
+            } else null
             val localUploadCount = cmResult.getOrNull()?.let { snapshot ->
                 val remoteUnlocked = snapshot.achievements
                     .asSequence()

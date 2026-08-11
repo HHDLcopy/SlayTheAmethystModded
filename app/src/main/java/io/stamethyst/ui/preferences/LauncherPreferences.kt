@@ -284,6 +284,14 @@ object LauncherPreferences {
         LauncherConfig.setSteamAchievementDebugModeEnabled(context, enabled)
     }
 
+    fun isSteamAchievementSyncEnabled(context: Context): Boolean {
+        return LauncherConfig.isSteamAchievementSyncEnabled(context)
+    }
+
+    fun setSteamAchievementSyncEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setSteamAchievementSyncEnabled(context, enabled)
+    }
+
     fun isLocalTestCloudControlEnabled(context: Context): Boolean {
         return LauncherConfig.isLocalTestCloudControlEnabled(context)
     }

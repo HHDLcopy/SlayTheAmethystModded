@@ -231,6 +231,8 @@ object LauncherConfig {
         "developer_settings_warning_dismissed"
     private const val PREF_KEY_STEAM_ACHIEVEMENT_DEBUG_MODE =
         "steam_achievement_debug_mode"
+    private const val PREF_KEY_STEAM_ACHIEVEMENT_SYNC_ENABLED =
+        "steam_achievement_sync_enabled"
     private const val PREF_KEY_USE_LOCAL_TEST_CLOUD_CONTROL =
         "use_local_test_cloud_control"
     private const val PREF_KEY_LOCAL_TEST_ONLINE_SERVICE_BASE_URL =
@@ -592,6 +594,19 @@ object LauncherConfig {
     fun setSteamAchievementDebugModeEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_STEAM_ACHIEVEMENT_DEBUG_MODE, enabled)
+        }
+    }
+
+    fun isSteamAchievementSyncEnabled(context: Context): Boolean {
+        return prefs(context, crossProcess = true).getBoolean(
+            PREF_KEY_STEAM_ACHIEVEMENT_SYNC_ENABLED,
+            false,
+        )
+    }
+
+    fun setSteamAchievementSyncEnabled(context: Context, enabled: Boolean) {
+        prefs(context, crossProcess = true).edit(commit = true) {
+            putBoolean(PREF_KEY_STEAM_ACHIEVEMENT_SYNC_ENABLED, enabled)
         }
     }
 

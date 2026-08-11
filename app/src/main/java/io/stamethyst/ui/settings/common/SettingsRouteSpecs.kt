@@ -53,7 +53,7 @@ internal val SettingsGameRouteSpec = SettingsRouteSpec(
 internal val SettingsMarketCloudRouteSpec = SettingsRouteSpec(
     titleResId = R.string.settings_category_market_cloud_title,
     subtitleResId = R.string.settings_category_market_cloud_subtitle,
-    iconResId = R.drawable.ic_cloud_sync,
+    iconResId = R.drawable.ic_steam,
 )
 
 

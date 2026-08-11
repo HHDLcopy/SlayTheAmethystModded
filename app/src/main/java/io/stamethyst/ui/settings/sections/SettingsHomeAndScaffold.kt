@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -33,6 +35,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.WindowInsets
@@ -527,6 +530,7 @@ internal fun LauncherSettingsMarketCloudScreenContent(
     onSteamCloudWattAccelerationChanged: (Boolean) -> Unit = {},
     onSteamCloudAutoLaunchAfterSyncChanged: (Boolean) -> Unit = {},
     onSteamGamePresenceChanged: (Boolean) -> Unit = {},
+    onSteamAchievementSyncChanged: (Boolean) -> Unit = {},
     onOpenSteamCloudSaveSettings: () -> Unit = {},
     onClearSteamCloudCredentials: () -> Unit = {},
     onClearSteamCloudNetworkCache: () -> Unit = {},
@@ -539,6 +543,43 @@ internal fun LauncherSettingsMarketCloudScreenContent(
     onClearWorkshopPreviewCache: () -> Unit = {},
     onOpenBaiduTranslationCredentials: () -> Unit = {},
 ) {
+    val steamActions = SteamCloudSettingsActions(
+        onOpenSteamCloudLogin = onOpenSteamCloudLogin,
+        onSteamCloudWattAccelerationChanged = onSteamCloudWattAccelerationChanged,
+        onSteamCloudAutoLaunchAfterSyncChanged = onSteamCloudAutoLaunchAfterSyncChanged,
+        onSteamGamePresenceChanged = onSteamGamePresenceChanged,
+        onSteamAchievementSyncChanged = onSteamAchievementSyncChanged,
+        onOpenSteamCloudSaveSettings = onOpenSteamCloudSaveSettings,
+        onClearSteamCloudCredentials = onClearSteamCloudCredentials,
+        onClearSteamCloudNetworkCache = onClearSteamCloudNetworkCache,
+    )
+    var showRequiresPurchaseDialog by remember { mutableStateOf(false) }
+    val requiresPurchaseAction: @Composable () -> Unit = {
+        IconButton(onClick = { showRequiresPurchaseDialog = true }) {
+            Icon(
+                painter = painterResource(R.drawable.ic_info_outline),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+    if (showRequiresPurchaseDialog) {
+        AlertDialog(
+            onDismissRequest = { showRequiresPurchaseDialog = false },
+            title = { Text(stringResource(R.string.settings_steam_services_requires_purchase_title)) },
+            text = {
+                Text(
+                    text = stringResource(R.string.settings_steam_services_requires_purchase_body),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            },
+            confirmButton = {
+                HapticTextButton(onClick = { showRequiresPurchaseDialog = false }) {
+                    Text(stringResource(android.R.string.ok))
+                }
+            },
+        )
+    }
     SettingsRouteScaffold(
         modifier = modifier,
         uiState = uiState,
@@ -546,19 +587,38 @@ internal fun LauncherSettingsMarketCloudScreenContent(
         onGoBack = onGoBack,
     ) {
         item {
-            SettingsSectionCard(title = stringResource(R.string.settings_steam_cloud_title)) {
+            SteamAccountSection(uiState = uiState, actions = steamActions)
+        }
+        item {
+            SettingsSectionCard(
+                title = stringResource(R.string.settings_steam_services_presence_section_title),
+                trailingAction = requiresPurchaseAction,
+            ) {
+                SteamGamePresenceSection(uiState = uiState, actions = steamActions)
+            }
+        }
+        item {
+            SettingsSectionCard(
+                title = stringResource(R.string.settings_steam_services_achievement_section_title),
+                trailingAction = requiresPurchaseAction,
+            ) {
+                SteamAchievementSection(uiState = uiState, actions = steamActions)
+            }
+        }
+        item {
+            SettingsSectionCard(
+                title = stringResource(R.string.settings_steam_cloud_title),
+                trailingAction = requiresPurchaseAction,
+            ) {
                 SettingsSteamCloudSection(
                     uiState = uiState,
-                    actions = SteamCloudSettingsActions(
-                        onOpenSteamCloudLogin = onOpenSteamCloudLogin,
-                        onSteamCloudWattAccelerationChanged = onSteamCloudWattAccelerationChanged,
-                        onSteamCloudAutoLaunchAfterSyncChanged = onSteamCloudAutoLaunchAfterSyncChanged,
-                        onSteamGamePresenceChanged = onSteamGamePresenceChanged,
-                        onOpenSteamCloudSaveSettings = onOpenSteamCloudSaveSettings,
-                        onClearSteamCloudCredentials = onClearSteamCloudCredentials,
-                        onClearSteamCloudNetworkCache = onClearSteamCloudNetworkCache,
-                    ),
+                    actions = steamActions,
                 )
+            }
+        }
+        item {
+            SettingsSectionCard(title = stringResource(R.string.settings_steam_services_network_section_title)) {
+                SteamNetworkSection(uiState = uiState, actions = steamActions)
             }
         }
         item {

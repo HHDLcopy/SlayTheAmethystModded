@@ -18,6 +18,7 @@ object RuntimePaths {
     private const val WORKSHOP_AUTO_IMPORT_PATCH_LOG_DIR_NAME = "workshop_auto_import_patch_logs"
     private const val WORKSHOP_BROWSE_FAILURE_LOG_DIR_NAME = "workshop_browse_failure_logs"
     private const val MEMORY_DIAGNOSTICS_LOG_FILE_NAME = "memory_diagnostics.log"
+    private const val ACHIEVEMENT_SYNC_LOG_FILE_NAME = "achievement_sync.log"
     private const val PERFORMANCE_LAUNCH_AUDIT_LOG_FILE_NAME = "performance_launch_audit.log"
     private const val JVM_GC_LOG_FILE_NAME = "jvm_gc.log"
     private const val JVM_HEAP_SNAPSHOT_FILE_NAME = "jvm_heap_snapshot.txt"
@@ -265,6 +266,10 @@ object RuntimePaths {
         File(jvmLogsDir(context), MEMORY_DIAGNOSTICS_LOG_FILE_NAME)
 
     @JvmStatic
+    fun achievementSyncLog(context: Context): File =
+        File(jvmLogsDir(context), ACHIEVEMENT_SYNC_LOG_FILE_NAME)
+
+    @JvmStatic
     fun performanceLaunchAuditLog(context: Context): File =
         File(jvmLogsDir(context), PERFORMANCE_LAUNCH_AUDIT_LOG_FILE_NAME)
 
@@ -401,6 +406,23 @@ object RuntimePaths {
             ?.toList()
             .orEmpty()
             .ifEmpty { listOf(memoryDiagnosticsLog(context)) }
+    }
+
+    @JvmStatic
+    fun listAchievementSyncLogFiles(context: Context): List<File> {
+        val directory = jvmLogsDir(context)
+        if (!directory.isDirectory) {
+            return listOf(achievementSyncLog(context))
+        }
+        return directory.listFiles()
+            ?.asSequence()
+            ?.filter { file -> file.isFile && isAchievementSyncLogFileName(file.name) }
+            ?.sortedWith { left, right ->
+                compareAchievementSyncLogFileNames(left.name, right.name)
+            }
+            ?.toList()
+            .orEmpty()
+            .ifEmpty { listOf(achievementSyncLog(context)) }
     }
 
     @JvmStatic
@@ -775,6 +797,11 @@ object RuntimePaths {
             name.startsWith("$MEMORY_DIAGNOSTICS_LOG_FILE_NAME.")
     }
 
+    internal fun isAchievementSyncLogFileName(name: String): Boolean {
+        return name == ACHIEVEMENT_SYNC_LOG_FILE_NAME ||
+            name.startsWith("$ACHIEVEMENT_SYNC_LOG_FILE_NAME.")
+    }
+
     internal fun isWindowDiagnosticsFileName(name: String): Boolean {
         return name == WINDOW_DIAGNOSTICS_LOG_FILE_NAME ||
             name.startsWith("$WINDOW_DIAGNOSTICS_LOG_FILE_NAME.")
@@ -806,6 +833,15 @@ object RuntimePaths {
     internal fun compareMemoryDiagnosticsFileNames(left: String, right: String): Int {
         val byRotationIndex = rotationIndexForMemoryDiagnosticsFile(left)
             .compareTo(rotationIndexForMemoryDiagnosticsFile(right))
+        if (byRotationIndex != 0) {
+            return byRotationIndex
+        }
+        return left.compareTo(right)
+    }
+
+    internal fun compareAchievementSyncLogFileNames(left: String, right: String): Int {
+        val byRotationIndex = rotationIndexForAchievementSyncLogFile(left)
+            .compareTo(rotationIndexForAchievementSyncLogFile(right))
         if (byRotationIndex != 0) {
             return byRotationIndex
         }
@@ -880,6 +916,18 @@ object RuntimePaths {
             return 0
         }
         return name.substringAfter("$MEMORY_DIAGNOSTICS_LOG_FILE_NAME.", "")
+            .toIntOrNull()
+            ?: Int.MAX_VALUE
+    }
+
+    private fun rotationIndexForAchievementSyncLogFile(name: String): Int {
+        if (!isAchievementSyncLogFileName(name)) {
+            return Int.MAX_VALUE
+        }
+        if (name == ACHIEVEMENT_SYNC_LOG_FILE_NAME) {
+            return 0
+        }
+        return name.substringAfter("$ACHIEVEMENT_SYNC_LOG_FILE_NAME.", "")
             .toIntOrNull()
             ?: Int.MAX_VALUE
     }

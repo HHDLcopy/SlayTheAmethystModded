@@ -229,6 +229,7 @@ internal object DiagnosticsArchiveBuilder {
                     "sts/memory_diagnostics/${memoryLogFile.name}"
                 )
             }
+            exportedCount += writeAchievementSyncLogsForArchive(zipOutput, context)
             exportedCount += writeWindowDiagnosticsForArchive(zipOutput, context)
             RuntimePaths.listLogcatCaptureFiles(context)
                 .groupBy { if (it.name.contains("system")) "system" else "app" }
@@ -279,14 +280,15 @@ internal object DiagnosticsArchiveBuilder {
         - feedback/：反馈提交所需的 issue 内容、请求信息和日志摘要；该目录保持反馈包原结构。
         - info/：设备信息和启动器设置。
         - logs/：JVM 日志及启动桥接、GC、堆快照、信号转储等启动器日志，JVM 日志最多保留 5 槽位。
-         - memory_diagnostics/：内存压力和内存诊断日志，最多保留 5 槽位。
-         - window/：游戏窗口、viewport、Surface、尺寸同步和触控坐标映射诊断日志，最多保留 3 槽位。
+        - achievement_sync/：成就请求解析、游戏内弹窗、Steam 查询、上传及失败事件，最多保留 3 槽位，不包含 Steam 凭据。
+        - memory_diagnostics/：内存压力和内存诊断日志，最多保留 5 槽位。
+        - window/：游戏窗口、viewport、Surface、尺寸同步和触控坐标映射诊断日志，最多保留 3 槽位。
         - logcat/app/：应用进程 logcat，最多 5 槽位。
         - logcat/system/：系统进程 logcat，最多 5 槽位。
         - launcher_crash_reports/：启动器崩溃报告，最多 5 槽位。
         - steam_login/：Steam credentials 登录失败记录，最多 5 槽位。
-         - steam_cloud/：Steam Cloud 操作、失败历史和协议诊断信息。
-         - steam-game-presence/：Steam 在线状态上报的最后摘要和连续事件日志，最多保留 3 槽位。
+        - steam_cloud/：Steam Cloud 操作、失败历史和协议诊断信息。
+        - steam-game-presence/：Steam 在线状态上报的最后摘要和连续事件日志，最多保留 3 槽位。
         - workshop/market_failed/：Workshop 市场查询失败日志，最多 5 槽位。
         - workshop/download_tasks/：最近 10 条 Workshop 下载任务日志。
         - workshop/auto_import_patch_logs/：自动导入补丁日志，最多 10 槽位。
@@ -584,6 +586,19 @@ internal object DiagnosticsArchiveBuilder {
                 zipOutput,
                 windowLogFile,
                 "sts/window/${windowLogFile.name}"
+            )
+        }
+        return exportedCount
+    }
+
+    @Throws(IOException::class)
+    internal fun writeAchievementSyncLogsForArchive(zipOutput: ZipOutputStream, context: Context): Int {
+        var exportedCount = 0
+        RuntimePaths.listAchievementSyncLogFiles(context).forEach { achievementLogFile ->
+            exportedCount += writeOptionalFile(
+                zipOutput,
+                achievementLogFile,
+                "sts/achievement_sync/${achievementLogFile.name}"
             )
         }
         return exportedCount

@@ -10,6 +10,7 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Map;
 import java.util.HashSet;
+import java.util.Locale;
 import java.util.Set;
 import com.megacrit.cardcrawl.core.CardCrawlGame;
 import com.megacrit.cardcrawl.screens.stats.AchievementItem;
@@ -28,6 +29,10 @@ public final class AchievementBridge {
 
     public static void initialize() {
         initialized = true;
+        System.out.println(
+            "[amethyst-achievement] bridge initialized requestPathConfigured="
+                + Boolean.toString(requestFile() != null)
+        );
     }
 
     public static void reportUnlocked(String id) {
@@ -36,7 +41,10 @@ public final class AchievementBridge {
         synchronized (AchievementBridge.class) {
             if (!SENT.add(normalized)) return;
         }
-        writeRequest(buildSyncRequest());
+        boolean written = writeRequest(buildSyncRequest());
+        System.out.println(
+            "[amethyst-achievement] report id=" + normalized + " requestWritten=" + Boolean.toString(written)
+        );
     }
 
     /** Called on the game thread to apply launcher-confirmed remote locks to the active cache. */
@@ -94,9 +102,9 @@ public final class AchievementBridge {
         }
     }
 
-    private static void writeRequest(String request) {
+    private static boolean writeRequest(String request) {
         File target = requestFile();
-        if (target == null) return;
+        if (target == null) return false;
         File parent = target.getParentFile();
         if (parent != null) parent.mkdirs();
         File temporary = new File(target.getPath() + ".tmp");
@@ -114,8 +122,13 @@ public final class AchievementBridge {
             } catch (Exception atomicFailure) {
                 Files.move(temporary.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
             }
-        } catch (Exception ignored) {
+            return true;
+        } catch (Exception error) {
             temporary.delete();
+            System.out.println(
+                "[amethyst-achievement] request write failed error=" + error.getClass().getSimpleName()
+            );
+            return false;
         }
     }
 
@@ -145,7 +158,7 @@ public final class AchievementBridge {
     }
 
     private static String sanitize(String value) {
-        return value.replace('\r', '_').replace('\n', '_').trim();
+        return value.replace('\r', '_').replace('\n', '_').trim().toLowerCase(Locale.ROOT);
     }
 
     private static String json(String value) {

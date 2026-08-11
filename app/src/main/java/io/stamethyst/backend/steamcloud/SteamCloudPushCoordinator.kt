@@ -15,6 +15,8 @@ import java.util.concurrent.TimeUnit
 
 internal object SteamCloudPushCoordinator {
     private const val FAILURE_PATH_SAMPLE_LIMIT = 12
+    private const val UPLOAD_BATCH_RECONCILIATION_MAX_ATTEMPTS = 3
+    private const val UPLOAD_BATCH_RECONCILIATION_DELAY_MS = 1_000L
 
     private data class PlanUploadTelemetry(
         var clientInitMs: Long? = null,
@@ -322,10 +324,12 @@ internal object SteamCloudPushCoordinator {
                 )
             )
             ensureNotCancelled(shouldContinue)
-            client.completeUploadBatch(
-                STEAM_CLOUD_APP_ID,
-                requireNotNull(uploadBatch).batchId,
-                EResult.OK,
+            val completionRecoveredFromManifest = completeUploadBatchOrReconcile(
+                client = client,
+                batch = requireNotNull(uploadBatch),
+                uploadCandidates = plan.uploadCandidates,
+                deleteRemotePaths = plan.remoteDeleteCandidates.map { it.remotePath },
+                shouldContinue = shouldContinue,
             )
             uploadBatch = null
 
@@ -381,6 +385,7 @@ internal object SteamCloudPushCoordinator {
                     "Upload summary: ${result.summaryPath}",
                     "Manifest path: ${SteamCloudManifestStore.manifestFile(host).absolutePath}",
                     "Baseline path: ${SteamCloudBaselineStore.baselineFile(host).absolutePath}",
+                    "Upload batch completion recovered from manifest: ${if (completionRecoveredFromManifest) "yes" else "no"}",
                 ) + result.warnings.distinct().map { "Warning: $it" },
             )
             return result
@@ -618,11 +623,14 @@ internal object SteamCloudPushCoordinator {
                 )
             )
             ensureNotCancelled(shouldContinue)
+            var completionRecoveredFromManifest = false
             uploadBatch?.let { batch ->
-                client.completeUploadBatch(
-                    STEAM_CLOUD_APP_ID,
-                    batch.batchId,
-                    EResult.OK,
+                completionRecoveredFromManifest = completeUploadBatchOrReconcile(
+                    client = client,
+                    batch = batch,
+                    uploadCandidates = preparedPlan.uploadCandidates,
+                    deleteRemotePaths = preparedPlan.deleteRemotePaths,
+                    shouldContinue = shouldContinue,
                 )
                 uploadBatch = null
             }
@@ -678,6 +686,7 @@ internal object SteamCloudPushCoordinator {
                     "Upload summary: ${result.summaryPath}",
                     "Manifest path: ${SteamCloudManifestStore.manifestFile(host).absolutePath}",
                     "Baseline path: ${SteamCloudBaselineStore.baselineFile(host).absolutePath}",
+                    "Upload batch completion recovered from manifest: ${if (completionRecoveredFromManifest) "yes" else "no"}",
                 ) + result.warnings.distinct().map { "Warning: $it" },
             )
             return result
@@ -818,6 +827,54 @@ internal object SteamCloudPushCoordinator {
         progress: SteamCloudSyncProgress,
     ) {
         progressCallback?.invoke(progress)
+    }
+
+    private fun completeUploadBatchOrReconcile(
+        client: SteamCloudClient,
+        batch: SteamCloudClient.UploadBatch,
+        uploadCandidates: List<SteamCloudUploadCandidate>,
+        deleteRemotePaths: List<String>,
+        shouldContinue: () -> Boolean,
+    ): Boolean {
+        try {
+            client.completeUploadBatch(STEAM_CLOUD_APP_ID, batch.batchId, EResult.OK)
+            return false
+        } catch (completionError: Throwable) {
+            for (attempt in 1..UPLOAD_BATCH_RECONCILIATION_MAX_ATTEMPTS) {
+                ensureNotCancelled(shouldContinue)
+                if (attempt > 1) {
+                    Thread.sleep(UPLOAD_BATCH_RECONCILIATION_DELAY_MS)
+                }
+                val remoteEntries = try {
+                    client.listFiles(STEAM_CLOUD_APP_ID)
+                } catch (manifestError: Throwable) {
+                    completionError.addSuppressed(manifestError)
+                    continue
+                }
+                if (uploadBatchChangesAreVisible(remoteEntries, uploadCandidates, deleteRemotePaths)) {
+                    return true
+                }
+            }
+            throw completionError
+        }
+    }
+
+    internal fun uploadBatchChangesAreVisible(
+        remoteEntries: List<SteamCloudClient.RemoteFileRecord>,
+        uploadCandidates: List<SteamCloudUploadCandidate>,
+        deleteRemotePaths: List<String>,
+    ): Boolean {
+        val entriesByPath = remoteEntries.associateBy { normalizeRemotePathKey(it.remotePath) }
+        val uploadsVisible = uploadCandidates.all { candidate ->
+            val remote = entriesByPath[normalizeRemotePathKey(candidate.remotePath)] ?: return@all false
+            remote.rawFileSize == candidate.fileSize &&
+                candidate.sha1.isNotBlank() &&
+                remote.sha1.equals(candidate.sha1, ignoreCase = true)
+        }
+        val deletesVisible = deleteRemotePaths.none { remotePath ->
+            normalizeRemotePathKey(remotePath) in entriesByPath
+        }
+        return uploadsVisible && deletesVisible
     }
 
     private fun ensureNotCancelled(shouldContinue: () -> Boolean) {

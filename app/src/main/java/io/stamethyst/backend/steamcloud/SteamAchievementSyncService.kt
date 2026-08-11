@@ -4,6 +4,7 @@ import android.content.Context
 import io.stamethyst.config.RuntimePaths
 import org.json.JSONObject
 import java.io.File
+import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -27,9 +28,13 @@ object SteamAchievementSyncService {
         val ids = buildSet {
             val array = json.optJSONArray("achievements")
             if (array != null) for (index in 0 until array.length()) {
-                array.optString(index).trim().takeIf { it in SteamAchievementCatalog.apiNames }?.let(::add)
+                array.optString(index).trim().lowercase(Locale.ROOT)
+                    .takeIf { it in SteamAchievementCatalog.apiNames }
+                    ?.let(::add)
             }
-            json.optString("achievement").trim().takeIf { it in SteamAchievementCatalog.apiNames }?.let(::add)
+            json.optString("achievement").trim().lowercase(Locale.ROOT)
+                .takeIf { it in SteamAchievementCatalog.apiNames }
+                ?.let(::add)
         }
         val id = json.optString("request_id").trim()
             .ifBlank { json.optString("id").trim() }
@@ -45,16 +50,42 @@ object SteamAchievementSyncService {
         .getStringSet(PENDING_IDS, emptySet()).orEmpty().toSet()
 
     fun syncRequestAsync(context: Context, request: Request, onFinished: (Throwable?) -> Unit = {}) {
+        val appContext = context.applicationContext
+        AchievementSyncLogStore.append(
+            appContext,
+            "sync_queued",
+            "source=runtime request=${request.id} slot=${request.saveSlot ?: "none"} ids=${request.achievementIds.sorted().joinToString(",")}",
+        )
         executor.execute {
-            val error = runCatching { syncRequest(context.applicationContext, request) }.exceptionOrNull()
+            val error = runCatching { syncRequest(appContext, request) }.exceptionOrNull()
+            AchievementSyncLogStore.append(
+                appContext,
+                if (error == null) "sync_completed" else "sync_failed",
+                if (error == null) {
+                    "source=runtime request=${request.id}"
+                } else {
+                    "source=runtime request=${request.id} error=${AchievementSyncLogStore.errorType(error)}"
+                },
+            )
             onFinished(error)
         }
     }
 
     /** Reconciles the union of all three local achievement files with the current Steam state. */
     fun syncAllLocalAchievementsAsync(context: Context, onFinished: (Throwable?) -> Unit = {}) {
+        val appContext = context.applicationContext
+        AchievementSyncLogStore.append(appContext, "sync_queued", "source=manual")
         executor.execute {
-            val error = runCatching { syncLocalAchievements(context.applicationContext) }.exceptionOrNull()
+            val error = runCatching { syncLocalAchievements(appContext, "manual") }.exceptionOrNull()
+            AchievementSyncLogStore.append(
+                appContext,
+                if (error == null) "sync_completed" else "sync_failed",
+                if (error == null) {
+                    "source=manual"
+                } else {
+                    "source=manual error=${AchievementSyncLogStore.errorType(error)}"
+                },
+            )
             onFinished(error)
         }
     }
@@ -102,24 +133,43 @@ object SteamAchievementSyncService {
     }
 
     private fun syncRequest(context: Context, request: Request) {
-        syncLocalAchievements(context)
+        syncLocalAchievements(context, "runtime")
     }
 
-    private fun syncLocalAchievements(context: Context) {
+    private fun syncLocalAchievements(context: Context, source: String) {
+        AchievementSyncLogStore.append(context, "auth_read_started", "source=$source")
         val auth = SteamCloudAuthStore.readAuthMaterial(context)
             ?: error("Steam authentication is unavailable")
+        AchievementSyncLogStore.append(context, "remote_fetch_started", "source=$source")
         val remote = SteamAchievementService.fetchViaCm(
             context, auth.accountName, auth.refreshToken, auth.steamId64
         ).achievements.filter { it.unlocked }.map { it.apiName }.toSet()
+        AchievementSyncLogStore.append(
+            context,
+            "remote_fetch_completed",
+            "source=$source unlocked_count=${remote.size}",
+        )
         val upload = localAchievementsMissingFromSteam(context, remote)
+        AchievementSyncLogStore.append(
+            context,
+            "upload_plan",
+            "source=$source count=${upload.size} ids=${upload.sorted().joinToString(",")}",
+        )
         upload.forEach { addPending(context, it) }
         upload.forEach { apiName ->
+            AchievementSyncLogStore.append(context, "upload_started", "source=$source id=$apiName")
             try {
                 SteamAchievementService.setAchievementUnlockedViaCm(
                     context, auth.accountName, auth.refreshToken, auth.steamId64, apiName, true
                 )
                 removePending(context, apiName)
+                AchievementSyncLogStore.append(context, "upload_completed", "source=$source id=$apiName")
             } catch (error: Throwable) {
+                AchievementSyncLogStore.append(
+                    context,
+                    "upload_failed",
+                    "source=$source id=$apiName error=${AchievementSyncLogStore.errorType(error)}",
+                )
                 throw error
             }
         }

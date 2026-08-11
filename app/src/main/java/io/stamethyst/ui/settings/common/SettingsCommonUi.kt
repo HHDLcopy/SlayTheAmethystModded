@@ -121,6 +121,16 @@ internal fun SettingsSectionCard(
     title: String,
     content: @Composable () -> Unit,
 ) {
+    SettingsSectionCard(title = title, trailingAction = null, content = content)
+}
+
+
+@Composable
+internal fun SettingsSectionCard(
+    title: String,
+    trailingAction: (@Composable () -> Unit)?,
+    content: @Composable () -> Unit,
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -134,7 +144,21 @@ internal fun SettingsSectionCard(
                 .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text(text = title, style = MaterialTheme.typography.titleMedium)
+            if (trailingAction != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.weight(1f),
+                    )
+                    trailingAction()
+                }
+            } else {
+                Text(text = title, style = MaterialTheme.typography.titleMedium)
+            }
             HorizontalDivider()
             content()
         }

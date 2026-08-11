@@ -19,6 +19,18 @@ class SteamAchievementSyncServiceTest {
     }
 
     @Test
+    fun parseRequest_normalizesVanillaUppercaseAchievementIds() {
+        val request = SteamAchievementSyncService.parseRequest(
+            "{\"version\":1,\"type\":\"achievement_sync\",\"save_slot\":0," +
+                "\"achievements\":[\"SHRUG_IT_OFF\"]}"
+        )
+
+        assertEquals(setOf(SteamAchievementService.SHRUG_IT_OFF_API_NAME), request?.achievementIds)
+        assertEquals(SteamAchievementService.SHRUG_IT_OFF_API_NAME, request?.id)
+        assertEquals(0, request?.saveSlot)
+    }
+
+    @Test
     fun parseRequest_rejectsEmptyOrMalformedRequests() {
         assertNull(SteamAchievementSyncService.parseRequest("{}"))
         assertNull(SteamAchievementSyncService.parseRequest("not-json"))
@@ -68,7 +80,7 @@ class SteamAchievementSyncServiceTest {
             val files = listOf("STSAchievements", "1_STSAchievements", "2_STSAchievements")
                 .map { File(root, it) }
             files[0].writeText("{\"shrug_it_off\":1}")
-            files[1].writeText("{\"THE_GUARDIAN\":1}")
+            files[1].writeText("{\"GUARDIAN\":1}")
             files[2].writeText("{\"shrug_it_off\":1}")
 
             val result = SteamAchievementSyncService.localAchievementsMissingFromSteam(
@@ -76,7 +88,7 @@ class SteamAchievementSyncServiceTest {
                 remoteUnlocked = setOf("shrug_it_off"),
             )
 
-            assertEquals(setOf("the_guardian"), result)
+            assertEquals(setOf("guardian"), result)
         } finally {
             root.deleteRecursively()
         }

@@ -76,6 +76,7 @@ internal data class SteamCloudSettingsActions(
     val onSteamCloudWattAccelerationChanged: (Boolean) -> Unit,
     val onSteamCloudAutoLaunchAfterSyncChanged: (Boolean) -> Unit,
     val onSteamGamePresenceChanged: (Boolean) -> Unit,
+    val onSteamAchievementSyncChanged: (Boolean) -> Unit,
     val onOpenSteamCloudSaveSettings: () -> Unit,
     val onClearSteamCloudCredentials: () -> Unit,
     val onClearSteamCloudNetworkCache: () -> Unit,
@@ -203,27 +204,12 @@ internal fun SettingsSteamCloudSection(
     uiState: SettingsScreenViewModel.UiState,
     actions: SteamCloudSettingsActions,
 ) {
-    var showLogoutConfirmDialog by rememberSaveable { mutableStateOf(false) }
-    val accountName = uiState.steamCloudAccountName.ifBlank {
-        stringResource(R.string.settings_steam_cloud_account_unknown)
-    }
-    val accountDisplayName = uiState.steamCloudPersonaName.ifBlank { accountName }
     val currentSaveModeText = steamCloudSaveModeDisplayName(uiState.steamCloudSaveMode)
 
     Text(
         text = stringResource(R.string.settings_steam_cloud_intro),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant
-    )
-
-    Spacer(modifier = Modifier.size(8.dp))
-    SteamCloudAccountCard(
-        loggedIn = uiState.steamCloudRefreshTokenConfigured,
-        accountName = accountDisplayName,
-        avatarUrl = uiState.steamCloudAvatarUrl,
-        busy = uiState.busy,
-        onLogin = actions.onOpenSteamCloudLogin,
-        onLogout = { showLogoutConfirmDialog = true },
     )
 
     Spacer(modifier = Modifier.size(8.dp))
@@ -252,24 +238,32 @@ internal fun SettingsSteamCloudSection(
     Spacer(modifier = Modifier.size(8.dp))
     SettingsSwitchItem(
         SettingsSwitchSpec(
-            checked = uiState.steamGamePresenceEnabled,
-            enabled = !uiState.busy && uiState.steamCloudRefreshTokenConfigured,
-            enabledText = stringResource(R.string.settings_steam_game_presence_enabled_title),
-            disabledText = stringResource(R.string.settings_steam_game_presence_disabled_title),
-            description = stringResource(R.string.settings_steam_game_presence_desc),
-            onCheckedChange = actions.onSteamGamePresenceChanged,
-        )
-    )
-
-    Spacer(modifier = Modifier.size(8.dp))
-    SettingsSwitchItem(
-        SettingsSwitchSpec(
             checked = uiState.steamCloudAutoLaunchAfterSyncEnabled,
             enabled = !uiState.busy,
             enabledText = stringResource(R.string.settings_steam_cloud_auto_launch_after_sync_title),
             disabledText = stringResource(R.string.settings_steam_cloud_auto_launch_after_sync_title),
             description = stringResource(R.string.settings_steam_cloud_auto_launch_after_sync_desc),
             onCheckedChange = actions.onSteamCloudAutoLaunchAfterSyncChanged,
+        )
+    )
+
+}
+
+
+
+@Composable
+internal fun SteamNetworkSection(
+    uiState: SettingsScreenViewModel.UiState,
+    actions: SteamCloudSettingsActions,
+) {
+    SettingsSwitchItem(
+        SettingsSwitchSpec(
+            checked = uiState.steamCloudWattAccelerationEnabled,
+            enabled = !uiState.busy,
+            enabledText = stringResource(R.string.settings_steam_cloud_watt_acceleration_enabled_title),
+            disabledText = stringResource(R.string.settings_steam_cloud_watt_acceleration_disabled_title),
+            description = stringResource(R.string.settings_steam_cloud_watt_acceleration_desc),
+            onCheckedChange = actions.onSteamCloudWattAccelerationChanged,
         )
     )
 
@@ -280,6 +274,90 @@ internal fun SettingsSteamCloudSection(
         enabled = !uiState.busy,
         onClick = actions.onClearSteamCloudNetworkCache,
     )
+}
+
+
+
+@Composable
+internal fun SteamAccountSection(
+    uiState: SettingsScreenViewModel.UiState,
+    actions: SteamCloudSettingsActions,
+) {
+    var showLogoutConfirmDialog by rememberSaveable { mutableStateOf(false) }
+    val accountName = uiState.steamCloudAccountName.ifBlank {
+        stringResource(R.string.settings_steam_cloud_account_unknown)
+    }
+    val accountDisplayName = uiState.steamCloudPersonaName.ifBlank { accountName }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
+        ),
+        shape = RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.settings_steam_services_account_section_title),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                SteamCloudAvatarImage(
+                    loggedIn = uiState.steamCloudRefreshTokenConfigured,
+                    avatarUrl = uiState.steamCloudAvatarUrl,
+                )
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Text(
+                        text = if (uiState.steamCloudRefreshTokenConfigured) accountDisplayName
+                               else stringResource(R.string.settings_steam_cloud_account_not_signed_in),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = if (uiState.steamCloudRefreshTokenConfigured)
+                                   stringResource(R.string.settings_steam_cloud_account_signed_in)
+                               else stringResource(R.string.settings_steam_cloud_account_login_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (uiState.steamCloudRefreshTokenConfigured) {
+                    HapticTextButton(
+                        enabled = !uiState.busy,
+                        onClick = { showLogoutConfirmDialog = true },
+                    ) {
+                        Text(
+                            text = stringResource(R.string.settings_steam_cloud_logout_action),
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                    }
+                } else {
+                    Button(
+                        enabled = !uiState.busy,
+                        onClick = actions.onOpenSteamCloudLogin,
+                    ) {
+                        Text(stringResource(R.string.settings_steam_cloud_login_action))
+                    }
+                }
+            }
+        }
+    }
 
     if (showLogoutConfirmDialog) {
         AlertDialog(
@@ -288,7 +366,7 @@ internal fun SettingsSteamCloudSection(
             text = {
                 Text(
                     text = stringResource(R.string.settings_steam_cloud_logout_confirm_desc),
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.bodyMedium,
                 )
             },
             confirmButton = {
@@ -312,7 +390,104 @@ internal fun SettingsSteamCloudSection(
             }
         )
     }
+}
 
+
+@Composable
+internal fun SteamGamePresenceSection(
+    uiState: SettingsScreenViewModel.UiState,
+    actions: SteamCloudSettingsActions,
+) {
+    var showRiskWarning by rememberSaveable { mutableStateOf(false) }
+
+    SettingsSwitchItem(
+        SettingsSwitchSpec(
+            checked = uiState.steamGamePresenceEnabled,
+            enabled = !uiState.busy && uiState.steamCloudRefreshTokenConfigured,
+            enabledText = stringResource(R.string.settings_steam_services_presence_enabled_title),
+            disabledText = stringResource(R.string.settings_steam_services_presence_disabled_title),
+            description = stringResource(R.string.settings_steam_services_presence_desc),
+            onCheckedChange = { enabled ->
+                if (enabled) showRiskWarning = true
+                else actions.onSteamGamePresenceChanged(false)
+            },
+        )
+    )
+
+    if (showRiskWarning) {
+        AlertDialog(
+            onDismissRequest = { showRiskWarning = false },
+            title = { Text(stringResource(R.string.settings_steam_services_risk_warning_title)) },
+            text = {
+                Text(
+                    text = stringResource(R.string.settings_steam_services_risk_warning_body),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            },
+            confirmButton = {
+                HapticTextButton(onClick = {
+                    showRiskWarning = false
+                    actions.onSteamGamePresenceChanged(true)
+                }) {
+                    Text(stringResource(R.string.settings_steam_services_risk_warning_confirm))
+                }
+            },
+            dismissButton = {
+                HapticTextButton(onClick = { showRiskWarning = false }) {
+                    Text(stringResource(android.R.string.cancel))
+                }
+            }
+        )
+    }
+}
+
+
+@Composable
+internal fun SteamAchievementSection(
+    uiState: SettingsScreenViewModel.UiState,
+    actions: SteamCloudSettingsActions,
+) {
+    var showRiskWarning by rememberSaveable { mutableStateOf(false) }
+
+    SettingsSwitchItem(
+        SettingsSwitchSpec(
+            checked = uiState.steamAchievementSyncEnabled,
+            enabled = !uiState.busy && uiState.steamCloudRefreshTokenConfigured,
+            enabledText = stringResource(R.string.settings_steam_services_achievement_enabled_title),
+            disabledText = stringResource(R.string.settings_steam_services_achievement_disabled_title),
+            description = stringResource(R.string.settings_steam_services_achievement_desc),
+            onCheckedChange = { enabled ->
+                if (enabled) showRiskWarning = true
+                else actions.onSteamAchievementSyncChanged(false)
+            },
+        )
+    )
+
+    if (showRiskWarning) {
+        AlertDialog(
+            onDismissRequest = { showRiskWarning = false },
+            title = { Text(stringResource(R.string.settings_steam_services_risk_warning_title)) },
+            text = {
+                Text(
+                    text = stringResource(R.string.settings_steam_services_risk_warning_body),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            },
+            confirmButton = {
+                HapticTextButton(onClick = {
+                    showRiskWarning = false
+                    actions.onSteamAchievementSyncChanged(true)
+                }) {
+                    Text(stringResource(R.string.settings_steam_services_risk_warning_confirm))
+                }
+            },
+            dismissButton = {
+                HapticTextButton(onClick = { showRiskWarning = false }) {
+                    Text(stringResource(android.R.string.cancel))
+                }
+            }
+        )
+    }
 }
 
 
@@ -346,17 +521,6 @@ internal fun SettingsMarketSection(
         description = stringResource(R.string.settings_market_download_threads_desc),
         enabled = !uiState.busy,
         onValueChange = actions.onWorkshopDownloadThreadsChanged,
-    )
-    Spacer(modifier = Modifier.size(8.dp))
-    SettingsSwitchItem(
-        SettingsSwitchSpec(
-            checked = uiState.workshopWattAccelerationEnabled,
-            enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_market_workshop_acceleration_enabled_title),
-            disabledText = stringResource(R.string.settings_market_workshop_acceleration_disabled_title),
-            description = stringResource(R.string.settings_market_workshop_acceleration_desc),
-            onCheckedChange = actions.onWorkshopWattAccelerationChanged,
-        )
     )
     Spacer(modifier = Modifier.size(8.dp))
     SettingsDropdownField(

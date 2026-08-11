@@ -252,6 +252,11 @@ class SteamGamePresenceService : Service() {
             )
             Log.i(TAG, "Reported Steam game AppID $APP_ID through CM.")
             while (!stopRequested.get() && isStillGameActive()) {
+                val richPresence = RichPresenceStore.current()
+                if (richPresence != null) {
+                    runCatching { steamClient.setRichPresence(richPresence) }
+                        .onFailure { e -> Log.w(TAG, "Rich presence upload failed.", e) }
+                }
                 Thread.sleep(15_000L)
             }
         } catch (error: Throwable) {

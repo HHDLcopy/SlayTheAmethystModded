@@ -235,6 +235,9 @@ Paginates root main-menu `MenuButton` entries whenever mod-added options exceed 
 
 The Together in Spire touch controls use the Lucide `feather`, `eraser`, `log-out`, and `keyboard` icons from <https://github.com/lucide-icons/lucide>, distributed under the ISC License. The packaged PNG files are rasterized from the upstream SVG sources without modifying their shapes.
 
+65. `RichPresencePatches`
+Intercepts `AbstractDungeon.nextRoomTransitionStart()` after each floor transition — including the initial entry at the start of a run — and calls `RichPresenceBridge.updateDungeonState()`, which reads the current `AbstractDungeon.floorNum`, `AbstractDungeon.player.chosenClass`, and the dungeon ID, then atomically overwrites the `.rich_presence_state` IPC file in the STS root directory with a key=value payload (`steam_display`, `character`, `floor`, `act`). The launcher polls this file every 500 ms via `GameSessionCoordinator`, parses the key-value pairs into a `Map`, and passes them to `RichPresenceStore`; `SteamGamePresenceService` reads `RichPresenceStore` every 15 s heartbeat and uploads the snapshot via `CMsgClientRichPresenceUpload` (EMsg 761) through `SteamCloudProtocolClient.sendRichPresence()`. The kv pairs are encoded as a binary VDF blob (root sub-object node 0x00, string nodes 0x01, two 0x08 terminators) and passed as `rich_presence_kv`. This addresses the symptom where a logged-in Steam account shows no rich-presence details on the friends list while a run is active. The IPC file path is injected via `-Damethyst.richpresence.path`; when the system property is absent `RichPresenceBridge` silently no-ops. Type: gameplay/runtime feature implemented by `RichPresencePatches` and `RichPresenceBridge`, with the launcher side in `RichPresenceStore`, `GameSessionCoordinator`, and `SteamCloudProtocolClient`.
+
 ## Maintenance rule
 
 If you add another fix through this mod, update this README in the same change and describe:

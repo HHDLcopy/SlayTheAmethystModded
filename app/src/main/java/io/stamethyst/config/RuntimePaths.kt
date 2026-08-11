@@ -41,6 +41,7 @@ object RuntimePaths {
     private const val ACHIEVEMENT_REQUEST_FILE_NAME = ".achievement_sync_request"
     private const val ACHIEVEMENT_LOCK_COMMAND_FILE_NAME = ".achievement_lock_command"
     private const val HARNESS_EXIT_REQUEST_FILE_NAME = ".harness_exit_request"
+    private const val RICH_PRESENCE_FILE_NAME = ".rich_presence_state"
     private const val JVM_HISTOGRAM_DIR_NAME = "jvm_histograms"
     private const val LOGCAT_DIR_NAME = "logcat"
     private const val WINDOW_DIAGNOSTICS_DIR_NAME = "window"
@@ -247,6 +248,10 @@ object RuntimePaths {
     @JvmStatic
     fun harnessExitRequestFile(context: Context): File =
         File(stsRoot(context), HARNESS_EXIT_REQUEST_FILE_NAME)
+
+    @JvmStatic
+    fun richPresenceFile(context: Context): File =
+        File(stsRoot(context), RICH_PRESENCE_FILE_NAME)
 
     @JvmStatic
     fun latestLog(context: Context): File = File(stsRoot(context), LATEST_LOG_FILE_NAME)

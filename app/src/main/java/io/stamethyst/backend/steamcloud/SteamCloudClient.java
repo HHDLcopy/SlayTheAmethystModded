@@ -50,6 +50,7 @@ import in.dragonbra.javasteam.enums.EOSType;
 import in.dragonbra.javasteam.base.ClientMsgProtobuf;
 import in.dragonbra.javasteam.base.IPacketMsg;
 import in.dragonbra.javasteam.protobufs.steamclient.SteammessagesClientserver;
+import in.dragonbra.javasteam.protobufs.steamclient.SteammessagesClientserver2;
 import in.dragonbra.javasteam.protobufs.steamclient.SteammessagesCloudSteamclient;
 import in.dragonbra.javasteam.networking.steam3.ProtocolTypes;
 import in.dragonbra.javasteam.rpc.service.Cloud;
@@ -580,6 +581,12 @@ public final class SteamCloudClient implements AutoCloseable {
         protocolClient.sendPersonaOnline();
         recordDiagnosticEvent("persona_state_sent state=Online");
         Log.i(TAG, "Published Steam persona state Online.");
+    }
+
+    public void setRichPresence(Map<String, String> kvPairs) {
+        protocolClient.sendRichPresence(kvPairs);
+        recordDiagnosticEvent("rich_presence_sent keys=" + kvPairs.size());
+        Log.i(TAG, "Published Steam rich presence (" + kvPairs.size() + " keys).");
     }
 
     private static EOSType androidOsType() {

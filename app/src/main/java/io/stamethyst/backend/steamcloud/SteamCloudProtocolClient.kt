@@ -12,6 +12,7 @@ import `in`.dragonbra.javasteam.protobufs.steamclient.SteammessagesCloudSteamcli
 import `in`.dragonbra.javasteam.protobufs.steamclient.SteammessagesClientserver
 import `in`.dragonbra.javasteam.protobufs.steamclient.SteammessagesClientserverUserstats
 import `in`.dragonbra.javasteam.protobufs.steamclient.SteammessagesClientserverFriends
+import `in`.dragonbra.javasteam.protobufs.steamclient.SteammessagesClientserver2
 
 /** Synchronous app facade over the proxy-capable protocol session. */
 internal class SteamCloudProtocolClient(
@@ -100,6 +101,39 @@ internal class SteamCloudProtocolClient(
             .setPersonaSetByUser(true)
             .build()
         session.sendClientMessage(SteamPacketCodec.emsgClientChangeStatus, request)
+    }
+
+    /**
+     * Uploads rich presence key-value pairs via CMsgClientRichPresenceUpload (EMsg 761).
+     * The proto field rich_presence_kv expects a binary VDF blob: a root container node
+     * (type=0x00, name="\x00") wrapping child string nodes (type=0x01) of the form:
+     *   [0x01][key\0][value\0]
+     * terminated with [0x08] (end-of-object). Fire-and-forget; mirrors sendPersonaOnline().
+     */
+    fun sendRichPresence(kvPairs: Map<String, String>) = runBlocking {
+        val vdf = encodeVdfKv(kvPairs)
+        val request = SteammessagesClientserver2.CMsgClientRichPresenceUpload.newBuilder()
+            .setRichPresenceKv(com.google.protobuf.ByteString.copyFrom(vdf))
+            .build()
+        session.sendClientMessage(SteamPacketCodec.emsgClientRichPresenceUpload, request)
+    }
+
+    /** Encodes a flat string→string map as a binary VDF blob expected by rich_presence_kv. */
+    private fun encodeVdfKv(kvPairs: Map<String, String>): ByteArray {
+        val buf = java.io.ByteArrayOutputStream()
+        // Root node: type=0x00 (sub-object), name="" (null-terminated)
+        buf.write(0x00)
+        buf.write(0x00) // empty root key
+        for ((key, value) in kvPairs) {
+            buf.write(0x01) // type: string
+            buf.write(key.toByteArray(Charsets.UTF_8))
+            buf.write(0x00) // null-terminate key
+            buf.write(value.toByteArray(Charsets.UTF_8))
+            buf.write(0x00) // null-terminate value
+        }
+        buf.write(0x08) // end of sub-object
+        buf.write(0x08) // end of root
+        return buf.toByteArray()
     }
 
     fun getAppFileChangelist(appId: Int): SteammessagesCloudSteamclient.CCloud_GetAppFileChangelist_Response = service(

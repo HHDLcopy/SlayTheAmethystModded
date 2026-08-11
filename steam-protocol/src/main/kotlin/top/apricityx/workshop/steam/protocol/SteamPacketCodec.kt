@@ -36,6 +36,7 @@ object SteamPacketCodec {
     const val emsgClientStoreUserStats2: Int = 5466
     const val emsgClientGamesPlayedWithDataBlob: Int = 5410
     const val emsgClientChangeStatus: Int = 716
+    const val emsgClientRichPresenceUpload: Int = 761
     // Must match SteamKit/JavaSteam's current ClientLogon protocol version.
     const val clientLogonProtocol: Int = 65580
 

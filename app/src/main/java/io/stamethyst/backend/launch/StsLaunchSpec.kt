@@ -240,6 +240,7 @@ object StsLaunchSpec {
             "-Damethyst.achievement.lock_command_path=" +
                 RuntimePaths.achievementLockCommandFile(context).absolutePath
         )
+        args.add("-Damethyst.richpresence.path=${RuntimePaths.richPresenceFile(context).absolutePath}")
         args.add("-Damethyst.touchscreen_card_hold_state=${RuntimePaths.touchscreenCardHoldStateFile(context).absolutePath}")
         args.add("-Damethyst.easytier.runtime_state_file=${EasyTierStateStore.stateFile(context).absolutePath}")
         args.add(

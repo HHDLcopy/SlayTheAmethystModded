@@ -36,7 +36,9 @@ object SteamPacketCodec {
     const val emsgClientStoreUserStats2: Int = 5466
     const val emsgClientGamesPlayedWithDataBlob: Int = 5410
     const val emsgClientChangeStatus: Int = 716
-    const val emsgClientRichPresenceUpload: Int = 761
+    // EMsg 761 is ClientCreateAcctResponse — an unrelated message the CM silently discards.
+    // ClientRichPresenceUpload is 7501 (SteamKit emsg.steamd, node-steam-user EMsg.js).
+    const val emsgClientRichPresenceUpload: Int = 7501
     // Must match SteamKit/JavaSteam's current ClientLogon protocol version.
     const val clientLogonProtocol: Int = 65580
 

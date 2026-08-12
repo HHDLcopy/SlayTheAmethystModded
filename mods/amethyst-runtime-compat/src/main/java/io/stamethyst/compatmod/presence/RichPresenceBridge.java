@@ -14,9 +14,18 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /** JVM-only IPC bridge: atomically writes current rich-presence key-value state so the
- *  launcher can upload it via CMsgClientRichPresenceUpload (EMsg 761). */
+ *  launcher can upload it via CMsgClientRichPresenceUpload (EMsg 7501).
+ *
+ *  <p>Key contract (matches BaseMod.setRichPresence and Steam's documented rules):
+ *  the human-readable text goes into {@code status}, while {@code steam_display} must be
+ *  a localization token registered for the app. Steam states that if {@code steam_display}
+ *  is not a valid localization tag, rich presence is not displayed at all — so raw text
+ *  there silently shows nothing. AppID 646570 ships {@code #Status}, which resolves to
+ *  {@code %status%}, so {@code #Status} is the only correct {@code steam_display} value. */
 public final class RichPresenceBridge {
     private static final String PRESENCE_PATH_PROP = "amethyst.richpresence.path";
+    /** Localization token registered by Slay the Spire; renders the `status` value. */
+    private static final String STEAM_DISPLAY_TOKEN = "#Status";
     private static boolean initialized;
     private static String lastWrittenPayload = "";
 
@@ -25,10 +34,24 @@ public final class RichPresenceBridge {
 
     public static void initialize() {
         initialized = true;
+        publishMainMenuState();
         System.out.println(
             "[amethyst-presence] bridge initialized pathConfigured="
                 + Boolean.toString(presenceFile() != null)
         );
+    }
+
+    /** Makes the launcher aware of an active game before a dungeon has been created. */
+    private static void publishMainMenuState() {
+        Map<String, String> kv = new LinkedHashMap<>();
+        kv.put("status", "主菜单");
+        kv.put("steam_display", STEAM_DISPLAY_TOKEN);
+        String payload = serializeKv(kv);
+        boolean written = writePresence(payload);
+        if (written) {
+            lastWrittenPayload = payload;
+        }
+        System.out.println("[amethyst-presence] main_menu written=" + written);
     }
 
     /**
@@ -66,13 +89,29 @@ public final class RichPresenceBridge {
             String character = player.chosenClass != null
                 ? player.chosenClass.name().toLowerCase(java.util.Locale.ROOT)
                 : "unknown";
-            Map<String, String> kv = new LinkedHashMap<>();
-            kv.put("steam_display", "#StatusInGame");
-            kv.put("character", character);
-            kv.put("floor", String.valueOf(floorNum));
+            // Use the localized character name for the human-readable status string.
+            // Falls back to the enum name if the method is unavailable.
+            String displayName;
+            try {
+                displayName = player.getLocalizedCharacterName();
+                if (displayName == null || displayName.isEmpty()) displayName = character;
+            } catch (Throwable ignored) {
+                displayName = character;
+            }
             // Dungeon id (e.g. "Exordium", "TheCity") — read via reflection to avoid
             // a compile-time dependency on the exact field name.
             String dungeonId = readDungeonId();
+            // The visible text must live in `status`; `steam_display` only names the
+            // localization token that renders it. See the class javadoc for why raw text
+            // in `steam_display` never displays.
+            String displayText = dungeonId != null && !dungeonId.isEmpty()
+                ? displayName + " · 第" + floorNum + "层 · " + dungeonId
+                : displayName + " · 第" + floorNum + "层";
+            Map<String, String> kv = new LinkedHashMap<>();
+            kv.put("status", displayText);
+            kv.put("steam_display", STEAM_DISPLAY_TOKEN);
+            kv.put("character", character);
+            kv.put("floor", String.valueOf(floorNum));
             if (dungeonId != null && !dungeonId.isEmpty()) {
                 kv.put("act", dungeonId);
             }

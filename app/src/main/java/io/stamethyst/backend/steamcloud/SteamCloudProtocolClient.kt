@@ -104,7 +104,7 @@ internal class SteamCloudProtocolClient(
     }
 
     /**
-     * Uploads rich presence key-value pairs via CMsgClientRichPresenceUpload (EMsg 761).
+     * Uploads rich presence key-value pairs via CMsgClientRichPresenceUpload (EMsg 7501).
      * The proto field rich_presence_kv expects a binary VDF blob: a root container node
      * (type=0x00, name="\x00") wrapping child string nodes (type=0x01) of the form:
      *   [0x01][key\0][value\0]
@@ -115,15 +115,18 @@ internal class SteamCloudProtocolClient(
         val request = SteammessagesClientserver2.CMsgClientRichPresenceUpload.newBuilder()
             .setRichPresenceKv(com.google.protobuf.ByteString.copyFrom(vdf))
             .build()
-        session.sendClientMessage(SteamPacketCodec.emsgClientRichPresenceUpload, request)
+        session.sendClientMessage(SteamPacketCodec.emsgClientRichPresenceUpload, request, 646570)
     }
 
-    /** Encodes a flat string→string map as a binary VDF blob expected by rich_presence_kv. */
+    /** Encodes a flat string→string map as a binary VDF blob expected by rich_presence_kv.
+     * The root node must be keyed "RP"; the Steam CM parses it as kvObj.RP on the receiving end.
+     */
     private fun encodeVdfKv(kvPairs: Map<String, String>): ByteArray {
         val buf = java.io.ByteArrayOutputStream()
-        // Root node: type=0x00 (sub-object), name="" (null-terminated)
+        // Root node: type=0x00 (sub-object), name="RP" (null-terminated)
         buf.write(0x00)
-        buf.write(0x00) // empty root key
+        buf.write("RP".toByteArray(Charsets.UTF_8))
+        buf.write(0x00) // null-terminate root key
         for ((key, value) in kvPairs) {
             buf.write(0x01) // type: string
             buf.write(key.toByteArray(Charsets.UTF_8))

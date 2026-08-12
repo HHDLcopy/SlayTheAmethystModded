@@ -174,7 +174,6 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
 
         sessionConfig = GameSessionConfig.fromActivityIntent(this, intent)
         GamePresenceStateMarker.markGameActive(this, sessionConfig.launchMode)
-        SteamGamePresenceService.startIfEnabled(this)
         MemoryDiagnosticsLogger.logEvent(
             this,
             "game_activity_created",
@@ -248,7 +247,6 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
         sessionCoordinator.onResume()
         activityForeground = true
         GamePresenceStateMarker.markGameActive(this, sessionConfig.launchMode)
-        SteamGamePresenceService.startIfEnabled(this)
         resetKeepScreenOnIdleTimer()
     }
 

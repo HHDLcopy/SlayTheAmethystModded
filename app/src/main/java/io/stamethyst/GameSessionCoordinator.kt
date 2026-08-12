@@ -27,6 +27,7 @@ import io.stamethyst.backend.runtime.RuntimePackInstaller
 import io.stamethyst.backend.steamcloud.SteamAchievementSyncService
 import io.stamethyst.backend.steamcloud.AchievementSyncLogStore
 import io.stamethyst.backend.steamcloud.RichPresenceStore
+import io.stamethyst.backend.steamcloud.SteamGamePresenceService
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.config.SpecialKeyInputMode
@@ -1216,6 +1217,9 @@ internal class GameSessionCoordinator(
             .toMap()
         if (kvPairs.isEmpty()) return
         RichPresenceStore.update(kvPairs)
+        // Defer CM presence login until the game mod has supplied an actual dungeon state.
+        // This also avoids racing the Steam Cloud login launched during application startup.
+        SteamGamePresenceService.startIfEnabled(activity)
     }
 
     /** Reverses the simple escaping applied by RichPresenceBridge.java. */

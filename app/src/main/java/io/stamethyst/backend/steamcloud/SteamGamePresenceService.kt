@@ -14,6 +14,7 @@ import io.stamethyst.R
 import io.stamethyst.backend.presence.GamePresenceState
 import io.stamethyst.backend.presence.GamePresenceStateMarker
 import io.stamethyst.config.LauncherConfig
+import io.stamethyst.config.RuntimePaths
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -32,10 +33,12 @@ class SteamGamePresenceService : Service() {
             val enabled = LauncherConfig.isSteamGamePresenceEnabled(appContext)
             val state = GamePresenceStateMarker.readCurrentState(appContext)
             val auth = SteamCloudAuthStore.readAuthMaterial(appContext)
+            val hasRichPresence = RuntimePaths.richPresenceFile(appContext).isFile
             val skipReason = when {
                 !enabled -> "feature_disabled"
                 state.state != GamePresenceState.Game -> "game_state_not_active"
                 auth == null -> "steam_auth_material_incomplete"
+                !hasRichPresence -> "rich_presence_not_available"
                 else -> ""
             }
             if (skipReason.isNotEmpty()) {
@@ -251,12 +254,50 @@ class SteamGamePresenceService : Service() {
                 "steam_presence_app_state_sent",
             )
             Log.i(TAG, "Reported Steam game AppID $APP_ID through CM.")
+            var lastBroadcastPresence: Map<String, String>? = null
             while (!stopRequested.get() && isStillGameActive()) {
-                val richPresence = RichPresenceStore.current()
-                if (richPresence != null) {
+                // RichPresenceStore is populated by GameSessionCoordinator in the main
+                // launcher process, but this service runs in the :game process — the
+                // in-memory singleton is never populated here. Read the IPC file directly
+                // so that both processes see the same state without an IPC mechanism.
+                val richPresence = readRichPresenceFromFile()
+                if (richPresence != null && richPresence != lastBroadcastPresence) {
+                    var sessionDropped = false
+                    SteamGamePresenceDiagnosticsStore.appendEvent(
+                        applicationContext,
+                        "rich_presence_upload_attempt",
+                        "emsg=7501; keys=${richPresence.keys.joinToString(",")}",
+                    )
                     runCatching { steamClient.setRichPresence(richPresence) }
-                        .onFailure { e -> Log.w(TAG, "Rich presence upload failed.", e) }
+                        .onSuccess {
+                            // CMsgClientRichPresenceUpload stores the KV on the CM server but does
+                            // not itself trigger a persona-state push to friends. Re-send
+                            // CMsgClientChangeStatus so the CM broadcasts an updated persona state
+                            // that includes the freshly stored rich_presence KV pairs.
+                            runCatching { steamClient.setPersonaOnline() }
+                                .onFailure { e -> Log.w(TAG, "Persona re-broadcast after rich presence failed.", e) }
+                            lastBroadcastPresence = richPresence
+                            SteamGamePresenceDiagnosticsStore.appendEvent(
+                                applicationContext,
+                                "rich_presence_upload_queued",
+                                "emsg=7501; status=${richPresence["status"].orEmpty()}; " +
+                                    "steamDisplay=${richPresence["steam_display"].orEmpty()}",
+                            )
+                        }
+                        .onFailure { e ->
+                            Log.w(TAG, "Rich presence upload failed.", e)
+                            // "not logged on" means the CM session was destroyed asynchronously
+                            // (e.g. LoggedOff received). Retrying in-loop is pointless; break out
+                            // so the service stops cleanly and can be restarted next game launch.
+                            if (e.message?.contains("not logged on") == true) {
+                                Log.w(TAG, "CM session dropped; stopping rich presence service.")
+                                sessionDropped = true
+                            }
+                        }
+                    if (sessionDropped) break
                 }
+                // Sleep at the end of the loop so the first iteration runs immediately after
+                // login — uploading before Android's FGS idle timeout can kill the service.
                 Thread.sleep(15_000L)
             }
         } catch (error: Throwable) {
@@ -282,6 +323,51 @@ class SteamGamePresenceService : Service() {
             )
             stopSelf()
         }
+    }
+
+    /**
+     * Reads the rich-presence key-value pairs written by the in-game mod via
+     * [RichPresenceBridge]. This service runs in the `:game` process while
+     * [RichPresenceStore] is populated by [GameSessionCoordinator] in the main
+     * launcher process — the in-memory singleton is never populated here.
+     * Reading the IPC file directly avoids needing a cross-process IPC mechanism.
+     */
+    private fun readRichPresenceFromFile(): Map<String, String>? {
+        val file = RuntimePaths.richPresenceFile(applicationContext)
+        if (!file.exists()) return null
+        return try {
+            val kv = LinkedHashMap<String, String>()
+            file.readLines(Charsets.UTF_8).forEach { line ->
+                val idx = line.indexOf('=')
+                if (idx < 1) return@forEach
+                val key = line.substring(0, idx)
+                val value = unescapePresenceValue(line.substring(idx + 1))
+                kv[key] = value
+            }
+            kv.ifEmpty { null }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to read rich presence file.", e)
+            null
+        }
+    }
+
+    private fun unescapePresenceValue(value: String): String {
+        val sb = StringBuilder(value.length)
+        var i = 0
+        while (i < value.length) {
+            if (value[i] == '\\' && i + 1 < value.length) {
+                when (value[i + 1]) {
+                    'n' -> { sb.append('\n'); i += 2 }
+                    '=' -> { sb.append('='); i += 2 }
+                    '\\' -> { sb.append('\\'); i += 2 }
+                    else -> { sb.append(value[i]); i++ }
+                }
+            } else {
+                sb.append(value[i])
+                i++
+            }
+        }
+        return sb.toString()
     }
 
     private fun isStillGameActive(): Boolean {

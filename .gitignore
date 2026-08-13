@@ -64,6 +64,7 @@ tmp-feedback-smoke/
 /.codex/
 /.codex_tmp/
 /.codex-tmp/
+/.codenomad/
 
 # OS-generated files
 .DS_Store

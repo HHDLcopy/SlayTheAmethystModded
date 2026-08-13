@@ -531,16 +531,20 @@ private fun ModsHeaderPinnedContent(
     folderControlsEnabled: Boolean,
     dragLocked: Boolean,
     showEnabledModsOnly: Boolean,
+    showUpdateAvailableModsOnly: Boolean,
     hostAvailable: Boolean,
     feedbackUnreadCount: Int,
     workshopUpdateCheckState: WorkshopUpdateCheckUiState,
     onToggleDragLocked: () -> Unit,
-    onToggleShowEnabledModsOnly: () -> Unit,
+    onShowEnabledModsOnlyChange: (Boolean) -> Unit,
+    onShowUpdateAvailableModsOnlyChange: (Boolean) -> Unit,
     onAddFolderClick: () -> Unit,
     onCheckWorkshopUpdates: () -> Unit,
     onOpenFeedbackUpdates: () -> Unit,
 ) {
     val canEditFolders = folderControlsEnabled && hostAvailable
+    var modFilterMenuExpanded by remember { mutableStateOf(false) }
+    val hasActiveModFilter = showEnabledModsOnly || showUpdateAvailableModsOnly
     HeaderPinnedRow(
         iconResId = R.drawable.ic_dock_mods,
         iconContentDescription = null,
@@ -570,27 +574,50 @@ private fun ModsHeaderPinnedContent(
                     }
                 }
             }
-            CompactTopBarIconButton(
-                onClick = onToggleShowEnabledModsOnly,
-                enabled = true,
-            ) {
-                Icon(
-                    painter = painterResource(
-                        if (showEnabledModsOnly) R.drawable.ic_check_circle else R.drawable.ic_filter_list
-                    ),
-                    contentDescription = stringResource(
-                        if (showEnabledModsOnly) {
-                            R.string.main_mod_filter_show_all
+            Box {
+                CompactTopBarIconButton(
+                    onClick = { modFilterMenuExpanded = true },
+                    enabled = true,
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_filter_list),
+                        contentDescription = stringResource(R.string.main_mod_filter_menu),
+                        tint = if (hasActiveModFilter) {
+                            MaterialTheme.colorScheme.primary
                         } else {
-                            R.string.main_mod_filter_show_enabled
-                        }
-                    ),
-                    tint = if (showEnabledModsOnly) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
+                DropdownMenu(
+                    expanded = modFilterMenuExpanded,
+                    onDismissRequest = { modFilterMenuExpanded = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.main_mod_filter_update_available)) },
+                        onClick = {
+                            onShowUpdateAvailableModsOnlyChange(!showUpdateAvailableModsOnly)
+                        },
+                        leadingIcon = {
+                            Checkbox(
+                                checked = showUpdateAvailableModsOnly,
+                                onCheckedChange = null,
+                            )
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.main_mod_filter_enabled)) },
+                        onClick = {
+                            onShowEnabledModsOnlyChange(!showEnabledModsOnly)
+                        },
+                        leadingIcon = {
+                            Checkbox(
+                                checked = showEnabledModsOnly,
+                                onCheckedChange = null,
+                            )
+                        },
+                    )
+                }
             }
             WorkshopUpdateCheckButton(
                 state = workshopUpdateCheckState,
@@ -4623,6 +4650,7 @@ private fun LauncherMainScreenContent(
                         var modsHeaderCollapsed by remember { mutableStateOf(false) }
                         var modsContentMountReady by remember { mutableStateOf(false) }
                         var showEnabledModsOnly by rememberSaveable { mutableStateOf(false) }
+                        var showUpdateAvailableModsOnly by rememberSaveable { mutableStateOf(false) }
                         val measuredModsHeaderHeight = with(density) { modsHeaderHeightPx.toDp() }
                         val modsHeaderContentTopInset =
                             (if (modsHeaderHeightPx == 0) 232.dp else measuredModsHeaderHeight) - 20.dp
@@ -4657,6 +4685,7 @@ private fun LauncherMainScreenContent(
                                     contentTopInset = modsHeaderContentTopInset,
                                     actionBarBottomPadding = launcherDockContentPadding + batchEditBarContentPadding,
                                     showEnabledModsOnly = showEnabledModsOnly,
+                                    showUpdateAvailableModsOnly = showUpdateAvailableModsOnly,
                                     onHeaderCollapsedChange = { modsHeaderCollapsed = it },
                                     onBatchEditBarStateChange = { batchEditBarState = it },
                                     actions = actions
@@ -4681,12 +4710,14 @@ private fun LauncherMainScreenContent(
                                         folderControlsEnabled = uiState.controlsEnabled && !batchSelectionMode,
                                         dragLocked = uiState.dragLocked,
                                         showEnabledModsOnly = showEnabledModsOnly,
+                                        showUpdateAvailableModsOnly = showUpdateAvailableModsOnly,
                                         hostAvailable = actions.isHostAvailable,
                                         feedbackUnreadCount = feedbackUnreadCount,
                                         workshopUpdateCheckState = workshopUpdateCheckState,
                                         onToggleDragLocked = actions.onToggleDragLocked,
-                                        onToggleShowEnabledModsOnly = {
-                                            showEnabledModsOnly = !showEnabledModsOnly
+                                        onShowEnabledModsOnlyChange = { showEnabledModsOnly = it },
+                                        onShowUpdateAvailableModsOnlyChange = {
+                                            showUpdateAvailableModsOnly = it
                                         },
                                         onAddFolderClick = { showCreateFolderDialog = true },
                                         onCheckWorkshopUpdates = {
@@ -6654,6 +6685,7 @@ private fun ColumnScope.MainContentSwitcher(
     contentTopInset: Dp = 0.dp,
     actionBarBottomPadding: Dp,
     showEnabledModsOnly: Boolean,
+    showUpdateAvailableModsOnly: Boolean,
     onHeaderCollapsedChange: (Boolean) -> Unit = {},
     onBatchEditBarStateChange: (BatchEditBarState?) -> Unit,
     actions: MainScreenActions
@@ -6715,6 +6747,7 @@ private fun ColumnScope.MainContentSwitcher(
                     contentBottomInset = actionBarBottomPadding,
                     hostAvailable = actions.isHostAvailable,
                     showEnabledModsOnly = showEnabledModsOnly,
+                    showUpdateAvailableModsOnly = showUpdateAvailableModsOnly,
                     onHeaderCollapsedChange = onHeaderCollapsedChange,
                     onBatchEditBarStateChange = onBatchEditBarStateChange,
                     callbacks = ModFolderSectionCallbacks(

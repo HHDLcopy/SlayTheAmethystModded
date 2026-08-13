@@ -491,8 +491,9 @@
     <string name="main_folder_dialog_cancel">取消</string>
     <string name="main_folder_summary_format">共 %1$d 個模組，未分類 %2$d 個</string>
     <string name="main_folder_filter_hint">篩選名稱或描述</string>
-    <string name="main_mod_filter_show_enabled">僅顯示已啟用模組</string>
-    <string name="main_mod_filter_show_all">顯示全部模組</string>
+    <string name="main_mod_filter_menu">篩選模組</string>
+    <string name="main_mod_filter_update_available">只看可更新</string>
+    <string name="main_mod_filter_enabled">只看已啟用</string>
     <string name="main_folder_name_count_format">%1$s  (%2$d/%3$d)</string>
     <string name="main_folder_expand">展開資料夾</string>
     <string name="main_folder_collapse">摺疊資料夾</string>

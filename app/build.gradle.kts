@@ -2,6 +2,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.io.File
 import java.nio.charset.StandardCharsets
 import java.util.Properties
+import org.gradle.api.tasks.PathSensitivity
 
 plugins {
     alias(libs.plugins.android.application)
@@ -208,6 +209,15 @@ android {
         unitTests.isReturnDefaultValues = true
         unitTests.all {
             it.maxParallelForks = (Runtime.getRuntime().availableProcessors() / 2).coerceAtLeast(1)
+            // LauncherConfigFloatingToolButtonsDefaultsTest reads the mod source to check that
+            // both sides agree on the tool button ids, so edits to it must invalidate the task.
+            it.inputs.file(
+                rootProject.file(
+                    "mods/amethyst-floating-tools/src/main/java/io/stamethyst/" +
+                        "floatingtools/FloatingToolPanel.java"
+                )
+            ).withPropertyName("floatingToolPanelSource")
+                .withPathSensitivity(PathSensitivity.RELATIVE)
         }
     }
 }
@@ -279,6 +289,7 @@ tasks.matching {
 }
 
 dependencies {
+    implementation(project(":lan-core"))
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.core.ktx)

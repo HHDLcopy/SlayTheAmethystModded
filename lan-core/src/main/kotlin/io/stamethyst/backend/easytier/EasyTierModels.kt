@@ -3,27 +3,21 @@ package io.stamethyst.backend.easytier
 import java.io.Serializable as JavaSerializable
 import kotlinx.serialization.Serializable
 
-enum class EasyTierNetworkMode(
-    val cloudControlValue: String,
-) {
+enum class EasyTierNetworkMode(val cloudControlValue: String) {
     Room("room"),
     Community("community");
 
     companion object {
         @JvmStatic
-        fun fromCloudControl(value: String): EasyTierNetworkMode {
-            return when (value.trim().lowercase()) {
-                "community" -> Community
-                else -> Room
-            }
+        fun fromCloudControl(value: String): EasyTierNetworkMode = when (value.trim().lowercase()) {
+            "community" -> Community
+            else -> Room
         }
     }
 }
 
 const val DEFAULT_EASYTIER_SHARED_ROOM_ID = "sts-public-lobby"
 const val EASY_TIER_ROOM_DESCRIPTION_MAX_LENGTH = 120
-
-/** Mirrors MAX_LAN_ROOM_PASSWORD_LENGTH on the server; longer input is truncated there anyway. */
 const val EASY_TIER_ROOM_PASSWORD_MAX_LENGTH = 64
 const val EASY_TIER_KICK_MESSAGE_MAX_LENGTH = 160
 
@@ -38,8 +32,7 @@ data class EasyTierResolvedConfig(
     val statusPollIntervalSeconds: Int,
     val allowSharedCommunityNetwork: Boolean,
 ) {
-    val canConnect: Boolean
-        get() = entryNodeUrl.isNotBlank()
+    val canConnect: Boolean get() = entryNodeUrl.isNotBlank()
 }
 
 @Serializable
@@ -63,8 +56,7 @@ data class EasyTierRoomMod(
     val name: String,
     val workshopId: String = "",
 ) {
-    val isWorkshopMod: Boolean
-        get() = workshopId.isNotBlank()
+    val isWorkshopMod: Boolean get() = workshopId.isNotBlank()
 }
 
 @Serializable
@@ -86,7 +78,6 @@ data class EasyTierRoomInfo(
     val description: String = "",
     val mode: EasyTierNetworkMode,
     val allowNewJoins: Boolean,
-    /** Whether the room demands a password to join. The password itself never leaves the server. */
     val hasPassword: Boolean = false,
     val closedAtMs: Long = 0L,
     val memberCount: Int,
@@ -103,7 +94,6 @@ data class EasyTierRoomListItem(
     val description: String = "",
     val mode: EasyTierNetworkMode,
     val allowNewJoins: Boolean,
-    /** Whether the room demands a password to join. The password itself never leaves the server. */
     val hasPassword: Boolean = false,
     val closedAtMs: Long = 0L,
     val memberCount: Int,
@@ -114,7 +104,8 @@ data class EasyTierRoomListItem(
     val updatedAtMs: Long = 0L,
 )
 
-internal data class EasyTierRoomListPage(
+/** A single page of rooms from the Room API. */
+data class EasyTierRoomListPage(
     val rooms: List<EasyTierRoomListItem>,
     val nextOffset: Int?,
 )
@@ -134,43 +125,23 @@ data class EasyTierSessionStatusSnapshot(
 
 @Serializable
 enum class EasyTierFailureCategory {
-    None,
-    VpnPermissionRequired,
-    VpnPermissionDenied,
-    VpnPermissionRevoked,
-    ConfigMissing,
-    SessionClosed,
-    SessionKicked,
-    SessionExpired,
-    RoomClosed,
-    RuntimeBridgePending,
-    RuntimeBridgeUnavailable,
-    BackgroundStartBlocked,
-    Unknown,
+    None, VpnPermissionRequired, VpnPermissionDenied, VpnPermissionRevoked, ConfigMissing,
+    SessionClosed, SessionKicked, SessionExpired, RoomClosed, RuntimeBridgePending,
+    RuntimeBridgeUnavailable, BackgroundStartBlocked, Unknown,
 }
 
 @Serializable
 enum class EasyTierConnectionStatus {
-    IDLE,
-    PERMISSION_REQUIRED,
-    CONNECTING,
-    SESSION_READY,
-    CONNECTED,
-    RECONNECTING,
-    DISCONNECTING,
-    DISCONNECTED,
-    FAILED;
+    IDLE, PERMISSION_REQUIRED, CONNECTING, SESSION_READY, CONNECTED, RECONNECTING,
+    DISCONNECTING, DISCONNECTED, FAILED;
 
     val operationInFlight: Boolean
         get() = this == CONNECTING || this == RECONNECTING || this == DISCONNECTING
-
     val isActive: Boolean
-        get() = this == CONNECTING ||
-            this == SESSION_READY ||
-            this == CONNECTED ||
-            this == RECONNECTING
+        get() = this == CONNECTING || this == SESSION_READY || this == CONNECTED || this == RECONNECTING
 }
 
+/** Public, credential-free runtime state shared with the game JVM on Android and desktop. */
 @Serializable
 data class EasyTierConnectionSnapshot(
     val enabled: Boolean,
@@ -199,9 +170,6 @@ data class EasyTierConnectionSnapshot(
     val lastRoomState: String = "",
     val userInitiated: Boolean = false,
 ) : JavaSerializable {
-    val operationInFlight: Boolean
-        get() = status.operationInFlight
-
-    val isConnectionActive: Boolean
-        get() = status.isActive
+    val operationInFlight: Boolean get() = status.operationInFlight
+    val isConnectionActive: Boolean get() = status.isActive
 }

@@ -109,6 +109,7 @@ internal fun ModFolderSection(
     contentBottomInset: Dp = 0.dp,
     hostAvailable: Boolean,
     showEnabledModsOnly: Boolean = false,
+    showUpdateAvailableModsOnly: Boolean = false,
     onHeaderCollapsedChange: (Boolean) -> Unit = {},
     onBatchEditBarStateChange: (BatchEditBarState?) -> Unit = {},
     callbacks: ModFolderSectionCallbacks
@@ -144,9 +145,16 @@ internal fun ModFolderSection(
     val filterText = interactionState.filterText
     val filterKeyword = filterText.trim()
     val searchActive = filterKeyword.isNotEmpty()
-    val filteredMods = remember(mods, filterKeyword, showEnabledModsOnly) {
+    val filteredMods = remember(
+        mods,
+        filterKeyword,
+        showEnabledModsOnly,
+        showUpdateAvailableModsOnly,
+    ) {
         mods.filter { mod ->
             (!showEnabledModsOnly || mod.enabled) && (
+                !showUpdateAvailableModsOnly || mod.workshop?.state == WorkshopModState.UpdateAvailable
+            ) && (
                 filterKeyword.isEmpty() ||
                 mod.name.contains(filterKeyword, ignoreCase = true) ||
                     mod.alias.contains(filterKeyword, ignoreCase = true) ||

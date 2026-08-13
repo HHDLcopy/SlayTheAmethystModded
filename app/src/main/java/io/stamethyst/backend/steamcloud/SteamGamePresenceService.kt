@@ -6,6 +6,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.os.FileObserver
 import android.os.IBinder
 import android.os.SystemClock
 import android.util.Log
@@ -15,8 +16,11 @@ import io.stamethyst.backend.presence.GamePresenceState
 import io.stamethyst.backend.presence.GamePresenceStateMarker
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
+import java.io.File
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.locks.ReentrantLock
 
 /** Experimental CM presence bridge. It is deliberately separate from Steam Cloud sync. */
 class SteamGamePresenceService : Service() {
@@ -27,18 +31,18 @@ class SteamGamePresenceService : Service() {
         private const val ACTION_START = "io.stamethyst.action.STEAM_GAME_PRESENCE_START"
         private const val APP_ID = 646570L
         private const val STARTUP_TIMEOUT_MS = 60_000L
+        private const val PRESENCE_RETRY_MS = 30_000L
+        private const val SESSION_RESTART_DELAY_MS = 1_000L
 
         fun startIfEnabled(context: Context) {
             val appContext = context.applicationContext
             val enabled = LauncherConfig.isSteamGamePresenceEnabled(appContext)
             val state = GamePresenceStateMarker.readCurrentState(appContext)
             val auth = SteamCloudAuthStore.readAuthMaterial(appContext)
-            val hasRichPresence = RuntimePaths.richPresenceFile(appContext).isFile
             val skipReason = when {
                 !enabled -> "feature_disabled"
                 state.state != GamePresenceState.Game -> "game_state_not_active"
                 auth == null -> "steam_auth_material_incomplete"
-                !hasRichPresence -> "rich_presence_not_available"
                 else -> ""
             }
             if (skipReason.isNotEmpty()) {
@@ -58,18 +62,6 @@ class SteamGamePresenceService : Service() {
                 return
             }
             val requestedAtMs = System.currentTimeMillis()
-            SteamGamePresenceDiagnosticsStore.writeSummary(
-                appContext,
-                "START_REQUESTED",
-                auth!!.accountName,
-                requestedAtMs,
-                requestedAtMs,
-                false,
-                false,
-                null,
-                null,
-                "foreground_service_start_requested",
-            )
             val intent = Intent(appContext, SteamGamePresenceService::class.java).setAction(ACTION_START)
             runCatching {
                 val component = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -87,7 +79,7 @@ class SteamGamePresenceService : Service() {
                 SteamGamePresenceDiagnosticsStore.writeSummary(
                     appContext,
                     "FAILED",
-                    auth.accountName,
+                    auth?.accountName.orEmpty(),
                     requestedAtMs,
                     System.currentTimeMillis(),
                     false,
@@ -108,6 +100,8 @@ class SteamGamePresenceService : Service() {
     private val stopRequested = AtomicBoolean(false)
     private val terminalSummaryWritten = AtomicBoolean(false)
     private val clientLock = Any()
+    private val presenceChangeLock = ReentrantLock()
+    private val presenceChangeCondition = presenceChangeLock.newCondition()
     @Volatile private var workerThread: Thread? = null
     @Volatile private var startupWatchdogThread: Thread? = null
     @Volatile private var client: SteamCloudClient? = null
@@ -117,6 +111,8 @@ class SteamGamePresenceService : Service() {
     @Volatile private var operationStartedAtMs = 0L
     @Volatile private var operationAccountName = ""
     @Volatile private var startupTimeoutFailure: TimeoutException? = null
+    @Volatile private var presenceChangeVersion = 0L
+    @Volatile private var presenceFileObserver: FileObserver? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -187,9 +183,8 @@ class SteamGamePresenceService : Service() {
             false,
             null,
             null,
-            "foreground_service_started_watchdog_armed",
-        )
-        scheduleStartupTimeout(operationStartedAtMs)
+                "foreground_service_started_waiting_for_rich_presence",
+            )
         val thread = Thread(::runPresence, "STS-SteamGamePresence")
         workerThread = thread
         thread.start()
@@ -198,6 +193,8 @@ class SteamGamePresenceService : Service() {
 
     override fun onDestroy() {
         stopRequested.set(true)
+        stopPresenceFileObserver()
+        signalPresenceChange()
         cancelStartupTimeout()
         workerThread?.interrupt()
         closeClient(clearState = true)
@@ -227,19 +224,36 @@ class SteamGamePresenceService : Service() {
             return
         }
         operationAccountName = auth.accountName
-        val steamClient = SteamCloudClient(applicationContext)
-        client = steamClient
         var failure: Throwable? = null
+        var steamClient: SteamCloudClient? = null
+        var restartAfterSessionDrop = false
         try {
-            steamClient.beginOperationDiagnostics("game_presence", auth.accountName, auth.guardData.isNotBlank())
-            steamClient.start()
+            startPresenceFileObserver()
+            var observedPresenceVersion = presenceChangeVersion
+            var richPresence: Map<String, String>? = null
+            while (!stopRequested.get() && isStillGameActive() && richPresence == null) {
+                richPresence = RichPresenceStateFile.read(
+                    RuntimePaths.richPresenceFile(applicationContext),
+                )
+                if (richPresence == null) {
+                    observedPresenceVersion = awaitPresenceChange(observedPresenceVersion, 0L)
+                }
+            }
+            if (stopRequested.get() || !isStillGameActive()) return
+            val firstPresence = requireNotNull(richPresence)
+            scheduleStartupTimeout(operationStartedAtMs)
+            val activeClient = SteamCloudClient(applicationContext)
+            steamClient = activeClient
+            client = activeClient
+            activeClient.beginOperationDiagnostics("game_presence", auth.accountName, auth.guardData.isNotBlank())
+            activeClient.start()
             check(!stopRequested.get() && isStillGameActive()) { "Game is no longer active." }
-            steamClient.logOnWithRefreshToken(auth.accountName, auth.refreshToken, auth.steamId64)
+            activeClient.logOnWithRefreshToken(auth.accountName, auth.refreshToken, auth.steamId64)
             check(!stopRequested.get() && isStillGameActive()) { "Game is no longer active." }
             loggedOn = true
             cancelStartupTimeout()
-            steamClient.setPersonaOnline()
-            steamClient.setGamePlayedAppId(APP_ID)
+            activeClient.setPersonaOnline()
+            activeClient.setGamePlayedAppId(APP_ID)
             appIdSent = true
             SteamGamePresenceDiagnosticsStore.writeSummary(
                 applicationContext,
@@ -250,55 +264,49 @@ class SteamGamePresenceService : Service() {
                 true,
                 false,
                 null,
-                steamClient.snapshotDiagnostics(),
+                activeClient.snapshotDiagnostics(),
                 "steam_presence_app_state_sent",
             )
             Log.i(TAG, "Reported Steam game AppID $APP_ID through CM.")
-            var lastBroadcastPresence: Map<String, String>? = null
+            val dispatchState = RichPresenceDispatchState(firstPresence)
             while (!stopRequested.get() && isStillGameActive()) {
-                // RichPresenceStore is populated by GameSessionCoordinator in the main
-                // launcher process, but this service runs in the :game process — the
-                // in-memory singleton is never populated here. Read the IPC file directly
-                // so that both processes see the same state without an IPC mechanism.
-                val richPresence = readRichPresenceFromFile()
-                if (richPresence != null && richPresence != lastBroadcastPresence) {
+                if (dispatchState.shouldUpload) {
+                    val pendingPresence = dispatchState.pending()
                     var sessionDropped = false
                     SteamGamePresenceDiagnosticsStore.appendEvent(
                         applicationContext,
                         "rich_presence_upload_attempt",
-                        "emsg=7501; keys=${richPresence.keys.joinToString(",")}",
+                        "emsg=7501; keys=${pendingPresence.keys.joinToString(",")}",
                     )
-                    runCatching { steamClient.setRichPresence(richPresence) }
+                    runCatching { activeClient.setRichPresence(pendingPresence) }
                         .onSuccess {
-                            // CMsgClientRichPresenceUpload stores the KV on the CM server but does
-                            // not itself trigger a persona-state push to friends. Re-send
-                            // CMsgClientChangeStatus so the CM broadcasts an updated persona state
-                            // that includes the freshly stored rich_presence KV pairs.
-                            runCatching { steamClient.setPersonaOnline() }
-                                .onFailure { e -> Log.w(TAG, "Persona re-broadcast after rich presence failed.", e) }
-                            lastBroadcastPresence = richPresence
+                            dispatchState.markUploaded()
                             SteamGamePresenceDiagnosticsStore.appendEvent(
                                 applicationContext,
                                 "rich_presence_upload_queued",
-                                "emsg=7501; status=${richPresence["status"].orEmpty()}; " +
-                                    "steamDisplay=${richPresence["steam_display"].orEmpty()}",
+                                "emsg=7501; status=${pendingPresence["status"].orEmpty()}; " +
+                                    "steamDisplay=${pendingPresence["steam_display"].orEmpty()}",
                             )
                         }
                         .onFailure { e ->
                             Log.w(TAG, "Rich presence upload failed.", e)
-                            // "not logged on" means the CM session was destroyed asynchronously
-                            // (e.g. LoggedOff received). Retrying in-loop is pointless; break out
-                            // so the service stops cleanly and can be restarted next game launch.
-                            if (e.message?.contains("not logged on") == true) {
+                            // A missing CM session means it was destroyed asynchronously (for
+                            // example, after LoggedOff). Other upload failures are retryable.
+                            if (!activeClient.isCmSessionActive()) {
                                 Log.w(TAG, "CM session dropped; stopping rich presence service.")
                                 sessionDropped = true
                             }
-                        }
-                    if (sessionDropped) break
+                    }
+                    if (sessionDropped) {
+                        restartAfterSessionDrop = true
+                        break
+                    }
                 }
-                // Sleep at the end of the loop so the first iteration runs immediately after
-                // login — uploading before Android's FGS idle timeout can kill the service.
-                Thread.sleep(15_000L)
+                val retryDelayMs = if (dispatchState.shouldUpload) PRESENCE_RETRY_MS else 0L
+                observedPresenceVersion = awaitPresenceChange(observedPresenceVersion, retryDelayMs)
+                RichPresenceStateFile.read(RuntimePaths.richPresenceFile(applicationContext))?.let {
+                    dispatchState.update(it)
+                }
             }
         } catch (error: Throwable) {
             if (startupTimeoutFailure != null) {
@@ -311,6 +319,7 @@ class SteamGamePresenceService : Service() {
             if (!stopRequested.get()) Log.w(TAG, "Experimental Steam presence stopped.", error)
         } finally {
             cancelStartupTimeout()
+            stopPresenceFileObserver()
             closeClient(clearState = true)
             writeTerminalSummary(
                 if (failure == null) "STOPPED" else "FAILED",
@@ -319,55 +328,79 @@ class SteamGamePresenceService : Service() {
                 appIdSent,
                 clearStateSent,
                 failure,
-                steamClient.snapshotDiagnostics(),
+                steamClient?.snapshotDiagnostics(),
             )
             stopSelf()
-        }
-    }
-
-    /**
-     * Reads the rich-presence key-value pairs written by the in-game mod via
-     * [RichPresenceBridge]. This service runs in the `:game` process while
-     * [RichPresenceStore] is populated by [GameSessionCoordinator] in the main
-     * launcher process — the in-memory singleton is never populated here.
-     * Reading the IPC file directly avoids needing a cross-process IPC mechanism.
-     */
-    private fun readRichPresenceFromFile(): Map<String, String>? {
-        val file = RuntimePaths.richPresenceFile(applicationContext)
-        if (!file.exists()) return null
-        return try {
-            val kv = LinkedHashMap<String, String>()
-            file.readLines(Charsets.UTF_8).forEach { line ->
-                val idx = line.indexOf('=')
-                if (idx < 1) return@forEach
-                val key = line.substring(0, idx)
-                val value = unescapePresenceValue(line.substring(idx + 1))
-                kv[key] = value
+            if (restartAfterSessionDrop && isStillGameActive()) {
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(
+                    { startIfEnabled(applicationContext) },
+                    SESSION_RESTART_DELAY_MS,
+                )
             }
-            kv.ifEmpty { null }
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to read rich presence file.", e)
-            null
         }
     }
 
-    private fun unescapePresenceValue(value: String): String {
-        val sb = StringBuilder(value.length)
-        var i = 0
-        while (i < value.length) {
-            if (value[i] == '\\' && i + 1 < value.length) {
-                when (value[i + 1]) {
-                    'n' -> { sb.append('\n'); i += 2 }
-                    '=' -> { sb.append('='); i += 2 }
-                    '\\' -> { sb.append('\\'); i += 2 }
-                    else -> { sb.append(value[i]); i++ }
+    private fun startPresenceFileObserver() {
+        val target = RuntimePaths.richPresenceFile(applicationContext)
+        val parent = target.parentFile ?: return
+        parent.mkdirs()
+        val observer = createPresenceFileObserver(parent, target.name)
+        presenceFileObserver = observer
+        observer.startWatching()
+        SteamGamePresenceDiagnosticsStore.appendEvent(
+            applicationContext,
+            "rich_presence_observer_started",
+            "path=${target.absolutePath}",
+        )
+    }
+
+    private fun stopPresenceFileObserver() {
+        presenceFileObserver?.stopWatching()
+        presenceFileObserver = null
+    }
+
+    private fun createPresenceFileObserver(parent: File, targetName: String): FileObserver {
+        val mask = FileObserver.CREATE or FileObserver.CLOSE_WRITE or FileObserver.MOVED_TO
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            object : FileObserver(parent, mask) {
+                override fun onEvent(event: Int, path: String?) {
+                    if (path == targetName) signalPresenceChange()
                 }
-            } else {
-                sb.append(value[i])
-                i++
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            object : FileObserver(parent.absolutePath, mask) {
+                override fun onEvent(event: Int, path: String?) {
+                    if (path == targetName) signalPresenceChange()
+                }
             }
         }
-        return sb.toString()
+    }
+
+    private fun signalPresenceChange() {
+        presenceChangeLock.lock()
+        try {
+            presenceChangeVersion += 1
+            presenceChangeCondition.signalAll()
+        } finally {
+            presenceChangeLock.unlock()
+        }
+    }
+
+    private fun awaitPresenceChange(observedVersion: Long, timeoutMs: Long): Long {
+        presenceChangeLock.lock()
+        try {
+            if (!stopRequested.get() && observedVersion == presenceChangeVersion) {
+                if (timeoutMs > 0L) {
+                    presenceChangeCondition.await(timeoutMs, TimeUnit.MILLISECONDS)
+                } else {
+                    presenceChangeCondition.await()
+                }
+            }
+            return presenceChangeVersion
+        } finally {
+            presenceChangeLock.unlock()
+        }
     }
 
     private fun isStillGameActive(): Boolean {

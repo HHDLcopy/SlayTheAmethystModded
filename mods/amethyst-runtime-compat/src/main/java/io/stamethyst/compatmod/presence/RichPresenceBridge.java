@@ -24,6 +24,13 @@ import java.util.Map;
  *  {@code %status%}, so {@code #Status} is the only correct {@code steam_display} value. */
 public final class RichPresenceBridge {
     private static final String PRESENCE_PATH_PROP = "amethyst.richpresence.path";
+    private static final String PREFIX_PROP = "amethyst.richpresence.prefix";
+    private static final String DEVICE_NAME_PROP = "amethyst.richpresence.device_name";
+    private static final String SHOW_CHARACTER_PROP = "amethyst.richpresence.show_character";
+    private static final String SHOW_FLOOR_PROP = "amethyst.richpresence.show_floor";
+    private static final String SHOW_ASCENSION_PROP = "amethyst.richpresence.show_ascension";
+    private static final String SHOW_ACT_PROP = "amethyst.richpresence.show_act";
+    private static final String GAME_PREFIX = "在 Slay the Amethyst 上游玩";
     /** Localization token registered by Slay the Spire; renders the `status` value. */
     private static final String STEAM_DISPLAY_TOKEN = "#Status";
     private static boolean initialized;
@@ -41,10 +48,17 @@ public final class RichPresenceBridge {
         );
     }
 
+    /** Re-publishes the menu state whenever the game creates a main-menu screen. */
+    public static void updateMainMenuState() {
+        if (!initialized) return;
+        publishMainMenuState();
+    }
+
     /** Makes the launcher aware of an active game before a dungeon has been created. */
     private static void publishMainMenuState() {
         Map<String, String> kv = new LinkedHashMap<>();
-        kv.put("status", "主菜单");
+        String prefix = prefixText();
+        kv.put("status", prefix.isEmpty() ? "主菜单" : prefix + " - 主菜单");
         kv.put("steam_display", STEAM_DISPLAY_TOKEN);
         String payload = serializeKv(kv);
         boolean written = writePresence(payload);
@@ -98,45 +112,32 @@ public final class RichPresenceBridge {
             } catch (Throwable ignored) {
                 displayName = character;
             }
-            // Dungeon id (e.g. "Exordium", "TheCity") — read via reflection to avoid
-            // a compile-time dependency on the exact field name.
-            String dungeonId = readDungeonId();
             // The visible text must live in `status`; `steam_display` only names the
             // localization token that renders it. See the class javadoc for why raw text
             // in `steam_display` never displays.
-            String displayText = dungeonId != null && !dungeonId.isEmpty()
-                ? displayName + " · 第" + floorNum + "层 · " + dungeonId
-                : displayName + " · 第" + floorNum + "层";
+            String prefix = prefixText();
+            boolean showCharacter = readBooleanProperty(SHOW_CHARACTER_PROP, true);
+            boolean showFloor = readBooleanProperty(SHOW_FLOOR_PROP, true);
+            boolean showAscension = readBooleanProperty(SHOW_ASCENSION_PROP, false)
+                && AbstractDungeon.isAscensionMode;
+            StringBuilder displayText = new StringBuilder(prefix);
+            if (showCharacter) displayText.append(displayName);
+            if (showFloor) {
+                appendStatusSegment(displayText, "第" + floorNum + "层");
+                if (showAscension) displayText.append("（进阶").append(AbstractDungeon.ascensionLevel).append("）");
+            } else if (showAscension) {
+                appendStatusSegment(displayText, "进阶" + AbstractDungeon.ascensionLevel);
+            }
+            if (readBooleanProperty(SHOW_ACT_PROP, false)) {
+                appendStatusSegment(displayText, "第" + AbstractDungeon.actNum + "幕");
+            }
+            if (displayText.length() == 0) displayText.append("游玩中");
             Map<String, String> kv = new LinkedHashMap<>();
-            kv.put("status", displayText);
+            kv.put("status", displayText.toString());
             kv.put("steam_display", STEAM_DISPLAY_TOKEN);
             kv.put("character", character);
             kv.put("floor", String.valueOf(floorNum));
-            if (dungeonId != null && !dungeonId.isEmpty()) {
-                kv.put("act", dungeonId);
-            }
             return kv;
-        } catch (Throwable ignored) {
-            return null;
-        }
-    }
-
-    private static String readDungeonId() {
-        try {
-            // AbstractDungeon.id is an instance field; the current dungeon is a static
-            // reference stored on AbstractDungeon (field name varies by build).
-            java.lang.reflect.Field dungeonField = null;
-            for (java.lang.reflect.Field f : AbstractDungeon.class.getDeclaredFields()) {
-                if ("id".equals(f.getName()) && f.getType() == String.class
-                        && java.lang.reflect.Modifier.isStatic(f.getModifiers())) {
-                    dungeonField = f;
-                    break;
-                }
-            }
-            if (dungeonField == null) return null;
-            dungeonField.setAccessible(true);
-            Object value = dungeonField.get(null);
-            return value instanceof String ? (String) value : null;
         } catch (Throwable ignored) {
             return null;
         }
@@ -149,6 +150,27 @@ public final class RichPresenceBridge {
             sb.append(entry.getKey()).append('=').append(escapeValue(entry.getValue()));
         }
         return sb.toString();
+    }
+
+    private static String prefixText() {
+        String prefix = System.getProperty(PREFIX_PROP, "game").trim();
+        if ("device".equals(prefix)) {
+            String deviceName = System.getProperty(DEVICE_NAME_PROP, "Android").trim();
+            return deviceName.isEmpty() ? "在 Android 上游玩" : "在 " + deviceName + " 上游玩";
+        }
+        if ("none".equals(prefix)) return "";
+        return GAME_PREFIX;
+    }
+
+    private static boolean readBooleanProperty(String key, boolean defaultValue) {
+        String value = System.getProperty(key, "").trim();
+        return value.isEmpty() ? defaultValue : Boolean.parseBoolean(value);
+    }
+
+    private static void appendStatusSegment(StringBuilder status, String segment) {
+        if (segment == null || segment.isEmpty()) return;
+        if (status.length() > 0) status.append(" - ");
+        status.append(segment);
     }
 
     /** Escapes newlines and equals signs in values to keep the format unambiguous. */

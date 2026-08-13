@@ -26,7 +26,6 @@ import io.stamethyst.backend.launch.StsLaunchSpec
 import io.stamethyst.backend.runtime.RuntimePackInstaller
 import io.stamethyst.backend.steamcloud.SteamAchievementSyncService
 import io.stamethyst.backend.steamcloud.AchievementSyncLogStore
-import io.stamethyst.backend.steamcloud.RichPresenceStore
 import io.stamethyst.backend.steamcloud.SteamGamePresenceService
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.RuntimePaths
@@ -57,7 +56,6 @@ internal class GameSessionCoordinator(
         private const val RESCUE_TOAST_REQUEST_POLL_MS = 120L
         private const val ACHIEVEMENT_REQUEST_POLL_MS = 120L
         private const val HARNESS_EXIT_REQUEST_POLL_MS = 120L
-        private const val RICH_PRESENCE_POLL_MS = 500L
         private const val EXPECTED_GAME_EXIT_PROCESS_KILL_DELAY_MS = 1500L
         private const val EXPECTED_GAME_EXIT_LAUNCHER_RESTART_DELAY_MS = 180L
         private const val LANDSCAPE_WAIT_TIMEOUT_MS = 4000L
@@ -102,8 +100,6 @@ internal class GameSessionCoordinator(
     private var lastAchievementRequestKey = ""
     private var lastInvalidAchievementPayload = ""
     private var harnessExitRequestPollStarted = false
-    private var richPresencePollStarted = false
-    private var lastRichPresencePayload = ""
     private var rescueToastShown = false
     @Volatile
     private var destroyed = false
@@ -183,14 +179,6 @@ internal class GameSessionCoordinator(
             }
         }
     }
-    private val richPresencePollRunnable = object : Runnable {
-        override fun run() {
-            pollRichPresence()
-            if (!destroyed && richPresencePollStarted) {
-                mainHandler.postDelayed(this, RICH_PRESENCE_POLL_MS)
-            }
-        }
-    }
 
     private val bootOverlayController: BootOverlayController = BootOverlayController(
         activity = activity,
@@ -245,7 +233,7 @@ internal class GameSessionCoordinator(
                 startFilePickerRequestPolling()
                 startRescueToastRequestPolling()
                 startAchievementRequestPolling()
-                startRichPresencePolling()
+                SteamGamePresenceService.startIfEnabled(activity)
                 updatePerformanceOverlayVisibility()
                 updateSystemGameState()
                 trySchedulePostBootSurfaceSoftRefresh("runtime_ready")
@@ -299,7 +287,6 @@ internal class GameSessionCoordinator(
         stopRescueToastRequestPolling()
         stopAchievementRequestPolling()
         stopHarnessExitRequestPolling()
-        stopRichPresencePolling()
         inGameEasyTierOverlayController.onDestroy()
         inGameAchievementOverlayController.onDestroy()
         RuntimePaths.touchscreenCardHoldStateFile(activity).delete()
@@ -1182,49 +1169,6 @@ internal class GameSessionCoordinator(
         mainHandler.removeCallbacks(achievementRequestPollRunnable)
         AchievementSyncLogStore.append(activity, "polling_stopped")
     }
-
-    private fun startRichPresencePolling() {
-        if (richPresencePollStarted) return
-        richPresencePollStarted = true
-        lastRichPresencePayload = ""
-        RuntimePaths.richPresenceFile(activity).delete()
-        mainHandler.post(richPresencePollRunnable)
-    }
-
-    private fun stopRichPresencePolling() {
-        richPresencePollStarted = false
-        mainHandler.removeCallbacks(richPresencePollRunnable)
-        RichPresenceStore.clear()
-    }
-
-    private fun pollRichPresence() {
-        if (!jvmLaunchController.runtimeLifecycleReady || backExitRequested) return
-        val presenceFile = RuntimePaths.richPresenceFile(activity)
-        val payload = try {
-            if (presenceFile.isFile) presenceFile.readText().trim() else ""
-        } catch (_: Throwable) {
-            return
-        }
-        if (payload.isBlank() || payload == lastRichPresencePayload) return
-        lastRichPresencePayload = payload
-        val kvPairs = payload.lines()
-            .mapNotNull { line ->
-                val idx = line.indexOf('=')
-                if (idx <= 0) null
-                else line.substring(0, idx).trim() to unescapeValue(line.substring(idx + 1))
-            }
-            .filter { (k, _) -> k.isNotEmpty() }
-            .toMap()
-        if (kvPairs.isEmpty()) return
-        RichPresenceStore.update(kvPairs)
-        // Defer CM presence login until the game mod has supplied an actual dungeon state.
-        // This also avoids racing the Steam Cloud login launched during application startup.
-        SteamGamePresenceService.startIfEnabled(activity)
-    }
-
-    /** Reverses the simple escaping applied by RichPresenceBridge.java. */
-    private fun unescapeValue(value: String): String =
-        value.replace("\\n", "\n").replace("\\=", "=").replace("\\\\", "\\")
 
     private fun pollAchievementRequest() {
         if (!jvmLaunchController.runtimeLifecycleReady || backExitRequested) return

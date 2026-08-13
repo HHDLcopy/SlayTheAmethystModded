@@ -174,6 +174,7 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
 
         sessionConfig = GameSessionConfig.fromActivityIntent(this, intent)
         GamePresenceStateMarker.markGameActive(this, sessionConfig.launchMode)
+        RuntimePaths.richPresenceFile(this).delete()
         MemoryDiagnosticsLogger.logEvent(
             this,
             "game_activity_created",

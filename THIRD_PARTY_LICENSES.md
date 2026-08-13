@@ -6,6 +6,16 @@
 - License: GNU Lesser General Public License v3.0 (LGPL-3.0)
 - Usage: JavaSE launch bridge integration, JNI bridge, component assets.
 
+## EasyTier (Desktop Companion, User-Supplied Runtime)
+- Source: https://github.com/EasyTier/EasyTier
+- License: GNU Lesser General Public License v3.0 (LGPL-3.0).
+- Usage: `desktop-companion` invokes an official `easytier-core.exe` selected by
+  the user as a separate process. The repository does not bundle or modify the
+  executable.
+- Redistribution requirement: An installer that later bundles EasyTier must
+  include the full LGPL notice, upstream copyright/source information, and a
+  replaceable EasyTier binary.
+
 ## GL4ES
 - Source lineage: packaged via Amethyst-Android renderer stack.
 - Local usage: `libgl4es_114.so`

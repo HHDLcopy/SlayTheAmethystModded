@@ -490,9 +490,8 @@
     <string name="main_folder_dialog_cancel">取消</string>
     <string name="main_folder_summary_format">共 %1$d 个模组，未分类 %2$d 个</string>
     <string name="main_folder_filter_hint">筛选名称或描述</string>
-    <string name="main_mod_filter_menu">筛选模组</string>
-    <string name="main_mod_filter_update_available">只看可更新</string>
-    <string name="main_mod_filter_enabled">只看已启用</string>
+    <string name="main_mod_filter_show_enabled">仅显示已启用模组</string>
+    <string name="main_mod_filter_show_all">显示全部模组</string>
     <string name="main_folder_name_count_format">%1$s  (%2$d/%3$d)</string>
     <string name="main_folder_expand">展开文件夹</string>
     <string name="main_folder_collapse">折叠文件夹</string>

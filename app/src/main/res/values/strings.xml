@@ -1609,6 +1609,10 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="main_steam_cloud_conflict_confirm_local_action">Overwrite cloud</string>
     <string name="main_steam_cloud_conflict_confirm_cloud_action">Replace local</string>
     <string name="main_steam_cloud_conflict_confirm_cancel">Cancel</string>
+    <string name="main_steam_cloud_conflict_view_files">View conflicting files</string>
+    <string name="main_steam_cloud_conflict_files_dialog_title">Conflicting files</string>
+    <string name="main_steam_cloud_conflict_files_dialog_kind_baseline_required">No baseline</string>
+    <string name="main_steam_cloud_conflict_files_dialog_kind_both_changed">Both changed</string>
     <string name="main_steam_cloud_background_upload_hint">Start the game now and keep syncing local progress to Steam Cloud in the background.</string>
     <string name="main_steam_cloud_warning_unsupported_local_path">A local file path is unsupported and was not added to the upload plan: %1$s</string>
     <string name="main_steam_cloud_warning_failed_to_map_local_file">A local file could not be mapped to a Steam Cloud path: %1$s</string>

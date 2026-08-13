@@ -1607,6 +1607,10 @@
     <string name="main_steam_cloud_conflict_confirm_local_action">覆盖云端</string>
     <string name="main_steam_cloud_conflict_confirm_cloud_action">替换本地</string>
     <string name="main_steam_cloud_conflict_confirm_cancel">取消</string>
+    <string name="main_steam_cloud_conflict_view_files">查看冲突文件</string>
+    <string name="main_steam_cloud_conflict_files_dialog_title">冲突文件列表</string>
+    <string name="main_steam_cloud_conflict_files_dialog_kind_baseline_required">无基线</string>
+    <string name="main_steam_cloud_conflict_files_dialog_kind_both_changed">双端变更</string>
     <string name="main_steam_cloud_background_upload_hint">现在直接开始游戏，剩余的本地进度会在后台继续上传到 Steam Cloud。</string>
     <string name="main_steam_cloud_warning_unsupported_local_path">以下本地文件路径不受支持，未加入上传计划：%1$s</string>
     <string name="main_steam_cloud_warning_failed_to_map_local_file">以下本地文件无法映射到 Steam 云存档路径：%1$s</string>

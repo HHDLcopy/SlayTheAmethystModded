@@ -172,14 +172,24 @@ internal object SteamCloudMirrorPlanner {
         if (baseline == null || current == null) {
             return true
         }
-        val sha1Changed = baseline.sha1.isNotBlank() &&
-            current.sha1.isNotBlank() &&
-            !baseline.sha1.equals(current.sha1, ignoreCase = true)
-        return baseline.remotePath != current.remotePath
-            || baseline.rawSize != current.rawSize
-            || baseline.timestamp != current.timestamp
-            || baseline.persistState != current.persistState
-            || sha1Changed
+        // Normalize path separators — Steam may return '\' or '/' depending on client/platform.
+        val baselinePath = baseline.remotePath.replace('\\', '/')
+        val currentPath = current.remotePath.replace('\\', '/')
+        if (baselinePath != currentPath) {
+            return true
+        }
+        if (baseline.persistState != current.persistState) {
+            return true
+        }
+        // SHA-1 is the authoritative content identity signal.
+        val baselineSha1 = baseline.sha1.trim()
+        val currentSha1 = current.sha1.trim()
+        if (baselineSha1.isNotBlank() && currentSha1.isNotBlank()) {
+            return !baselineSha1.equals(currentSha1, ignoreCase = true)
+        }
+        // Do NOT compare timestamp — Steam's CM timestamp reflects server processing time, not
+        // content change time, and drifts slightly after every push even for identical content.
+        return baseline.rawSize != current.rawSize
     }
 
     private fun shouldSkipUploadBecauseRemoteMatches(
@@ -189,9 +199,12 @@ internal object SteamCloudMirrorPlanner {
         if (remote == null) {
             return false
         }
-        if (local.sha1.isBlank() || remote.sha1.isBlank()) {
-            return false
+        // Use SHA-1 when both sides have it; fall back to size when either is missing.
+        val localSha1 = local.sha1.trim()
+        val remoteSha1 = remote.sha1.trim()
+        if (localSha1.isNotBlank() && remoteSha1.isNotBlank()) {
+            return localSha1.equals(remoteSha1, ignoreCase = true)
         }
-        return local.sha1.equals(remote.sha1, ignoreCase = true)
+        return local.fileSize == remote.rawSize
     }
 }

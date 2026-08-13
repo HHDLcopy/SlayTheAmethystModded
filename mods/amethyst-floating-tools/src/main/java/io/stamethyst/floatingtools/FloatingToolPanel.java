@@ -7,6 +7,7 @@ import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.math.MathUtils;
 import com.megacrit.cardcrawl.core.CardCrawlGame;
 import com.megacrit.cardcrawl.core.Settings;
+import com.megacrit.cardcrawl.helpers.FontHelper;
 import com.megacrit.cardcrawl.helpers.ImageMaster;
 import com.megacrit.cardcrawl.helpers.input.InputHelper;
 import java.util.ArrayList;
@@ -45,9 +46,18 @@ final class FloatingToolPanel {
     private static final float BUTTON_PRESS_GROW_SPEED = 18f;
     private static final float BUTTON_PRESS_SHRINK_SPEED = 12f;
     private static final float BUTTON_HOVER_SCALE = 1.08f;
+    private static final float TIP_BOX_W = 320f;
+    private static final float TIP_SIDE_PAD = 24f;
+    private static final float TIP_ANCHOR_GAP = 46f;
+    private static final float TIP_TOP_OFFSET = 58f;
+    private static final float TIP_TEXT_SCALE = 0.9f;
+    private static final float TIP_MIN_W = 180f;
+    private static final float TIP_H = 54f;
 
     private static final Color WHITE = new Color(1f, 1f, 1f, 1f);
     private static final Color SHADOW = new Color(0f, 0f, 0f, 0.38f);
+    private static final Color TIP_BACKGROUND = new Color(0.035f, 0.028f, 0.022f, 0.96f);
+    private static final Color TIP_BORDER = new Color(0.72f, 0.57f, 0.30f, 0.92f);
     private static final Color PASSIVE_OUTLINE = new Color(0f, 0f, 0f, 0.33f);
     private static final Color ACTIVE_OUTLINE = new Color(0.62f, 0.9f, 0.38f, 0.72f);
     private static final Color RELIC_DARK = new Color(0.075f, 0.068f, 0.052f, 1f);
@@ -526,6 +536,11 @@ final class FloatingToolPanel {
         for (ToolButton button : buttons) {
             renderButton(sb, button);
         }
+        ToolButton hoveredButton = findButton(InputHelper.mX, InputHelper.mY);
+        if (hoveredButton != null && isHoverableAction(hoveredButton.action) &&
+            hoveredButton.appear >= BUTTON_CLICKABLE_APPEAR) {
+            renderHoverTooltip(sb, hoveredButton);
+        }
     }
 
     private void renderButton(SpriteBatch sb, ToolButton button) {
@@ -547,7 +562,62 @@ final class FloatingToolPanel {
     }
 
     private boolean isHoverableAction(Action action) {
-        return action == Action.MOUSE_MODE || action == Action.ADD_KEY;
+        return action == Action.MOUSE_MODE ||
+            action == Action.ADD_KEY ||
+            action == Action.KEYBOARD ||
+            action == Action.ONLINE;
+    }
+
+    private void renderHoverTooltip(SpriteBatch sb, ToolButton button) {
+        String text = tooltipFor(button.action);
+        if (text == null || FontHelper.cardDescFont_N == null) {
+            return;
+        }
+
+        float s = Settings.scale;
+        float textW = FontHelper.getWidth(FontHelper.cardDescFont_N, text, TIP_TEXT_SCALE);
+        float boxW = Math.max(TIP_MIN_W * s, textW + TIP_SIDE_PAD * 2f * s);
+        float boxH = TIP_H * s;
+        float sidePad = TIP_SIDE_PAD * s;
+        float x = button.centerX - boxW - TIP_ANCHOR_GAP * s;
+        float maxX = Math.max(sidePad, Settings.WIDTH - boxW - sidePad);
+        x = MathUtils.clamp(x, sidePad, maxX);
+        float y = button.centerY + TIP_TOP_OFFSET * s;
+        if (y + boxH > Settings.HEIGHT - sidePad) {
+            y = button.centerY - boxH - TIP_TOP_OFFSET * s;
+        }
+        y = MathUtils.clamp(y, sidePad, Settings.HEIGHT - boxH - sidePad);
+
+        drawRectCentered(sb, x + boxW / 2f + 4f * s, y + boxH / 2f - 4f * s,
+            boxW, boxH, SHADOW);
+        drawRectCentered(sb, x + boxW / 2f, y + boxH / 2f, boxW, boxH, TIP_BORDER);
+        drawRectCentered(sb, x + boxW / 2f, y + boxH / 2f, boxW - 4f * s, boxH - 4f * s,
+            TIP_BACKGROUND);
+        FontHelper.renderFontCentered(
+            sb,
+            FontHelper.cardDescFont_N,
+            text,
+            x + boxW / 2f,
+            y + boxH / 2f - 6f * s,
+            Settings.CREAM_COLOR,
+            TIP_TEXT_SCALE
+        );
+        sb.setColor(WHITE);
+    }
+
+    private String tooltipFor(Action action) {
+        switch (action) {
+            case MOUSE_MODE:
+                return "切换鼠标左右键";
+            case ADD_KEY:
+                return "新增按键";
+            case KEYBOARD:
+                return "打开键盘";
+            case ONLINE:
+                return "打开虚拟局域网菜单";
+            default:
+                return null;
+        }
     }
 
     private boolean isActive(Action action) {

@@ -41,6 +41,18 @@ class LauncherConfigFloatingToolButtonsDefaultsTest {
         assertTrue(floatingToolPanelSource().contains("\"$property\""))
     }
 
+    @Test
+    fun primaryDrawerActionsKeepTheirRequestedHoverTooltips() {
+        val panel = floatingToolPanelSource()
+
+        assertTrue(panel.contains("\"切换鼠标左右键\""))
+        assertTrue(panel.contains("\"新增按键\""))
+        assertTrue(panel.contains("\"打开键盘\""))
+        assertTrue(panel.contains("\"打开虚拟局域网菜单\""))
+        assertTrue(panel.contains("renderHoverTooltip"))
+        assertTrue(panel.contains("FontHelper.renderFontCentered"))
+    }
+
     private fun floatingToolPanelSource(): String {
         return repositorySource(MOD_PANEL_PATH)
     }

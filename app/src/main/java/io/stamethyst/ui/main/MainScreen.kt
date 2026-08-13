@@ -5969,6 +5969,7 @@ private fun SteamCloudBottomSheetContent(
             buildSteamCloudConflictCardSummaries(it)
         }
     }
+    var showConflictFilesDialog by remember { mutableStateOf(false) }
     val showBackgroundUploadAction = shouldShowSteamCloudBackgroundUploadAction(indicator)
 
     Column(
@@ -6142,6 +6143,19 @@ private fun SteamCloudBottomSheetContent(
                         }
                     }
                 }
+                // "View conflicting files" link — only shown when there are typed conflicts
+                val conflictingFiles = indicator.plan?.conflicts
+                if (!conflictingFiles.isNullOrEmpty()) {
+                    Text(
+                        text = stringResource(R.string.main_steam_cloud_conflict_view_files),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        textDecoration = TextDecoration.Underline,
+                        modifier = Modifier
+                            .clickable { showConflictFilesDialog = true }
+                            .padding(top = 2.dp),
+                    )
+                }
             }
 
             MainScreenViewModel.SteamCloudIndicatorState.SYNCING -> {
@@ -6233,6 +6247,14 @@ private fun SteamCloudBottomSheetContent(
                 }
             }
         }
+    }
+
+    if (showConflictFilesDialog) {
+        val conflicts = indicator.plan?.conflicts.orEmpty()
+        SteamCloudConflictFilesDialog(
+            conflicts = conflicts,
+            onDismiss = { showConflictFilesDialog = false },
+        )
     }
 }
 
@@ -6378,6 +6400,57 @@ private fun SteamCloudConflictMetaLine(
         style = MaterialTheme.typography.bodySmall,
         fontFamily = if (monospace) FontFamily.Monospace else null,
         color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+}
+
+@Composable
+private fun SteamCloudConflictFilesDialog(
+    conflicts: List<io.stamethyst.backend.steamcloud.SteamCloudConflict>,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(text = stringResource(R.string.main_steam_cloud_conflict_files_dialog_title))
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                conflicts.forEachIndexed { index, conflict ->
+                    val kindLabel = when (conflict.kind) {
+                        io.stamethyst.backend.steamcloud.SteamCloudConflictKind.BASELINE_REQUIRED ->
+                            stringResource(R.string.main_steam_cloud_conflict_files_dialog_kind_baseline_required)
+                        io.stamethyst.backend.steamcloud.SteamCloudConflictKind.BOTH_CHANGED ->
+                            stringResource(R.string.main_steam_cloud_conflict_files_dialog_kind_both_changed)
+                    }
+                    if (index > 0) {
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = conflict.localRelativePath,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            text = kindLabel,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = stringResource(R.string.main_steam_cloud_conflict_confirm_cancel))
+            }
+        },
     )
 }
 

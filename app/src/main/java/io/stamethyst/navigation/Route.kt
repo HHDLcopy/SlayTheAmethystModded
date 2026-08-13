@@ -32,6 +32,8 @@ sealed interface Route : NavKey {
     @Serializable
     data object SettingsGame : Route
     @Serializable
+    data object SettingsPerformance : Route
+    @Serializable
     data object SettingsMarketCloud : Route
     @Serializable
     data object SettingsWorkshopAutoImportDefaults : Route

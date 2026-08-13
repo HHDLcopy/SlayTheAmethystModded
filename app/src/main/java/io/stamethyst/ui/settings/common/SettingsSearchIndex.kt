@@ -97,49 +97,6 @@ internal val SettingsSearchEntries: List<SettingsSearchEntry> = listOf(
         route = Route.SettingsGame,
     ),
     entry(
-        titleResId = R.string.settings_ram_saver_title,
-        subtitleResId = R.string.settings_ram_saver_desc,
-        categoryTitleResId = R.string.settings_category_game_title,
-        route = Route.SettingsGame,
-    ),
-    entry(
-        titleResId = R.string.settings_mts_patch_cache_title,
-        subtitleResId = R.string.settings_mts_patch_cache_desc,
-        categoryTitleResId = R.string.settings_category_game_title,
-        route = Route.SettingsGame,
-    ),
-    entry(
-        titleResId = R.string.settings_render_scale_title,
-        subtitleResId = R.string.settings_render_scale_desc,
-        categoryTitleResId = R.string.settings_category_game_title,
-        route = Route.SettingsGame,
-    ),
-    entry(
-        titleResId = R.string.settings_target_fps_title,
-        categoryTitleResId = R.string.settings_category_game_title,
-        route = Route.SettingsGame,
-    ),
-    entry(
-        titleResId = R.string.settings_virtual_resolution_mode_title,
-        categoryTitleResId = R.string.settings_category_game_title,
-        route = Route.SettingsGame,
-    ),
-    entry(
-        titleResId = R.string.settings_display_cutout_enabled,
-        categoryTitleResId = R.string.settings_category_game_title,
-        route = Route.SettingsGame,
-    ),
-    entry(
-        titleResId = R.string.settings_crop_screen_bottom_enabled,
-        categoryTitleResId = R.string.settings_category_game_title,
-        route = Route.SettingsGame,
-    ),
-    entry(
-        titleResId = R.string.settings_gameplay_larger_ui_enabled,
-        categoryTitleResId = R.string.settings_category_game_title,
-        route = Route.SettingsGame,
-    ),
-    entry(
         titleResId = R.string.settings_back_behavior_title,
         categoryTitleResId = R.string.settings_category_game_title,
         route = Route.SettingsGame,
@@ -178,16 +135,6 @@ internal val SettingsSearchEntries: List<SettingsSearchEntry> = listOf(
         route = Route.SettingsGame,
     ),
     entry(
-        titleResId = R.string.settings_keep_screen_on_timeout_title,
-        categoryTitleResId = R.string.settings_category_game_title,
-        route = Route.SettingsGame,
-    ),
-    entry(
-        titleResId = R.string.settings_performance_overlay_enabled,
-        categoryTitleResId = R.string.settings_category_game_title,
-        route = Route.SettingsGame,
-    ),
-    entry(
         titleResId = R.string.settings_special_key_input_mode_title,
         subtitleResId = R.string.settings_special_key_input_mode_desc,
         categoryTitleResId = R.string.settings_category_game_title,
@@ -209,6 +156,66 @@ internal val SettingsSearchEntries: List<SettingsSearchEntry> = listOf(
         titleResId = R.string.settings_auto_switch_left_enabled,
         categoryTitleResId = R.string.settings_category_game_title,
         route = Route.SettingsGame,
+    ),
+    entry(
+        titleResId = R.string.settings_display_cutout_enabled,
+        categoryTitleResId = R.string.settings_category_game_title,
+        route = Route.SettingsGame,
+    ),
+    entry(
+        titleResId = R.string.settings_crop_screen_bottom_enabled,
+        categoryTitleResId = R.string.settings_category_game_title,
+        route = Route.SettingsGame,
+    ),
+    entry(
+        titleResId = R.string.settings_gameplay_larger_ui_enabled,
+        categoryTitleResId = R.string.settings_category_game_title,
+        route = Route.SettingsGame,
+    ),
+    entry(
+        titleResId = R.string.settings_gameplay_font_scale_title,
+        categoryTitleResId = R.string.settings_category_game_title,
+        route = Route.SettingsGame,
+    ),
+    entry(
+        titleResId = R.string.settings_keep_screen_on_timeout_title,
+        categoryTitleResId = R.string.settings_category_game_title,
+        route = Route.SettingsGame,
+    ),
+
+    // Performance
+    entry(
+        titleResId = R.string.settings_ram_saver_title,
+        subtitleResId = R.string.settings_ram_saver_desc,
+        categoryTitleResId = R.string.settings_category_performance_title,
+        route = Route.SettingsPerformance,
+    ),
+    entry(
+        titleResId = R.string.settings_mts_patch_cache_title,
+        subtitleResId = R.string.settings_mts_patch_cache_desc,
+        categoryTitleResId = R.string.settings_category_performance_title,
+        route = Route.SettingsPerformance,
+    ),
+    entry(
+        titleResId = R.string.settings_render_scale_title,
+        subtitleResId = R.string.settings_render_scale_desc,
+        categoryTitleResId = R.string.settings_category_performance_title,
+        route = Route.SettingsPerformance,
+    ),
+    entry(
+        titleResId = R.string.settings_target_fps_title,
+        categoryTitleResId = R.string.settings_category_performance_title,
+        route = Route.SettingsPerformance,
+    ),
+    entry(
+        titleResId = R.string.settings_virtual_resolution_mode_title,
+        categoryTitleResId = R.string.settings_category_performance_title,
+        route = Route.SettingsPerformance,
+    ),
+    entry(
+        titleResId = R.string.settings_performance_overlay_enabled,
+        categoryTitleResId = R.string.settings_category_performance_title,
+        route = Route.SettingsPerformance,
     ),
 
     // Market / cloud

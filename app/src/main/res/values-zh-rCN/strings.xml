@@ -268,6 +268,7 @@
     <string name="touch_mouse_custom_key_picker_title">添加悬浮按键</string>
     <string name="touch_mouse_custom_key_picker_none">请选择一个按键</string>
     <string name="touch_mouse_custom_key_picker_selected_format">已选择：%1$s</string>
+    <string name="touch_mouse_custom_key_category_common">常用</string>
     <string name="touch_mouse_custom_key_category_function">功能键</string>
     <string name="touch_mouse_custom_key_category_letters">字母</string>
     <string name="touch_mouse_custom_key_category_number_row">数字行</string>
@@ -489,6 +490,8 @@
     <string name="main_folder_dialog_cancel">取消</string>
     <string name="main_folder_summary_format">共 %1$d 个模组，未分类 %2$d 个</string>
     <string name="main_folder_filter_hint">筛选名称或描述</string>
+    <string name="main_mod_filter_show_enabled">仅显示已启用模组</string>
+    <string name="main_mod_filter_show_all">显示全部模组</string>
     <string name="main_folder_name_count_format">%1$s  (%2$d/%3$d)</string>
     <string name="main_folder_expand">展开文件夹</string>
     <string name="main_folder_collapse">折叠文件夹</string>
@@ -1190,7 +1193,9 @@
     <string name="settings_category_launcher_title">启动器</string>
     <string name="settings_category_launcher_subtitle">新手教程、外观、更新和基础设置引导</string>
     <string name="settings_category_game_title">游戏</string>
-    <string name="settings_category_game_subtitle">渲染、输入与交互</string>
+    <string name="settings_category_game_subtitle">玩家信息、输入与交互</string>
+    <string name="settings_category_performance_title">性能</string>
+    <string name="settings_category_performance_subtitle">渲染、帧率、内存和显示行为</string>
     <string name="settings_category_market_cloud_title">Steam 服务</string>
     <string name="settings_category_market_cloud_subtitle">Steam 云存档和市场下载设置</string>
     <string name="settings_feedback_logs_title">文件与反馈</string>
@@ -1262,6 +1267,7 @@
     <string name="settings_native_library_market_error_unknown">原生库市场发生未知错误。</string>
     <string name="settings_section_render">渲染</string>
     <string name="settings_section_input">输入与交互</string>
+    <string name="settings_section_game_display">游戏显示</string>
     <string name="settings_input_basic_title">基础设置</string>
     <string name="settings_input_floating_title">鼠标悬浮窗</string>
     <string name="settings_section_status_logs">状态与日志</string>
@@ -1300,6 +1306,24 @@
     <string name="settings_steam_services_presence_enabled_title">向 Steam 好友展示游玩状态</string>
     <string name="settings_steam_services_presence_disabled_title">向 Steam 好友展示游玩状态</string>
     <string name="settings_steam_services_presence_desc">开启后，向 Steam 好友展示游玩中的信息。</string>
+    <string name="settings_steam_services_rich_presence_display_title">富文本展示</string>
+    <string name="settings_steam_services_rich_presence_prefix_title">前缀</string>
+    <string name="settings_steam_services_rich_presence_prefix_game">在 Slay the Amethyst 上游玩</string>
+    <string name="settings_steam_services_rich_presence_prefix_device">在本设备上游玩</string>
+    <string name="settings_steam_services_rich_presence_prefix_none">不显示</string>
+    <string name="settings_steam_services_rich_presence_show_character">显示角色</string>
+    <string name="settings_steam_services_rich_presence_show_character_desc">在对局中显示当前角色。</string>
+    <string name="settings_steam_services_rich_presence_show_floor">显示层数</string>
+    <string name="settings_steam_services_rich_presence_show_floor_desc">在对局中显示当前层数。</string>
+    <string name="settings_steam_services_rich_presence_show_ascension">显示进阶等级</string>
+    <string name="settings_steam_services_rich_presence_show_ascension_desc">在对局中显示当前进阶等级。</string>
+    <string name="settings_steam_services_rich_presence_show_act">显示 Act</string>
+    <string name="settings_steam_services_rich_presence_show_act_desc">在对局中显示当前 Act。</string>
+    <string name="settings_steam_services_rich_presence_restart_note">修改将在下次启动游戏时生效。</string>
+    <string name="settings_steam_services_rich_presence_summary_character">角色</string>
+    <string name="settings_steam_services_rich_presence_summary_floor">层数</string>
+    <string name="settings_steam_services_rich_presence_summary_ascension">进阶</string>
+    <string name="settings_steam_services_rich_presence_summary_act">Act</string>
     <string name="settings_steam_services_achievement_section_title">成就</string>
     <string name="settings_steam_services_achievement_enabled_title">开启 Steam 成就同步</string>
     <string name="settings_steam_services_achievement_disabled_title">开启 Steam 成就同步</string>
@@ -1319,6 +1343,7 @@
     <string name="main_steam_achievements_open">查看官方成就</string>
     <string name="main_steam_achievements_loading">正在加载 Steam 成就状态...</string>
     <string name="main_steam_achievements_progress">已获得 %1$d / %2$d</string>
+    <string name="main_steam_achievements_view_and_sync">查看与同步 Steam 成就</string>
     <string name="main_steam_achievements_unavailable">暂时无法获取成就</string>
     <string name="main_steam_achievements_read_only">成就名称和图标已内置。Steam CM 通常仅用于读取解锁状态。</string>
     <string name="main_steam_achievements_debug_operation">调试模式已开启。每次操作会通过 Steam CM 修改一个成就位，然后重新读取状态。</string>
@@ -2802,4 +2827,11 @@
     <string name="main_mod_workshop_state_texture_pack">资源包</string>
     <string name="main_mod_workshop_state_update_available">可更新</string>
     <string name="main_mod_workshop_state_file_missing">文件缺失</string>
+    <string name="settings_floating_tool_buttons_title">可选工具按键</string>
+    <string name="settings_floating_tool_button_ctrl">显示 Ctrl 按钮</string>
+    <string name="settings_floating_tool_button_shift">显示 Shift 按钮</string>
+    <string name="settings_floating_tool_button_tab">显示 Tab 按钮</string>
+    <string name="settings_floating_tool_button_alt">显示 Alt 按钮</string>
+    <string name="settings_floating_tool_button_lock">显示输入锁定按钮</string>
+    <string name="settings_floating_tool_button_wheel">显示虚拟滚轮按钮</string>
 </resources>

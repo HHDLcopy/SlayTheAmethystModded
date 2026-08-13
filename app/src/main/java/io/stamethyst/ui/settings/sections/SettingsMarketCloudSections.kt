@@ -13,6 +13,8 @@ import io.stamethyst.ui.settings.steamcloud.*
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -63,6 +65,8 @@ import io.stamethyst.backend.steamcloud.SteamCloudUploadCandidate
 import io.stamethyst.backend.steamcloud.SteamCloudUploadCandidateKind
 import io.stamethyst.backend.workshop.SteamLanguagePreference
 import io.stamethyst.config.SteamCloudSaveMode
+import io.stamethyst.config.RichPresenceDisplayPreferences
+import io.stamethyst.config.RichPresencePrefix
 import io.stamethyst.ui.preferences.LauncherPreferences
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -76,6 +80,7 @@ internal data class SteamCloudSettingsActions(
     val onSteamCloudWattAccelerationChanged: (Boolean) -> Unit,
     val onSteamCloudAutoLaunchAfterSyncChanged: (Boolean) -> Unit,
     val onSteamGamePresenceChanged: (Boolean) -> Unit,
+    val onRichPresenceDisplayPreferencesChanged: (RichPresenceDisplayPreferences) -> Unit,
     val onSteamAchievementSyncChanged: (Boolean) -> Unit,
     val onOpenSteamCloudSaveSettings: () -> Unit,
     val onClearSteamCloudCredentials: () -> Unit,
@@ -399,6 +404,7 @@ internal fun SteamGamePresenceSection(
     actions: SteamCloudSettingsActions,
 ) {
     var showRiskWarning by rememberSaveable { mutableStateOf(false) }
+    var showRichPresenceEditor by rememberSaveable { mutableStateOf(false) }
 
     SettingsSwitchItem(
         SettingsSwitchSpec(
@@ -413,6 +419,25 @@ internal fun SteamGamePresenceSection(
             },
         )
     )
+
+    Spacer(modifier = Modifier.size(8.dp))
+    SettingsActionListItem(
+        title = stringResource(R.string.settings_steam_services_rich_presence_display_title),
+        supportingText = richPresenceDisplaySummary(uiState.richPresenceDisplayPreferences),
+        enabled = !uiState.busy && uiState.steamGamePresenceEnabled,
+        onClick = { showRichPresenceEditor = true },
+    )
+
+    if (showRichPresenceEditor) {
+        RichPresenceDisplayEditorDialog(
+            initialSettings = uiState.richPresenceDisplayPreferences,
+            onDismiss = { showRichPresenceEditor = false },
+            onSave = { settings ->
+                actions.onRichPresenceDisplayPreferencesChanged(settings)
+                showRichPresenceEditor = false
+            },
+        )
+    }
 
     if (showRiskWarning) {
         AlertDialog(
@@ -439,6 +464,112 @@ internal fun SteamGamePresenceSection(
             }
         )
     }
+}
+
+@Composable
+private fun RichPresenceDisplayEditorDialog(
+    initialSettings: RichPresenceDisplayPreferences,
+    onDismiss: () -> Unit,
+    onSave: (RichPresenceDisplayPreferences) -> Unit,
+) {
+    var settings by remember(initialSettings) { mutableStateOf(initialSettings) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.settings_steam_services_rich_presence_display_title)) },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.settings_steam_services_rich_presence_prefix_title),
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                RichPresencePrefix.entries.forEach { prefix ->
+                    SettingsRadioOptionRow(
+                        selected = settings.prefix == prefix,
+                        enabled = true,
+                        text = richPresencePrefixLabel(prefix),
+                        onSelect = { settings = settings.copy(prefix = prefix) },
+                    )
+                }
+                SettingsSwitchItem(
+                    SettingsSwitchSpec(
+                        checked = settings.showCharacter,
+                        enabled = true,
+                        enabledText = stringResource(R.string.settings_steam_services_rich_presence_show_character),
+                        disabledText = stringResource(R.string.settings_steam_services_rich_presence_show_character),
+                        description = stringResource(R.string.settings_steam_services_rich_presence_show_character_desc),
+                        onCheckedChange = { settings = settings.copy(showCharacter = it) },
+                    ),
+                )
+                SettingsSwitchItem(
+                    SettingsSwitchSpec(
+                        checked = settings.showFloor,
+                        enabled = true,
+                        enabledText = stringResource(R.string.settings_steam_services_rich_presence_show_floor),
+                        disabledText = stringResource(R.string.settings_steam_services_rich_presence_show_floor),
+                        description = stringResource(R.string.settings_steam_services_rich_presence_show_floor_desc),
+                        onCheckedChange = { settings = settings.copy(showFloor = it) },
+                    ),
+                )
+                SettingsSwitchItem(
+                    SettingsSwitchSpec(
+                        checked = settings.showAscension,
+                        enabled = true,
+                        enabledText = stringResource(R.string.settings_steam_services_rich_presence_show_ascension),
+                        disabledText = stringResource(R.string.settings_steam_services_rich_presence_show_ascension),
+                        description = stringResource(R.string.settings_steam_services_rich_presence_show_ascension_desc),
+                        onCheckedChange = { settings = settings.copy(showAscension = it) },
+                    ),
+                )
+                SettingsSwitchItem(
+                    SettingsSwitchSpec(
+                        checked = settings.showAct,
+                        enabled = true,
+                        enabledText = stringResource(R.string.settings_steam_services_rich_presence_show_act),
+                        disabledText = stringResource(R.string.settings_steam_services_rich_presence_show_act),
+                        description = stringResource(R.string.settings_steam_services_rich_presence_show_act_desc),
+                        onCheckedChange = { settings = settings.copy(showAct = it) },
+                    ),
+                )
+                Text(
+                    text = stringResource(R.string.settings_steam_services_rich_presence_restart_note),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            HapticTextButton(onClick = { onSave(settings) }) {
+                Text(stringResource(android.R.string.ok))
+            }
+        },
+        dismissButton = {
+            HapticTextButton(onClick = onDismiss) {
+                Text(stringResource(android.R.string.cancel))
+            }
+        },
+    )
+}
+
+@Composable
+private fun richPresenceDisplaySummary(settings: RichPresenceDisplayPreferences): String {
+    val parts = buildList {
+        add(richPresencePrefixLabel(settings.prefix))
+        if (settings.showCharacter) add(stringResource(R.string.settings_steam_services_rich_presence_summary_character))
+        if (settings.showFloor) add(stringResource(R.string.settings_steam_services_rich_presence_summary_floor))
+        if (settings.showAscension) add(stringResource(R.string.settings_steam_services_rich_presence_summary_ascension))
+        if (settings.showAct) add(stringResource(R.string.settings_steam_services_rich_presence_summary_act))
+    }
+    return parts.joinToString(" · ")
+}
+
+@Composable
+private fun richPresencePrefixLabel(prefix: RichPresencePrefix): String = when (prefix) {
+    RichPresencePrefix.GAME -> stringResource(R.string.settings_steam_services_rich_presence_prefix_game)
+    RichPresencePrefix.DEVICE -> stringResource(R.string.settings_steam_services_rich_presence_prefix_device)
+    RichPresencePrefix.NONE -> stringResource(R.string.settings_steam_services_rich_presence_prefix_none)
 }
 
 
@@ -884,4 +1015,3 @@ internal fun formatSteamCloudBytes(bytes: Long): String {
         else -> "$bytes B"
     }
 }
-

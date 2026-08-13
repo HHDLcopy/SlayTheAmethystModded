@@ -50,6 +50,7 @@ object LauncherConfig {
     private const val PREF_KEY_TOUCH_MOUSE_NEW_INTERACTION = "touch_mouse_new_interaction"
     private const val PREF_KEY_BUILT_IN_SOFT_KEYBOARD_ENABLED =
         "built_in_soft_keyboard_enabled"
+    private const val PREF_KEY_FLOATING_TOOL_BUTTONS = "floating_tool_buttons"
     private const val PREF_KEY_HAPTIC_FEEDBACK_ENABLED = "haptic_feedback_enabled"
     private const val PREF_KEY_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = "auto_switch_left_after_right_click"
     private const val PREF_KEY_TOUCH_DOUBLE_CLICK_AS_RIGHT_CLICK =
@@ -198,6 +199,13 @@ object LauncherConfig {
         "steam_cloud_auto_launch_after_sync_enabled"
     private const val PREF_KEY_STEAM_GAME_PRESENCE_ENABLED =
         "steam_game_presence_enabled"
+    private const val PREF_KEY_STEAM_RICH_PRESENCE_PREFIX = "steam_rich_presence_prefix"
+    private const val PREF_KEY_STEAM_RICH_PRESENCE_SHOW_CHARACTER =
+        "steam_rich_presence_show_character"
+    private const val PREF_KEY_STEAM_RICH_PRESENCE_SHOW_FLOOR = "steam_rich_presence_show_floor"
+    private const val PREF_KEY_STEAM_RICH_PRESENCE_SHOW_ASCENSION =
+        "steam_rich_presence_show_ascension"
+    private const val PREF_KEY_STEAM_RICH_PRESENCE_SHOW_ACT = "steam_rich_presence_show_act"
     private const val PREF_KEY_WORKSHOP_MAX_CONCURRENT_DOWNLOADS =
         "workshop_max_concurrent_downloads"
     private const val PREF_KEY_WORKSHOP_DOWNLOAD_THREADS = "workshop_download_threads"
@@ -294,6 +302,15 @@ object LauncherConfig {
     val DEFAULT_TOUCH_MOUSE_INTERACTION_MODE: TouchMouseInteractionMode =
         TouchMouseInteractionMode.OPEN_MENU_ON_TAP
     const val DEFAULT_BUILT_IN_SOFT_KEYBOARD_ENABLED = true
+    val DEFAULT_FLOATING_TOOL_BUTTONS: Set<String> = emptySet()
+    val FLOATING_TOOL_BUTTON_IDS: List<String> = listOf(
+        "ctrl",
+        "shift",
+        "tab",
+        "alt",
+        "lock",
+        "wheel",
+    )
     const val DEFAULT_HAPTIC_FEEDBACK_ENABLED = true
     const val DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK = true
     const val DEFAULT_TOUCH_DOUBLE_CLICK_AS_RIGHT_CLICK = false
@@ -731,6 +748,21 @@ object LauncherConfig {
     fun setBuiltInSoftKeyboardEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_BUILT_IN_SOFT_KEYBOARD_ENABLED, enabled)
+        }
+    }
+
+    fun readFloatingToolButtons(context: Context): Set<String> {
+        val stored = prefs(context).getStringSet(PREF_KEY_FLOATING_TOOL_BUTTONS, null)
+            ?: return DEFAULT_FLOATING_TOOL_BUTTONS
+        return stored.intersect(FLOATING_TOOL_BUTTON_IDS.toSet())
+    }
+
+    fun saveFloatingToolButtons(context: Context, buttons: Set<String>) {
+        prefs(context).edit {
+            putStringSet(
+                PREF_KEY_FLOATING_TOOL_BUTTONS,
+                buttons.intersect(FLOATING_TOOL_BUTTON_IDS.toSet()).toSet()
+            )
         }
     }
 
@@ -1992,6 +2024,32 @@ object LauncherConfig {
     fun setSteamGamePresenceEnabled(context: Context, enabled: Boolean) {
         prefs(context, crossProcess = true).edit(commit = true) {
             putBoolean(PREF_KEY_STEAM_GAME_PRESENCE_ENABLED, enabled)
+        }
+    }
+
+    fun readRichPresenceDisplayPreferences(context: Context): RichPresenceDisplayPreferences {
+        val preferences = prefs(context, crossProcess = true)
+        return RichPresenceDisplayPreferences(
+            prefix = RichPresencePrefix.fromPersistedValue(
+                preferences.getString(PREF_KEY_STEAM_RICH_PRESENCE_PREFIX, null),
+            ),
+            showCharacter = preferences.getBoolean(PREF_KEY_STEAM_RICH_PRESENCE_SHOW_CHARACTER, true),
+            showFloor = preferences.getBoolean(PREF_KEY_STEAM_RICH_PRESENCE_SHOW_FLOOR, true),
+            showAscension = preferences.getBoolean(PREF_KEY_STEAM_RICH_PRESENCE_SHOW_ASCENSION, false),
+            showAct = preferences.getBoolean(PREF_KEY_STEAM_RICH_PRESENCE_SHOW_ACT, false),
+        )
+    }
+
+    fun saveRichPresenceDisplayPreferences(
+        context: Context,
+        settings: RichPresenceDisplayPreferences,
+    ) {
+        prefs(context, crossProcess = true).edit(commit = true) {
+            putString(PREF_KEY_STEAM_RICH_PRESENCE_PREFIX, settings.prefix.persistedValue)
+            putBoolean(PREF_KEY_STEAM_RICH_PRESENCE_SHOW_CHARACTER, settings.showCharacter)
+            putBoolean(PREF_KEY_STEAM_RICH_PRESENCE_SHOW_FLOOR, settings.showFloor)
+            putBoolean(PREF_KEY_STEAM_RICH_PRESENCE_SHOW_ASCENSION, settings.showAscension)
+            putBoolean(PREF_KEY_STEAM_RICH_PRESENCE_SHOW_ACT, settings.showAct)
         }
     }
 

@@ -268,6 +268,7 @@
     <string name="touch_mouse_custom_key_picker_title">Add floating key</string>
     <string name="touch_mouse_custom_key_picker_none">Choose a key</string>
     <string name="touch_mouse_custom_key_picker_selected_format">Selected: %1$s</string>
+    <string name="touch_mouse_custom_key_category_common">Common</string>
     <string name="touch_mouse_custom_key_category_function">Function</string>
     <string name="touch_mouse_custom_key_category_letters">Letters</string>
     <string name="touch_mouse_custom_key_category_number_row">Numbers</string>
@@ -490,6 +491,8 @@ Do you still want to continue?</string>
     <string name="main_folder_dialog_cancel">Cancel</string>
     <string name="main_folder_summary_format">%1$d mods total, %2$d uncategorized</string>
     <string name="main_folder_filter_hint">Filter by name or description</string>
+    <string name="main_mod_filter_show_enabled">Show enabled mods only</string>
+    <string name="main_mod_filter_show_all">Show all mods</string>
     <string name="main_folder_name_count_format">%1$s  (%2$d/%3$d)</string>
     <string name="main_folder_expand">Expand folder</string>
     <string name="main_folder_collapse">Collapse folder</string>
@@ -1191,7 +1194,9 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_category_launcher_title">Launcher</string>
     <string name="settings_category_launcher_subtitle">Tutorial, appearance, updates, and setup guide</string>
     <string name="settings_category_game_title">Game</string>
-    <string name="settings_category_game_subtitle">Rendering, input, interaction, resources, and files</string>
+    <string name="settings_category_game_subtitle">Player and input interaction</string>
+    <string name="settings_category_performance_title">Performance</string>
+    <string name="settings_category_performance_subtitle">Rendering, frame rate, memory, and display behavior</string>
     <string name="settings_category_market_cloud_title">Steam Services</string>
     <string name="settings_category_market_cloud_subtitle">Steam Cloud saves and market download behavior</string>
     <string name="settings_feedback_logs_title">Logs and feedback</string>
@@ -1263,6 +1268,7 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_native_library_market_error_unknown">Unknown native library market error.</string>
     <string name="settings_section_render">Rendering</string>
     <string name="settings_section_input">Input and interaction</string>
+    <string name="settings_section_game_display">Game display</string>
     <string name="settings_input_basic_title">Basic settings</string>
     <string name="settings_input_floating_title">Floating mouse window</string>
     <string name="settings_section_status_logs">Status and logs</string>
@@ -1301,6 +1307,24 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_steam_services_presence_enabled_title">Show play status to Steam friends</string>
     <string name="settings_steam_services_presence_disabled_title">Show play status to Steam friends</string>
     <string name="settings_steam_services_presence_desc">When enabled, shows that you are playing to your Steam friends.</string>
+    <string name="settings_steam_services_rich_presence_display_title">Rich Presence display</string>
+    <string name="settings_steam_services_rich_presence_prefix_title">Prefix</string>
+    <string name="settings_steam_services_rich_presence_prefix_game">Playing on Slay the Amethyst</string>
+    <string name="settings_steam_services_rich_presence_prefix_device">Playing on this device</string>
+    <string name="settings_steam_services_rich_presence_prefix_none">Do not show</string>
+    <string name="settings_steam_services_rich_presence_show_character">Show character</string>
+    <string name="settings_steam_services_rich_presence_show_character_desc">Adds the selected character during a run.</string>
+    <string name="settings_steam_services_rich_presence_show_floor">Show floor</string>
+    <string name="settings_steam_services_rich_presence_show_floor_desc">Adds the current floor during a run.</string>
+    <string name="settings_steam_services_rich_presence_show_ascension">Show Ascension level</string>
+    <string name="settings_steam_services_rich_presence_show_ascension_desc">Adds the active Ascension level during a run.</string>
+    <string name="settings_steam_services_rich_presence_show_act">Show Act</string>
+    <string name="settings_steam_services_rich_presence_show_act_desc">Adds the current Act during a run.</string>
+    <string name="settings_steam_services_rich_presence_restart_note">Changes apply the next time the game starts.</string>
+    <string name="settings_steam_services_rich_presence_summary_character">character</string>
+    <string name="settings_steam_services_rich_presence_summary_floor">floor</string>
+    <string name="settings_steam_services_rich_presence_summary_ascension">Ascension</string>
+    <string name="settings_steam_services_rich_presence_summary_act">Act</string>
     <string name="settings_steam_services_achievement_section_title">Achievements</string>
     <string name="settings_steam_services_achievement_enabled_title">Enable Steam achievement sync</string>
     <string name="settings_steam_services_achievement_disabled_title">Enable Steam achievement sync</string>
@@ -1320,6 +1344,7 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="main_steam_achievements_open">View official achievements</string>
     <string name="main_steam_achievements_loading">Loading Steam achievement state...</string>
     <string name="main_steam_achievements_progress">%1$d of %2$d unlocked</string>
+    <string name="main_steam_achievements_view_and_sync">View and sync Steam achievements</string>
     <string name="main_steam_achievements_unavailable">Achievement data unavailable</string>
     <string name="main_steam_achievements_read_only">Achievement names and icons are bundled. Steam CM normally reads unlock state only.</string>
     <string name="main_steam_achievements_debug_operation">Debug mode is active. Each operation changes one achievement bit through Steam CM and then re-reads its state.</string>
@@ -2804,4 +2829,11 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="main_mod_workshop_state_texture_pack">Texture pack</string>
     <string name="main_mod_workshop_state_update_available">Update available</string>
     <string name="main_mod_workshop_state_file_missing">File missing</string>
+    <string name="settings_floating_tool_buttons_title">Optional tool buttons</string>
+    <string name="settings_floating_tool_button_ctrl">Show Ctrl button</string>
+    <string name="settings_floating_tool_button_shift">Show Shift button</string>
+    <string name="settings_floating_tool_button_tab">Show Tab button</string>
+    <string name="settings_floating_tool_button_alt">Show Alt button</string>
+    <string name="settings_floating_tool_button_lock">Show input lock button</string>
+    <string name="settings_floating_tool_button_wheel">Show virtual wheel button</string>
 </resources>

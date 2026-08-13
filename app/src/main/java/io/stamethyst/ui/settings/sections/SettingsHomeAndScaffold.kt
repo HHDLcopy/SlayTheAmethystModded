@@ -55,6 +55,7 @@ import io.stamethyst.config.LauncherIconMode
 import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeMode
 import io.stamethyst.config.RenderSurfaceBackend
+import io.stamethyst.config.RichPresenceDisplayPreferences
 import io.stamethyst.config.SpecialKeyInputMode
 import io.stamethyst.config.TouchMouseInteractionMode
 import io.stamethyst.config.TouchscreenInputMode
@@ -437,16 +438,6 @@ internal fun LauncherSettingsGameScreenContent(
     modifier: Modifier = Modifier,
     uiState: SettingsScreenViewModel.UiState,
     onGoBack: () -> Unit = {},
-    onRenderScaleSelected: (Float) -> Unit = {},
-    onTargetFpsSelected: (Int) -> Unit = {},
-    onVirtualResolutionModeChanged: (VirtualResolutionMode) -> Unit = {},
-    onDisplayCutoutAvoidanceChanged: (Boolean) -> Unit = {},
-    onScreenBottomCropChanged: (Boolean) -> Unit = {},
-    onRamSaverEnabledChanged: (Boolean) -> Unit = {},
-    onMtsPatchCacheEnabledChanged: (Boolean) -> Unit = {},
-    onKeepScreenOnTimeoutSelected: (Int) -> Unit = {},
-    onGameplayFontScaleChanged: (Float) -> Unit = {},
-    onGameplayLargerUiChanged: (Boolean) -> Unit = {},
     onPlayerNameChanged: (String) -> Boolean = { true },
     onBackBehaviorChanged: (BackBehavior) -> Unit = {},
     onTouchscreenInputModeChanged: (TouchscreenInputMode) -> Unit = {},
@@ -457,9 +448,14 @@ internal fun LauncherSettingsGameScreenContent(
     onTouchDoubleClickAsRightClickChanged: (Boolean) -> Unit = {},
     onIgnoreLongPressRightClickWhilePlayingCardChanged: (Boolean) -> Unit = {},
     onBuiltInSoftKeyboardChanged: (Boolean) -> Unit = {},
+    onFloatingToolButtonChanged: (String, Boolean) -> Unit = { _, _ -> },
     onHapticFeedbackChanged: (Boolean) -> Unit = {},
     onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit = {},
-    onGamePerformanceOverlayChanged: (Boolean) -> Unit = {},
+    onDisplayCutoutAvoidanceChanged: (Boolean) -> Unit = {},
+    onScreenBottomCropChanged: (Boolean) -> Unit = {},
+    onGameplayFontScaleChanged: (Float) -> Unit = {},
+    onGameplayLargerUiChanged: (Boolean) -> Unit = {},
+    onKeepScreenOnTimeoutSelected: (Int) -> Unit = {},
 ) {
     SettingsRouteScaffold(
         modifier = modifier,
@@ -472,24 +468,6 @@ internal fun LauncherSettingsGameScreenContent(
                 SettingsPlayerNameAction(
                     uiState = uiState,
                     onPlayerNameChanged = onPlayerNameChanged,
-                )
-            }
-        }
-        item {
-            SettingsSectionCard(title = stringResource(R.string.settings_section_render)) {
-                SettingsPerformanceSection(
-                    uiState = uiState,
-                    actions = PerformanceSettingsActions(
-                        onRenderScaleSelected = onRenderScaleSelected,
-                        onTargetFpsSelected = onTargetFpsSelected,
-                        onVirtualResolutionModeChanged = onVirtualResolutionModeChanged,
-                        onDisplayCutoutAvoidanceChanged = onDisplayCutoutAvoidanceChanged,
-                        onScreenBottomCropChanged = onScreenBottomCropChanged,
-                        onRamSaverEnabledChanged = onRamSaverEnabledChanged,
-                        onMtsPatchCacheEnabledChanged = onMtsPatchCacheEnabledChanged,
-                        onGameplayFontScaleChanged = onGameplayFontScaleChanged,
-                        onGameplayLargerUiChanged = onGameplayLargerUiChanged,
-                    ),
                 )
             }
         }
@@ -508,11 +486,70 @@ internal fun LauncherSettingsGameScreenContent(
                         onIgnoreLongPressRightClickWhilePlayingCardChanged =
                             onIgnoreLongPressRightClickWhilePlayingCardChanged,
                         onBuiltInSoftKeyboardChanged = onBuiltInSoftKeyboardChanged,
+                        onFloatingToolButtonChanged = onFloatingToolButtonChanged,
                         onHapticFeedbackChanged = onHapticFeedbackChanged,
                         onAutoSwitchLeftAfterRightClickChanged = onAutoSwitchLeftAfterRightClickChanged,
-                        onKeepScreenOnTimeoutSelected = onKeepScreenOnTimeoutSelected,
-                        onGamePerformanceOverlayChanged = onGamePerformanceOverlayChanged,
                     ),
+                )
+            }
+        }
+        item {
+            SettingsSectionCard(title = stringResource(R.string.settings_section_game_display)) {
+                SettingsGameplayDisplaySection(
+                    uiState = uiState,
+                    actions = GameplayDisplaySettingsActions(
+                        onDisplayCutoutAvoidanceChanged = onDisplayCutoutAvoidanceChanged,
+                        onScreenBottomCropChanged = onScreenBottomCropChanged,
+                        onGameplayFontScaleChanged = onGameplayFontScaleChanged,
+                        onGameplayLargerUiChanged = onGameplayLargerUiChanged,
+                        onKeepScreenOnTimeoutSelected = onKeepScreenOnTimeoutSelected,
+                    ),
+                )
+            }
+        }
+    }
+}
+
+
+@Composable
+internal fun LauncherSettingsPerformanceScreenContent(
+    modifier: Modifier = Modifier,
+    uiState: SettingsScreenViewModel.UiState,
+    onGoBack: () -> Unit = {},
+    onRenderScaleSelected: (Float) -> Unit = {},
+    onTargetFpsSelected: (Int) -> Unit = {},
+    onVirtualResolutionModeChanged: (VirtualResolutionMode) -> Unit = {},
+    onRamSaverEnabledChanged: (Boolean) -> Unit = {},
+    onMtsPatchCacheEnabledChanged: (Boolean) -> Unit = {},
+    onGamePerformanceOverlayChanged: (Boolean) -> Unit = {},
+) {
+    SettingsRouteScaffold(
+        modifier = modifier,
+        uiState = uiState,
+        spec = SettingsPerformanceRouteSpec,
+        onGoBack = onGoBack,
+    ) {
+        item {
+            SettingsSectionCard(title = stringResource(R.string.settings_section_render)) {
+                SettingsPerformanceSection(
+                    uiState = uiState,
+                    actions = PerformanceSettingsActions(
+                        onRenderScaleSelected = onRenderScaleSelected,
+                        onTargetFpsSelected = onTargetFpsSelected,
+                        onVirtualResolutionModeChanged = onVirtualResolutionModeChanged,
+                        onRamSaverEnabledChanged = onRamSaverEnabledChanged,
+                        onMtsPatchCacheEnabledChanged = onMtsPatchCacheEnabledChanged,
+                    ),
+                )
+                SettingsSwitchItem(
+                    SettingsSwitchSpec(
+                        checked = uiState.showGamePerformanceOverlay,
+                        enabled = !uiState.busy,
+                        enabledText = stringResource(R.string.settings_performance_overlay_enabled),
+                        disabledText = stringResource(R.string.settings_performance_overlay_disabled),
+                        description = stringResource(R.string.settings_performance_overlay_desc),
+                        onCheckedChange = onGamePerformanceOverlayChanged,
+                    )
                 )
             }
         }
@@ -530,6 +567,7 @@ internal fun LauncherSettingsMarketCloudScreenContent(
     onSteamCloudWattAccelerationChanged: (Boolean) -> Unit = {},
     onSteamCloudAutoLaunchAfterSyncChanged: (Boolean) -> Unit = {},
     onSteamGamePresenceChanged: (Boolean) -> Unit = {},
+    onRichPresenceDisplayPreferencesChanged: (RichPresenceDisplayPreferences) -> Unit = {},
     onSteamAchievementSyncChanged: (Boolean) -> Unit = {},
     onOpenSteamCloudSaveSettings: () -> Unit = {},
     onClearSteamCloudCredentials: () -> Unit = {},
@@ -548,6 +586,7 @@ internal fun LauncherSettingsMarketCloudScreenContent(
         onSteamCloudWattAccelerationChanged = onSteamCloudWattAccelerationChanged,
         onSteamCloudAutoLaunchAfterSyncChanged = onSteamCloudAutoLaunchAfterSyncChanged,
         onSteamGamePresenceChanged = onSteamGamePresenceChanged,
+        onRichPresenceDisplayPreferencesChanged = onRichPresenceDisplayPreferencesChanged,
         onSteamAchievementSyncChanged = onSteamAchievementSyncChanged,
         onOpenSteamCloudSaveSettings = onOpenSteamCloudSaveSettings,
         onClearSteamCloudCredentials = onClearSteamCloudCredentials,
@@ -794,4 +833,3 @@ internal fun LauncherSettingsAboutScreenContent(
         }
     }
 }
-

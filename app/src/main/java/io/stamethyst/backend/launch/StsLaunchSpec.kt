@@ -241,6 +241,13 @@ object StsLaunchSpec {
                 RuntimePaths.achievementLockCommandFile(context).absolutePath
         )
         args.add("-Damethyst.richpresence.path=${RuntimePaths.richPresenceFile(context).absolutePath}")
+        val richPresenceDisplay = LauncherConfig.readRichPresenceDisplayPreferences(context)
+        args.add("-Damethyst.richpresence.prefix=${richPresenceDisplay.prefix.persistedValue}")
+        args.add("-Damethyst.richpresence.device_name=${richPresenceDeviceName()}")
+        args.add("-Damethyst.richpresence.show_character=${richPresenceDisplay.showCharacter}")
+        args.add("-Damethyst.richpresence.show_floor=${richPresenceDisplay.showFloor}")
+        args.add("-Damethyst.richpresence.show_ascension=${richPresenceDisplay.showAscension}")
+        args.add("-Damethyst.richpresence.show_act=${richPresenceDisplay.showAct}")
         args.add("-Damethyst.touchscreen_card_hold_state=${RuntimePaths.touchscreenCardHoldStateFile(context).absolutePath}")
         args.add("-Damethyst.easytier.runtime_state_file=${EasyTierStateStore.stateFile(context).absolutePath}")
         args.add(
@@ -358,6 +365,14 @@ object StsLaunchSpec {
         args.add(
             "-Damethyst.floating_tools.built_in_keyboard=" +
                 if (LauncherConfig.isBuiltInSoftKeyboardEnabled(context)) "true" else "false"
+        )
+        args.add(
+            "-Damethyst.floating_tools.auto_switch_left_after_right_click=" +
+                if (LauncherConfig.readAutoSwitchLeftAfterRightClick(context)) "true" else "false"
+        )
+        args.add(
+            "-Damethyst.floating_tools.buttons=" +
+                LauncherConfig.readFloatingToolButtons(context).joinToString(",")
         )
         args.add(
             "-D$TOGETHER_IN_SPIRE_ROUTE_LOCK_PROPERTY=" +
@@ -1007,6 +1022,16 @@ object StsLaunchSpec {
 
     private fun hasJvmProperty(args: List<String>, key: String): Boolean {
         return readEffectiveJvmProperty(args, key) != null
+    }
+
+    private fun richPresenceDeviceName(): String {
+        val manufacturer = Build.MANUFACTURER.orEmpty().trim()
+        val model = Build.MODEL.orEmpty().trim()
+        return when {
+            model.isEmpty() -> manufacturer.ifEmpty { "Android" }
+            manufacturer.isEmpty() || model.startsWith(manufacturer, ignoreCase = true) -> model
+            else -> "$manufacturer $model"
+        }
     }
 
     private fun readEffectiveJvmProperty(args: List<String>, key: String): String? {

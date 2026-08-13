@@ -65,7 +65,7 @@ internal data class SettingsSwitchSpec(
     val enabled: Boolean,
     val enabledText: String,
     val disabledText: String,
-    val description: String,
+    val description: String? = null,
     val chipText: String? = null,
     val onCheckedChange: (Boolean) -> Unit,
 )
@@ -246,7 +246,7 @@ internal fun SwitchSettingRow(
     enabled: Boolean,
     enabledText: String,
     disabledText: String,
-    description: String,
+    description: String?,
     onCheckedChange: (Boolean) -> Unit,
     chipText: String? = null,
 ) {
@@ -281,10 +281,12 @@ internal fun SwitchSettingRow(
             }
         }
     }
-    Text(
-        text = description,
-        style = MaterialTheme.typography.bodySmall
-    )
+    description?.let { value ->
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodySmall
+        )
+    }
 }
 
 
@@ -576,5 +578,4 @@ internal fun performTapHapticFeedback(view: android.view.View) {
 internal fun performHapticFeedback(view: android.view.View, feedbackConstant: Int) {
     LauncherHaptics.perform(view, feedbackConstant)
 }
-
 

@@ -46,7 +46,14 @@ internal val SettingsLauncherRouteSpec = SettingsRouteSpec(
 internal val SettingsGameRouteSpec = SettingsRouteSpec(
     titleResId = R.string.settings_category_game_title,
     subtitleResId = R.string.settings_category_game_subtitle,
-    iconResId = R.drawable.ic_dock_game,
+    iconResId = R.drawable.ic_gamepad,
+)
+
+
+internal val SettingsPerformanceRouteSpec = SettingsRouteSpec(
+    titleResId = R.string.settings_category_performance_title,
+    subtitleResId = R.string.settings_category_performance_subtitle,
+    iconResId = R.drawable.ic_speed,
 )
 
 
@@ -95,11 +102,11 @@ internal val SettingsWorkshopAutoImportDefaultsRouteSpec = SettingsRouteSpec(
 internal val SettingsHomeDestinations = listOf(
     SettingsHomeDestination(Route.SettingsLauncher, SettingsLauncherRouteSpec),
     SettingsHomeDestination(Route.SettingsGame, SettingsGameRouteSpec),
+    SettingsHomeDestination(Route.SettingsPerformance, SettingsPerformanceRouteSpec),
     SettingsHomeDestination(Route.SettingsMarketCloud, SettingsMarketCloudRouteSpec),
     SettingsHomeDestination(Route.SettingsFeedback, SettingsFeedbackRouteSpec),
     SettingsHomeDestination(Route.NativeLibraryMarket, SettingsNativeLibraryMarketRouteSpec),
     SettingsHomeDestination(Route.DeveloperSettings, SettingsDeveloperRouteSpec),
     SettingsHomeDestination(Route.SettingsAbout, SettingsAboutRouteSpec),
 )
-
 

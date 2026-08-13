@@ -20,6 +20,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -36,6 +37,7 @@ import io.stamethyst.R
 import io.stamethyst.backend.render.VirtualResolutionMode
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.CardPlayOptimizationMode
+import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.SpecialKeyInputMode
 import io.stamethyst.config.TouchMouseInteractionMode
 import io.stamethyst.config.TouchscreenInputMode
@@ -47,12 +49,17 @@ internal data class PerformanceSettingsActions(
     val onRenderScaleSelected: (Float) -> Unit,
     val onTargetFpsSelected: (Int) -> Unit,
     val onVirtualResolutionModeChanged: (VirtualResolutionMode) -> Unit,
-    val onDisplayCutoutAvoidanceChanged: (Boolean) -> Unit,
-    val onScreenBottomCropChanged: (Boolean) -> Unit,
     val onRamSaverEnabledChanged: (Boolean) -> Unit,
     val onMtsPatchCacheEnabledChanged: (Boolean) -> Unit,
+)
+
+
+internal data class GameplayDisplaySettingsActions(
+    val onDisplayCutoutAvoidanceChanged: (Boolean) -> Unit,
+    val onScreenBottomCropChanged: (Boolean) -> Unit,
     val onGameplayFontScaleChanged: (Float) -> Unit,
     val onGameplayLargerUiChanged: (Boolean) -> Unit,
+    val onKeepScreenOnTimeoutSelected: (Int) -> Unit,
 )
 
 
@@ -66,23 +73,18 @@ internal data class InputSettingsActions(
     val onTouchDoubleClickAsRightClickChanged: (Boolean) -> Unit,
     val onIgnoreLongPressRightClickWhilePlayingCardChanged: (Boolean) -> Unit,
     val onBuiltInSoftKeyboardChanged: (Boolean) -> Unit,
+    val onFloatingToolButtonChanged: (String, Boolean) -> Unit,
     val onHapticFeedbackChanged: (Boolean) -> Unit,
     val onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit,
-    val onKeepScreenOnTimeoutSelected: (Int) -> Unit,
-    val onGamePerformanceOverlayChanged: (Boolean) -> Unit,
 )
 
 
 internal data class InputBasicsSettingsActions(
     val onBackBehaviorChanged: (BackBehavior) -> Unit,
     val onTouchscreenInputModeChanged: (TouchscreenInputMode) -> Unit,
-    val onCardPlayOptimizationModeChanged: (CardPlayOptimizationMode) -> Unit,
     val onTouchIndicatorEnabledChanged: (Boolean) -> Unit,
-    val onTouchDoubleClickAsRightClickChanged: (Boolean) -> Unit,
     val onIgnoreLongPressRightClickWhilePlayingCardChanged: (Boolean) -> Unit,
     val onHapticFeedbackChanged: (Boolean) -> Unit,
-    val onKeepScreenOnTimeoutSelected: (Int) -> Unit,
-    val onGamePerformanceOverlayChanged: (Boolean) -> Unit,
 )
 
 
@@ -90,6 +92,7 @@ internal data class FloatingMouseSettingsActions(
     val onSpecialKeyInputModeChanged: (SpecialKeyInputMode) -> Unit,
     val onTouchMouseInteractionModeChanged: (TouchMouseInteractionMode) -> Unit,
     val onBuiltInSoftKeyboardChanged: (Boolean) -> Unit,
+    val onFloatingToolButtonChanged: (String, Boolean) -> Unit,
     val onAutoSwitchLeftAfterRightClickChanged: (Boolean) -> Unit,
 )
 
@@ -105,12 +108,6 @@ internal fun SettingsPerformanceSection(
     }
     var lastRenderScaleStep by remember(uiState.selectedRenderScale) {
         mutableIntStateOf(renderScaleToStep(uiState.selectedRenderScale))
-    }
-    var gameplayFontScaleSliderValue by remember(uiState.gameplayFontScale) {
-        mutableFloatStateOf(uiState.gameplayFontScale)
-    }
-    var lastGameplayFontScaleStep by remember(uiState.gameplayFontScale) {
-        mutableIntStateOf(gameplayFontScaleToStep(uiState.gameplayFontScale))
     }
 
     SettingsSwitchItem(
@@ -196,6 +193,22 @@ internal fun SettingsPerformanceSection(
         )
     )
 
+}
+
+
+@Composable
+internal fun SettingsGameplayDisplaySection(
+    uiState: SettingsScreenViewModel.UiState,
+    actions: GameplayDisplaySettingsActions,
+) {
+    val view = LocalView.current
+    var gameplayFontScaleSliderValue by remember(uiState.gameplayFontScale) {
+        mutableFloatStateOf(uiState.gameplayFontScale)
+    }
+    var lastGameplayFontScaleStep by remember(uiState.gameplayFontScale) {
+        mutableIntStateOf(gameplayFontScaleToStep(uiState.gameplayFontScale))
+    }
+
     SettingsSwitchItem(
         SettingsSwitchSpec(
             checked = uiState.avoidDisplayCutout,
@@ -203,7 +216,7 @@ internal fun SettingsPerformanceSection(
             enabledText = stringResource(R.string.settings_display_cutout_enabled),
             disabledText = stringResource(R.string.settings_display_cutout_disabled),
             description = stringResource(R.string.settings_display_cutout_desc),
-            onCheckedChange = actions.onDisplayCutoutAvoidanceChanged
+            onCheckedChange = actions.onDisplayCutoutAvoidanceChanged,
         )
     )
 
@@ -214,7 +227,7 @@ internal fun SettingsPerformanceSection(
             enabledText = stringResource(R.string.settings_crop_screen_bottom_enabled),
             disabledText = stringResource(R.string.settings_crop_screen_bottom_disabled),
             description = stringResource(R.string.settings_crop_screen_bottom_desc),
-            onCheckedChange = actions.onScreenBottomCropChanged
+            onCheckedChange = actions.onScreenBottomCropChanged,
         )
     )
 
@@ -225,24 +238,24 @@ internal fun SettingsPerformanceSection(
             enabledText = stringResource(R.string.settings_gameplay_larger_ui_enabled),
             disabledText = stringResource(R.string.settings_gameplay_larger_ui_disabled),
             description = stringResource(R.string.settings_gameplay_larger_ui_desc),
-            onCheckedChange = actions.onGameplayLargerUiChanged
+            onCheckedChange = actions.onGameplayLargerUiChanged,
         )
     )
 
     Text(
         text = stringResource(R.string.settings_gameplay_font_scale_title),
-        style = MaterialTheme.typography.bodyMedium
+        style = MaterialTheme.typography.bodyMedium,
     )
     Text(
         text = stringResource(
             R.string.settings_gameplay_font_scale_value,
-            GameplaySettingsService.formatFontScale(gameplayFontScaleSliderValue)
+            GameplaySettingsService.formatFontScale(gameplayFontScaleSliderValue),
         ),
-        style = MaterialTheme.typography.bodySmall
+        style = MaterialTheme.typography.bodySmall,
     )
     Text(
         text = stringResource(R.string.settings_gameplay_font_scale_desc),
-        style = MaterialTheme.typography.bodySmall
+        style = MaterialTheme.typography.bodySmall,
     )
     Slider(
         value = gameplayFontScaleSliderValue,
@@ -262,9 +275,18 @@ internal fun SettingsPerformanceSection(
                 GameplaySettingsService.FONT_SCALE_STEP
             ).roundToInt() - 1,
         enabled = !uiState.busy,
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
     )
 
+    SettingsDropdownField(
+        label = stringResource(R.string.settings_keep_screen_on_timeout_title),
+        valueText = keepScreenOnTimeoutDisplayName(uiState.keepScreenOnTimeoutMinutes),
+        enabled = !uiState.busy,
+        supportingText = stringResource(R.string.settings_keep_screen_on_timeout_desc),
+        options = uiState.keepScreenOnTimeoutMinuteOptions,
+        optionLabel = { timeoutMinutes -> keepScreenOnTimeoutDisplayName(timeoutMinutes) },
+        onOptionSelected = actions.onKeepScreenOnTimeoutSelected,
+    )
 }
 
 
@@ -349,25 +371,25 @@ internal fun SettingsInputSection(
             text = stringResource(R.string.settings_input_basic_title),
             style = MaterialTheme.typography.titleSmall
         )
-        SettingsInputBasicsSection(
-            uiState = uiState,
-            actions = InputBasicsSettingsActions(
-                onBackBehaviorChanged = actions.onBackBehaviorChanged,
-                onTouchscreenInputModeChanged = actions.onTouchscreenInputModeChanged,
-                onCardPlayOptimizationModeChanged = actions.onCardPlayOptimizationModeChanged,
-                onTouchIndicatorEnabledChanged = actions.onTouchIndicatorEnabledChanged,
-                onTouchDoubleClickAsRightClickChanged = actions.onTouchDoubleClickAsRightClickChanged,
-                onIgnoreLongPressRightClickWhilePlayingCardChanged =
-                    actions.onIgnoreLongPressRightClickWhilePlayingCardChanged,
-                onHapticFeedbackChanged = actions.onHapticFeedbackChanged,
-                onKeepScreenOnTimeoutSelected = actions.onKeepScreenOnTimeoutSelected,
-                onGamePerformanceOverlayChanged = actions.onGamePerformanceOverlayChanged,
-            ),
+        SettingsDropdownField(
+            label = stringResource(R.string.settings_card_play_optimization_title),
+            valueText = uiState.cardPlayOptimizationMode.displayName(),
+            enabled = !uiState.busy && uiState.touchscreenInputMode.touchscreenEnabled,
+            supportingText = uiState.cardPlayOptimizationMode.description(),
+            options = CardPlayOptimizationMode.entries,
+            optionLabel = { mode -> mode.displayName() },
+            optionDescription = { mode -> mode.description() },
+            onOptionSelected = actions.onCardPlayOptimizationModeChanged,
         )
-        HorizontalDivider()
-        Text(
-            text = stringResource(R.string.settings_special_key_input_mode_title),
-            style = MaterialTheme.typography.titleSmall
+        SettingsSwitchItem(
+            SettingsSwitchSpec(
+                checked = uiState.touchDoubleClickAsRightClick,
+                enabled = !uiState.busy,
+                enabledText = stringResource(R.string.settings_touch_double_click_as_right_click_enabled),
+                disabledText = stringResource(R.string.settings_touch_double_click_as_right_click_disabled),
+                description = stringResource(R.string.settings_touch_double_click_as_right_click_desc),
+                onCheckedChange = actions.onTouchDoubleClickAsRightClickChanged,
+            )
         )
         SettingsFloatingMouseSection(
             uiState = uiState,
@@ -375,7 +397,20 @@ internal fun SettingsInputSection(
                 onSpecialKeyInputModeChanged = actions.onSpecialKeyInputModeChanged,
                 onTouchMouseInteractionModeChanged = actions.onTouchMouseInteractionModeChanged,
                 onBuiltInSoftKeyboardChanged = actions.onBuiltInSoftKeyboardChanged,
+                onFloatingToolButtonChanged = actions.onFloatingToolButtonChanged,
                 onAutoSwitchLeftAfterRightClickChanged = actions.onAutoSwitchLeftAfterRightClickChanged,
+            ),
+        )
+        HorizontalDivider()
+        SettingsInputBasicsSection(
+            uiState = uiState,
+            actions = InputBasicsSettingsActions(
+                onBackBehaviorChanged = actions.onBackBehaviorChanged,
+                onTouchscreenInputModeChanged = actions.onTouchscreenInputModeChanged,
+                onTouchIndicatorEnabledChanged = actions.onTouchIndicatorEnabledChanged,
+                onIgnoreLongPressRightClickWhilePlayingCardChanged =
+                    actions.onIgnoreLongPressRightClickWhilePlayingCardChanged,
+                onHapticFeedbackChanged = actions.onHapticFeedbackChanged,
             ),
         )
     }
@@ -413,28 +448,6 @@ internal fun SettingsInputBasicsSection(
         onOptionSelected = actions.onTouchscreenInputModeChanged
     )
 
-    SettingsDropdownField(
-        label = stringResource(R.string.settings_card_play_optimization_title),
-        valueText = uiState.cardPlayOptimizationMode.displayName(),
-        enabled = !uiState.busy && uiState.touchscreenInputMode.touchscreenEnabled,
-        supportingText = uiState.cardPlayOptimizationMode.description(),
-        options = CardPlayOptimizationMode.entries,
-        optionLabel = { mode -> mode.displayName() },
-        optionDescription = { mode -> mode.description() },
-        onOptionSelected = actions.onCardPlayOptimizationModeChanged
-    )
-
-    SettingsSwitchItem(
-        SettingsSwitchSpec(
-            checked = uiState.touchDoubleClickAsRightClick,
-            enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_touch_double_click_as_right_click_enabled),
-            disabledText = stringResource(R.string.settings_touch_double_click_as_right_click_disabled),
-            description = stringResource(R.string.settings_touch_double_click_as_right_click_desc),
-            onCheckedChange = actions.onTouchDoubleClickAsRightClickChanged
-        )
-    )
-
     if (uiState.touchDoubleClickAsRightClick) {
         SettingsSwitchItem(
             SettingsSwitchSpec(
@@ -470,35 +483,6 @@ internal fun SettingsInputBasicsSection(
         )
     )
 
-    SettingsDropdownField(
-        label = stringResource(R.string.settings_keep_screen_on_timeout_title),
-        valueText = keepScreenOnTimeoutDisplayName(uiState.keepScreenOnTimeoutMinutes),
-        enabled = !uiState.busy,
-        supportingText = stringResource(R.string.settings_keep_screen_on_timeout_desc),
-        options = uiState.keepScreenOnTimeoutMinuteOptions,
-        optionLabel = { timeoutMinutes -> keepScreenOnTimeoutDisplayName(timeoutMinutes) },
-        onOptionSelected = actions.onKeepScreenOnTimeoutSelected
-    )
-
-//    SwitchSettingRow(
-//        checked = uiState.mobileHudEnabled,
-//        enabled = !uiState.busy,
-//        enabledText = stringResource(R.string.settings_mobile_hud_enabled),
-//        disabledText = stringResource(R.string.settings_mobile_hud_disabled),
-//        description = stringResource(R.string.settings_mobile_hud_desc),
-//        onCheckedChange = onMobileHudEnabledChanged
-//    )
-
-    SettingsSwitchItem(
-        SettingsSwitchSpec(
-            checked = uiState.showGamePerformanceOverlay,
-            enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_performance_overlay_enabled),
-            disabledText = stringResource(R.string.settings_performance_overlay_disabled),
-            description = stringResource(R.string.settings_performance_overlay_desc),
-            onCheckedChange = actions.onGamePerformanceOverlayChanged
-        )
-    )
 }
 
 
@@ -520,6 +504,8 @@ internal fun SettingsFloatingMouseSection(
 
     val useLegacyFloatingWindow =
         uiState.specialKeyInputMode == SpecialKeyInputMode.LEGACY_FLOATING_WINDOW
+    val useBuiltInTools =
+        uiState.specialKeyInputMode == SpecialKeyInputMode.BUILT_IN_MOD
 
     if (useLegacyFloatingWindow) {
         SettingsDropdownField(
@@ -534,7 +520,7 @@ internal fun SettingsFloatingMouseSection(
         )
     }
 
-    if (useLegacyFloatingWindow) {
+    if (useLegacyFloatingWindow || useBuiltInTools) {
         SettingsSwitchItem(
             SettingsSwitchSpec(
                 checked = uiState.builtInSoftKeyboardEnabled,
@@ -556,8 +542,65 @@ internal fun SettingsFloatingMouseSection(
                 onCheckedChange = actions.onAutoSwitchLeftAfterRightClickChanged
             )
         )
+
+    }
+
+    if (useBuiltInTools) {
+        var showFloatingToolButtonDialog by rememberSaveable { mutableStateOf(false) }
+        val optionalButtons = LauncherConfig.FLOATING_TOOL_BUTTON_IDS.map { buttonId ->
+            buttonId to requireNotNull(FLOATING_TOOL_BUTTON_LABELS[buttonId]) {
+                "Missing label for floating tool button id '$buttonId'"
+            }
+        }
+        SettingsActionListItem(
+            title = stringResource(R.string.settings_floating_tool_buttons_title),
+            enabled = !uiState.busy,
+            onClick = { showFloatingToolButtonDialog = true },
+        )
+        if (showFloatingToolButtonDialog) {
+            AlertDialog(
+                onDismissRequest = { showFloatingToolButtonDialog = false },
+                title = { Text(stringResource(R.string.settings_floating_tool_buttons_title)) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        optionalButtons.forEach { (buttonId, labelRes) ->
+                            SettingsSwitchItem(
+                                SettingsSwitchSpec(
+                                    checked = buttonId in uiState.floatingToolButtons,
+                                    enabled = !uiState.busy,
+                                    enabledText = stringResource(labelRes),
+                                    disabledText = stringResource(labelRes),
+                                    onCheckedChange = { enabled ->
+                                        actions.onFloatingToolButtonChanged(buttonId, enabled)
+                                    },
+                                )
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showFloatingToolButtonDialog = false }) {
+                        Text(stringResource(android.R.string.ok))
+                    }
+                },
+            )
+        }
     }
 }
+
+
+/**
+ * Labels for [LauncherConfig.FLOATING_TOOL_BUTTON_IDS]. Kept in sync by
+ * FloatingToolButtonLabelsTest, since a missing entry would otherwise drop a toggle at runtime.
+ */
+internal val FLOATING_TOOL_BUTTON_LABELS: Map<String, Int> = mapOf(
+    "ctrl" to R.string.settings_floating_tool_button_ctrl,
+    "shift" to R.string.settings_floating_tool_button_shift,
+    "tab" to R.string.settings_floating_tool_button_tab,
+    "alt" to R.string.settings_floating_tool_button_alt,
+    "lock" to R.string.settings_floating_tool_button_lock,
+    "wheel" to R.string.settings_floating_tool_button_wheel,
+)
 
 
 @Composable
@@ -666,7 +709,7 @@ private fun CardPlayOptimizationMode.description(): String {
 
 
 @Composable
-private fun keepScreenOnTimeoutDisplayName(timeoutMinutes: Int): String {
+internal fun keepScreenOnTimeoutDisplayName(timeoutMinutes: Int): String {
     return if (timeoutMinutes == LauncherPreferences.KEEP_SCREEN_ON_TIMEOUT_ALWAYS_MINUTES) {
         stringResource(R.string.settings_keep_screen_on_timeout_always)
     } else {
@@ -729,5 +772,3 @@ private fun SpecialKeyInputMode.description(): String {
         }
     )
 }
-
-

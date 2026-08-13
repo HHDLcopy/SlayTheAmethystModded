@@ -129,6 +129,7 @@ import io.stamethyst.ui.settings.native_library.LauncherNativeLibraryMarketScree
 import io.stamethyst.ui.settings.core.LauncherSettingsAboutScreen
 import io.stamethyst.ui.settings.core.LauncherSettingsFeedbackScreen
 import io.stamethyst.ui.settings.core.LauncherSettingsGameScreen
+import io.stamethyst.ui.settings.core.LauncherSettingsPerformanceScreen
 import io.stamethyst.ui.settings.core.LauncherSettingsLauncherScreen
 import io.stamethyst.ui.settings.core.LauncherSettingsMarketCloudScreen
 import io.stamethyst.ui.settings.core.LauncherSettingsScreen
@@ -723,6 +724,13 @@ fun LauncherContent(
 
                         entry<Route.SettingsGame> {
                             LauncherSettingsGameScreen(
+                                viewModel = settingsViewModel,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+
+                        entry<Route.SettingsPerformance> {
+                            LauncherSettingsPerformanceScreen(
                                 viewModel = settingsViewModel,
                                 modifier = Modifier.fillMaxSize(),
                             )
@@ -1521,9 +1529,10 @@ private fun Route?.launcherDockRoute(): Route? {
         Route.Workshop -> Route.Workshop
         Route.WorkshopSubscriptions -> Route.Workshop
         Route.Settings -> Route.Settings
-        Route.SettingsLauncher,
-        Route.SettingsGame,
-        Route.SettingsMarketCloud,
+         Route.SettingsLauncher,
+         Route.SettingsGame,
+         Route.SettingsPerformance,
+         Route.SettingsMarketCloud,
         Route.SettingsWorkshopAutoImportDefaults,
         Route.SettingsFeedback,
         Route.SettingsAbout -> Route.Settings

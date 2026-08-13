@@ -97,6 +97,7 @@ import io.stamethyst.backend.mods.importing.patches.ImportPatchRegistry
 import io.stamethyst.backend.mods.importing.patches.texture.AtlasOfflineDownscalePatchModule
 import io.stamethyst.backend.mods.RuntimeDownscaleMaterialPolicy
 import io.stamethyst.backend.mods.StsDesktopJarIntegrity
+import io.stamethyst.config.RichPresenceDisplayPreferences
 import io.stamethyst.backend.update.LauncherUpdateService
 import io.stamethyst.backend.update.LauncherUpdateUiReducer
 import io.stamethyst.backend.update.UpdateCheckExecutionResult
@@ -369,6 +370,7 @@ class SettingsScreenViewModel : ViewModel() {
             LauncherPreferences.DEFAULT_IGNORE_LONG_PRESS_RIGHT_CLICK_WHILE_PLAYING_CARD,
         val builtInSoftKeyboardEnabled: Boolean =
             LauncherPreferences.DEFAULT_BUILT_IN_SOFT_KEYBOARD_ENABLED,
+        val floatingToolButtons: Set<String> = LauncherPreferences.DEFAULT_FLOATING_TOOL_BUTTONS,
         val hapticFeedbackEnabled: Boolean = LauncherPreferences.DEFAULT_HAPTIC_FEEDBACK_ENABLED,
         val autoSwitchLeftAfterRightClick: Boolean = LauncherPreferences.DEFAULT_AUTO_SWITCH_LEFT_AFTER_RIGHT_CLICK,
         val showModFileName: Boolean = LauncherPreferences.DEFAULT_SHOW_MOD_FILE_NAME,
@@ -446,6 +448,8 @@ class SettingsScreenViewModel : ViewModel() {
             LauncherPreferences.DEFAULT_STEAM_CLOUD_AUTO_LAUNCH_AFTER_SYNC_ENABLED,
         val steamGamePresenceEnabled: Boolean =
             LauncherPreferences.DEFAULT_STEAM_GAME_PRESENCE_ENABLED,
+        val richPresenceDisplayPreferences: RichPresenceDisplayPreferences =
+            RichPresenceDisplayPreferences(),
         val steamAchievementSyncEnabled: Boolean = false,
         val workshopMaxConcurrentDownloads: Int =
             LauncherPreferences.DEFAULT_WORKSHOP_MAX_CONCURRENT_DOWNLOADS,
@@ -1352,6 +1356,8 @@ class SettingsScreenViewModel : ViewModel() {
                         steamCloudAutoLaunchAfterSyncEnabled =
                             LauncherPreferences.isSteamCloudAutoLaunchAfterSyncEnabled(host),
                         steamGamePresenceEnabled = LauncherPreferences.isSteamGamePresenceEnabled(host),
+                        richPresenceDisplayPreferences =
+                            LauncherPreferences.readRichPresenceDisplayPreferences(host),
                         steamAchievementSyncEnabled = LauncherPreferences.isSteamAchievementSyncEnabled(host),
                         workshopMaxConcurrentDownloads = LauncherPreferences.readWorkshopMaxConcurrentDownloads(host),
                         workshopDownloadThreads = LauncherPreferences.readWorkshopDownloadThreads(host),
@@ -1918,6 +1924,14 @@ class SettingsScreenViewModel : ViewModel() {
         } else {
             SteamGamePresenceService.stop(host)
         }
+        refreshStatus(host)
+    }
+
+    fun onRichPresenceDisplayPreferencesChanged(
+        host: Activity,
+        settings: RichPresenceDisplayPreferences,
+    ) {
+        LauncherPreferences.saveRichPresenceDisplayPreferences(host, settings)
         refreshStatus(host)
     }
 
@@ -2999,6 +3013,18 @@ class SettingsScreenViewModel : ViewModel() {
         refreshStatus(host)
     }
 
+    fun onFloatingToolButtonChanged(host: Activity, buttonId: String, enabled: Boolean) {
+        if (uiState.busy || buttonId !in LauncherPreferences.FLOATING_TOOL_BUTTON_IDS) {
+            return
+        }
+        val buttons = uiState.floatingToolButtons.toMutableSet().apply {
+            if (enabled) add(buttonId) else remove(buttonId)
+        }
+        uiState = uiState.copy(floatingToolButtons = buttons)
+        LauncherPreferences.saveFloatingToolButtons(host, buttons)
+        refreshStatus(host)
+    }
+
     fun onHapticFeedbackChanged(host: Activity, enabled: Boolean) {
         if (uiState.busy) {
             return
@@ -3879,6 +3905,7 @@ class SettingsScreenViewModel : ViewModel() {
             touchDoubleClickAsRightClick = input.touchDoubleClickAsRightClick,
             ignoreLongPressRightClickWhilePlayingCard = input.ignoreLongPressRightClickWhilePlayingCard,
             builtInSoftKeyboardEnabled = input.builtInSoftKeyboardEnabled,
+            floatingToolButtons = input.floatingToolButtons,
             hapticFeedbackEnabled = input.hapticFeedbackEnabled,
             autoSwitchLeftAfterRightClick = input.autoSwitchLeftAfterRightClick,
             showModFileName = input.showModFileName,

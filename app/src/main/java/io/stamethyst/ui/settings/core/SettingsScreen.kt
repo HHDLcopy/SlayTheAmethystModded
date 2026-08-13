@@ -128,32 +128,6 @@ fun LauncherSettingsGameScreen(
         modifier = modifier,
         uiState = uiState,
         onGoBack = navigator::goBack,
-        onRenderScaleSelected = { value -> viewModel.onRenderScaleSelected(activity, value) },
-        onTargetFpsSelected = { fps -> viewModel.onTargetFpsSelected(activity, fps) },
-        onVirtualResolutionModeChanged = { mode ->
-            viewModel.onVirtualResolutionModeChanged(activity, mode)
-        },
-        onDisplayCutoutAvoidanceChanged = { enabled ->
-            viewModel.onDisplayCutoutAvoidanceChanged(activity, enabled)
-        },
-        onScreenBottomCropChanged = { enabled ->
-            viewModel.onScreenBottomCropChanged(activity, enabled)
-        },
-        onRamSaverEnabledChanged = { enabled ->
-            viewModel.onRamSaverEnabledChanged(activity, enabled)
-        },
-        onMtsPatchCacheEnabledChanged = { enabled ->
-            viewModel.onMtsPatchCacheEnabledChanged(activity, enabled)
-        },
-        onKeepScreenOnTimeoutSelected = { timeoutMinutes ->
-            viewModel.onKeepScreenOnTimeoutSelected(activity, timeoutMinutes)
-        },
-        onGameplayFontScaleChanged = { value ->
-            viewModel.onGameplayFontScaleChanged(activity, value)
-        },
-        onGameplayLargerUiChanged = { enabled ->
-            viewModel.onGameplayLargerUiChanged(activity, enabled)
-        },
         onPlayerNameChanged = { name -> viewModel.onPlayerNameChanged(activity, name) },
         onBackBehaviorChanged = { behavior -> viewModel.onBackBehaviorChanged(activity, behavior) },
         onTouchscreenInputModeChanged = { mode ->
@@ -180,11 +154,61 @@ fun LauncherSettingsGameScreen(
         onBuiltInSoftKeyboardChanged = { enabled ->
             viewModel.onBuiltInSoftKeyboardChanged(activity, enabled)
         },
+        onFloatingToolButtonChanged = { buttonId, enabled ->
+            viewModel.onFloatingToolButtonChanged(activity, buttonId, enabled)
+        },
         onHapticFeedbackChanged = { enabled ->
             viewModel.onHapticFeedbackChanged(activity, enabled)
         },
         onAutoSwitchLeftAfterRightClickChanged = { enabled ->
             viewModel.onAutoSwitchLeftAfterRightClickChanged(activity, enabled)
+        },
+        onDisplayCutoutAvoidanceChanged = { enabled ->
+            viewModel.onDisplayCutoutAvoidanceChanged(activity, enabled)
+        },
+        onScreenBottomCropChanged = { enabled ->
+            viewModel.onScreenBottomCropChanged(activity, enabled)
+        },
+        onGameplayFontScaleChanged = { value ->
+            viewModel.onGameplayFontScaleChanged(activity, value)
+        },
+        onGameplayLargerUiChanged = { enabled ->
+            viewModel.onGameplayLargerUiChanged(activity, enabled)
+        },
+        onKeepScreenOnTimeoutSelected = { timeoutMinutes ->
+            viewModel.onKeepScreenOnTimeoutSelected(activity, timeoutMinutes)
+        },
+    )
+}
+
+
+@Composable
+fun LauncherSettingsPerformanceScreen(
+    viewModel: SettingsScreenViewModel,
+    modifier: Modifier = Modifier,
+) {
+    val activity = requireNotNull(LocalActivity.current)
+    val navigator = currentNavigator
+    val uiState = viewModel.uiState
+
+    LaunchedEffect(activity) {
+        viewModel.bind(activity)
+    }
+
+    LauncherSettingsPerformanceScreenContent(
+        modifier = modifier,
+        uiState = uiState,
+        onGoBack = navigator::goBack,
+        onRenderScaleSelected = { value -> viewModel.onRenderScaleSelected(activity, value) },
+        onTargetFpsSelected = { fps -> viewModel.onTargetFpsSelected(activity, fps) },
+        onVirtualResolutionModeChanged = { mode ->
+            viewModel.onVirtualResolutionModeChanged(activity, mode)
+        },
+        onRamSaverEnabledChanged = { enabled ->
+            viewModel.onRamSaverEnabledChanged(activity, enabled)
+        },
+        onMtsPatchCacheEnabledChanged = { enabled ->
+            viewModel.onMtsPatchCacheEnabledChanged(activity, enabled)
         },
         onGamePerformanceOverlayChanged = { enabled ->
             viewModel.onGamePerformanceOverlayChanged(activity, enabled)
@@ -219,6 +243,9 @@ fun LauncherSettingsMarketCloudScreen(
         },
         onSteamGamePresenceChanged = { enabled ->
             viewModel.onSteamGamePresenceChanged(activity, enabled)
+        },
+        onRichPresenceDisplayPreferencesChanged = { settings ->
+            viewModel.onRichPresenceDisplayPreferencesChanged(activity, settings)
         },
         onSteamAchievementSyncChanged = { enabled ->
             viewModel.onSteamAchievementSyncChanged(activity, enabled)

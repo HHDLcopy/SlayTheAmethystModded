@@ -219,8 +219,11 @@ interface SteamCmSession : Closeable {
         routingAppId: UInt?,
     ): T = sendClientMessage(emsg, request, responseEmsg, parser)
     suspend fun sendClientMessage(emsg: Int, request: com.google.protobuf.MessageLite)
-    suspend fun sendClientMessage(emsg: Int, request: com.google.protobuf.MessageLite, routingAppId: Int) =
-        sendClientMessage(emsg, request)
+    suspend fun sendClientMessage(
+        emsg: Int,
+        request: com.google.protobuf.MessageLite,
+        routingAppId: UInt,
+    )
     suspend fun requestDepotDecryptionKey(appId: UInt, depotId: UInt): ByteArray
     suspend fun requestAppProductInfo(appId: UInt): SteamAppProductInfo
 

@@ -55,6 +55,12 @@ internal object SteamCloudFailureClassifier {
                 "BeginHTTPUpload failed: DuplicateRequest",
             ) -> SteamCloudFailureCategory.TRANSIENT_NETWORK
 
+            // CompleteAppUploadBatch returning EResult.Fail (2) is a known transient race where
+            // Steam's backend hasn't finished committing the batch yet.  The upload itself
+            // succeeded; this is a protocol-layer false-negative.
+            containsAny(description, "completeappuploadbatch") && hasEResult(description, 2) ->
+                SteamCloudFailureCategory.TRANSIENT_NETWORK
+
             causes.any { cause ->
                 cause is SocketTimeoutException ||
                     cause is ConnectException ||

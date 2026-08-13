@@ -113,6 +113,8 @@ public final class SteamCloudClient implements AutoCloseable {
         new long[] { 10_000L, 20_000L, 30_000L, 60_000L, 90_000L, 120_000L };
     private static final int TRANSIENT_RPC_MAX_ATTEMPTS = 4;
     private static final long[] TRANSIENT_RPC_RETRY_DELAYS_MS = new long[] { 2_000L, 5_000L, 10_000L };
+    private static final int COMPLETE_UPLOAD_BATCH_MAX_ATTEMPTS = 5;
+    private static final long[] COMPLETE_UPLOAD_BATCH_RETRY_DELAYS_MS = new long[] { 2_000L, 5_000L, 10_000L, 20_000L };
     private static final int JAVA_STEAM_LOG_TAIL_LIMIT = 12;
     private static final int JAVA_STEAM_STACKTRACE_LINE_LIMIT = 24;
     private static final int DIAGNOSTIC_EVENT_LIMIT = 96;
@@ -583,6 +585,10 @@ public final class SteamCloudClient implements AutoCloseable {
         Log.i(TAG, "Published Steam persona state Online.");
     }
 
+    public boolean isCmSessionActive() {
+        return protocolClient.isSessionActive();
+    }
+
     public void setRichPresence(Map<String, String> kvPairs) {
         protocolClient.sendRichPresence(kvPairs);
         recordDiagnosticEvent("rich_presence_sent keys=" + kvPairs.size());
@@ -1011,19 +1017,87 @@ public final class SteamCloudClient implements AutoCloseable {
     }
 
     public void completeUploadBatch(int appId, long batchId, EResult batchResult) throws Exception {
-        try {
-            SteammessagesCloudSteamclient.CCloud_CompleteAppUploadBatch_Request request =
-                SteammessagesCloudSteamclient.CCloud_CompleteAppUploadBatch_Request.newBuilder()
-                    .setAppid(appId)
-                    .setBatchId(batchId)
-                    .setBatchEresult(batchResult.code())
-                    .build();
-            protocolClient.completeAppUploadBatch(request);
-            Log.i(TAG, "Steam Cloud upload batch completed. batchId=" + batchId + " result=" + batchResult);
-        } catch (Exception error) {
-            Log.e(TAG, "Steam Cloud upload batch completion failed during " + currentStage + '.', error);
-            throw error;
+        // CompleteAppUploadBatch is susceptible to transient EResult.Fail (2) responses from the
+        // Steam backend when the batch finalization is still in-flight server-side even though all
+        // individual file commits succeeded.  Retry with back-off before giving up.
+        SteammessagesCloudSteamclient.CCloud_CompleteAppUploadBatch_Request request =
+            SteammessagesCloudSteamclient.CCloud_CompleteAppUploadBatch_Request.newBuilder()
+                .setAppid(appId)
+                .setBatchId(batchId)
+                .setBatchEresult(batchResult.code())
+                .build();
+        for (int attempt = 1; attempt <= COMPLETE_UPLOAD_BATCH_MAX_ATTEMPTS; attempt++) {
+            try {
+                protocolClient.completeAppUploadBatch(request);
+                Log.i(TAG, "Steam Cloud upload batch completed. batchId=" + batchId
+                    + " result=" + batchResult + " attempt=" + attempt);
+                recordDiagnosticEvent(
+                    "completeappuploadbatch success batchId=" + batchId
+                        + " result=" + batchResult + " attempt=" + attempt
+                );
+                return;
+            } catch (Exception error) {
+                boolean isRetryable = isRetryableCompleteUploadBatchException(error);
+                recordDiagnosticEvent(
+                    "completeappuploadbatch failed batchId=" + batchId
+                        + " attempt=" + attempt + " retryable=" + isRetryable
+                        + " error=" + describeThrowable(error)
+                );
+                if (!isRetryable || attempt >= COMPLETE_UPLOAD_BATCH_MAX_ATTEMPTS) {
+                    Log.e(TAG, "Steam Cloud upload batch completion failed during " + currentStage
+                        + " batchId=" + batchId + " attempt=" + attempt + '.', error);
+                    throw error;
+                }
+                long delayMs = COMPLETE_UPLOAD_BATCH_RETRY_DELAYS_MS[
+                    Math.min(attempt - 1, COMPLETE_UPLOAD_BATCH_RETRY_DELAYS_MS.length - 1)
+                ];
+                Log.w(TAG, "Steam Cloud upload batch completion failed transiently for batchId=" + batchId
+                    + ": " + sanitizeSingleLine(error.getMessage())
+                    + "; retrying attempt " + (attempt + 1) + "/" + COMPLETE_UPLOAD_BATCH_MAX_ATTEMPTS
+                    + " after " + delayMs + "ms.", error);
+                sleepBeforeRetry(delayMs);
+            }
         }
+        throw new IllegalStateException("CompleteAppUploadBatch failed without completing. batchId=" + batchId);
+    }
+
+    private static boolean isRetryableCompleteUploadBatchException(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof TimeoutException) {
+                return true;
+            }
+            // SteamServiceMethodException carries the raw EResult code; EResult.Fail (2) is the
+            // most common transient result during CompleteAppUploadBatch.
+            if (current instanceof top.apricityx.workshop.steam.protocol.SteamServiceMethodException) {
+                int code = ((top.apricityx.workshop.steam.protocol.SteamServiceMethodException) current).getResultCode();
+                return isRetryableCompleteUploadBatchResultCode(code);
+            }
+            String message = current.getMessage();
+            if (message != null) {
+                String normalized = message.toLowerCase(Locale.ROOT);
+                if (normalized.contains("completeappuploadbatch failed: fail")
+                    || normalized.contains("eresult=2")
+                    || normalized.contains("eresult = 2")
+                    || normalized.contains("busy")
+                    || normalized.contains("timeout")
+                    || normalized.contains("timed out")
+                    || normalized.contains("serviceunavailable")
+                    || normalized.contains("service unavailable")
+                    || normalized.contains("remotecallfailed")
+                    || normalized.contains("remote call failed")
+                ) {
+                    return true;
+                }
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private static boolean isRetryableCompleteUploadBatchResultCode(int code) {
+        // EResult.Fail=2, Busy=10, ServiceUnavailable=15, Timeout=16, RemoteCallFailed=71
+        return code == 2 || code == 10 || code == 15 || code == 16 || code == 71;
     }
 
     @Override
@@ -1782,6 +1856,18 @@ public final class SteamCloudClient implements AutoCloseable {
         while (current != null) {
             if (current instanceof TimeoutException) {
                 return true;
+            }
+            // SteamServiceMethodException carries a typed result code; check it directly instead
+            // of relying on string parsing which misses codes like EResult.Fail (2).
+            if (current instanceof top.apricityx.workshop.steam.protocol.SteamServiceMethodException) {
+                int code = ((top.apricityx.workshop.steam.protocol.SteamServiceMethodException) current).getResultCode();
+                // Busy=10, ServiceUnavailable=15, Timeout=16, RemoteCallFailed=71
+                if (code == 10 || code == 15 || code == 16 || code == 71) {
+                    return true;
+                }
+                // Do not retry other typed results (e.g. Fail=2 for generic cloud calls,
+                // auth errors, etc.) — let the caller decide based on context.
+                return false;
             }
             String message = current.getMessage();
             if (message != null) {

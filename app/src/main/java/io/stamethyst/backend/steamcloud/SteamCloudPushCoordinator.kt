@@ -15,8 +15,14 @@ import java.util.concurrent.TimeUnit
 
 internal object SteamCloudPushCoordinator {
     private const val FAILURE_PATH_SAMPLE_LIMIT = 12
-    private const val UPLOAD_BATCH_RECONCILIATION_MAX_ATTEMPTS = 3
-    private const val UPLOAD_BATCH_RECONCILIATION_DELAY_MS = 1_000L
+    // After a CompleteAppUploadBatch failure the coordinator polls the manifest to verify that
+    // the batch changes are already visible server-side before deciding to surface the error.
+    // Steam's eventual-consistency window can be several seconds, so use more attempts and
+    // longer delays than the original 3 × 1 s that was too aggressive.
+    private const val UPLOAD_BATCH_RECONCILIATION_MAX_ATTEMPTS = 6
+    private val UPLOAD_BATCH_RECONCILIATION_DELAY_MS_VALUES = longArrayOf(
+        2_000L, 5_000L, 10_000L, 15_000L, 20_000L,
+    )
 
     private data class PlanUploadTelemetry(
         var clientInitMs: Long? = null,
@@ -840,10 +846,17 @@ internal object SteamCloudPushCoordinator {
             client.completeUploadBatch(STEAM_CLOUD_APP_ID, batch.batchId, EResult.OK)
             return false
         } catch (completionError: Throwable) {
+            // completeUploadBatch already retried internally on EResult.Fail and other transient
+            // codes.  If it still failed, check whether the changes landed anyway (the CM can
+            // commit the batch server-side before returning a successful response, so the error
+            // may be a false-negative in the protocol layer).
             for (attempt in 1..UPLOAD_BATCH_RECONCILIATION_MAX_ATTEMPTS) {
                 ensureNotCancelled(shouldContinue)
                 if (attempt > 1) {
-                    Thread.sleep(UPLOAD_BATCH_RECONCILIATION_DELAY_MS)
+                    val delayMs = UPLOAD_BATCH_RECONCILIATION_DELAY_MS_VALUES[
+                        minOf(attempt - 2, UPLOAD_BATCH_RECONCILIATION_DELAY_MS_VALUES.size - 1)
+                    ]
+                    Thread.sleep(delayMs)
                 }
                 val remoteEntries = try {
                     client.listFiles(STEAM_CLOUD_APP_ID)
@@ -867,9 +880,18 @@ internal object SteamCloudPushCoordinator {
         val entriesByPath = remoteEntries.associateBy { normalizeRemotePathKey(it.remotePath) }
         val uploadsVisible = uploadCandidates.all { candidate ->
             val remote = entriesByPath[normalizeRemotePathKey(candidate.remotePath)] ?: return@all false
-            remote.rawFileSize == candidate.fileSize &&
-                candidate.sha1.isNotBlank() &&
-                remote.sha1.equals(candidate.sha1, ignoreCase = true)
+            // Size must always match.
+            if (remote.rawFileSize != candidate.fileSize) return@all false
+            // Use SHA-1 comparison only when both sides have a hash; if either side is missing
+            // the hash (e.g. older manifest entries or locally-collected entries without SHA-1)
+            // fall back to size-only which is still a meaningful guard.
+            val candidateSha1 = candidate.sha1
+            val remoteSha1 = remote.sha1
+            if (candidateSha1.isNotBlank() && remoteSha1.isNotBlank()) {
+                candidateSha1.equals(remoteSha1, ignoreCase = true)
+            } else {
+                true
+            }
         }
         val deletesVisible = deleteRemotePaths.none { remotePath ->
             normalizeRemotePathKey(remotePath) in entriesByPath

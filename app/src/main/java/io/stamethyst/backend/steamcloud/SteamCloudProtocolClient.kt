@@ -103,6 +103,8 @@ internal class SteamCloudProtocolClient(
         session.sendClientMessage(SteamPacketCodec.emsgClientChangeStatus, request)
     }
 
+    fun isSessionActive(): Boolean = session.currentSession.value != null
+
     /**
      * Uploads rich presence key-value pairs via CMsgClientRichPresenceUpload (EMsg 7501).
      * The proto field rich_presence_kv expects a binary VDF blob: a root container node
@@ -115,7 +117,7 @@ internal class SteamCloudProtocolClient(
         val request = SteammessagesClientserver2.CMsgClientRichPresenceUpload.newBuilder()
             .setRichPresenceKv(com.google.protobuf.ByteString.copyFrom(vdf))
             .build()
-        session.sendClientMessage(SteamPacketCodec.emsgClientRichPresenceUpload, request, 646570)
+        session.sendClientMessage(SteamPacketCodec.emsgClientRichPresenceUpload, request, 646570U)
     }
 
     /** Encodes a flat string→string map as a binary VDF blob expected by rich_presence_kv.

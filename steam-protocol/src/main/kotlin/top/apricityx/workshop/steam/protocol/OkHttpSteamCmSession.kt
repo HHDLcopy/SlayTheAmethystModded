@@ -443,7 +443,7 @@ class OkHttpSteamCmSession(
         check(webSocket?.send(packet.toByteString()) == true) { "Failed to send EMsg.$emsg" }
     }
 
-    override suspend fun sendClientMessage(emsg: Int, request: MessageLite, routingAppId: Int) {
+    override suspend fun sendClientMessage(emsg: Int, request: MessageLite, routingAppId: UInt) {
         val session = currentSession.value
             ?: throw SteamProtocolException("Steam CM session is not logged on")
         val packet = SteamPacketCodec.encode(
@@ -453,7 +453,7 @@ class OkHttpSteamCmSession(
                 .setSteamid(session.steamId)
                 .setJobidSource(-1L)
                 .setJobidTarget(-1L)
-                .setRoutingAppid(routingAppId)
+                .setRoutingAppid(routingAppId.toInt())
                 .build(),
             body = request,
         )
@@ -634,7 +634,6 @@ class OkHttpSteamCmSession(
         pendingRequests.values.forEach { it.fail(error) }
         pendingRequests.clear()
         pendingLogon.completeExceptionallyIfNeeded(error)
-        System.err.println("[SteamCmSession] session invalidated: ${error.message}")
     }
 
     private suspend fun reconnectForRetry() {

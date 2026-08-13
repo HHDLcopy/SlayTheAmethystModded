@@ -98,6 +98,12 @@ class UgcWorkshopDownloaderRateLimitTest {
             request: com.google.protobuf.MessageLite,
         ) = error("CM client message should not be called after rate limiting")
 
+        override suspend fun sendClientMessage(
+            emsg: Int,
+            request: com.google.protobuf.MessageLite,
+            routingAppId: UInt,
+        ) = error("CM client message should not be called after rate limiting")
+
         override suspend fun requestDepotDecryptionKey(appId: UInt, depotId: UInt): ByteArray {
             depotKeyRequests += 1
             error("Depot key should not be requested after rate limiting")

@@ -491,8 +491,9 @@ Do you still want to continue?</string>
     <string name="main_folder_dialog_cancel">Cancel</string>
     <string name="main_folder_summary_format">%1$d mods total, %2$d uncategorized</string>
     <string name="main_folder_filter_hint">Filter by name or description</string>
-    <string name="main_mod_filter_show_enabled">Show enabled mods only</string>
-    <string name="main_mod_filter_show_all">Show all mods</string>
+    <string name="main_mod_filter_menu">Filter mods</string>
+    <string name="main_mod_filter_update_available">Show updates available only</string>
+    <string name="main_mod_filter_enabled">Show enabled mods only</string>
     <string name="main_folder_name_count_format">%1$s  (%2$d/%3$d)</string>
     <string name="main_folder_expand">Expand folder</string>
     <string name="main_folder_collapse">Collapse folder</string>

@@ -509,6 +509,7 @@ class MainScreenViewModel : ViewModel() {
             hasRamSaver = dependencyAvailability.hasRamSaver,
             storageIssue = storageIssue
         )
+        refreshSteamAchievementCache(host)
         syncEasyTierProcessEventReceiver(host)
         syncEasyTierRoomSelection(host)
         lastFullRefreshAtElapsedMs = SystemClock.elapsedRealtime()
@@ -1032,7 +1033,7 @@ class MainScreenViewModel : ViewModel() {
                 achievements = initialAchievements,
                 loading = true,
                 errorSummary = "",
-                fromCache = cached != null && previous.achievements.isEmpty(),
+                fromCache = cached != null || previous.fromCache,
                 lastLoadedAtMs = cached?.fetchedAtMs ?: previous.lastLoadedAtMs,
                 pendingUploadCount = SteamAchievementSyncService.pendingIds(host).size,
             )
@@ -1108,6 +1109,42 @@ class MainScreenViewModel : ViewModel() {
                 }
             }
         }
+    }
+
+    private fun refreshSteamAchievementCache(host: Activity) {
+        val auth = SteamCloudAuthStore.readAuthMaterial(host)
+        if (auth == null || auth.steamId64.isBlank()) {
+            val emptySnapshot = SteamAchievementService.buildSnapshot(
+                steamId64 = "",
+                unlockedApiNames = emptySet(),
+                fetchedAtMs = 0L,
+                fromCache = false,
+            )
+            uiState = uiState.copy(
+                steamAchievements = SteamAchievementUi(
+                    achievements = emptySnapshot.achievements,
+                    errorSummary = host.getString(R.string.main_steam_achievements_sign_in_required),
+                ),
+            )
+            return
+        }
+        val cached = SteamAchievementService.readCached(host.applicationContext, auth.steamId64)
+        val snapshot = cached ?: SteamAchievementService.buildSnapshot(
+            steamId64 = auth.steamId64,
+            unlockedApiNames = emptySet(),
+            fetchedAtMs = 0L,
+            fromCache = false,
+        )
+        val current = uiState.steamAchievements
+        uiState = uiState.copy(
+            steamAchievements = current.copy(
+                accountName = auth.accountName,
+                achievements = snapshot.achievements,
+                errorSummary = "",
+                fromCache = cached != null,
+                lastLoadedAtMs = cached?.fetchedAtMs,
+            ),
+        )
     }
 
     fun syncSteamAchievements(host: Activity) {

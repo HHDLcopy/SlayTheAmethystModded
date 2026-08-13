@@ -53,27 +53,35 @@ internal fun SteamAchievementOverviewCard(
     state: MainScreenViewModel.SteamAchievementUi,
     onClick: () -> Unit,
 ) {
-    val hasAchievements = state.achievements.isNotEmpty()
-    val unavailable = !state.loading && !hasAchievements && state.errorSummary.isNotBlank()
+    val signedIn = state.accountName.isNotBlank()
     Card(
         modifier = Modifier.fillMaxWidth(),
         onClick = onClick,
+        enabled = signedIn,
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f)),
         colors = CardDefaults.cardColors(
-            containerColor = if (unavailable) MaterialTheme.colorScheme.surfaceContainerLow
-                             else MaterialTheme.colorScheme.surface,
+            containerColor = MaterialTheme.colorScheme.surface,
+            disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
         ),
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalAlignment = Alignment.Top,
         ) {
             Surface(
                 shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
-                contentColor = MaterialTheme.colorScheme.primary,
+                color = if (signedIn) {
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant
+                },
+                contentColor = if (signedIn) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
             ) {
                 Box(
                     modifier = Modifier.padding(10.dp).size(24.dp),
@@ -86,23 +94,22 @@ internal fun SteamAchievementOverviewCard(
                     }
                 }
             }
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
                     text = stringResource(R.string.main_steam_achievements_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
-                    text = when {
-                        state.loading -> stringResource(R.string.main_steam_achievements_loading)
-                        hasAchievements -> stringResource(
-                            R.string.main_steam_achievements_progress,
-                            state.unlockedCount,
-                            state.achievements.size,
-                        )
-                        state.errorSummary.isNotBlank() -> stringResource(R.string.main_steam_achievements_unavailable)
-                        else -> stringResource(R.string.main_steam_achievements_open)
-                    },
+                    text = stringResource(
+                        R.string.main_steam_achievements_progress,
+                        state.unlockedCount,
+                        state.achievements.size,
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    text = stringResource(R.string.main_steam_achievements_view_and_sync),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

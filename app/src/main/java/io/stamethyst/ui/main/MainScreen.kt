@@ -99,6 +99,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -529,10 +530,12 @@ private fun GameLaunchActionBar(
 private fun ModsHeaderPinnedContent(
     folderControlsEnabled: Boolean,
     dragLocked: Boolean,
+    showEnabledModsOnly: Boolean,
     hostAvailable: Boolean,
     feedbackUnreadCount: Int,
     workshopUpdateCheckState: WorkshopUpdateCheckUiState,
     onToggleDragLocked: () -> Unit,
+    onToggleShowEnabledModsOnly: () -> Unit,
     onAddFolderClick: () -> Unit,
     onCheckWorkshopUpdates: () -> Unit,
     onOpenFeedbackUpdates: () -> Unit,
@@ -566,6 +569,28 @@ private fun ModsHeaderPinnedContent(
                         )
                     }
                 }
+            }
+            CompactTopBarIconButton(
+                onClick = onToggleShowEnabledModsOnly,
+                enabled = true,
+            ) {
+                Icon(
+                    painter = painterResource(
+                        if (showEnabledModsOnly) R.drawable.ic_check_circle else R.drawable.ic_filter_list
+                    ),
+                    contentDescription = stringResource(
+                        if (showEnabledModsOnly) {
+                            R.string.main_mod_filter_show_all
+                        } else {
+                            R.string.main_mod_filter_show_enabled
+                        }
+                    ),
+                    tint = if (showEnabledModsOnly) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
             }
             WorkshopUpdateCheckButton(
                 state = workshopUpdateCheckState,
@@ -1016,6 +1041,10 @@ private fun EasyTierOverviewCard(
         enabled = indicator.visible,
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f)),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface,
+            disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        ),
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -4593,6 +4622,7 @@ private fun LauncherMainScreenContent(
                         var modsHeaderHeightPx by remember { mutableIntStateOf(0) }
                         var modsHeaderCollapsed by remember { mutableStateOf(false) }
                         var modsContentMountReady by remember { mutableStateOf(false) }
+                        var showEnabledModsOnly by rememberSaveable { mutableStateOf(false) }
                         val measuredModsHeaderHeight = with(density) { modsHeaderHeightPx.toDp() }
                         val modsHeaderContentTopInset =
                             (if (modsHeaderHeightPx == 0) 232.dp else measuredModsHeaderHeight) - 20.dp
@@ -4626,6 +4656,7 @@ private fun LauncherMainScreenContent(
                                     showInitializing = showInitializing || !modsContentMountReady,
                                     contentTopInset = modsHeaderContentTopInset,
                                     actionBarBottomPadding = launcherDockContentPadding + batchEditBarContentPadding,
+                                    showEnabledModsOnly = showEnabledModsOnly,
                                     onHeaderCollapsedChange = { modsHeaderCollapsed = it },
                                     onBatchEditBarStateChange = { batchEditBarState = it },
                                     actions = actions
@@ -4649,10 +4680,14 @@ private fun LauncherMainScreenContent(
                                     ModsHeaderPinnedContent(
                                         folderControlsEnabled = uiState.controlsEnabled && !batchSelectionMode,
                                         dragLocked = uiState.dragLocked,
+                                        showEnabledModsOnly = showEnabledModsOnly,
                                         hostAvailable = actions.isHostAvailable,
                                         feedbackUnreadCount = feedbackUnreadCount,
                                         workshopUpdateCheckState = workshopUpdateCheckState,
                                         onToggleDragLocked = actions.onToggleDragLocked,
+                                        onToggleShowEnabledModsOnly = {
+                                            showEnabledModsOnly = !showEnabledModsOnly
+                                        },
                                         onAddFolderClick = { showCreateFolderDialog = true },
                                         onCheckWorkshopUpdates = {
                                             if (!batchSelectionMode) {
@@ -6545,6 +6580,7 @@ private fun ColumnScope.MainContentSwitcher(
     showInitializing: Boolean,
     contentTopInset: Dp = 0.dp,
     actionBarBottomPadding: Dp,
+    showEnabledModsOnly: Boolean,
     onHeaderCollapsedChange: (Boolean) -> Unit = {},
     onBatchEditBarStateChange: (BatchEditBarState?) -> Unit,
     actions: MainScreenActions
@@ -6605,6 +6641,7 @@ private fun ColumnScope.MainContentSwitcher(
                     contentTopInset = contentTopInset,
                     contentBottomInset = actionBarBottomPadding,
                     hostAvailable = actions.isHostAvailable,
+                    showEnabledModsOnly = showEnabledModsOnly,
                     onHeaderCollapsedChange = onHeaderCollapsedChange,
                     onBatchEditBarStateChange = onBatchEditBarStateChange,
                     callbacks = ModFolderSectionCallbacks(

@@ -1354,6 +1354,7 @@
     <string name="main_steam_achievements_debug_mutation_failed">Steam CM 未能确认成就状态更新。</string>
     <string name="main_steam_achievements_refresh">刷新</string>
     <string name="main_steam_achievements_cache_notice">当前显示的是上次缓存的 Steam 解锁状态。</string>
+    <string name="main_steam_achievements_cache_refresh_failed">Steam 刷新失败：%1$s。当前显示的是上次缓存的 Steam 解锁状态。</string>
     <string name="main_steam_achievements_empty">Steam 没有返回此账号可见的成就。</string>
     <string name="main_steam_achievements_unlocked">已获得</string>
     <string name="main_steam_achievements_sign_in_required">请先登录 Steam 以查看成就。</string>

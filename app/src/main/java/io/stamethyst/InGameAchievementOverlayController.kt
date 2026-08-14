@@ -194,23 +194,23 @@ internal class InGameAchievementOverlayController(
     private fun SteamAchievementNotification(entry: SteamAchievementCatalog.Entry) {
         Row(
             modifier = Modifier
-                .width(338.dp)
-                .shadow(14.dp, RoundedCornerShape(4.dp), clip = false)
+                .width(286.dp)
+                .shadow(10.dp, RoundedCornerShape(4.dp), clip = false)
                 .clip(RoundedCornerShape(4.dp))
                 .background(Color(0xFF17212B))
-                .padding(7.dp),
+                .padding(5.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Image(
                 painter = painterResource(entry.unlockedIconResId),
                 contentDescription = null,
                 modifier = Modifier
-                    .size(64.dp)
+                    .size(52.dp)
                     .clip(RoundedCornerShape(2.dp))
                     .background(Color(0xFF0D141C)),
                 contentScale = ContentScale.Crop,
             )
-            Spacer(Modifier.width(11.dp))
+            Spacer(Modifier.width(8.dp))
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.Center,

@@ -14,9 +14,9 @@ class GameOrientationPolicyTest {
     }
 
     @Test
-    fun resolveRequestedOrientation_keepsLandscapeInMultiWindow() {
+    fun resolveRequestedOrientation_defersToFreeformHostInMultiWindow() {
         assertEquals(
-            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
+            ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED,
             GameOrientationPolicy.resolveRequestedOrientation(isInMultiWindowMode = true)
         )
     }

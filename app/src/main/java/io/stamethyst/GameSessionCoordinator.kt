@@ -28,6 +28,7 @@ import io.stamethyst.backend.steamcloud.SteamAchievementSyncService
 import io.stamethyst.backend.steamcloud.AchievementSyncLogStore
 import io.stamethyst.backend.steamcloud.SteamGamePresenceService
 import io.stamethyst.config.BackBehavior
+import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.config.SpecialKeyInputMode
 import io.stamethyst.input.GameInputHandler
@@ -498,12 +499,23 @@ internal class GameSessionCoordinator(
             )
         )
 
+        clearStaleAchievementRequestBeforeLaunch()
         syncRuntimeForegroundState(true)
         ExpectedGameExitNotice.clearExpectedGameExit(activity)
         jvmLaunchStartedWallTimeMs = System.currentTimeMillis()
         jvmLaunchController.start(
             javaHome = javaHome,
             bootOverlayController = bootOverlayController
+        )
+    }
+
+    private fun clearStaleAchievementRequestBeforeLaunch() {
+        val requestFile = RuntimePaths.achievementRequestFile(activity)
+        if (!requestFile.isFile) return
+        val deleted = runCatching { requestFile.delete() }.getOrDefault(false)
+        AchievementSyncLogStore.append(
+            activity,
+            if (deleted) "request_cleared_before_launch" else "request_clear_before_launch_failed",
         )
     }
 
@@ -1212,7 +1224,9 @@ internal class GameSessionCoordinator(
         } else if (!requestUnchanged) {
             AchievementSyncLogStore.append(activity, "request_delete_deferred", "request=${request.id}")
         }
-        inGameAchievementOverlayController.enqueue(request.achievementIds)
+        if (LauncherConfig.isSteamAchievementSyncEnabled(activity)) {
+            inGameAchievementOverlayController.enqueue(request.achievementIds)
+        }
         SteamAchievementSyncService.syncRequestAsync(activity.applicationContext, request) { error ->
             if (error != null) {
                 activity.runOnUiThread {
@@ -1402,14 +1416,3 @@ internal class GameSessionCoordinator(
         }
     }
 }
-        clearStaleAchievementRequestBeforeLaunch()
-    private fun clearStaleAchievementRequestBeforeLaunch() {
-        val requestFile = RuntimePaths.achievementRequestFile(activity)
-        if (!requestFile.isFile) return
-        val deleted = runCatching { requestFile.delete() }.getOrDefault(false)
-        AchievementSyncLogStore.append(
-            activity,
-            if (deleted) "request_cleared_before_launch" else "request_clear_before_launch_failed",
-        )
-    }
-

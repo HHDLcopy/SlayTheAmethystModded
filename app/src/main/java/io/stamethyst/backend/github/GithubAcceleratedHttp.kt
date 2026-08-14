@@ -466,7 +466,7 @@ internal class ExperimentalGithubDirectAccessInterceptor(
                 effectiveRoute != null &&
                 usedForwardTarget != null &&
                 !routeRefreshAttempted &&
-                response.code in STALE_ROUTE_RESPONSE_CODES
+                response.isStaleForwardRouteResponse(logicalRequest.url)
             ) {
                 routeRefreshAttempted = true
                 failedForwardTargets += usedForwardTarget
@@ -1778,7 +1778,18 @@ private const val HTTP_METHOD_HEAD = "HEAD"
 private const val HTTP_TEMP_REDIRECT = 307
 private const val HTTP_PERM_REDIRECT = 308
 private val REDIRECT_RESPONSE_CODES = setOf(300, 301, 302, 303, HTTP_TEMP_REDIRECT, HTTP_PERM_REDIRECT)
+// A forward endpoint can reject the logical Host even though the Steam endpoint itself is
+// available. Treat these responses as a failed Watt hop so the interceptor refreshes the route
+// and excludes that target instead of returning the proxy's error to the caller.
 private val STALE_ROUTE_RESPONSE_CODES = setOf(400, 404)
+
+private fun Response.isStaleForwardRouteResponse(logicalUrl: HttpUrl): Boolean =
+    code in STALE_ROUTE_RESPONSE_CODES ||
+        (
+            code == 403 &&
+                logicalUrl.host == "steamcommunity.com" &&
+                logicalUrl.encodedPath.startsWith("/workshop/browse/")
+        )
 
 /**
  * Validates certificates through the platform trust manager, relaxing the check

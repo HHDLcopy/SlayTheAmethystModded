@@ -30,6 +30,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import java.util.concurrent.Executor
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 class SteamCloudAcceleratedHttpTest {
@@ -930,6 +931,164 @@ class SteamCloudAcceleratedHttpTest {
     }
 
     @Test
+    fun interceptor_concurrentWorkshopRequests_probeEveryServerAndAvoidFailed403Route() {
+        val badForwardServer = MockWebServer()
+        val goodForwardServer = MockWebServer()
+        val timeoutForwardServer = MockWebServer()
+        badForwardServer.start()
+        goodForwardServer.start()
+        timeoutForwardServer.start()
+        try {
+            val badTarget = "http://bad-community.test:${badForwardServer.port}"
+            val goodTarget = "http://good-community.test:${goodForwardServer.port}"
+            val timeoutTarget = "http://timeout-community.test:${timeoutForwardServer.port}"
+            val targets = listOf(badTarget, goodTarget, timeoutTarget)
+            val routePayload = """
+                {
+                  "🦓": [
+                    {
+                      "Items": [
+                        {
+                          "MatchDomainNames": "steamcommunity.com;www.steamcommunity.com",
+                          "ListenDomainNames": "steamcommunity.com;www.steamcommunity.com",
+                          "ForwardDomainNames": "$badTarget;$goodTarget;$timeoutTarget",
+                          "ProxyType": 0,
+                          "IgnoreSSLCertVerification": true,
+                          "Checked": true
+                        }
+                      ]
+                    }
+                  ]
+                }
+            """.trimIndent()
+            repeat(8) {
+                apiServer.enqueue(MockResponse.Builder().code(200).body(routePayload).build())
+            }
+
+            // This is the reported failure: the forward endpoint answers 403 while the
+            // logical Host remains steamcommunity.com. It is an HTTP response, so the
+            // current interceptor returns it instead of trying the next candidate.
+            badForwardServer.enqueue(MockResponse.Builder().code(403).body("bad-route").build())
+            goodForwardServer.enqueue(MockResponse.Builder().code(200).body("workshop-ok").build())
+            timeoutForwardServer.enqueue(
+                MockResponse.Builder()
+                    .code(200)
+                    .body("too-late")
+                    .bodyDelay(PROBE_TIMEOUT_MS * 4, TimeUnit.MILLISECONDS)
+                    .build(),
+            )
+            repeat(8) {
+                badForwardServer.enqueue(MockResponse.Builder().code(403).body("bad-route").build())
+                goodForwardServer.enqueue(MockResponse.Builder().code(200).body("workshop-ok").build())
+            }
+
+            val dns = Dns { listOf(InetAddress.getByName("127.0.0.1")) }
+            val probeResults = probeWorkshopForwardTargetsConcurrently(
+                targets = targets,
+                dns = dns,
+            )
+            assertEquals("http-403", probeResults.getValue(badTarget).outcome)
+            assertEquals("success", probeResults.getValue(goodTarget).outcome)
+            assertEquals("timeout", probeResults.getValue(timeoutTarget).outcome)
+
+            val routeStore = object : WattToolkitGithubRouteStore {
+                var persisted: PersistedWattToolkitGithubRoute? = PersistedWattToolkitGithubRoute(
+                    route = WattToolkitGithubRoute(
+                        logicalHosts = setOf("steamcommunity.com", "www.steamcommunity.com"),
+                        forwardTargets = listOf(badTarget),
+                    ),
+                    cachedAtMs = 1_000L,
+                )
+
+                override fun load(): PersistedWattToolkitGithubRoute? = persisted
+
+                override fun save(route: PersistedWattToolkitGithubRoute) {
+                    persisted = route
+                }
+
+                override fun clear() {
+                    persisted = null
+                }
+            }
+            val resolver = WattToolkitGithubRouteResolver(
+                routeProfile = SteamCommunityWattToolkitRouteProfile,
+                client = OkHttpClient.Builder().dns(dns).build(),
+                projectGroupsUrl = apiServer.url("/accelerator/projectgroups"),
+                routeStore = routeStore,
+                forwardTargetProbe = { target ->
+                    val result = probeResults.getValue(target)
+                    when (result.outcome) {
+                        "success" -> WattToolkitForwardTargetProbe(3, 3, result.elapsedMs)
+                        else -> WattToolkitForwardTargetProbe.failed()
+                    }
+                },
+                backgroundExecutor = Executor { },
+            )
+            val directClient = OkHttpClient.Builder()
+                .dns(dns)
+                .retryOnConnectionFailure(false)
+                .followRedirects(false)
+                .followSslRedirects(false)
+                .build()
+            val client = OkHttpClient.Builder()
+                .dns(dns)
+                .retryOnConnectionFailure(false)
+                .dispatcher(
+                    okhttp3.Dispatcher(
+                        Executors.newFixedThreadPool(8),
+                    ).apply {
+                        maxRequests = 8
+                        maxRequestsPerHost = 8
+                    },
+                )
+                .addInterceptor(
+                    ExperimentalGithubDirectAccessInterceptor(
+                        routeResolvers = listOf(resolver),
+                        directCallFactory = directClient,
+                    ),
+                )
+                .build()
+
+            val executor = Executors.newFixedThreadPool(8)
+            try {
+                val start = java.util.concurrent.CountDownLatch(1)
+                val futures = (1..8).map { requestIndex ->
+                    executor.submit<Pair<Int, String>> {
+                        start.await(5, TimeUnit.SECONDS)
+                        client.newCall(
+                            Request.Builder()
+                                .url("https://steamcommunity.com/workshop/browse/?appid=${646570 + requestIndex}")
+                                .build(),
+                        ).execute().use { response ->
+                            response.code to response.body.string()
+                        }
+                    }
+                }
+                start.countDown()
+                val responses = futures.map { it.get(20, TimeUnit.SECONDS) }
+
+                // Until 403 is classified as a failed forward route, this assertion
+                // reproduces the bug and documents the required launcher behavior.
+                assertTrue("all browse requests must avoid the 403 route: $responses", responses.all { it.first == 200 })
+                assertTrue(responses.all { it.second == "workshop-ok" })
+            } finally {
+                executor.shutdownNow()
+            }
+
+            assertTrue("the failing route must have been attempted", badForwardServer.requestCount > 0)
+            assertTrue("the healthy route must serve every request", goodForwardServer.requestCount >= 8)
+            repeat(goodForwardServer.requestCount) {
+                assertEquals("steamcommunity.com", goodForwardServer.takeRequest().headers["Host"])
+            }
+            assertEquals(1, timeoutForwardServer.requestCount)
+        } finally {
+            badForwardServer.close()
+            goodForwardServer.close()
+            timeoutForwardServer.close()
+        }
+    }
+
+    @Test
     fun interceptor_followsCdnRedirectWhenWattHasNoRouteForTheInitialHost() {
         apiServer.enqueue(
             MockResponse.Builder()
@@ -1247,6 +1406,70 @@ class SteamCloudAcceleratedHttpTest {
             .addExperimentalGithubDirectAccess(runtime)
             .withAcceleratedCookieJar(jar)
             .build()
+    }
+
+    private fun probeWorkshopForwardTargetsConcurrently(
+        targets: List<String>,
+        dns: Dns,
+    ): Map<String, WorkshopForwardProbeResult> {
+        val executor = Executors.newFixedThreadPool(targets.size)
+        val start = java.util.concurrent.CountDownLatch(1)
+        try {
+            val futures = targets.associateWith { target ->
+                executor.submit<WorkshopForwardProbeResult> {
+                    start.await(PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                    probeWorkshopForwardTarget(target, dns)
+                }
+            }
+            start.countDown()
+            return futures.mapValues { (_, future) ->
+                future.get(PROBE_TIMEOUT_MS * 3, TimeUnit.MILLISECONDS)
+            }
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+
+    private fun probeWorkshopForwardTarget(
+        target: String,
+        dns: Dns,
+    ): WorkshopForwardProbeResult {
+        val startedAtNs = System.nanoTime()
+        val client = OkHttpClient.Builder()
+            .dns(dns)
+            .connectTimeout(PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            .readTimeout(PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            .writeTimeout(PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            .callTimeout(PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            .retryOnConnectionFailure(false)
+            .build()
+        val outcome = try {
+            client.newCall(
+                Request.Builder()
+                    .url("$target/workshop/browse/?appid=646570")
+                    .header("Host", "steamcommunity.com")
+                    .build(),
+            ).execute().use { response ->
+                response.body.string()
+                if (response.isSuccessful) "success" else "http-${response.code}"
+            }
+        } catch (error: java.io.InterruptedIOException) {
+            "timeout"
+        } catch (error: java.io.IOException) {
+            "io-${error::class.simpleName}"
+        }
+        val elapsedMs = ((System.nanoTime() - startedAtNs) / 1_000_000L).coerceAtLeast(1L)
+        println("Workshop forward probe target=$target outcome=$outcome elapsedMs=$elapsedMs")
+        return WorkshopForwardProbeResult(outcome = outcome, elapsedMs = elapsedMs)
+    }
+
+    private data class WorkshopForwardProbeResult(
+        val outcome: String,
+        val elapsedMs: Long,
+    )
+
+    private companion object {
+        const val PROBE_TIMEOUT_MS = 250L
     }
 
     private class RecordingCookieJar : CookieJar {

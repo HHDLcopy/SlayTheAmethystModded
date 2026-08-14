@@ -45,11 +45,10 @@ final class LwjglHotLoopConfig {
 
 	private static volatile boolean liveSizeBridgeUnavailable = false;
 
-	/** Live physical surface width, falling back to the display facade and launch-time override.
-	 *
-	 * The Android bridge is updated from the SurfaceView dimensions after a window-mode change.
-	 * Prefer it because the GLFW Display facade can retain the previous fullscreen size while the
-	 * Android surface is already presenting in a freeform window. */
+    /** Fixed physical render-buffer width, falling back to the display facade and launch-time override.
+     *
+     * The Android bridge publishes the cropped game canvas before the JVM starts. Window-mode
+     * changes are compositor-only and must not resize the GLFW logical window or render buffer. */
 	static int physicalWidth () {
 		return preferLivePhysicalSize(nativePhysicalWidth(), displayWidth(), PHYSICAL_WIDTH_OVERRIDE);
 	}

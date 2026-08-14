@@ -15,6 +15,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import io.stamethyst.backend.render.DisplayConfigSync
 import io.stamethyst.backend.render.DisplayRefreshRateController
+import io.stamethyst.backend.render.FullscreenCanvasSize
 import io.stamethyst.backend.render.FullscreenCanvasResolution
 import io.stamethyst.backend.render.ForegroundResyncScheduler
 import io.stamethyst.backend.render.RenderSurfaceState
@@ -89,6 +90,7 @@ class RenderSurfaceManager(
     private var displayManager: DisplayManager? = null
     private var lastDisplayRotation: Int? = null
     private var bootOverlayActive = true
+    private var fullscreenVirtualResolution: io.stamethyst.backend.render.VirtualResolution? = null
     private var startupVirtualResolution: io.stamethyst.backend.render.VirtualResolution? = null
 
     private val foregroundResyncRunnable = Runnable {
@@ -686,7 +688,7 @@ class RenderSurfaceManager(
         forceBufferApply: Boolean = false,
         forceWindowSizeDispatch: Boolean = false
     ): RenderSurfaceState.ApplyPlan {
-        val virtualResolution = resolveVirtualResolution()
+        val virtualResolution = resolveCurrentViewportVirtualResolution()
         val plan = if (forceBufferApply) {
             state.buildForcedApplyPlan(
                 viewWidth = viewWidth,
@@ -709,15 +711,45 @@ class RenderSurfaceManager(
         }
     }
 
-    private fun resolveVirtualResolution(): io.stamethyst.backend.render.VirtualResolution {
-        startupVirtualResolution?.let { return it }
+    private fun resolveFullscreenVirtualResolution(): io.stamethyst.backend.render.VirtualResolution {
+        fullscreenVirtualResolution?.let { return it }
         val fullscreenCanvas = FullscreenCanvasResolution.resolve(activity)
         return VirtualResolutionPolicy.resolve(
             physicalWidth = fullscreenCanvas.width,
             physicalHeight = fullscreenCanvas.height,
             renderScale = renderScale,
             mode = virtualResolutionMode
+        ).also { fullscreenVirtualResolution = it }
+    }
+
+    private fun resolveVirtualResolution(): io.stamethyst.backend.render.VirtualResolution {
+        return resolveCurrentViewportVirtualResolution()
+    }
+
+    private fun resolveVirtualResolutionForViewport(
+        rootWidth: Int,
+        rootHeight: Int,
+        cropInsets: RenderViewportInsets
+    ): io.stamethyst.backend.render.VirtualResolution {
+        if (!avoidDisplayCutout && !cropScreenBottom) {
+            return resolveFullscreenVirtualResolution().also { startupVirtualResolution = it }
+        }
+        val canvasSize = resolveViewportCanvasSize(rootWidth, rootHeight, cropInsets)
+        return VirtualResolutionPolicy.resolve(
+            physicalWidth = canvasSize.width,
+            physicalHeight = canvasSize.height,
+            renderScale = renderScale,
+            mode = virtualResolutionMode
         ).also { startupVirtualResolution = it }
+    }
+
+    private fun resolveCurrentViewportVirtualResolution(): io.stamethyst.backend.render.VirtualResolution {
+        val root = renderRoot
+        if (root == null || root.width <= 0 || root.height <= 0) {
+            return startupVirtualResolution ?: resolveFullscreenVirtualResolution()
+        }
+        val cropInsets = resolveViewportCropInsets(currentWindowInsets())
+        return resolveVirtualResolutionForViewport(root.width, root.height, cropInsets)
     }
 
     private fun resolveViewportLayoutMode(): VirtualResolutionMode = VirtualResolutionMode.FULLSCREEN_FILL
@@ -790,7 +822,11 @@ class RenderSurfaceManager(
         }
         val resolvedInsets = insets ?: currentWindowInsets()
         val cropInsets = resolveViewportCropInsets(resolvedInsets)
-        val virtualResolution = resolveVirtualResolution()
+        val virtualResolution = resolveVirtualResolutionForViewport(
+            rootWidth = rootWidth,
+            rootHeight = rootHeight,
+            cropInsets = cropInsets
+        )
         val layout = resolveFixedVirtualViewportLayout(
             rootWidth = rootWidth,
             rootHeight = rootHeight,
@@ -1111,6 +1147,23 @@ class RenderSurfaceManager(
                 topMargin = topCrop + centeredTopMargin,
                 rightMargin = rightCrop + remainingHorizontal - centeredLeftMargin,
                 bottomMargin = bottomCrop + remainingVertical - centeredTopMargin
+            )
+        }
+
+        internal fun resolveViewportCanvasSize(
+            rootWidth: Int,
+            rootHeight: Int,
+            cropInsets: RenderViewportInsets
+        ): FullscreenCanvasSize {
+            return FullscreenCanvasSize(
+                width = (
+                    rootWidth - cropInsets.left.coerceAtLeast(0) -
+                        cropInsets.right.coerceAtLeast(0)
+                    ).coerceAtLeast(1),
+                height = (
+                    rootHeight - cropInsets.top.coerceAtLeast(0) -
+                        cropInsets.bottom.coerceAtLeast(0)
+                    ).coerceAtLeast(1)
             )
         }
 

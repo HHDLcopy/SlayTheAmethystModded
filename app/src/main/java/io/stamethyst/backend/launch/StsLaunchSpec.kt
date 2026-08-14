@@ -15,6 +15,7 @@ import io.stamethyst.backend.mods.importing.patches.texture.AtlasFilterPatchModu
 import io.stamethyst.backend.render.AndroidGameModeSupport
 import io.stamethyst.backend.render.DisplayConfigSync
 import io.stamethyst.backend.render.DisplayRefreshRateController
+import io.stamethyst.backend.render.FullscreenCanvasSize
 import io.stamethyst.backend.render.FullscreenCanvasResolution
 import io.stamethyst.backend.render.RendererBackendResolver
 import io.stamethyst.backend.render.RendererDecision
@@ -440,8 +441,14 @@ object StsLaunchSpec {
             renderScale = renderScale,
             mode = virtualResolutionMode
         )
-        val virtualWidth = virtualResolution.width
-        val virtualHeight = virtualResolution.height
+        val launchVirtualSize = resolveLaunchVirtualSize(
+            bridgeWidth = CallbackBridge.windowWidth,
+            bridgeHeight = CallbackBridge.windowHeight,
+            fallbackWidth = virtualResolution.width,
+            fallbackHeight = virtualResolution.height
+        )
+        val virtualWidth = launchVirtualSize.width
+        val virtualHeight = launchVirtualSize.height
         val effectiveTargetFps = AndroidGameModeSupport.resolveTargetFps(
             LauncherConfig.readTargetFps(context),
             AndroidGameModeSupport.readCurrentMode(context)
@@ -818,6 +825,22 @@ object StsLaunchSpec {
             selectionMode = LauncherConfig.readRendererSelectionMode(context),
             manualBackend = LauncherConfig.readManualRendererBackend(context)
         )
+    }
+
+    internal fun resolveLaunchVirtualSize(
+        bridgeWidth: Int,
+        bridgeHeight: Int,
+        fallbackWidth: Int,
+        fallbackHeight: Int
+    ): FullscreenCanvasSize {
+        return if (bridgeWidth > 0 && bridgeHeight > 0) {
+            FullscreenCanvasSize(bridgeWidth, bridgeHeight)
+        } else {
+            FullscreenCanvasSize(
+                fallbackWidth.coerceAtLeast(1),
+                fallbackHeight.coerceAtLeast(1)
+            )
+        }
     }
 
     private fun joinModIds(modIds: List<String>): String {

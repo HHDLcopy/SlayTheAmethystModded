@@ -3,6 +3,7 @@ package io.stamethyst
 import android.content.pm.ActivityInfo
 import android.view.WindowManager
 import io.stamethyst.backend.render.VirtualResolutionMode
+import io.stamethyst.backend.render.VirtualResolutionPolicy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -228,6 +229,42 @@ class RenderSurfaceManagerPolicyTest {
                 cropInsets = RenderViewportInsets(),
                 virtualWidth = 960,
                 virtualHeight = 540
+            )
+        )
+    }
+
+    @Test
+    fun resolveViewportCanvasSize_usesCroppedAreaAsFullscreenCanvas() {
+        val canvas = RenderSurfaceManager.resolveViewportCanvasSize(
+            rootWidth = 2400,
+            rootHeight = 1080,
+            cropInsets = RenderViewportInsets(left = 96)
+        )
+
+        assertEquals(2304, canvas.width)
+        assertEquals(1080, canvas.height)
+
+        val virtualResolution = VirtualResolutionPolicy.resolve(
+            physicalWidth = canvas.width,
+            physicalHeight = canvas.height,
+            renderScale = 1.0f,
+            mode = VirtualResolutionMode.FULLSCREEN_FILL
+        )
+        assertEquals(
+            RenderViewportLayout(
+                width = 2304,
+                height = 1080,
+                leftMargin = 96,
+                topMargin = 0,
+                rightMargin = 0,
+                bottomMargin = 0
+            ),
+            RenderSurfaceManager.resolveFixedVirtualViewportLayout(
+                rootWidth = 2400,
+                rootHeight = 1080,
+                cropInsets = RenderViewportInsets(left = 96),
+                virtualWidth = virtualResolution.width,
+                virtualHeight = virtualResolution.height
             )
         )
     }

@@ -1402,3 +1402,14 @@ internal class GameSessionCoordinator(
         }
     }
 }
+        clearStaleAchievementRequestBeforeLaunch()
+    private fun clearStaleAchievementRequestBeforeLaunch() {
+        val requestFile = RuntimePaths.achievementRequestFile(activity)
+        if (!requestFile.isFile) return
+        val deleted = runCatching { requestFile.delete() }.getOrDefault(false)
+        AchievementSyncLogStore.append(
+            activity,
+            if (deleted) "request_cleared_before_launch" else "request_clear_before_launch_failed",
+        )
+    }
+

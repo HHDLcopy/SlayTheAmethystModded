@@ -35,6 +35,10 @@ class RenderSurfaceStateTest {
             viewWidth = 1280, viewHeight = 720, virtualWidth = 960, virtualHeight = 540
         )
 
+        assertEquals(1280, secondPlan.physicalWidth)
+        assertEquals(720, secondPlan.physicalHeight)
+        assertEquals(960, secondPlan.windowWidth)
+        assertEquals(540, secondPlan.windowHeight)
         assertFalse(secondPlan.shouldApplyBufferSize)
         assertFalse(secondPlan.shouldDispatchWindowSize)
     }

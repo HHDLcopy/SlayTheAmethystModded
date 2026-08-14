@@ -486,6 +486,8 @@ class RenderSurfaceManager(
     }
 
     private fun dispatchWindowSize(plan: RenderSurfaceState.ApplyPlan): Boolean {
+        CallbackBridge.physicalWidth = plan.physicalWidth
+        CallbackBridge.physicalHeight = plan.physicalHeight
         if (!plan.shouldDispatchWindowSize) {
             state.recordWindowSizeDispatch(plan, dispatched = false)
             return false
@@ -498,11 +500,8 @@ class RenderSurfaceManager(
                 "buffer=${plan.bufferWidth}x${plan.bufferHeight}, " +
                 "window=${plan.windowWidth}x${plan.windowHeight}"
         )
-        CallbackBridge.physicalWidth = plan.physicalWidth
-        CallbackBridge.physicalHeight = plan.physicalHeight
         CallbackBridge.windowWidth = plan.windowWidth
         CallbackBridge.windowHeight = plan.windowHeight
-        CallbackBridge.sendUpdateWindowSize(plan.windowWidth, plan.windowHeight)
         state.recordWindowSizeDispatch(plan, dispatched = true)
         return true
     }
@@ -729,8 +728,10 @@ class RenderSurfaceManager(
     private fun resolveVirtualResolutionForViewport(
         rootWidth: Int,
         rootHeight: Int,
-        cropInsets: RenderViewportInsets
+        cropInsets: RenderViewportInsets,
+        lockResolution: Boolean = true
     ): io.stamethyst.backend.render.VirtualResolution {
+        startupVirtualResolution?.let { return it }
         if (!avoidDisplayCutout && !cropScreenBottom) {
             return resolveFullscreenVirtualResolution().also { startupVirtualResolution = it }
         }
@@ -740,7 +741,11 @@ class RenderSurfaceManager(
             physicalHeight = canvasSize.height,
             renderScale = renderScale,
             mode = virtualResolutionMode
-        ).also { startupVirtualResolution = it }
+        ).also {
+            if (lockResolution) {
+                startupVirtualResolution = it
+            }
+        }
     }
 
     private fun resolveCurrentViewportVirtualResolution(): io.stamethyst.backend.render.VirtualResolution {
@@ -748,8 +753,14 @@ class RenderSurfaceManager(
         if (root == null || root.width <= 0 || root.height <= 0) {
             return startupVirtualResolution ?: resolveFullscreenVirtualResolution()
         }
-        val cropInsets = resolveViewportCropInsets(currentWindowInsets())
-        return resolveVirtualResolutionForViewport(root.width, root.height, cropInsets)
+        val insets = currentWindowInsets()
+        val cropInsets = resolveViewportCropInsets(insets)
+        return resolveVirtualResolutionForViewport(
+            root.width,
+            root.height,
+            cropInsets,
+            lockResolution = !avoidDisplayCutout || insets != null
+        )
     }
 
     private fun resolveViewportLayoutMode(): VirtualResolutionMode = VirtualResolutionMode.FULLSCREEN_FILL
@@ -825,7 +836,8 @@ class RenderSurfaceManager(
         val virtualResolution = resolveVirtualResolutionForViewport(
             rootWidth = rootWidth,
             rootHeight = rootHeight,
-            cropInsets = cropInsets
+            cropInsets = cropInsets,
+            lockResolution = !avoidDisplayCutout || resolvedInsets != null
         )
         val layout = resolveFixedVirtualViewportLayout(
             rootWidth = rootWidth,

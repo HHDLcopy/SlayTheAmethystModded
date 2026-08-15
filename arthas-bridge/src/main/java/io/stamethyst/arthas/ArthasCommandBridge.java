@@ -36,6 +36,11 @@ public class ArthasCommandBridge {
         if (logger != null) { logger.println("[arthas-bridge] " + msg); logger.flush(); }
     }
 
+    public static void runOptionalDiagnostics(Instrumentation inst) {
+        setupProcFSFallback();
+        setupAsyncProfilerFlat();
+    }
+
     /** True when a usable listener for {@code port} already exists. */
     private static boolean hasLiveListener(int port) {
         synchronized (LOCK) {
@@ -138,9 +143,6 @@ public class ArthasCommandBridge {
                 return;
             }
 
-            setupProcFSFallback();
-            setupAsyncProfilerFlat();
-
             // Idempotent attach: the bootstrap and resolver above were already
             // refreshed, and the running accept loop resolves the shell server
             // per connection, so it picks up the new bootstrap on its own.
@@ -150,6 +152,11 @@ public class ArthasCommandBridge {
             }
 
             log("listening on " + port);
+            Thread diagnostics = new Thread(
+                new OptionalDiagnostics(inst),
+                "arthas-optional-diagnostics");
+            diagnostics.setDaemon(true);
+            diagnostics.start();
             acceptLoop(listener.socket, inst);
         } catch (Throwable e) {
             log("START FAILED: " + e);
@@ -157,6 +164,13 @@ public class ArthasCommandBridge {
         }
     }
 
+    /**
+     * Optional native/profiler setup must not delay the shell handshake.
+     * Some Android runtimes block while loading procfs helpers, and
+     * async-profiler can be rejected by device perf policy.  The bridge is
+     * useful without either enhancement, so initialize them after the socket
+     * is accepting connections.
+     */
     /**
      * Accept connections until the listener is closed.  The shell server is
      * resolved per connection instead of being captured, so a bootstrap

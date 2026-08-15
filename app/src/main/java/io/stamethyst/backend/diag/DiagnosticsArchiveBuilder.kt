@@ -77,6 +77,14 @@ internal object DiagnosticsArchiveBuilder {
         return DiagnosticsArchiveResult(archiveFile, entryCount)
     }
 
+    /**
+     * Called by [io.stamethyst.backend.diag.DiagnosticsProcessService.runAdbStage] via the
+     * adb staging path. Uses the same bundle as Share Logs / exportJvmLogBundle.
+     */
+    @Throws(IOException::class)
+    fun writeDiagnosticsBundlePublic(context: Context, output: OutputStream): Int =
+        writeDiagnosticsBundle(context, output, null)
+
     @Throws(IOException::class)
     fun exportJvmLogBundle(context: Context, destination: Uri): Int {
         context.contentResolver.openOutputStream(destination).use { output ->
@@ -88,7 +96,7 @@ internal object DiagnosticsArchiveBuilder {
     }
 
     @Throws(IOException::class)
-    private fun writeDiagnosticsBundle(
+    internal fun writeDiagnosticsBundle(
         context: Context,
         output: OutputStream,
         crashContext: CrashArchiveContext?

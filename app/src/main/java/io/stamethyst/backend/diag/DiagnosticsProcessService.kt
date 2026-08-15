@@ -15,6 +15,17 @@ class DiagnosticsProcessService : Service() {
         const val ACTION_EXPORT_JVM_LOG_BUNDLE = "io.stamethyst.action.EXPORT_JVM_LOG_BUNDLE"
         const val ACTION_BUILD_JVM_LOG_SHARE = "io.stamethyst.action.BUILD_JVM_LOG_SHARE"
         const val ACTION_BUILD_CRASH_SHARE = "io.stamethyst.action.BUILD_CRASH_SHARE"
+        /** No ResultReceiver required. Writes archive to staging dir, then writes sentinel. */
+        const val ACTION_ADB_STAGE_JVM_LOG = "io.stamethyst.action.ADB_STAGE_JVM_LOG"
+
+        /** Staging sub-directory inside filesDir, accessible via run-as. */
+        const val ADB_STAGING_DIR = "sts-logs-staging"
+        /** Archive file name inside ADB_STAGING_DIR. */
+        const val ADB_STAGING_ZIP = "export.zip"
+        /** Written after success; content = entry count as decimal string. */
+        const val ADB_STAGING_SENTINEL_READY = "ready"
+        /** Written after failure; content = error message. */
+        const val ADB_STAGING_SENTINEL_ERROR = "error"
 
         const val EXTRA_RESULT_RECEIVER = "io.stamethyst.extra.RESULT_RECEIVER"
         const val EXTRA_DESTINATION_URI = "io.stamethyst.extra.DESTINATION_URI"
@@ -38,6 +49,14 @@ class DiagnosticsProcessService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val safeIntent = intent ?: return START_NOT_STICKY
+        if (safeIntent.action == ACTION_ADB_STAGE_JVM_LOG) {
+            // adb-triggered path: no ResultReceiver, signal via staging sentinel files
+            if (workerThread != null) return START_NOT_STICKY
+            val thread = Thread({ runAdbStage(startId) }, "STS-Diag-Adb")
+            workerThread = thread
+            thread.start()
+            return START_NOT_STICKY
+        }
         val receiver = extractResultReceiver(safeIntent) ?: return START_NOT_STICKY
         if (workerThread != null) {
             receiver.send(
@@ -59,6 +78,29 @@ class DiagnosticsProcessService : Service() {
         thread?.interrupt()
         super.onDestroy()
         android.os.Process.killProcess(android.os.Process.myPid())
+    }
+
+    private fun runAdbStage(startId: Int) {
+        val stagingDir = java.io.File(applicationContext.filesDir, ADB_STAGING_DIR)
+        stagingDir.mkdirs()
+        val zipFile = java.io.File(stagingDir, ADB_STAGING_ZIP)
+        val readySentinel = java.io.File(stagingDir, ADB_STAGING_SENTINEL_READY)
+        val errorSentinel = java.io.File(stagingDir, ADB_STAGING_SENTINEL_ERROR)
+        // Clear previous run artifacts
+        zipFile.delete(); readySentinel.delete(); errorSentinel.delete()
+        try {
+            val entryCount = java.io.FileOutputStream(zipFile, false).use { out ->
+                DiagnosticsArchiveBuilder.writeDiagnosticsBundlePublic(applicationContext, out)
+            }
+            readySentinel.writeText(entryCount.toString())
+        } catch (t: Throwable) {
+            val sw = java.io.StringWriter()
+            t.printStackTrace(java.io.PrintWriter(sw))
+            errorSentinel.writeText(sw.toString())
+        } finally {
+            if (Thread.currentThread() === workerThread) workerThread = null
+            stopSelfResult(startId)
+        }
     }
 
     private fun runRequest(

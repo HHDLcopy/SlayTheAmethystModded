@@ -167,6 +167,8 @@ object LauncherPreferences {
         get() = LauncherConfig.DEFAULT_STEAM_CLOUD_AUTO_LAUNCH_AFTER_SYNC_ENABLED
     val DEFAULT_STEAM_GAME_PRESENCE_ENABLED: Boolean
         get() = LauncherConfig.DEFAULT_STEAM_GAME_PRESENCE_ENABLED
+    val DEFAULT_ACHIEVEMENT_UNLOCK_NOTIFICATION_ENABLED: Boolean
+        get() = LauncherConfig.DEFAULT_ACHIEVEMENT_UNLOCK_NOTIFICATION_ENABLED
     val DEFAULT_WORKSHOP_MAX_CONCURRENT_DOWNLOADS: Int
         get() = LauncherConfig.DEFAULT_WORKSHOP_MAX_CONCURRENT_DOWNLOADS
     val MIN_WORKSHOP_MAX_CONCURRENT_DOWNLOADS: Int
@@ -295,6 +297,14 @@ object LauncherPreferences {
 
     fun setSteamAchievementSyncEnabled(context: Context, enabled: Boolean) {
         LauncherConfig.setSteamAchievementSyncEnabled(context, enabled)
+    }
+
+    fun isAchievementUnlockNotificationEnabled(context: Context): Boolean {
+        return LauncherConfig.isAchievementUnlockNotificationEnabled(context)
+    }
+
+    fun setAchievementUnlockNotificationEnabled(context: Context, enabled: Boolean) {
+        LauncherConfig.setAchievementUnlockNotificationEnabled(context, enabled)
     }
 
     fun isLocalTestCloudControlEnabled(context: Context): Boolean {

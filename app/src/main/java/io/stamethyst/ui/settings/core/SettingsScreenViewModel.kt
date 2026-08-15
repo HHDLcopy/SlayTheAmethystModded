@@ -451,6 +451,8 @@ class SettingsScreenViewModel : ViewModel() {
         val richPresenceDisplayPreferences: RichPresenceDisplayPreferences =
             RichPresenceDisplayPreferences(),
         val steamAchievementSyncEnabled: Boolean = false,
+        val achievementUnlockNotificationEnabled: Boolean =
+            LauncherPreferences.DEFAULT_ACHIEVEMENT_UNLOCK_NOTIFICATION_ENABLED,
         val workshopMaxConcurrentDownloads: Int =
             LauncherPreferences.DEFAULT_WORKSHOP_MAX_CONCURRENT_DOWNLOADS,
         val workshopDownloadThreads: Int = LauncherPreferences.DEFAULT_WORKSHOP_DOWNLOAD_THREADS,
@@ -1359,6 +1361,8 @@ class SettingsScreenViewModel : ViewModel() {
                         richPresenceDisplayPreferences =
                             LauncherPreferences.readRichPresenceDisplayPreferences(host),
                         steamAchievementSyncEnabled = LauncherPreferences.isSteamAchievementSyncEnabled(host),
+                        achievementUnlockNotificationEnabled =
+                            LauncherPreferences.isAchievementUnlockNotificationEnabled(host),
                         workshopMaxConcurrentDownloads = LauncherPreferences.readWorkshopMaxConcurrentDownloads(host),
                         workshopDownloadThreads = LauncherPreferences.readWorkshopDownloadThreads(host),
                         workshopWattAccelerationEnabled = LauncherPreferences.isWorkshopWattAccelerationEnabled(host),
@@ -1937,6 +1941,11 @@ class SettingsScreenViewModel : ViewModel() {
 
     fun onSteamAchievementSyncChanged(host: Activity, enabled: Boolean) {
         LauncherPreferences.setSteamAchievementSyncEnabled(host, enabled)
+        refreshStatus(host)
+    }
+
+    fun onAchievementUnlockNotificationChanged(host: Activity, enabled: Boolean) {
+        LauncherPreferences.setAchievementUnlockNotificationEnabled(host, enabled)
         refreshStatus(host)
     }
 

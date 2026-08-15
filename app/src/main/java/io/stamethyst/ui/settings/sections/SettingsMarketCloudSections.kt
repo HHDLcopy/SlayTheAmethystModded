@@ -82,6 +82,7 @@ internal data class SteamCloudSettingsActions(
     val onSteamGamePresenceChanged: (Boolean) -> Unit,
     val onRichPresenceDisplayPreferencesChanged: (RichPresenceDisplayPreferences) -> Unit,
     val onSteamAchievementSyncChanged: (Boolean) -> Unit,
+    val onAchievementUnlockNotificationChanged: (Boolean) -> Unit,
     val onOpenSteamCloudSaveSettings: () -> Unit,
     val onClearSteamCloudCredentials: () -> Unit,
     val onClearSteamCloudNetworkCache: () -> Unit,
@@ -233,8 +234,7 @@ internal fun SettingsSteamCloudSection(
         SettingsSwitchSpec(
             checked = uiState.steamCloudWattAccelerationEnabled,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_steam_cloud_watt_acceleration_enabled_title),
-            disabledText = stringResource(R.string.settings_steam_cloud_watt_acceleration_disabled_title),
+            title = stringResource(R.string.settings_steam_cloud_watt_acceleration_enabled_title),
             description = stringResource(R.string.settings_steam_cloud_watt_acceleration_desc),
             onCheckedChange = actions.onSteamCloudWattAccelerationChanged,
         )
@@ -245,8 +245,7 @@ internal fun SettingsSteamCloudSection(
         SettingsSwitchSpec(
             checked = uiState.steamCloudAutoLaunchAfterSyncEnabled,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_steam_cloud_auto_launch_after_sync_title),
-            disabledText = stringResource(R.string.settings_steam_cloud_auto_launch_after_sync_title),
+            title = stringResource(R.string.settings_steam_cloud_auto_launch_after_sync_title),
             description = stringResource(R.string.settings_steam_cloud_auto_launch_after_sync_desc),
             onCheckedChange = actions.onSteamCloudAutoLaunchAfterSyncChanged,
         )
@@ -265,8 +264,7 @@ internal fun SteamNetworkSection(
         SettingsSwitchSpec(
             checked = uiState.steamCloudWattAccelerationEnabled,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_steam_cloud_watt_acceleration_enabled_title),
-            disabledText = stringResource(R.string.settings_steam_cloud_watt_acceleration_disabled_title),
+            title = stringResource(R.string.settings_steam_cloud_watt_acceleration_enabled_title),
             description = stringResource(R.string.settings_steam_cloud_watt_acceleration_desc),
             onCheckedChange = actions.onSteamCloudWattAccelerationChanged,
         )
@@ -410,8 +408,7 @@ internal fun SteamGamePresenceSection(
         SettingsSwitchSpec(
             checked = uiState.steamGamePresenceEnabled,
             enabled = !uiState.busy && uiState.steamCloudRefreshTokenConfigured,
-            enabledText = stringResource(R.string.settings_steam_services_presence_enabled_title),
-            disabledText = stringResource(R.string.settings_steam_services_presence_disabled_title),
+            title = stringResource(R.string.settings_steam_services_presence_enabled_title),
             description = stringResource(R.string.settings_steam_services_presence_desc),
             onCheckedChange = { enabled ->
                 if (enabled) showRiskWarning = true
@@ -497,8 +494,7 @@ private fun RichPresenceDisplayEditorDialog(
                     SettingsSwitchSpec(
                         checked = settings.showCharacter,
                         enabled = true,
-                        enabledText = stringResource(R.string.settings_steam_services_rich_presence_show_character),
-                        disabledText = stringResource(R.string.settings_steam_services_rich_presence_show_character),
+                        title = stringResource(R.string.settings_steam_services_rich_presence_show_character),
                         description = stringResource(R.string.settings_steam_services_rich_presence_show_character_desc),
                         onCheckedChange = { settings = settings.copy(showCharacter = it) },
                     ),
@@ -507,8 +503,7 @@ private fun RichPresenceDisplayEditorDialog(
                     SettingsSwitchSpec(
                         checked = settings.showFloor,
                         enabled = true,
-                        enabledText = stringResource(R.string.settings_steam_services_rich_presence_show_floor),
-                        disabledText = stringResource(R.string.settings_steam_services_rich_presence_show_floor),
+                        title = stringResource(R.string.settings_steam_services_rich_presence_show_floor),
                         description = stringResource(R.string.settings_steam_services_rich_presence_show_floor_desc),
                         onCheckedChange = { settings = settings.copy(showFloor = it) },
                     ),
@@ -517,8 +512,7 @@ private fun RichPresenceDisplayEditorDialog(
                     SettingsSwitchSpec(
                         checked = settings.showAscension,
                         enabled = true,
-                        enabledText = stringResource(R.string.settings_steam_services_rich_presence_show_ascension),
-                        disabledText = stringResource(R.string.settings_steam_services_rich_presence_show_ascension),
+                        title = stringResource(R.string.settings_steam_services_rich_presence_show_ascension),
                         description = stringResource(R.string.settings_steam_services_rich_presence_show_ascension_desc),
                         onCheckedChange = { settings = settings.copy(showAscension = it) },
                     ),
@@ -527,8 +521,7 @@ private fun RichPresenceDisplayEditorDialog(
                     SettingsSwitchSpec(
                         checked = settings.showAct,
                         enabled = true,
-                        enabledText = stringResource(R.string.settings_steam_services_rich_presence_show_act),
-                        disabledText = stringResource(R.string.settings_steam_services_rich_presence_show_act),
+                        title = stringResource(R.string.settings_steam_services_rich_presence_show_act),
                         description = stringResource(R.string.settings_steam_services_rich_presence_show_act_desc),
                         onCheckedChange = { settings = settings.copy(showAct = it) },
                     ),
@@ -584,13 +577,22 @@ internal fun SteamAchievementSection(
         SettingsSwitchSpec(
             checked = uiState.steamAchievementSyncEnabled,
             enabled = !uiState.busy && uiState.steamCloudRefreshTokenConfigured,
-            enabledText = stringResource(R.string.settings_steam_services_achievement_enabled_title),
-            disabledText = stringResource(R.string.settings_steam_services_achievement_disabled_title),
+            title = stringResource(R.string.settings_steam_services_achievement_enabled_title),
             description = stringResource(R.string.settings_steam_services_achievement_desc),
             onCheckedChange = { enabled ->
                 if (enabled) showRiskWarning = true
                 else actions.onSteamAchievementSyncChanged(false)
             },
+        )
+    )
+
+    SettingsSwitchItem(
+        SettingsSwitchSpec(
+            checked = uiState.achievementUnlockNotificationEnabled,
+            enabled = !uiState.busy,
+            title = stringResource(R.string.settings_steam_services_achievement_notification_enabled_title),
+            description = stringResource(R.string.settings_steam_services_achievement_notification_desc),
+            onCheckedChange = actions.onAchievementUnlockNotificationChanged,
         )
     )
 
@@ -668,8 +670,7 @@ internal fun SettingsMarketSection(
         SettingsSwitchSpec(
             checked = uiState.workshopAutoImportEnabled,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_market_workshop_auto_import_enabled_title),
-            disabledText = stringResource(R.string.settings_market_workshop_auto_import_disabled_title),
+            title = stringResource(R.string.settings_market_workshop_auto_import_enabled_title),
             description = stringResource(R.string.settings_market_workshop_auto_import_desc),
             onCheckedChange = actions.onWorkshopAutoImportChanged,
         )

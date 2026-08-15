@@ -63,8 +63,7 @@ import io.stamethyst.ui.resolve
 internal data class SettingsSwitchSpec(
     val checked: Boolean,
     val enabled: Boolean,
-    val enabledText: String,
-    val disabledText: String,
+    val title: String,
     val description: String? = null,
     val chipText: String? = null,
     val onCheckedChange: (Boolean) -> Unit,
@@ -171,8 +170,7 @@ internal fun SettingsSwitchItem(spec: SettingsSwitchSpec) {
     SwitchSettingRow(
         checked = spec.checked,
         enabled = spec.enabled,
-        enabledText = spec.enabledText,
-        disabledText = spec.disabledText,
+        title = spec.title,
         description = spec.description,
         onCheckedChange = spec.onCheckedChange,
         chipText = spec.chipText,
@@ -244,14 +242,12 @@ internal fun <T> SettingsChoiceDialogItem(spec: SettingsChoiceSpec<T>) {
 internal fun SwitchSettingRow(
     checked: Boolean,
     enabled: Boolean,
-    enabledText: String,
-    disabledText: String,
+    title: String,
     description: String?,
     onCheckedChange: (Boolean) -> Unit,
     chipText: String? = null,
 ) {
     val view = LocalView.current
-    val title = if (checked) enabledText else disabledText
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
@@ -578,4 +574,3 @@ internal fun performTapHapticFeedback(view: android.view.View) {
 internal fun performHapticFeedback(view: android.view.View, feedbackConstant: Int) {
     LauncherHaptics.perform(view, feedbackConstant)
 }
-

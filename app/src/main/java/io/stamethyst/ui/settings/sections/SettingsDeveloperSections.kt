@@ -204,8 +204,7 @@ internal fun LauncherDeveloperSettingsScreenContent(
                     SettingsSwitchSpec(
                         checked = uiState.localTestCloudControlEnabled,
                         enabled = !uiState.busy,
-                        enabledText = stringResource(R.string.settings_cloud_control_test_enabled),
-                        disabledText = stringResource(R.string.settings_cloud_control_test_disabled),
+                        title = stringResource(R.string.settings_cloud_control_test_enabled),
                         description = stringResource(R.string.settings_cloud_control_test_desc),
                         onCheckedChange = onLocalTestCloudControlEnabledChanged,
                     )
@@ -344,8 +343,7 @@ internal fun LauncherDeveloperSettingsScreenContent(
                     SettingsSwitchSpec(
                         checked = uiState.steamAchievementDebugModeEnabled,
                         enabled = !uiState.busy,
-                        enabledText = stringResource(R.string.settings_steam_achievement_debug_mode_enabled),
-                        disabledText = stringResource(R.string.settings_steam_achievement_debug_mode_disabled),
+                        title = stringResource(R.string.settings_steam_achievement_debug_mode_enabled),
                         description = stringResource(R.string.settings_steam_achievement_debug_mode_desc),
                         onCheckedChange = onSteamAchievementDebugModeEnabledChanged,
                     )
@@ -386,8 +384,7 @@ internal fun SettingsTogetherInSpireSection(
         SettingsSwitchSpec(
             checked = uiState.togetherInSpireRouteLockEnabled,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_together_in_spire_route_lock_enabled),
-            disabledText = stringResource(R.string.settings_together_in_spire_route_lock_disabled),
+            title = stringResource(R.string.settings_together_in_spire_route_lock_enabled),
             description = stringResource(R.string.settings_together_in_spire_route_lock_desc),
             onCheckedChange = actions.onRouteLockEnabledChanged,
         )
@@ -397,8 +394,7 @@ internal fun SettingsTogetherInSpireSection(
         SettingsSwitchSpec(
             checked = uiState.togetherInSpireEasyTierAutofillEnabled,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_together_in_spire_autofill_enabled),
-            disabledText = stringResource(R.string.settings_together_in_spire_autofill_disabled),
+            title = stringResource(R.string.settings_together_in_spire_autofill_enabled),
             description = stringResource(R.string.settings_together_in_spire_autofill_desc),
             onCheckedChange = actions.onEasyTierAutofillEnabledChanged,
         )
@@ -620,8 +616,7 @@ internal fun SettingsDeveloperRuntimeSection(
         SettingsSwitchSpec(
             checked = uiState.sustainedPerformanceModeEnabled,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_sustained_performance_enabled),
-            disabledText = stringResource(R.string.settings_sustained_performance_disabled),
+            title = stringResource(R.string.settings_sustained_performance_enabled),
             description = stringResource(R.string.settings_sustained_performance_desc),
             onCheckedChange = actions.onSustainedPerformanceModeChanged
         )
@@ -645,8 +640,7 @@ internal fun SettingsDeveloperRuntimeSection(
         SettingsSwitchSpec(
             checked = uiState.manualDismissBootOverlay,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_boot_overlay_manual_enabled),
-            disabledText = stringResource(R.string.settings_boot_overlay_manual_disabled),
+            title = stringResource(R.string.settings_boot_overlay_manual_enabled),
             description = stringResource(R.string.settings_boot_overlay_manual_desc),
             onCheckedChange = actions.onManualDismissBootOverlayChanged
         )
@@ -656,8 +650,7 @@ internal fun SettingsDeveloperRuntimeSection(
         SettingsSwitchSpec(
             checked = uiState.compendiumUpgradeTouchFixEnabled,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_compendium_upgrade_touch_fix_enabled),
-            disabledText = stringResource(R.string.settings_compendium_upgrade_touch_fix_disabled),
+            title = stringResource(R.string.settings_compendium_upgrade_touch_fix_enabled),
             description = stringResource(R.string.settings_compendium_upgrade_touch_fix_desc),
             onCheckedChange = actions.onCompendiumUpgradeTouchFixEnabledChanged
         )
@@ -724,8 +717,7 @@ internal fun SettingsAdvancedRenderSection(
         SettingsSwitchSpec(
             checked = uiState.rendererSelectionMode == RendererSelectionMode.AUTO,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_renderer_auto_enabled),
-            disabledText = stringResource(R.string.settings_renderer_auto_disabled),
+            title = stringResource(R.string.settings_renderer_auto_enabled),
             description = if (uiState.rendererSelectionMode == RendererSelectionMode.AUTO) {
                 stringResource(
                     R.string.settings_renderer_auto_current,
@@ -837,11 +829,8 @@ internal fun SettingsAdvancedRenderSection(
             enabled = !uiState.busy &&
                 uiState.gpuResourceGuardianMode != GpuResourceGuardianMode.OFF &&
                 uiState.gpuResourceGuardianMode != GpuResourceGuardianMode.LEGACY,
-            enabledText = stringResource(
+            title = stringResource(
                 R.string.settings_gpu_resource_guardian_pressure_downscale_enabled
-            ),
-            disabledText = stringResource(
-                R.string.settings_gpu_resource_guardian_pressure_downscale_disabled
             ),
             description = stringResource(
                 R.string.settings_gpu_resource_guardian_pressure_downscale_desc
@@ -888,8 +877,7 @@ internal fun SettingsAdvancedRenderSection(
         SettingsSwitchSpec(
             checked = uiState.compressedPointersEnabled,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_jvm_compressed_pointers_enabled),
-            disabledText = stringResource(R.string.settings_jvm_compressed_pointers_disabled),
+            title = stringResource(R.string.settings_jvm_compressed_pointers_enabled),
             description = stringResource(R.string.settings_jvm_compressed_pointers_desc),
             onCheckedChange = actions.onJvmCompressedPointersChanged
         )
@@ -899,8 +887,7 @@ internal fun SettingsAdvancedRenderSection(
         SettingsSwitchSpec(
             checked = uiState.stringDeduplicationEnabled,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_jvm_string_dedup_enabled),
-            disabledText = stringResource(R.string.settings_jvm_string_dedup_disabled),
+            title = stringResource(R.string.settings_jvm_string_dedup_enabled),
             description = stringResource(R.string.settings_jvm_string_dedup_desc),
             onCheckedChange = actions.onJvmStringDeduplicationChanged
         )
@@ -955,8 +942,7 @@ internal fun SettingsStatusSection(
         SettingsSwitchSpec(
             checked = uiState.lwjglDebugEnabled,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_lwjgl_debug_enabled),
-            disabledText = stringResource(R.string.settings_lwjgl_debug_disabled),
+            title = stringResource(R.string.settings_lwjgl_debug_enabled),
             description = stringResource(R.string.settings_lwjgl_debug_desc),
             onCheckedChange = actions.onLwjglDebugChanged
         )
@@ -965,8 +951,7 @@ internal fun SettingsStatusSection(
         SettingsSwitchSpec(
             checked = uiState.preloadAllJreLibrariesEnabled,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_preload_all_jre_enabled),
-            disabledText = stringResource(R.string.settings_preload_all_jre_disabled),
+            title = stringResource(R.string.settings_preload_all_jre_enabled),
             description = stringResource(R.string.settings_preload_all_jre_desc),
             onCheckedChange = actions.onPreloadAllJreLibrariesChanged
         )
@@ -975,8 +960,7 @@ internal fun SettingsStatusSection(
         SettingsSwitchSpec(
             checked = uiState.logcatCaptureEnabled,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_logcat_capture_enabled),
-            disabledText = stringResource(R.string.settings_logcat_capture_disabled),
+            title = stringResource(R.string.settings_logcat_capture_enabled),
             description = stringResource(R.string.settings_logcat_capture_desc),
             onCheckedChange = actions.onLogcatCaptureChanged
         )
@@ -985,8 +969,7 @@ internal fun SettingsStatusSection(
         SettingsSwitchSpec(
             checked = uiState.launcherLogcatCaptureEnabled,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_launcher_logcat_capture_enabled),
-            disabledText = stringResource(R.string.settings_launcher_logcat_capture_disabled),
+            title = stringResource(R.string.settings_launcher_logcat_capture_enabled),
             description = stringResource(R.string.settings_launcher_logcat_capture_desc),
             onCheckedChange = actions.onLauncherLogcatCaptureChanged
         )
@@ -995,8 +978,7 @@ internal fun SettingsStatusSection(
         SettingsSwitchSpec(
             checked = uiState.jvmLogcatMirrorEnabled,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_jvm_logcat_mirror_enabled),
-            disabledText = stringResource(R.string.settings_jvm_logcat_mirror_disabled),
+            title = stringResource(R.string.settings_jvm_logcat_mirror_enabled),
             description = stringResource(R.string.settings_jvm_logcat_mirror_desc),
             onCheckedChange = actions.onJvmLogcatMirrorChanged
         )
@@ -1005,8 +987,7 @@ internal fun SettingsStatusSection(
         SettingsSwitchSpec(
             checked = uiState.gpuResourceDiagEnabled,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_gpu_resource_diag_enabled),
-            disabledText = stringResource(R.string.settings_gpu_resource_diag_disabled),
+            title = stringResource(R.string.settings_gpu_resource_diag_enabled),
             description = stringResource(R.string.settings_gpu_resource_diag_desc),
             onCheckedChange = actions.onGpuResourceDiagChanged
         )
@@ -1015,8 +996,7 @@ internal fun SettingsStatusSection(
         SettingsSwitchSpec(
             checked = uiState.gdxPadCursorDebugEnabled,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_gdx_pad_cursor_debug_enabled),
-            disabledText = stringResource(R.string.settings_gdx_pad_cursor_debug_disabled),
+            title = stringResource(R.string.settings_gdx_pad_cursor_debug_enabled),
             description = stringResource(R.string.settings_gdx_pad_cursor_debug_desc),
             onCheckedChange = actions.onGdxPadCursorDebugChanged
         )
@@ -1025,8 +1005,7 @@ internal fun SettingsStatusSection(
         SettingsSwitchSpec(
             checked = uiState.glBridgeSwapHeartbeatDebugEnabled,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_glbridge_swap_heartbeat_enabled),
-            disabledText = stringResource(R.string.settings_glbridge_swap_heartbeat_disabled),
+            title = stringResource(R.string.settings_glbridge_swap_heartbeat_enabled),
             description = stringResource(R.string.settings_glbridge_swap_heartbeat_desc),
             onCheckedChange = actions.onGlBridgeSwapHeartbeatDebugChanged
         )

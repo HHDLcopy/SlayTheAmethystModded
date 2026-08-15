@@ -114,8 +114,7 @@ internal fun SettingsPerformanceSection(
         SettingsSwitchSpec(
             checked = uiState.ramSaverEnabled,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_ram_saver_title),
-            disabledText = stringResource(R.string.settings_ram_saver_title),
+            title = stringResource(R.string.settings_ram_saver_title),
             description = stringResource(R.string.settings_ram_saver_desc),
             onCheckedChange = actions.onRamSaverEnabledChanged,
             chipText = stringResource(R.string.settings_ram_saver_experimental_chip),
@@ -126,8 +125,7 @@ internal fun SettingsPerformanceSection(
         SettingsSwitchSpec(
             checked = uiState.mtsPatchCacheEnabled,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_mts_patch_cache_title),
-            disabledText = stringResource(R.string.settings_mts_patch_cache_title),
+            title = stringResource(R.string.settings_mts_patch_cache_title),
             description = stringResource(R.string.settings_mts_patch_cache_desc),
             onCheckedChange = actions.onMtsPatchCacheEnabledChanged,
             chipText = stringResource(R.string.settings_ram_saver_experimental_chip),
@@ -213,8 +211,7 @@ internal fun SettingsGameplayDisplaySection(
         SettingsSwitchSpec(
             checked = uiState.avoidDisplayCutout,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_display_cutout_enabled),
-            disabledText = stringResource(R.string.settings_display_cutout_disabled),
+            title = stringResource(R.string.settings_display_cutout_enabled),
             description = stringResource(R.string.settings_display_cutout_desc),
             onCheckedChange = actions.onDisplayCutoutAvoidanceChanged,
         )
@@ -224,8 +221,7 @@ internal fun SettingsGameplayDisplaySection(
         SettingsSwitchSpec(
             checked = uiState.cropScreenBottom,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_crop_screen_bottom_enabled),
-            disabledText = stringResource(R.string.settings_crop_screen_bottom_disabled),
+            title = stringResource(R.string.settings_crop_screen_bottom_enabled),
             description = stringResource(R.string.settings_crop_screen_bottom_desc),
             onCheckedChange = actions.onScreenBottomCropChanged,
         )
@@ -235,8 +231,7 @@ internal fun SettingsGameplayDisplaySection(
         SettingsSwitchSpec(
             checked = uiState.gameplayLargerUiEnabled,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_gameplay_larger_ui_enabled),
-            disabledText = stringResource(R.string.settings_gameplay_larger_ui_disabled),
+            title = stringResource(R.string.settings_gameplay_larger_ui_enabled),
             description = stringResource(R.string.settings_gameplay_larger_ui_desc),
             onCheckedChange = actions.onGameplayLargerUiChanged,
         )
@@ -385,8 +380,7 @@ internal fun SettingsInputSection(
             SettingsSwitchSpec(
                 checked = uiState.touchDoubleClickAsRightClick,
                 enabled = !uiState.busy,
-                enabledText = stringResource(R.string.settings_touch_double_click_as_right_click_enabled),
-                disabledText = stringResource(R.string.settings_touch_double_click_as_right_click_disabled),
+                title = stringResource(R.string.settings_touch_double_click_as_right_click_enabled),
                 description = stringResource(R.string.settings_touch_double_click_as_right_click_desc),
                 onCheckedChange = actions.onTouchDoubleClickAsRightClickChanged,
             )
@@ -453,8 +447,7 @@ internal fun SettingsInputBasicsSection(
             SettingsSwitchSpec(
                 checked = uiState.ignoreLongPressRightClickWhilePlayingCard,
                 enabled = !uiState.busy,
-                enabledText = stringResource(R.string.settings_ignore_long_press_right_click_while_playing_card_enabled),
-                disabledText = stringResource(R.string.settings_ignore_long_press_right_click_while_playing_card_disabled),
+                title = stringResource(R.string.settings_ignore_long_press_right_click_while_playing_card_enabled),
                 description = stringResource(R.string.settings_ignore_long_press_right_click_while_playing_card_desc),
                 onCheckedChange = actions.onIgnoreLongPressRightClickWhilePlayingCardChanged
             )
@@ -465,8 +458,7 @@ internal fun SettingsInputBasicsSection(
         SettingsSwitchSpec(
             checked = uiState.touchIndicatorEnabled,
             enabled = !uiState.busy && uiState.touchscreenInputMode.touchscreenEnabled,
-            enabledText = stringResource(R.string.settings_touch_indicator_enabled),
-            disabledText = stringResource(R.string.settings_touch_indicator_disabled),
+            title = stringResource(R.string.settings_touch_indicator_enabled),
             description = stringResource(R.string.settings_touch_indicator_desc),
             onCheckedChange = actions.onTouchIndicatorEnabledChanged
         )
@@ -476,8 +468,7 @@ internal fun SettingsInputBasicsSection(
         SettingsSwitchSpec(
             checked = uiState.hapticFeedbackEnabled,
             enabled = !uiState.busy,
-            enabledText = stringResource(R.string.settings_haptic_feedback_enabled),
-            disabledText = stringResource(R.string.settings_haptic_feedback_disabled),
+            title = stringResource(R.string.settings_haptic_feedback_enabled),
             description = stringResource(R.string.settings_haptic_feedback_desc),
             onCheckedChange = actions.onHapticFeedbackChanged
         )
@@ -525,8 +516,7 @@ internal fun SettingsFloatingMouseSection(
             SettingsSwitchSpec(
                 checked = uiState.builtInSoftKeyboardEnabled,
                 enabled = !uiState.busy,
-                enabledText = stringResource(R.string.settings_built_in_soft_keyboard_enabled),
-                disabledText = stringResource(R.string.settings_built_in_soft_keyboard_disabled),
+                title = stringResource(R.string.settings_built_in_soft_keyboard_enabled),
                 description = stringResource(R.string.settings_built_in_soft_keyboard_desc),
                 onCheckedChange = actions.onBuiltInSoftKeyboardChanged
             )
@@ -536,8 +526,7 @@ internal fun SettingsFloatingMouseSection(
             SettingsSwitchSpec(
                 checked = uiState.autoSwitchLeftAfterRightClick,
                 enabled = !uiState.busy,
-                enabledText = stringResource(R.string.settings_auto_switch_left_enabled),
-                disabledText = stringResource(R.string.settings_auto_switch_left_disabled),
+                title = stringResource(R.string.settings_auto_switch_left_enabled),
                 description = stringResource(R.string.settings_auto_switch_left_desc),
                 onCheckedChange = actions.onAutoSwitchLeftAfterRightClickChanged
             )
@@ -568,8 +557,7 @@ internal fun SettingsFloatingMouseSection(
                                 SettingsSwitchSpec(
                                     checked = buttonId in uiState.floatingToolButtons,
                                     enabled = !uiState.busy,
-                                    enabledText = stringResource(labelRes),
-                                    disabledText = stringResource(labelRes),
+                                    title = stringResource(labelRes),
                                     onCheckedChange = { enabled ->
                                         actions.onFloatingToolButtonChanged(buttonId, enabled)
                                     },

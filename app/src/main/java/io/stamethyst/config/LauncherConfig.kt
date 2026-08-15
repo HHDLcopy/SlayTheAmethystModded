@@ -241,6 +241,8 @@ object LauncherConfig {
         "steam_achievement_debug_mode"
     private const val PREF_KEY_STEAM_ACHIEVEMENT_SYNC_ENABLED =
         "steam_achievement_sync_enabled"
+    private const val PREF_KEY_ACHIEVEMENT_UNLOCK_NOTIFICATION_ENABLED =
+        "achievement_unlock_notification_enabled"
     private const val PREF_KEY_USE_LOCAL_TEST_CLOUD_CONTROL =
         "use_local_test_cloud_control"
     private const val PREF_KEY_LOCAL_TEST_ONLINE_SERVICE_BASE_URL =
@@ -255,6 +257,7 @@ object LauncherConfig {
     const val DEFAULT_BACK_IMMEDIATE_EXIT = true
     val DEFAULT_BACK_BEHAVIOR: BackBehavior = BackBehavior.EXIT_TO_LAUNCHER
     const val DEFAULT_MANUAL_DISMISS_BOOT_OVERLAY = false
+    const val DEFAULT_ACHIEVEMENT_UNLOCK_NOTIFICATION_ENABLED = true
     const val DEFAULT_TARGET_FPS = 90
     val TARGET_FPS_OPTIONS = intArrayOf(24, 30, 60, 90, 120, 240)
     const val KEEP_SCREEN_ON_TIMEOUT_ALWAYS_MINUTES = 0
@@ -624,6 +627,19 @@ object LauncherConfig {
     fun setSteamAchievementSyncEnabled(context: Context, enabled: Boolean) {
         prefs(context, crossProcess = true).edit(commit = true) {
             putBoolean(PREF_KEY_STEAM_ACHIEVEMENT_SYNC_ENABLED, enabled)
+        }
+    }
+
+    fun isAchievementUnlockNotificationEnabled(context: Context): Boolean {
+        return prefs(context).getBoolean(
+            PREF_KEY_ACHIEVEMENT_UNLOCK_NOTIFICATION_ENABLED,
+            DEFAULT_ACHIEVEMENT_UNLOCK_NOTIFICATION_ENABLED,
+        )
+    }
+
+    fun setAchievementUnlockNotificationEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(PREF_KEY_ACHIEVEMENT_UNLOCK_NOTIFICATION_ENABLED, enabled)
         }
     }
 
@@ -1245,8 +1261,11 @@ object LauncherConfig {
     }
 
     fun resolveJvmHeapStartMb(heapMaxMb: Int): Int {
-        val normalizedMax = normalizeJvmHeapMaxMb(heapMaxMb)
-        return normalizedMax.coerceAtMost(DEFAULT_JVM_HEAP_MAX_MB)
+        // Xms follows Xmx so G1 commits the full heap at startup.
+        // The old coerceAtMost(512) kept Xms at 512 MB regardless of the
+        // user setting, causing G1 to never expand past 512 MB committed
+        // even when Xmx was set to 1024 MB+.
+        return normalizeJvmHeapMaxMb(heapMaxMb)
     }
 
     fun readJvmHeapMaxMb(context: Context): Int {

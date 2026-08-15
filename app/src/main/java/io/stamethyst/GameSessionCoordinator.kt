@@ -213,6 +213,7 @@ internal class GameSessionCoordinator(
         autoplayMode = config.autoplayMode,
         autoplaySingleRoomSpecPath = config.autoplaySingleRoomSpecPath,
         autoplayChoiceDelayMs = config.autoplayChoiceDelayMs,
+        autoplaySingleRoomBenchMode = config.autoplaySingleRoomBenchMode,
         cardObtainEffectOwnershipCompatEnabled = config.cardObtainEffectOwnershipCompatEnabled,
         mirrorJvmLogsToLogcat = config.mirrorJvmLogsToLogcat,
         onProgressUpdate = { percent, message ->
@@ -266,7 +267,9 @@ internal class GameSessionCoordinator(
                 overlayView = overlayView,
                 rendererSummary = config.rendererDecision.overlaySummary(),
                 readJvmRuntimeMemorySnapshot = { jvmLaunchController.runtimeMemorySnapshot },
-                readJvmLaunchStartedElapsedMs = { jvmLaunchController.jvmLaunchStartedElapsedMs }
+                readJvmLaunchStartedElapsedMs = { jvmLaunchController.jvmLaunchStartedElapsedMs },
+                snapshotFile = io.stamethyst.config.RuntimePaths.launcherPerfSnapshot(activity),
+                performanceDeepDiagnostics = config.performanceDeepDiagnostics
             )
         }
         performanceOverlayController?.init()
@@ -1224,7 +1227,7 @@ internal class GameSessionCoordinator(
         } else if (!requestUnchanged) {
             AchievementSyncLogStore.append(activity, "request_delete_deferred", "request=${request.id}")
         }
-        if (LauncherConfig.isSteamAchievementSyncEnabled(activity)) {
+        if (LauncherConfig.isAchievementUnlockNotificationEnabled(activity)) {
             inGameAchievementOverlayController.enqueue(request.achievementIds)
         }
         SteamAchievementSyncService.syncRequestAsync(activity.applicationContext, request) { error ->

@@ -545,8 +545,7 @@ internal fun LauncherSettingsPerformanceScreenContent(
                     SettingsSwitchSpec(
                         checked = uiState.showGamePerformanceOverlay,
                         enabled = !uiState.busy,
-                        enabledText = stringResource(R.string.settings_performance_overlay_enabled),
-                        disabledText = stringResource(R.string.settings_performance_overlay_disabled),
+                        title = stringResource(R.string.settings_performance_overlay_enabled),
                         description = stringResource(R.string.settings_performance_overlay_desc),
                         onCheckedChange = onGamePerformanceOverlayChanged,
                     )
@@ -569,6 +568,7 @@ internal fun LauncherSettingsMarketCloudScreenContent(
     onSteamGamePresenceChanged: (Boolean) -> Unit = {},
     onRichPresenceDisplayPreferencesChanged: (RichPresenceDisplayPreferences) -> Unit = {},
     onSteamAchievementSyncChanged: (Boolean) -> Unit = {},
+    onAchievementUnlockNotificationChanged: (Boolean) -> Unit = {},
     onOpenSteamCloudSaveSettings: () -> Unit = {},
     onClearSteamCloudCredentials: () -> Unit = {},
     onClearSteamCloudNetworkCache: () -> Unit = {},
@@ -588,6 +588,7 @@ internal fun LauncherSettingsMarketCloudScreenContent(
         onSteamGamePresenceChanged = onSteamGamePresenceChanged,
         onRichPresenceDisplayPreferencesChanged = onRichPresenceDisplayPreferencesChanged,
         onSteamAchievementSyncChanged = onSteamAchievementSyncChanged,
+        onAchievementUnlockNotificationChanged = onAchievementUnlockNotificationChanged,
         onOpenSteamCloudSaveSettings = onOpenSteamCloudSaveSettings,
         onClearSteamCloudCredentials = onClearSteamCloudCredentials,
         onClearSteamCloudNetworkCache = onClearSteamCloudNetworkCache,
@@ -710,11 +711,8 @@ internal fun LauncherSettingsWorkshopAutoImportDefaultsScreenContent(
                     SettingsSwitchSpec(
                         checked = uiState.workshopAutoImportAtlasDownscaleEnabled,
                         enabled = !uiState.busy,
-                        enabledText = stringResource(
+                        title = stringResource(
                             R.string.settings_workshop_auto_import_defaults_atlas_enabled_title
-                        ),
-                        disabledText = stringResource(
-                            R.string.settings_workshop_auto_import_defaults_atlas_disabled_title
                         ),
                         description = stringResource(
                             R.string.settings_workshop_auto_import_defaults_atlas_desc

@@ -2,12 +2,20 @@ package top.apricityx.workshop.steam.protocol
 
 import java.io.Closeable
 import java.time.Instant
+import okhttp3.Request
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
 
 data class CmServer(
     val endpoint: String,
     val type: String,
     val websocketUri: String = SteamPacketCodec.buildWebSocketUri(endpoint),
 )
+
+/** Lets app integrations customize how Steam CM WebSockets are opened. */
+fun interface SteamWebSocketFactory {
+    fun newWebSocket(request: Request, listener: WebSocketListener): WebSocket
+}
 
 data class CdnServer(
     val type: String,
@@ -205,6 +213,7 @@ interface SteamCmSession : Closeable {
         request: com.google.protobuf.MessageLite,
         parser: com.google.protobuf.Parser<T>,
     ): T
+
     suspend fun <T : com.google.protobuf.MessageLite> sendClientMessage(
         emsg: Int,
         request: com.google.protobuf.MessageLite,

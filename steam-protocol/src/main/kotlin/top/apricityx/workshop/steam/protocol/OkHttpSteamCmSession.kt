@@ -45,6 +45,9 @@ class OkHttpSteamCmSession(
     private val client: OkHttpClient = newDefaultOkHttpClient(),
     private val machineName: String = DEFAULT_MACHINE_NAME,
     private val machineId: ByteArray = defaultSteamMachineId(),
+    private val webSocketFactory: SteamWebSocketFactory = SteamWebSocketFactory { request, listener ->
+        client.newWebSocket(request, listener)
+    },
 ) : SteamCmSession {
     init {
         activeSessions += this
@@ -184,7 +187,7 @@ class OkHttpSteamCmSession(
             }
         }
 
-        webSocket = client.newWebSocket(request, listener)
+        webSocket = webSocketFactory.newWebSocket(request, listener)
         withTimeout(REQUEST_TIMEOUT_MS) { deferred.await() }
     }
 

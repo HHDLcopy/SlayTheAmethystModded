@@ -8,6 +8,7 @@ import top.apricityx.workshop.steam.protocol.SteamAccountSession
 import top.apricityx.workshop.steam.protocol.SteamDirectoryClient
 import top.apricityx.workshop.steam.protocol.SteamCmSession
 import top.apricityx.workshop.steam.protocol.SteamPacketCodec
+import top.apricityx.workshop.steam.protocol.SteamWebSocketFactory
 import `in`.dragonbra.javasteam.protobufs.steamclient.SteammessagesCloudSteamclient
 import `in`.dragonbra.javasteam.protobufs.steamclient.SteammessagesClientserver
 import `in`.dragonbra.javasteam.protobufs.steamclient.SteammessagesClientserverUserstats
@@ -17,8 +18,9 @@ import `in`.dragonbra.javasteam.protobufs.steamclient.SteammessagesClientserver2
 /** Synchronous app facade over the proxy-capable protocol session. */
 internal class SteamCloudProtocolClient(
     private val httpClient: OkHttpClient,
+    webSocketFactory: SteamWebSocketFactory,
 ) : AutoCloseable {
-    private val session: SteamCmSession = OkHttpSteamCmSession(httpClient)
+    private val session: SteamCmSession = OkHttpSteamCmSession(httpClient, webSocketFactory = webSocketFactory)
     private val directory = SteamDirectoryClient(httpClient)
 
     fun logOn(accountName: String, refreshToken: String, steamId64: String): Long = runBlocking {

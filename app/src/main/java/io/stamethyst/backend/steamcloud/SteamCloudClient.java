@@ -205,7 +205,10 @@ public final class SteamCloudClient implements AutoCloseable {
             DOWNLOAD_TIMEOUT_MS
         );
         protocolHttpClient = httpClient;
-        protocolClient = new SteamCloudProtocolClient(httpClient);
+        protocolClient = new SteamCloudProtocolClient(
+            httpClient,
+            SteamCloudAcceleratedHttp.createWebSocketFactory(context, httpClient)
+        );
         Log.i(TAG, "Steam Cloud Watt acceleration: " + (wattAccelerationEnabled ? "enabled" : "disabled") + '.');
 
         // JavaSteam's internal Ktor websocket cannot be given the accelerated OkHttp transport.

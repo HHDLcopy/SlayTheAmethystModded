@@ -5,14 +5,24 @@ import io.stamethyst.backend.github.ExperimentalGithubDirectAccessRuntime
 import io.stamethyst.backend.github.ExperimentalGithubDirectAccessInterceptor
 import io.stamethyst.backend.github.WATT_PROXY_TYPE_DIRECT
 import io.stamethyst.backend.github.WATT_PROXY_TYPE_REVERSE_PROXY
+import io.stamethyst.backend.github.WattToolkitForwardDns
+import io.stamethyst.backend.github.WattToolkitGithubRoute
+import io.stamethyst.backend.github.WattToolkitGithubRouteResolver
 import io.stamethyst.backend.github.WattToolkitRouteProfile
 import io.stamethyst.backend.github.createWattToolkitRuntime
+import io.stamethyst.backend.github.trustWattToolkitForwardCertificates
 import io.stamethyst.backend.network.NetworkAccelerationPolicy
 import io.stamethyst.config.LauncherConfig
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
+import top.apricityx.workshop.steam.protocol.SteamWebSocketFactory
 
 internal val SteamCommunityWattToolkitRouteProfile = WattToolkitRouteProfile(
     name = "steam-community",
@@ -105,7 +115,9 @@ private val defaultSteamCloudWattToolkitRouteProfiles = listOf(
     SteamImageCdnWattToolkitRouteProfile,
     SteamMediaWattToolkitRouteProfile,
     SteamContentCdnWattToolkitRouteProfile,
-    SteamCmWattToolkitRouteProfile,
+    // Steam CM accepts the WebSocket handshake through a forward route, but the
+    // subsequent Cloud RPC can be rejected with ClientServerUnavailable/serverType=41.
+    // Keep binary CM traffic on the official endpoint; HTTP/CDN acceleration remains enabled.
 )
 
 object SteamCloudAcceleratedHttp {
@@ -162,10 +174,205 @@ object SteamCloudAcceleratedHttp {
             .build()
     }
 
+    /**
+     * CM traffic uses a WebSocket and therefore does not pass through OkHttp's
+     * application interceptor forwarding path. Keep the CM route selection here so
+     * cloud batch completion and manifest refresh RPCs use the same Watt route as
+     * their HTTP setup calls.
+     */
+    @JvmStatic
+    fun createWebSocketFactory(
+        context: Context,
+        client: OkHttpClient,
+    ): SteamWebSocketFactory {
+        val officialClient = client.newBuilder().apply {
+            interceptors().removeAll { interceptor ->
+                interceptor is ExperimentalGithubDirectAccessInterceptor
+            }
+        }.build()
+        val filesDir = context.filesDir
+        val runtime = runtimeCache.getOrPut(filesDir.absolutePath) {
+            createSteamCloudWattToolkitRuntime(filesDir)
+        }
+        val forwardClient = officialClient.newBuilder()
+            .hostnameVerifier(runtime.hostnameVerifier)
+            .dns(runtime.forwardDns ?: WattToolkitForwardDns())
+            .trustWattToolkitForwardCertificates { host ->
+                runtime.resolvers.any { resolver -> resolver.allowsUnsafeHostnameBypass(host) }
+            }
+            .protocols(listOf(Protocol.HTTP_1_1))
+            .build()
+        return SteamCmAcceleratedWebSocketFactory(
+            officialClient = officialClient,
+            forwardClient = forwardClient,
+            routeResolvers = runtime.resolvers,
+            forwardDns = runtime.forwardDns,
+            enabledProvider = { isEnabled(context) },
+        )
+    }
+
     @JvmStatic
     fun clearRuntimeCacheForTests() {
         runtimeCache.clear()
     }
+}
+
+/** Applies a Watt route to the WebSocket opening handshake and falls back once before open. */
+internal class SteamCmAcceleratedWebSocketFactory(
+    private val officialClient: OkHttpClient,
+    private val forwardClient: OkHttpClient,
+    private val routeResolvers: List<WattToolkitGithubRouteResolver>,
+    private val forwardDns: WattToolkitForwardDns? = null,
+    private val enabledProvider: () -> Boolean = { true },
+) : SteamWebSocketFactory {
+    override fun newWebSocket(request: Request, listener: WebSocketListener): WebSocket {
+        val resolver = routeResolvers.firstOrNull { candidate -> candidate.supports(request.url.host) }
+        if (!enabledProvider() || resolver == null) {
+            return officialClient.newWebSocket(request, listener)
+        }
+        val route = resolver.resolveRouteForHost(request.url.host)
+        if (route == null || route.isOfficial || route.forwardTargets.isEmpty()) {
+            return officialClient.newWebSocket(request, listener)
+        }
+
+        val attempts = route.forwardTargetCandidates()
+            .filter { candidate -> candidate.forwardTargets.isNotEmpty() }
+        if (attempts.isEmpty()) {
+            return officialClient.newWebSocket(request, listener)
+        }
+        return openAttempt(
+            logicalRequest = request,
+            listener = listener,
+            resolver = resolver,
+            candidateRoutes = attempts,
+            attemptIndex = 0,
+        )
+    }
+
+    private fun openAttempt(
+        logicalRequest: Request,
+        listener: WebSocketListener,
+        resolver: WattToolkitGithubRouteResolver,
+        candidateRoutes: List<WattToolkitGithubRoute>,
+        attemptIndex: Int,
+    ): WebSocket {
+        val route = candidateRoutes[attemptIndex]
+        val target = route.forwardTargets.first()
+        val forwardedRequest = buildSteamCmForwardedWebSocketRequest(logicalRequest, route, forwardDns)
+        val opened = java.util.concurrent.atomic.AtomicBoolean(false)
+        val terminal = java.util.concurrent.atomic.AtomicBoolean(false)
+        val forwardedListener = object : WebSocketListener() {
+            override fun onOpen(webSocket: WebSocket, response: Response) {
+                opened.set(true)
+                resolver.confirmSuccessfulForwardTarget(logicalRequest.url.host, target)
+                listener.onOpen(webSocket, response)
+            }
+
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                listener.onMessage(webSocket, text)
+            }
+
+            override fun onMessage(webSocket: WebSocket, bytes: okio.ByteString) {
+                listener.onMessage(webSocket, bytes)
+            }
+
+            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                listener.onClosing(webSocket, code, reason)
+            }
+
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                if (opened.get() || !terminal.compareAndSet(false, true)) {
+                    listener.onClosed(webSocket, code, reason)
+                } else {
+                    resolver.markForwardTargetFailed(logicalRequest.url.host, target)
+                    openFallback(
+                        logicalRequest = logicalRequest,
+                        listener = listener,
+                        resolver = resolver,
+                        candidateRoutes = candidateRoutes,
+                        nextAttemptIndex = attemptIndex + 1,
+                    )
+                }
+            }
+
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                if (opened.get() || !terminal.compareAndSet(false, true)) {
+                    listener.onFailure(webSocket, t, response)
+                } else {
+                    resolver.markForwardTargetFailed(logicalRequest.url.host, target)
+                    openFallback(
+                        logicalRequest = logicalRequest,
+                        listener = listener,
+                        resolver = resolver,
+                        candidateRoutes = candidateRoutes,
+                        nextAttemptIndex = attemptIndex + 1,
+                    )
+                }
+            }
+        }
+        return forwardClient.newWebSocket(forwardedRequest, forwardedListener)
+    }
+
+    private fun openFallback(
+        logicalRequest: Request,
+        listener: WebSocketListener,
+        resolver: WattToolkitGithubRouteResolver,
+        candidateRoutes: List<WattToolkitGithubRoute>,
+        nextAttemptIndex: Int,
+    ) {
+        if (nextAttemptIndex < candidateRoutes.size) {
+            openAttempt(
+                logicalRequest = logicalRequest,
+                listener = listener,
+                resolver = resolver,
+                candidateRoutes = candidateRoutes,
+                attemptIndex = nextAttemptIndex,
+            )
+        } else {
+            val officialListener = object : WebSocketListener() {
+                override fun onOpen(webSocket: WebSocket, response: Response) {
+                    resolver.confirmSuccessfulOfficialPath(logicalRequest.url.host)
+                    listener.onOpen(webSocket, response)
+                }
+
+                override fun onMessage(webSocket: WebSocket, text: String) {
+                    listener.onMessage(webSocket, text)
+                }
+
+                override fun onMessage(webSocket: WebSocket, bytes: okio.ByteString) {
+                    listener.onMessage(webSocket, bytes)
+                }
+
+                override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                    listener.onClosing(webSocket, code, reason)
+                }
+
+                override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                    listener.onClosed(webSocket, code, reason)
+                }
+
+                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                    resolver.markOfficialPathFailed(logicalRequest.url.host)
+                    listener.onFailure(webSocket, t, response)
+                }
+            }
+            officialClient.newWebSocket(logicalRequest, officialListener)
+        }
+    }
+}
+
+internal fun buildSteamCmForwardedWebSocketRequest(
+    logicalRequest: Request,
+    route: WattToolkitGithubRoute,
+    forwardDns: WattToolkitForwardDns? = null,
+): Request {
+    val logicalUrl = route.normalizeLogicalUrl(logicalRequest.url, logicalRequest.url.host)
+    val networkUrl = route.buildForwardedUrl(logicalUrl)
+    forwardDns?.register(route)
+    return logicalRequest.newBuilder()
+        .url(networkUrl)
+        .header("Host", logicalUrl.host)
+        .build()
 }
 
 internal fun createSteamCloudWattToolkitRuntime(

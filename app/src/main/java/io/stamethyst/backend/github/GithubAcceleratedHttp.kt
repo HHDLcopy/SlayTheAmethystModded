@@ -409,7 +409,6 @@ internal class ExperimentalGithubDirectAccessInterceptor(
     ): Response {
         var logicalRequest = initialLogicalRequest
         var followUpCount = 0
-        var routeRefreshAttempted = false
         val failedForwardTargets = LinkedHashSet<String>()
         while (true) {
             val resolver = routeResolvers.firstOrNull { candidate -> candidate.supports(logicalRequest.url.host) }
@@ -465,11 +464,9 @@ internal class ExperimentalGithubDirectAccessInterceptor(
                 resolver != null &&
                 effectiveRoute != null &&
                 usedForwardTarget != null &&
-                !routeRefreshAttempted &&
-                response.isStaleForwardRouteResponse(logicalRequest.url)
+                response.isStaleForwardRouteResponse(logicalRequest.url) &&
+                failedForwardTargets.add(usedForwardTarget)
             ) {
-                routeRefreshAttempted = true
-                failedForwardTargets += usedForwardTarget
                 response.close()
                 resolver.refreshRouteForHost(
                     host = logicalRequest.url.host,
@@ -856,6 +853,17 @@ internal class WattToolkitGithubRouteResolver(
             installRouteLocked(current.copy(isOfficial = true), nowProvider(), httpConfirmed = true)
         }
         scheduleBackgroundBestPathSearch(normalizedHost, force = false)
+    }
+
+    fun markForwardTargetFailed(host: String, forwardTarget: String) {
+        val normalizedHost = host.lowercase(Locale.ROOT)
+        if (!isProfileHost(normalizedHost) || forwardTarget.isBlank()) {
+            return
+        }
+        synchronized(lock) {
+            restorePersistedRouteLocked()
+            markFailedTargetsLocked(listOf(forwardTarget))
+        }
     }
 
     fun markOfficialPathFailed(host: String) {
@@ -1778,17 +1786,34 @@ private const val HTTP_METHOD_HEAD = "HEAD"
 private const val HTTP_TEMP_REDIRECT = 307
 private const val HTTP_PERM_REDIRECT = 308
 private val REDIRECT_RESPONSE_CODES = setOf(300, 301, 302, 303, HTTP_TEMP_REDIRECT, HTTP_PERM_REDIRECT)
-// A forward endpoint can reject the logical Host even though the Steam endpoint itself is
-// available. Treat these responses as a failed Watt hop so the interceptor refreshes the route
-// and excludes that target instead of returning the proxy's error to the caller.
 private val STALE_ROUTE_RESPONSE_CODES = setOf(400, 404)
+private val WORKSHOP_BROWSE_FORWARD_FAILURE_RESPONSE_CODES = setOf(
+    400,
+    403,
+    404,
+    408,
+    421,
+    500,
+    501,
+    502,
+    503,
+    504,
+    521,
+    522,
+    523,
+    524,
+    525,
+)
 
+// A forward endpoint can reject the logical Host even though Steam itself is available. Treat a
+// browse-only 403 as a failed Watt hop, refreshing until a new target succeeds or every forward
+// target has been excluded. Other 403s retain their normal application-level meaning.
 private fun Response.isStaleForwardRouteResponse(logicalUrl: HttpUrl): Boolean =
     code in STALE_ROUTE_RESPONSE_CODES ||
         (
-            code == 403 &&
-                logicalUrl.host == "steamcommunity.com" &&
-                logicalUrl.encodedPath.startsWith("/workshop/browse/")
+            code in WORKSHOP_BROWSE_FORWARD_FAILURE_RESPONSE_CODES &&
+            logicalUrl.host == "steamcommunity.com" &&
+            logicalUrl.encodedPath.startsWith("/workshop/browse/")
         )
 
 /**

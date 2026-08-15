@@ -795,7 +795,10 @@ public final class SteamCloudPhase0ManifestProbe {
                 httpClientBuilder.proxy(proxySettings.proxy);
             }
             httpClient = httpClientBuilder.build();
-            protocolClient = new SteamCloudProtocolClient(httpClient);
+            protocolClient = new SteamCloudProtocolClient(
+                httpClient,
+                SteamCloudAcceleratedHttp.createWebSocketFactory(context, httpClient)
+            );
             steamConfiguration = null;
             steamClient = null;
             callbackManager = null;

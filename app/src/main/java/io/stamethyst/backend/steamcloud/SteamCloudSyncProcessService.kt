@@ -161,15 +161,23 @@ class SteamCloudSyncProcessService : Service() {
                 }
             )
         }
+
+        internal fun shouldRejectReplacementStart(
+            isRunning: Boolean,
+            cancellationPending: Boolean,
+        ): Boolean = isRunning && cancellationPending
     }
 
     private val cancelRequested = AtomicBoolean(false)
     @Volatile
     private var workerThread: Thread? = null
+    @Volatile
+    private var latestStartId = 0
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        latestStartId = startId
         val safeIntent = intent ?: return START_NOT_STICKY
         if (safeIntent.action == ACTION_CANCEL) {
             cancelRequested.set(true)
@@ -178,7 +186,7 @@ class SteamCloudSyncProcessService : Service() {
                 putString(EXTRA_ERROR_SUMMARY, getString(R.string.main_steam_cloud_sync_cancelled_summary))
                 putString(EXTRA_FAILURE_CATEGORY, SteamCloudFailureCategory.CANCELLED.name)
             })
-            updateNotification(getString(R.string.main_steam_cloud_sync_cancelled_summary))
+            stopForegroundCompat()
             if (!running) {
                 stopSelf(startId)
             }
@@ -190,8 +198,16 @@ class SteamCloudSyncProcessService : Service() {
             return START_NOT_STICKY
         }
 
-        startForeground(NOTIFICATION_ID, buildNotification(getString(R.string.main_steam_cloud_progress_preparing_auto_sync)))
         if (running) {
+            if (shouldRejectReplacementStart(running, cancelRequested.get())) {
+                // The previous worker can still be unwinding a blocking CM or HTTP request. Do not
+                // acknowledge a replacement request as started because it has no worker to finish it.
+                deliverResult(applicationContext, extractResultReceiver(safeIntent), RESULT_CANCELLED, Bundle().apply {
+                    putString(EXTRA_ERROR_SUMMARY, getString(R.string.main_steam_cloud_sync_cancelled_summary))
+                    putString(EXTRA_FAILURE_CATEGORY, SteamCloudFailureCategory.CANCELLED.name)
+                })
+                return START_NOT_STICKY
+            }
             deliverResult(applicationContext, extractResultReceiver(safeIntent), RESULT_SYNC_STARTED, Bundle().apply {
                 putString(EXTRA_PROGRESS_MESSAGE, getString(R.string.main_steam_cloud_bar_summary_syncing))
             })
@@ -200,10 +216,11 @@ class SteamCloudSyncProcessService : Service() {
 
         cancelRequested.set(false)
         running = true
+        startForeground(NOTIFICATION_ID, buildNotification(getString(R.string.main_steam_cloud_progress_preparing_auto_sync)))
         val receiver = extractResultReceiver(safeIntent)
         val taskIntent = Intent(safeIntent)
         val thread = Thread(
-            { runOperation(action, taskIntent, receiver) },
+            { runOperation(action, taskIntent, receiver, startId) },
             "STS-SteamCloudSync"
         )
         workerThread = thread
@@ -223,6 +240,7 @@ class SteamCloudSyncProcessService : Service() {
         action: String,
         intent: Intent,
         receiver: ResultReceiver?,
+        operationStartId: Int,
     ) {
         try {
             val authMaterial = SteamCloudAuthStore.readAuthMaterial(applicationContext)
@@ -252,15 +270,21 @@ class SteamCloudSyncProcessService : Service() {
                 putString(EXTRA_FAILURE_CATEGORY, category.name)
                 putLong(EXTRA_CHECKED_AT_MS, System.currentTimeMillis())
             })
-            updateNotification(summary)
+            if (category != SteamCloudFailureCategory.CANCELLED) {
+                updateNotification(summary)
+            }
             if (action == ACTION_CHECK_AND_SYNC && category != SteamCloudFailureCategory.CANCELLED) {
                 maybeShowBackgroundCheckToast(R.string.main_steam_cloud_background_check_failed_toast)
             }
         } finally {
-            running = false
-            workerThread = null
-            stopForegroundCompat()
-            stopSelf()
+            if (workerThread === Thread.currentThread()) {
+                running = false
+                workerThread = null
+                stopForegroundCompat()
+            }
+            // A cancelled operation can finish after a later start command arrives. Stop only after
+            // the newest command, so an old worker cannot tear down a replacement foreground sync.
+            stopSelfResult(maxOf(operationStartId, latestStartId))
         }
     }
 

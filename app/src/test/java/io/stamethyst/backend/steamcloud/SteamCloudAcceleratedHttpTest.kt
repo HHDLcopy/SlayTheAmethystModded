@@ -127,6 +127,26 @@ class SteamCloudAcceleratedHttpTest {
     }
 
     @Test
+    fun steamCmWebSocketForwarding_preservesLogicalHostAndSocketPath() {
+        val route = WattToolkitGithubRoute(
+            logicalHosts = setOf("steamserver.net"),
+            logicalHostSuffixes = setOf(".steamserver.net"),
+            forwardTargets = listOf("https://cm-forward.rmbgame.net"),
+            fakeServerName = "cm-front.rmbgame.net",
+        )
+        val request = Request.Builder()
+            .url("wss://cmp2-hkg1.steamserver.net/cmsocket/?transport=websocket")
+            .build()
+
+        val forwarded = buildSteamCmForwardedWebSocketRequest(request, route)
+
+        assertEquals("cm-front.rmbgame.net", forwarded.url.host)
+        assertEquals("/cmsocket/", forwarded.url.encodedPath)
+        assertEquals("transport=websocket", forwarded.url.encodedQuery)
+        assertEquals("cmp2-hkg1.steamserver.net", forwarded.header("Host"))
+    }
+
+    @Test
     fun interceptor_refreshesCachedRouteAfterStaleHttpErrorAndRetriesOnce() {
         apiServer.enqueue(
             MockResponse.Builder()

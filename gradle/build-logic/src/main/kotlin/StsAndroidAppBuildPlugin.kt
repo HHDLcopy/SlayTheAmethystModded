@@ -779,7 +779,12 @@ private fun Project.registerHarnessTasks() {
             description = taskDescription
             val taskAutoplay = forceAutoplay || autoplay.toBooleanStrictOrNull() == true
             val taskLaunchMode = if (forceAutoplay) "mts" else launchMode
-            val taskTimeoutSeconds = if (taskAutoplay) {
+            val taskTimeoutSeconds = if (command == "perf-bench") {
+                // -PperfBenchTimeoutSeconds overrides for perf-bench specifically.
+                // Falls back to -PharnessTimeoutSeconds, then to default 720 s.
+                providers.gradleProperty("perfBenchTimeoutSeconds")
+                    .orElse(harnessTimeoutSecondsProperty.orElse("720")).get()
+            } else if (taskAutoplay) {
                 autoplayHarnessTimeoutSeconds
             } else if (command == "startup-cache-profile" || command == "steam-cloud-sync") {
                 autoplayHarnessTimeoutSeconds
@@ -871,6 +876,18 @@ private fun Project.registerHarnessTasks() {
                     args.add("-NoClearStartupCache")
                 }
             }
+            if (command == "perf-bench") {
+                val perfBenchEnableProfiler = providers.gradleProperty("perfBenchEnableProfiler").orElse("false").get()
+                val perfBenchProfilerSeconds = providers.gradleProperty("perfBenchProfilerSeconds").orElse("30").get()
+                val perfBenchBaseline = providers.gradleProperty("perfBenchBaseline").orElse("").get()
+                val perfBenchUpdateBaseline = providers.gradleProperty("perfBenchUpdateBaseline").orElse("false").get()
+                val perfBenchCharacter = providers.gradleProperty("perfBenchCharacter").orElse("").get()
+                if (perfBenchEnableProfiler.toBooleanStrictOrNull() == true) { args.add("-PerfBenchEnableProfiler") }
+                args.add("-PerfBenchProfilerSeconds"); args.add(perfBenchProfilerSeconds)
+                if (perfBenchBaseline.isNotEmpty()) { args.add("-PerfBenchBaseline"); args.add(perfBenchBaseline) }
+                if (perfBenchUpdateBaseline.toBooleanStrictOrNull() == true) { args.add("-UpdateBaseline") }
+                if (perfBenchCharacter.isNotEmpty()) { args.add("-PerfBenchCharacter"); args.add(perfBenchCharacter) }
+            }
             commandLine(pythonExecutable, *args.toTypedArray())
         }
     }
@@ -936,6 +953,12 @@ private fun Project.registerHarnessTasks() {
         taskName = "stsHarnessSteamCloudSync",
         command = "steam-cloud-sync",
         taskDescription = "Modify a device-side save marker, open the launcher, poll Steam Cloud diagnostics, export logs, and stop."
+    )
+    registerHarnessExecTask(
+        taskName = "stsHarnessPerfBench",
+        command = "perf-bench",
+        taskDescription = "Run a full autoplay dungeon run, pull frame-probe-incidents.jsonl, and report a structured performance result against a baseline.",
+        forceAutoplay = true
     )
 }
 

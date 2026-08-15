@@ -283,7 +283,11 @@ class Daemon:
         data = bytearray()
         sock.settimeout(min(1.0, timeout))
         while time.monotonic() < deadline:
-            chunk = sock.recv(8192)
+            try:
+                chunk = sock.recv(8192)
+            except _socket.timeout:
+                # recv window elapsed but deadline has not — keep polling
+                continue
             if not chunk:
                 raise RuntimeError("Arthas bridge closed before prompt")
             data.extend(chunk)
@@ -398,12 +402,12 @@ class Daemon:
         if response != "OK":
             raise RuntimeError(f"game-probe rejected arthas bridge: {response or 'connection closed'}")
         last_error: Exception | None = None
-        for _ in range(10):
+        for _ in range(20):
             try:
                 return self._probe_arthas(serial, arthas_port)
             except Exception as exc:
                 last_error = exc
-                time.sleep(0.3)
+                time.sleep(0.5)
         raise RuntimeError(f"bridge did not become ready: {last_error}")
 
     def _ensure_arthas(self, serial: str, agent_port: int, arthas_port: int) -> dict[str, Any]:

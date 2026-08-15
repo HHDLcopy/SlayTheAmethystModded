@@ -1,5 +1,6 @@
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+
 use std::{
-    collections::BTreeMap,
     env,
     fs::{self, File, OpenOptions},
     io::Write,
@@ -10,6 +11,9 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+#[cfg(target_os = "windows")]
+use std::ptr::null_mut;
+
 use arboard::Clipboard;
 use reqwest::{blocking::Client, header, StatusCode};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -19,16 +23,88 @@ use tray_icon::{
     Icon, TrayIconBuilder,
 };
 use url::Url;
-use uuid::Uuid;
 use winit::{
     event::Event,
     event_loop::{ControlFlow, EventLoop, EventLoopProxy},
 };
 
+#[cfg(target_os = "windows")]
+use windows_sys::Win32::{
+    Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HWND, LPARAM, LRESULT, WPARAM},
+    System::LibraryLoader::GetModuleHandleW,
+    System::Threading::CreateMutexW,
+    UI::WindowsAndMessaging::{
+        CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW,
+        GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, PostQuitMessage, RegisterClassW,
+        SetWindowLongPtrW, ShowWindow, TranslateMessage, BS_DEFPUSHBUTTON, CREATESTRUCTW,
+        CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, ES_AUTOHSCROLL, ES_PASSWORD, GWLP_USERDATA, HMENU,
+        MSG, SW_SHOW, WM_CLOSE, WM_COMMAND, WM_DESTROY, WM_NCCREATE, WNDCLASSW, WS_BORDER,
+        WS_CAPTION, WS_CHILD, WS_EX_DLGMODALFRAME, WS_OVERLAPPED, WS_SYSMENU, WS_VISIBLE,
+    },
+};
+
 const APP_NAME: &str = "Slay the Amethyst Online";
 const APP_VERSION: &str = "desktop-0.1.0";
+// The Room API parses this field as a semantic app version (x.y.z[-suffix]).
+const CLIENT_VERSION: &str = "1.5.7-dev1";
 const TOGETHER_IN_SPIRE_PORT: u16 = 33455;
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(15);
+const CLOUD_CONTROL_URL: &str = "https://github.com/ModinMobileSTS/SlayTheAmethystResource/releases/download/Resource/cloud-control.json";
+const EMBEDDED_EASYTIER_CORE: &[u8] = include_bytes!("../assets/easytier-core.exe");
+const EMBEDDED_APP_ICON: &[u8] = include_bytes!("../assets/ic_launcher_amethyst.png");
+const EMBEDDED_CLOUD_CONTROL: &[u8] = include_bytes!("../assets/cloud-control.json");
+const EMBEDDED_EASYTIER_CORE_SHA256: &str =
+    "da7eb2d24b5416f3d3407636949e964a0750e3f9dc53a828cb6799a57ead445d";
+const EMBEDDED_EASYTIER_RUNTIME: &[(&str, &[u8])] = &[
+    ("packet.dll", include_bytes!("../assets/packet.dll")),
+    ("wintun.dll", include_bytes!("../assets/wintun.dll")),
+    (
+        "WinDivert64.sys",
+        include_bytes!("../assets/WinDivert64.sys"),
+    ),
+];
+
+struct SingleInstance {
+    #[cfg(target_os = "windows")]
+    handle: windows_sys::Win32::Foundation::HANDLE,
+}
+
+impl SingleInstance {
+    fn acquire() -> Result<Option<Self>, String> {
+        #[cfg(target_os = "windows")]
+        {
+            let name = "Global\\SlayTheAmethystOnlineTray"
+                .encode_utf16()
+                .chain(std::iter::once(0))
+                .collect::<Vec<_>>();
+            let handle = unsafe { CreateMutexW(null_mut(), 1, name.as_ptr()) };
+            if handle.is_null() {
+                return Err("无法创建应用互斥体。".to_owned());
+            }
+            if unsafe { GetLastError() } == ERROR_ALREADY_EXISTS {
+                unsafe {
+                    CloseHandle(handle);
+                }
+                return Ok(None);
+            }
+            return Ok(Some(Self { handle }));
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            Ok(Some(Self {}))
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl Drop for SingleInstance {
+    fn drop(&mut self) {
+        unsafe {
+            CloseHandle(self.handle);
+        }
+    }
+}
 
 #[derive(Clone)]
 struct AppPaths {
@@ -49,10 +125,6 @@ impl AppPaths {
         Self { root }
     }
 
-    fn settings_file(&self) -> PathBuf {
-        self.root.join("settings.json")
-    }
-
     fn runtime_dir(&self) -> PathBuf {
         self.root.join("runtime")
     }
@@ -68,32 +140,9 @@ impl AppPaths {
     fn log_file(&self) -> PathBuf {
         self.runtime_dir().join("easytier.log")
     }
-}
 
-#[derive(Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct Settings {
-    #[serde(default)]
-    room_api_base_url: String,
-    #[serde(default = "default_player_name")]
-    player_name: String,
-    #[serde(default = "default_player_id")]
-    player_id: String,
-    #[serde(default)]
-    easytier_executable: String,
-    #[serde(default)]
-    room_passwords: BTreeMap<String, String>,
-}
-
-impl Default for Settings {
-    fn default() -> Self {
-        Self {
-            room_api_base_url: String::new(),
-            player_name: default_player_name(),
-            player_id: default_player_id(),
-            easytier_executable: String::new(),
-            room_passwords: BTreeMap::new(),
-        }
+    fn easytier_executable(&self) -> PathBuf {
+        self.runtime_dir().join("easytier-core.exe")
     }
 }
 
@@ -103,8 +152,141 @@ fn default_player_name() -> String {
         .unwrap_or_else(|_| "Player".to_owned())
 }
 
-fn default_player_id() -> String {
-    Uuid::new_v4().to_string()
+#[derive(Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CloudControl {
+    #[serde(default)]
+    enabled: bool,
+    #[serde(default)]
+    room_api_base_url: String,
+}
+
+#[derive(Clone)]
+struct AppConfig {
+    cloud_control: CloudControl,
+    player_name: String,
+    player_id: String,
+    easytier_executable: PathBuf,
+}
+
+#[derive(Deserialize)]
+struct CloudControlResponse {
+    #[serde(rename = "easyTier", default)]
+    easy_tier: CloudControl,
+}
+
+fn load_config(paths: &AppPaths) -> Result<AppConfig, String> {
+    let client = Client::builder()
+        .timeout(Duration::from_secs(20))
+        .user_agent(format!("SlayTheAmethystDesktop/{APP_VERSION}"))
+        .build()
+        .map_err(|error| format!("Could not create cloud control client: {error}"))?;
+    let response = client.get(CLOUD_CONTROL_URL).send().ok();
+    let text = match response {
+        Some(response) if response.status().is_success() => response
+            .text()
+            .map_err(|error| format!("Could not read cloud control response: {error}"))?,
+        Some(response) => {
+            write_startup_log(
+                paths,
+                &format!(
+                    "Cloud control returned HTTP {}; using bundled defaults.",
+                    response.status()
+                ),
+            );
+            String::from_utf8_lossy(EMBEDDED_CLOUD_CONTROL).into_owned()
+        }
+        None => {
+            write_startup_log(
+                paths,
+                "Could not load cloud control; using bundled defaults.",
+            );
+            String::from_utf8_lossy(EMBEDDED_CLOUD_CONTROL).into_owned()
+        }
+    };
+    let cloud_control = serde_json::from_str::<CloudControlResponse>(&text)
+        .map_err(|error| format!("Cloud control returned invalid JSON: {error}"))?
+        .easy_tier;
+    if !cloud_control.enabled {
+        return Err("EasyTier room support is disabled by cloud control.".to_owned());
+    }
+    if cloud_control.room_api_base_url.trim().is_empty() {
+        return Err("Cloud control did not provide an EasyTier Room API URL.".to_owned());
+    }
+    let executable = ensure_embedded_easytier(paths)?;
+    Ok(AppConfig {
+        cloud_control,
+        player_name: default_player_name(),
+        player_id: stable_player_id(),
+        easytier_executable: executable,
+    })
+}
+
+fn write_startup_log(paths: &AppPaths, message: &str) {
+    let _ = fs::create_dir_all(paths.runtime_dir());
+    let _ = fs::write(
+        paths.runtime_dir().join("startup.log"),
+        format!("{}\n{}\n", now_ms(), message),
+    );
+}
+
+fn ensure_embedded_easytier(paths: &AppPaths) -> Result<PathBuf, String> {
+    let executable = paths.easytier_executable();
+    let parent = executable
+        .parent()
+        .ok_or_else(|| "Embedded EasyTier executable has no parent directory.".to_owned())?;
+    fs::create_dir_all(parent).map_err(io_error)?;
+    write_embedded_asset(
+        &executable,
+        EMBEDDED_EASYTIER_CORE,
+        Some(EMBEDDED_EASYTIER_CORE_SHA256),
+    )?;
+    for (name, bytes) in EMBEDDED_EASYTIER_RUNTIME {
+        write_embedded_asset(&parent.join(name), bytes, None)?;
+    }
+    Ok(executable)
+}
+
+fn write_embedded_asset(
+    path: &Path,
+    bytes: &[u8],
+    expected_sha256: Option<&str>,
+) -> Result<(), String> {
+    if path.is_file() {
+        let existing = fs::read(path).map_err(io_error)?;
+        let matches = expected_sha256
+            .map(|expected| hex_sha256_bytes(&existing) == expected)
+            .unwrap_or_else(|| existing == bytes);
+        if matches {
+            return Ok(());
+        }
+    }
+    let parent = path
+        .parent()
+        .ok_or_else(|| "Embedded runtime asset has no parent directory.".to_owned())?;
+    let temporary = parent.join(format!(
+        ".{}.{}.tmp",
+        path.file_name().unwrap().to_string_lossy(),
+        now_ms()
+    ));
+    fs::write(&temporary, bytes).map_err(io_error)?;
+    if path.is_file() {
+        fs::remove_file(path).map_err(io_error)?;
+    }
+    fs::rename(&temporary, path).map_err(io_error)
+}
+
+fn stable_player_id() -> String {
+    let computer = env::var("COMPUTERNAME")
+        .or_else(|_| env::var("HOSTNAME"))
+        .unwrap_or_default();
+    let user = env::var("USERNAME")
+        .or_else(|_| env::var("USER"))
+        .unwrap_or_default();
+    format!(
+        "desktop-{}",
+        &hex_sha256(&format!("{computer}\n{user}"))[..24]
+    )
 }
 
 #[derive(Serialize)]
@@ -138,10 +320,11 @@ struct ConnectionState {
 }
 
 impl ConnectionState {
-    fn disconnected(settings: &Settings) -> Self {
+    fn disconnected(config: &AppConfig) -> Self {
         Self {
             enabled: true,
-            can_connect: !settings.room_api_base_url.trim().is_empty(),
+            can_connect: config.cloud_control.enabled
+                && !config.cloud_control.room_api_base_url.trim().is_empty(),
             status: "DISCONNECTED".to_owned(),
             mode: "Room".to_owned(),
             failure_category: "None".to_owned(),
@@ -157,7 +340,7 @@ impl ConnectionState {
             last_error_summary: String::new(),
             diagnostics_summary_path: String::new(),
             assigned_ipv4_cidr: String::new(),
-            current_player_id: settings.player_id.clone(),
+            current_player_id: config.player_id.clone(),
             room_owner_player_id: String::new(),
             room_owner_ipv4_cidr: String::new(),
             peer_count: None,
@@ -275,7 +458,9 @@ impl RoomApi {
                     .query(&[("limit", "50"), ("offset", offset_text.as_str())]),
             )?;
             rooms.extend(response.rooms);
-            let Some(next) = response.next_offset else { break };
+            let Some(next) = response.next_offset else {
+                break;
+            };
             if next <= offset {
                 break;
             }
@@ -284,7 +469,14 @@ impl RoomApi {
         Ok(rooms)
     }
 
-    fn start_session(&self, settings: &Settings, room_id: &str) -> Result<Session, String> {
+    fn start_session(
+        &self,
+        config: &AppConfig,
+        room_id: &str,
+        password: &str,
+        description: &str,
+        create_only: bool,
+    ) -> Result<Session, String> {
         #[derive(Serialize)]
         #[serde(rename_all = "camelCase")]
         struct StartRequest<'a> {
@@ -295,21 +487,24 @@ impl RoomApi {
             device_summary: String,
             mac_address: String,
             password: &'a str,
+            description: &'a str,
+            create_only: bool,
         }
 
-        let password = settings.room_passwords.get(room_id).map(String::as_str).unwrap_or("");
         let request = StartRequest {
             room_id,
-            player_id: &settings.player_id,
-            display_name: if settings.player_name.trim().is_empty() {
+            player_id: &config.player_id,
+            display_name: if config.player_name.trim().is_empty() {
                 "Player".to_owned()
             } else {
-                settings.player_name.trim().to_owned()
+                config.player_name.trim().to_owned()
             },
-            client_version: APP_VERSION,
+            client_version: CLIENT_VERSION,
             device_summary: format!("Desktop {}", env::consts::OS),
-            mac_address: stable_mac_address(&settings.player_id),
+            mac_address: stable_mac_address(&config.player_id),
             password,
+            description,
+            create_only,
         };
         self.request_json(
             self.client
@@ -318,7 +513,11 @@ impl RoomApi {
         )
     }
 
-    fn report_runtime(&self, session: &Session, relay_server_description: &str) -> Result<SessionRuntime, String> {
+    fn report_runtime(
+        &self,
+        session: &Session,
+        relay_server_description: &str,
+    ) -> Result<SessionRuntime, String> {
         #[derive(Serialize)]
         #[serde(rename_all = "camelCase")]
         struct RuntimeRequest<'a> {
@@ -352,19 +551,23 @@ impl RoomApi {
             self.authorized(
                 self.client
                     .post(self.url(&["api", "lan", "session", "stop"]))
-                    .json(&StopRequest { session_id: &session.session_id }),
+                    .json(&StopRequest {
+                        session_id: &session.session_id,
+                    }),
                 &session.session_token,
             ),
         )
     }
 
     fn room_info(&self, room_id: &str) -> Result<RoomInfo, String> {
-        self.request_json(
-            self.client.get(self.url(&["api", "lan", "rooms", room_id])),
-        )
+        self.request_json(self.client.get(self.url(&["api", "lan", "rooms", room_id])))
     }
 
-    fn authorized(&self, request: reqwest::blocking::RequestBuilder, token: &str) -> reqwest::blocking::RequestBuilder {
+    fn authorized(
+        &self,
+        request: reqwest::blocking::RequestBuilder,
+        token: &str,
+    ) -> reqwest::blocking::RequestBuilder {
         request.header(header::AUTHORIZATION, format!("Bearer {token}"))
     }
 
@@ -382,17 +585,22 @@ impl RoomApi {
         &self,
         request: reqwest::blocking::RequestBuilder,
     ) -> Result<T, String> {
-        let response = request.send().map_err(|error| format!("Room API request failed: {error}"))?;
+        let response = request
+            .send()
+            .map_err(|error| format!("Room API request failed: {error}"))?;
         let status = response.status();
         let text = response.text().unwrap_or_default();
         if !status.is_success() {
             return Err(api_error(status, &text));
         }
-        serde_json::from_str(&text).map_err(|error| format!("Room API returned invalid JSON: {error}"))
+        serde_json::from_str(&text)
+            .map_err(|error| format!("Room API returned invalid JSON: {error}"))
     }
 
     fn request_empty(&self, request: reqwest::blocking::RequestBuilder) -> Result<(), String> {
-        let response = request.send().map_err(|error| format!("Room API request failed: {error}"))?;
+        let response = request
+            .send()
+            .map_err(|error| format!("Room API request failed: {error}"))?;
         if response.status().is_success() {
             Ok(())
         } else {
@@ -409,12 +617,24 @@ fn api_error(status: StatusCode, body: &str) -> String {
         .map(|error| error.message)
         .filter(|message| !message.trim().is_empty())
         .unwrap_or_else(|| body.split_whitespace().collect::<Vec<_>>().join(" "));
-    format!("EasyTier Room API failed: HTTP {status}{}", if message.is_empty() { String::new() } else { format!(" - {message}") })
+    format!(
+        "EasyTier Room API failed: HTTP {status}{}",
+        if message.is_empty() {
+            String::new()
+        } else {
+            format!(" - {message}")
+        }
+    )
 }
 
 enum WorkerCommand {
     Refresh,
-    Connect(String),
+    Connect {
+        room_id: String,
+        password: String,
+        description: String,
+        create_only: bool,
+    },
     Disconnect,
     Shutdown,
 }
@@ -441,7 +661,7 @@ struct ActiveConnection {
 
 struct Worker {
     paths: AppPaths,
-    settings: Settings,
+    config: AppConfig,
     active: Option<ActiveConnection>,
     proxy: EventLoopProxy<AppEvent>,
 }
@@ -453,11 +673,20 @@ impl Worker {
             let timeout = self
                 .active
                 .as_ref()
-                .map(|active| active.next_heartbeat.saturating_duration_since(std::time::Instant::now()))
+                .map(|active| {
+                    active
+                        .next_heartbeat
+                        .saturating_duration_since(std::time::Instant::now())
+                })
                 .unwrap_or(Duration::from_secs(60));
             match receiver.recv_timeout(timeout) {
                 Ok(WorkerCommand::Refresh) => self.refresh(),
-                Ok(WorkerCommand::Connect(room_id)) => self.connect(&room_id),
+                Ok(WorkerCommand::Connect {
+                    room_id,
+                    password,
+                    description,
+                    create_only,
+                }) => self.connect(&room_id, &password, &description, create_only),
                 Ok(WorkerCommand::Disconnect) => self.disconnect(),
                 Ok(WorkerCommand::Shutdown) => {
                     self.disconnect();
@@ -480,19 +709,28 @@ impl Worker {
         }
     }
 
-    fn connect(&mut self, room_id: &str) {
+    fn connect(&mut self, room_id: &str, password: &str, description: &str, create_only: bool) {
         self.disconnect();
         self.emit(WorkerEvent::Connecting(room_id.to_owned()));
         let result = (|| {
             if room_id.trim().is_empty() {
                 return Err("Room ID is empty.".to_owned());
             }
-            let executable = PathBuf::from(self.settings.easytier_executable.trim());
+            let executable = &self.config.easytier_executable;
             if !executable.is_file() {
-                return Err(format!("EasyTier executable was not found: {}", executable.display()));
+                return Err(format!(
+                    "EasyTier executable was not found: {}",
+                    executable.display()
+                ));
             }
             let api = self.api()?;
-            let session = api.start_session(&self.settings, room_id.trim())?;
+            let session = api.start_session(
+                &self.config,
+                room_id.trim(),
+                password,
+                description,
+                create_only,
+            )?;
             let room_info = match api.room_info(&session.room_id) {
                 Ok(room_info) => room_info,
                 Err(error) => {
@@ -504,7 +742,7 @@ impl Worker {
                 let _ = api.stop_session(&session);
                 return Err(error);
             }
-            let process = match self.start_easytier(&executable, &session) {
+            let process = match self.start_easytier(executable, &session) {
                 Ok(process) => process,
                 Err(error) => {
                     let _ = api.stop_session(&session);
@@ -540,7 +778,9 @@ impl Worker {
                     let _ = process.wait();
                     let _ = api.stop_session(&session);
                     self.remove_runtime_config();
-                    return Err("The Room API did not provide a virtual IPv4 address yet.".to_owned());
+                    return Err(
+                        "The Room API did not provide a virtual IPv4 address yet.".to_owned()
+                    );
                 }
             };
             let state = ConnectionState {
@@ -560,8 +800,12 @@ impl Worker {
                 last_updated_at_ms: now_ms(),
                 last_error_summary: String::new(),
                 diagnostics_summary_path: String::new(),
-                assigned_ipv4_cidr: if runtime.assigned_ipv4_cidr.is_empty() { session.assigned_ipv4_cidr.clone() } else { runtime.assigned_ipv4_cidr.clone() },
-                current_player_id: self.settings.player_id.clone(),
+                assigned_ipv4_cidr: if runtime.assigned_ipv4_cidr.is_empty() {
+                    session.assigned_ipv4_cidr.clone()
+                } else {
+                    runtime.assigned_ipv4_cidr.clone()
+                },
+                current_player_id: self.config.player_id.clone(),
                 room_owner_player_id: room_info.owner_player_id,
                 room_owner_ipv4_cidr: owner_cidr,
                 peer_count: runtime.peer_count,
@@ -584,7 +828,10 @@ impl Worker {
                 state,
                 next_heartbeat: std::time::Instant::now() + HEARTBEAT_INTERVAL,
             });
-            Ok((room_id.to_owned(), format!("{host}:{TOGETHER_IN_SPIRE_PORT}")))
+            Ok((
+                room_id.to_owned(),
+                format!("{host}:{TOGETHER_IN_SPIRE_PORT}"),
+            ))
         })();
         match result {
             Ok((room_id, address)) => self.emit(WorkerEvent::Connected { room_id, address }),
@@ -596,16 +843,23 @@ impl Worker {
     }
 
     fn heartbeat(&mut self) {
-        let Some(mut active) = self.active.take() else { return };
+        let Some(mut active) = self.active.take() else {
+            return;
+        };
         if active.process.try_wait().ok().flatten().is_some() {
-            let error = format!("EasyTier stopped unexpectedly. See {}", self.paths.log_file().display());
+            let error = format!(
+                "EasyTier stopped unexpectedly. See {}",
+                self.paths.log_file().display()
+            );
             self.write_failed_state(&error);
             self.remove_runtime_config();
             let _ = self.api().and_then(|api| api.stop_session(&active.session));
             self.emit(WorkerEvent::Error(error));
             return;
         }
-        let result = self.api().and_then(|api| api.report_runtime(&active.session, &active.state.relay_server_description));
+        let result = self.api().and_then(|api| {
+            api.report_runtime(&active.session, &active.state.relay_server_description)
+        });
         match result {
             Ok(runtime) => {
                 active.state.peer_count = runtime.peer_count;
@@ -632,18 +886,22 @@ impl Worker {
 
     fn disconnect(&mut self) {
         let Some(mut active) = self.active.take() else {
-            let _ = write_state(&self.paths, &ConnectionState::disconnected(&self.settings));
+            let _ = write_state(&self.paths, &ConnectionState::disconnected(&self.config));
             return;
         };
         let _ = active.process.kill();
         let _ = active.process.wait();
         let _ = self.api().and_then(|api| api.stop_session(&active.session));
         self.remove_runtime_config();
-        let _ = write_state(&self.paths, &ConnectionState::disconnected(&self.settings));
+        let _ = write_state(&self.paths, &ConnectionState::disconnected(&self.config));
         self.emit(WorkerEvent::Disconnected);
     }
 
-    fn write_connecting_state(&self, session: &Session, room_info: &RoomInfo) -> Result<(), String> {
+    fn write_connecting_state(
+        &self,
+        session: &Session,
+        room_info: &RoomInfo,
+    ) -> Result<(), String> {
         let owner_cidr = room_info
             .members
             .iter()
@@ -662,7 +920,7 @@ impl Worker {
             assigned_ipv4_cidr: session.assigned_ipv4_cidr.clone(),
             room_owner_player_id: room_info.owner_player_id.clone(),
             room_owner_ipv4_cidr: owner_cidr,
-            ..ConnectionState::disconnected(&self.settings)
+            ..ConnectionState::disconnected(&self.config)
         };
         write_state(&self.paths, &state)
     }
@@ -672,13 +930,13 @@ impl Worker {
             status: "FAILED".to_owned(),
             failure_category: "RuntimeBridgeUnavailable".to_owned(),
             last_error_summary: error.to_owned(),
-            ..ConnectionState::disconnected(&self.settings)
+            ..ConnectionState::disconnected(&self.config)
         };
         let _ = write_state(&self.paths, &state);
     }
 
     fn start_easytier(&self, executable: &Path, session: &Session) -> Result<Child, String> {
-        let config = easytier_config(session, &self.settings.player_id);
+        let config = easytier_config(session, &self.config.player_id);
         fs::create_dir_all(self.paths.runtime_dir()).map_err(io_error)?;
         write_config(&self.paths.config_file(), &config)?;
         let log = OpenOptions::new()
@@ -696,7 +954,10 @@ impl Worker {
             .map_err(|error| format!("Could not start EasyTier: {error}"))?;
         thread::sleep(Duration::from_millis(750));
         if let Some(status) = process.try_wait().map_err(io_error)? {
-            return Err(format!("EasyTier exited during startup ({status}). See {}", self.paths.log_file().display()));
+            return Err(format!(
+                "EasyTier exited during startup ({status}). See {}",
+                self.paths.log_file().display()
+            ));
         }
         Ok(process)
     }
@@ -708,10 +969,17 @@ impl Worker {
     }
 
     fn api(&self) -> Result<RoomApi, String> {
-        if self.settings.room_api_base_url.trim().is_empty() {
-            return Err("Set roomApiBaseUrl in settings.json first.".to_owned());
+        if !self.config.cloud_control.enabled
+            || self
+                .config
+                .cloud_control
+                .room_api_base_url
+                .trim()
+                .is_empty()
+        {
+            return Err("EasyTier Room API is unavailable in cloud control.".to_owned());
         }
-        RoomApi::new(&self.settings.room_api_base_url)
+        RoomApi::new(&self.config.cloud_control.room_api_base_url)
     }
 
     fn emit(&self, event: WorkerEvent) {
@@ -723,74 +991,151 @@ struct TrayMenu {
     status: MenuItem,
     rooms: Submenu,
     refresh: MenuItem,
+    create_room: MenuItem,
     disconnect: MenuItem,
-    open_settings: MenuItem,
     quit: MenuItem,
-    room_items: Vec<(MenuItem, String)>,
+    room_items: Vec<(MenuItem, String, bool)>,
+}
+
+struct RoomSelection {
+    room_id: String,
+    has_password: bool,
+}
+
+struct CreateRoomRequest {
+    room_id: String,
+    description: String,
+    password: String,
 }
 
 impl TrayMenu {
     fn new() -> Result<(Self, Menu), Box<dyn std::error::Error>> {
         let menu = Menu::new();
-        let status = MenuItem::new("Disconnected", false, None);
-        let rooms = Submenu::new("Rooms", true);
-        let refresh = MenuItem::new("Refresh rooms", true, None);
-        let disconnect = MenuItem::new("Disconnect", false, None);
-        let open_settings = MenuItem::new("Open settings", true, None);
-        let quit = MenuItem::new("Exit", true, None);
+        let status = MenuItem::new("未连接", false, None);
+        let rooms = Submenu::new("房间", true);
+        let refresh = MenuItem::new("刷新房间", true, None);
+        let create_room = MenuItem::new("创建房间", true, None);
+        let disconnect = MenuItem::new("断开连接", false, None);
+        let quit = MenuItem::new("退出", true, None);
         menu.append(&status)?;
         menu.append(&PredefinedMenuItem::separator())?;
         menu.append(&rooms)?;
         menu.append(&refresh)?;
+        menu.append(&create_room)?;
         menu.append(&disconnect)?;
         menu.append(&PredefinedMenuItem::separator())?;
-        menu.append(&open_settings)?;
         menu.append(&quit)?;
-        Ok((Self { status, rooms, refresh, disconnect, open_settings, quit, room_items: Vec::new() }, menu))
+        Ok((
+            Self {
+                status,
+                rooms,
+                refresh,
+                create_room,
+                disconnect,
+                quit,
+                room_items: Vec::new(),
+            },
+            menu,
+        ))
     }
 
     fn set_rooms(&mut self, rooms: Vec<RoomListItem>) {
-        for (item, _) in self.room_items.drain(..) {
+        for (item, _, _) in self.room_items.drain(..) {
             let _ = self.rooms.remove(&item);
         }
         if rooms.is_empty() {
-            let item = MenuItem::new("No rooms found", false, None);
+            let item = MenuItem::new("没有找到可用房间", false, None);
             let _ = self.rooms.append(&item);
-            self.room_items.push((item, String::new()));
+            self.room_items.push((item, String::new(), false));
             return;
         }
         for room in rooms {
-            let lock = if room.has_password { " [password]" } else { "" };
+            let lock = if room.has_password {
+                " [需要密码]"
+            } else {
+                ""
+            };
             let detail = if room.description.trim().is_empty() {
                 room.owner_display_name
             } else {
                 room.description
             };
-            let label = format!("{} ({}/{}){} - {}", room.room_id, room.online_member_count, room.member_count, lock, detail);
+            let label = format!(
+                "{} ({}/{}){} - {}",
+                room.room_id, room.online_member_count, room.member_count, lock, detail
+            );
             let item = MenuItem::new(label, true, None);
             let _ = self.rooms.append(&item);
-            self.room_items.push((item, room.room_id));
+            self.room_items
+                .push((item, room.room_id, room.has_password));
         }
     }
 
-    fn selected_room(&self, event: &MenuEvent) -> Option<String> {
+    fn selected_room(&self, event: &MenuEvent) -> Option<RoomSelection> {
         self.room_items
             .iter()
-            .find(|(item, room_id)| !room_id.is_empty() && event.id == item.id())
-            .map(|(_, room_id)| room_id.clone())
+            .find(|(item, room_id, _)| !room_id.is_empty() && event.id == item.id())
+            .map(|(_, room_id, has_password)| RoomSelection {
+                room_id: room_id.clone(),
+                has_password: *has_password,
+            })
     }
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() {
     let paths = AppPaths::discover();
-    let settings = load_settings(&paths)?;
-    let _ = write_state(&paths, &ConnectionState::disconnected(&settings));
+    if let Err(error) = run(&paths) {
+        write_startup_log(&paths, &error.to_string());
+        notify(
+            "程序启动失败",
+            &format!(
+                "{}\n\n详细信息：{}",
+                error,
+                paths.runtime_dir().join("startup.log").display()
+            ),
+        );
+    }
+}
+
+fn run(paths: &AppPaths) -> Result<(), Box<dyn std::error::Error>> {
+    let _single_instance = match SingleInstance::acquire()? {
+        Some(instance) => instance,
+        None => {
+            notify(
+                "程序已在运行",
+                "Slay the Amethyst Online 已经在后台运行。\n请从系统托盘使用已有实例。",
+            );
+            return Ok(());
+        }
+    };
+    let config = match load_config(paths) {
+        Ok(config) => config,
+        Err(error) => {
+            write_startup_log(&paths, &error);
+            notify(
+                "程序启动失败",
+                &format!(
+                    "{error}\n\n详细信息：{}",
+                    paths.runtime_dir().join("startup.log").display()
+                ),
+            );
+            return Ok(());
+        }
+    };
+    let _ = write_state(&paths, &ConnectionState::disconnected(&config));
 
     let event_loop: EventLoop<AppEvent> = EventLoop::with_user_event().build()?;
     let proxy = event_loop.create_proxy();
     let (command_sender, command_receiver) = mpsc::channel();
-    let worker = Worker { paths: paths.clone(), settings, active: None, proxy };
-    thread::Builder::new().name("sts-easytier-worker".to_owned()).spawn(move || worker.run(command_receiver))?;
+    let worker = Worker {
+        paths: paths.clone(),
+        config,
+        active: None,
+        proxy,
+    };
+    thread::Builder::new()
+        .name("sts-easytier-worker".to_owned())
+        .spawn(move || worker.run(command_receiver))?;
 
     let (mut menu, native_menu) = TrayMenu::new()?;
     let _tray = TrayIconBuilder::new()
@@ -802,30 +1147,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut closing = false;
 
     event_loop.run(move |event, target| {
-        target.set_control_flow(ControlFlow::WaitUntil(std::time::Instant::now() + Duration::from_millis(250)));
+        target.set_control_flow(ControlFlow::WaitUntil(
+            std::time::Instant::now() + Duration::from_millis(250),
+        ));
         match event {
             Event::UserEvent(AppEvent::Worker(event)) => match event {
                 WorkerEvent::Rooms(rooms) => menu.set_rooms(rooms),
                 WorkerEvent::Connecting(room_id) => {
-                    let _ = menu.status.set_text(format!("Connecting: {room_id}"));
+                    let _ = menu.status.set_text(format!("正在连接：{room_id}"));
                     let _ = menu.disconnect.set_enabled(true);
                 }
                 WorkerEvent::Connected { room_id, address } => {
-                    let copied = Clipboard::new().and_then(|mut clipboard| clipboard.set_text(address.clone())).is_ok();
-                    let _ = menu.status.set_text(format!("Connected: {room_id}"));
+                    let copied = Clipboard::new()
+                        .and_then(|mut clipboard| clipboard.set_text(address.clone()))
+                        .is_ok();
+                    let _ = menu.status.set_text(format!("已连接：{room_id}"));
                     let _ = menu.disconnect.set_enabled(true);
-                    let detail = if copied { format!("Connected to {room_id}. {address} was copied to the clipboard.") } else { format!("Connected to {room_id}. Together in Spire address: {address}") };
-                    notify("EasyTier connected", &detail);
+                    let detail = if copied {
+                        format!("已连接到 {room_id}。联机地址 {address} 已复制到剪贴板。")
+                    } else {
+                        format!("已连接到 {room_id}。联机地址：{address}")
+                    };
+                    notify("EasyTier 已连接", &detail);
                     let _ = command_sender.send(WorkerCommand::Refresh);
                 }
                 WorkerEvent::Disconnected => {
-                    let _ = menu.status.set_text("Disconnected");
+                    let _ = menu.status.set_text("未连接");
                     let _ = menu.disconnect.set_enabled(false);
                 }
                 WorkerEvent::Error(error) => {
-                    let _ = menu.status.set_text("Connection failed");
+                    let _ = menu.status.set_text("连接失败");
                     let _ = menu.disconnect.set_enabled(false);
-                    notify("Slay the Amethyst Online", &error);
+                    notify("联机连接错误", &error);
                 }
                 WorkerEvent::ShutdownComplete => target.exit(),
             },
@@ -835,17 +1188,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let _ = command_sender.send(WorkerCommand::Refresh);
                     } else if event.id == menu.disconnect.id() {
                         let _ = command_sender.send(WorkerCommand::Disconnect);
-                    } else if event.id == menu.open_settings.id() {
-                        if let Err(error) = Command::new("notepad.exe").arg(paths.settings_file()).spawn() {
-                            notify("Could not open settings", &error.to_string());
+                    } else if event.id == menu.create_room.id() {
+                        if let Some(request) = prompt_create_room() {
+                            let _ = command_sender.send(WorkerCommand::Connect {
+                                room_id: request.room_id,
+                                password: request.password,
+                                description: request.description,
+                                create_only: true,
+                            });
                         }
                     } else if event.id == menu.quit.id() {
                         if !closing {
                             closing = true;
                             let _ = command_sender.send(WorkerCommand::Shutdown);
                         }
-                    } else if let Some(room_id) = menu.selected_room(&event) {
-                        let _ = command_sender.send(WorkerCommand::Connect(room_id));
+                    } else if let Some(selection) = menu.selected_room(&event) {
+                        let password = if selection.has_password {
+                            match prompt_password("加入密码房间", "请输入房间密码：")
+                            {
+                                Some(password) => password,
+                                None => continue,
+                            }
+                        } else {
+                            String::new()
+                        };
+                        let _ = command_sender.send(WorkerCommand::Connect {
+                            room_id: selection.room_id,
+                            password,
+                            description: String::new(),
+                            create_only: false,
+                        });
                     }
                 }
             }
@@ -855,17 +1227,211 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn load_settings(paths: &AppPaths) -> Result<Settings, String> {
-    let file = paths.settings_file();
-    match fs::read_to_string(&file) {
-        Ok(contents) => serde_json::from_str(&contents).map_err(|error| format!("Could not parse {}: {error}", file.display())),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            let settings = Settings::default();
-            write_json(&file, &settings, false)?;
-            Ok(settings)
-        }
-        Err(error) => Err(io_error(error)),
+fn prompt_create_room() -> Option<CreateRoomRequest> {
+    let fields = prompt_fields(
+        "创建房间",
+        &["房间 ID：", "房间描述（可选）：", "房间密码（可选）："],
+        &[false, false, true],
+    )?;
+    let room_id = fields.first()?.clone();
+    let room_id = room_id.trim().to_owned();
+    if room_id.is_empty() {
+        notify(
+            "创建房间失败",
+            "房间 ID 不能为空。\n房间 ID 只能使用字母、数字、短横线和下划线。",
+        );
+        return None;
     }
+    Some(CreateRoomRequest {
+        room_id,
+        description: fields.get(1).cloned().unwrap_or_default(),
+        password: fields.get(2).cloned().unwrap_or_default(),
+    })
+}
+
+fn prompt_password(title: &str, message: &str) -> Option<String> {
+    prompt_fields(title, &[message], &[true]).and_then(|mut values| values.pop())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn prompt_fields(_title: &str, _labels: &[&str], _passwords: &[bool]) -> Option<Vec<String>> {
+    None
+}
+
+#[cfg(target_os = "windows")]
+fn prompt_fields(title: &str, labels: &[&str], passwords: &[bool]) -> Option<Vec<String>> {
+    if labels.is_empty() || labels.len() != passwords.len() {
+        return None;
+    }
+    let mut state = Box::new(PromptState {
+        controls: Vec::new(),
+        result: None,
+    });
+    let state_ptr: *mut PromptState = &mut *state;
+    let class_name = wide("SlayTheAmethystPrompt");
+    let title = wide(title);
+    let instance = unsafe { GetModuleHandleW(std::ptr::null()) };
+    if instance.is_null() {
+        return None;
+    }
+    let window_class = WNDCLASSW {
+        style: CS_HREDRAW | CS_VREDRAW,
+        lpfnWndProc: Some(prompt_window_proc),
+        hInstance: instance,
+        lpszClassName: class_name.as_ptr(),
+        ..unsafe { std::mem::zeroed() }
+    };
+    unsafe {
+        RegisterClassW(&window_class);
+    }
+    let window = unsafe {
+        CreateWindowExW(
+            WS_EX_DLGMODALFRAME,
+            class_name.as_ptr(),
+            title.as_ptr(),
+            WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU,
+            CW_USEDEFAULT,
+            CW_USEDEFAULT,
+            390,
+            150 + labels.len() as i32 * 58,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            instance,
+            state_ptr.cast(),
+        )
+    };
+    if window.is_null() {
+        return None;
+    }
+    unsafe {
+        for (index, (label, password)) in labels.iter().zip(passwords).enumerate() {
+            let label = wide(label);
+            CreateWindowExW(
+                0,
+                wide("STATIC").as_ptr(),
+                label.as_ptr(),
+                WS_CHILD | WS_VISIBLE,
+                20,
+                20 + index as i32 * 58,
+                340,
+                20,
+                window,
+                std::ptr::null_mut(),
+                instance,
+                std::ptr::null(),
+            );
+            let mut style = WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL as u32;
+            if *password {
+                style |= ES_PASSWORD as u32;
+            }
+            let edit = CreateWindowExW(
+                0,
+                wide("EDIT").as_ptr(),
+                wide("").as_ptr(),
+                style,
+                20,
+                40 + index as i32 * 58,
+                340,
+                24,
+                window,
+                (100 + index) as usize as HMENU,
+                instance,
+                std::ptr::null(),
+            );
+            (*state_ptr).controls.push(edit);
+        }
+        let button_y = 55 + labels.len() as i32 * 58;
+        CreateWindowExW(
+            0,
+            wide("BUTTON").as_ptr(),
+            wide("确定").as_ptr(),
+            WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON as u32,
+            190,
+            button_y,
+            80,
+            28,
+            window,
+            1 as usize as HMENU,
+            instance,
+            std::ptr::null(),
+        );
+        CreateWindowExW(
+            0,
+            wide("BUTTON").as_ptr(),
+            wide("取消").as_ptr(),
+            WS_CHILD | WS_VISIBLE,
+            280,
+            button_y,
+            80,
+            28,
+            window,
+            2 as usize as HMENU,
+            instance,
+            std::ptr::null(),
+        );
+        ShowWindow(window, SW_SHOW);
+        let mut message = MSG::default();
+        while GetMessageW(&mut message, std::ptr::null_mut(), 0, 0) > 0 {
+            TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+    }
+    state.result.take()
+}
+
+#[cfg(target_os = "windows")]
+struct PromptState {
+    controls: Vec<HWND>,
+    result: Option<Vec<String>>,
+}
+
+#[cfg(target_os = "windows")]
+unsafe extern "system" fn prompt_window_proc(
+    window: HWND,
+    message: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    let state = if message == WM_NCCREATE {
+        let create = &*(lparam as *const CREATESTRUCTW);
+        let state = create.lpCreateParams as *mut PromptState;
+        SetWindowLongPtrW(window, GWLP_USERDATA, state as isize);
+        state
+    } else {
+        GetWindowLongPtrW(window, GWLP_USERDATA) as *mut PromptState
+    };
+    match message {
+        WM_COMMAND if (wparam & 0xffff) == 1 => {
+            let mut values = Vec::new();
+            for control in &(*state).controls {
+                let length = GetWindowTextLengthW(*control) as usize;
+                let mut buffer = vec![0_u16; length + 1];
+                GetWindowTextW(*control, buffer.as_mut_ptr(), buffer.len() as i32);
+                values.push(String::from_utf16_lossy(&buffer[..length]));
+            }
+            (*state).result = Some(values);
+            DestroyWindow(window);
+            0
+        }
+        WM_COMMAND if (wparam & 0xffff) == 2 => {
+            DestroyWindow(window);
+            0
+        }
+        WM_CLOSE => {
+            DestroyWindow(window);
+            0
+        }
+        WM_DESTROY => {
+            PostQuitMessage(0);
+            0
+        }
+        _ => DefWindowProcW(window, message, wparam, lparam),
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn wide(value: &str) -> Vec<u16> {
+    value.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
 fn write_state(paths: &AppPaths, state: &ConnectionState) -> Result<(), String> {
@@ -873,16 +1439,26 @@ fn write_state(paths: &AppPaths, state: &ConnectionState) -> Result<(), String> 
 }
 
 fn write_config(path: &Path, contents: &str) -> Result<(), String> {
-    let parent = path.parent().ok_or_else(|| "EasyTier config has no parent directory.".to_owned())?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| "EasyTier config has no parent directory.".to_owned())?;
     fs::create_dir_all(parent).map_err(io_error)?;
     fs::write(path, contents).map_err(io_error)
 }
 
 fn write_json<T: Serialize>(path: &Path, value: &T, backup: bool) -> Result<(), String> {
-    let parent = path.parent().ok_or_else(|| "Output file has no parent directory.".to_owned())?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| "Output file has no parent directory.".to_owned())?;
     fs::create_dir_all(parent).map_err(io_error)?;
     let contents = serde_json::to_vec_pretty(value).map_err(|error| error.to_string())?;
-    let temporary = parent.join(format!(".{}.{}.tmp", path.file_name().and_then(|name| name.to_str()).unwrap_or("state"), now_ms()));
+    let temporary = parent.join(format!(
+        ".{}.{}.tmp",
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("state"),
+        now_ms()
+    ));
     let mut file = File::create(&temporary).map_err(io_error)?;
     file.write_all(&contents).map_err(io_error)?;
     file.sync_all().map_err(io_error)?;
@@ -890,7 +1466,9 @@ fn write_json<T: Serialize>(path: &Path, value: &T, backup: bool) -> Result<(), 
     if backup && path.is_file() {
         let backup = path.with_file_name(format!(
             "{}.bak",
-            path.file_name().and_then(|name| name.to_str()).unwrap_or("state")
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("state")
         ));
         let _ = fs::copy(path, backup);
     }
@@ -908,7 +1486,13 @@ fn easytier_config(session: &Session, player_id: &str) -> String {
     let assigned = valid_cidr(&session.assigned_ipv4_cidr);
     let mut config = format!(
         "instance_name = {}\nhostname = {}\n",
-        toml_string(&stable_name("sts-pc", &session.session_id, "session", 96, 12)),
+        toml_string(&stable_name(
+            "sts-pc",
+            &session.session_id,
+            "session",
+            96,
+            12
+        )),
         toml_string(&stable_name("sts", player_id, "player", 63, 8)),
     );
     if let Some(cidr) = assigned {
@@ -925,43 +1509,96 @@ fn easytier_config(session: &Session, player_id: &str) -> String {
     config
 }
 
-fn stable_name(prefix: &str, value: &str, fallback: &str, max_length: usize, hash_length: usize) -> String {
-    let input = if value.trim().is_empty() { fallback } else { value.trim() };
+fn stable_name(
+    prefix: &str,
+    value: &str,
+    fallback: &str,
+    max_length: usize,
+    hash_length: usize,
+) -> String {
+    let input = if value.trim().is_empty() {
+        fallback
+    } else {
+        value.trim()
+    };
     let hash = hex_sha256(input)[..hash_length].to_owned();
     let body: String = value
         .trim()
         .to_ascii_lowercase()
         .chars()
-        .map(|character| if character.is_ascii_lowercase() || character.is_ascii_digit() { character } else { '-' })
+        .map(|character| {
+            if character.is_ascii_lowercase() || character.is_ascii_digit() {
+                character
+            } else {
+                '-'
+            }
+        })
         .collect::<String>()
         .split('-')
         .filter(|part| !part.is_empty())
         .collect::<Vec<_>>()
         .join("-");
-    let body = if body.is_empty() { fallback.to_owned() } else { body };
-    let available = max_length.saturating_sub(prefix.len() + hash.len() + 2).max(1);
-    let body = body.chars().take(available).collect::<String>().trim_end_matches('-').to_owned();
-    format!("{prefix}-{}-{hash}", if body.is_empty() { fallback } else { &body })
+    let body = if body.is_empty() {
+        fallback.to_owned()
+    } else {
+        body
+    };
+    let available = max_length
+        .saturating_sub(prefix.len() + hash.len() + 2)
+        .max(1);
+    let body = body
+        .chars()
+        .take(available)
+        .collect::<String>()
+        .trim_end_matches('-')
+        .to_owned();
+    format!(
+        "{prefix}-{}-{hash}",
+        if body.is_empty() { fallback } else { &body }
+    )
 }
 
 fn stable_mac_address(player_id: &str) -> String {
     let mut bytes = Sha256::digest(player_id.trim().as_bytes())[0..6].to_vec();
     bytes[0] = (bytes[0] & 0xfe) | 0x02;
-    bytes.iter().map(|byte| format!("{byte:02X}")).collect::<Vec<_>>().join(":")
+    bytes
+        .iter()
+        .map(|byte| format!("{byte:02X}"))
+        .collect::<Vec<_>>()
+        .join(":")
 }
 
 fn hex_sha256(value: &str) -> String {
-    Sha256::digest(value.as_bytes()).iter().map(|byte| format!("{byte:02x}")).collect()
+    hex_sha256_bytes(value.as_bytes())
+}
+
+fn hex_sha256_bytes(value: &[u8]) -> String {
+    Sha256::digest(value)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 fn toml_string(value: &str) -> String {
-    format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n").replace('\r', "\\r").replace('\t', "\\t"))
+    format!(
+        "\"{}\"",
+        value
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('\n', "\\n")
+            .replace('\r', "\\r")
+            .replace('\t', "\\t")
+    )
 }
 
 fn valid_cidr(value: &str) -> Option<&str> {
     let (address, prefix) = value.trim().split_once('/')?;
     let prefix = prefix.parse::<u8>().ok()?;
-    if prefix > 32 || cidr_host(address).is_none() { None } else { Some(value.trim()) }
+    if prefix > 32 || cidr_host(address).is_none() {
+        None
+    } else {
+        Some(value.trim())
+    }
 }
 
 fn cidr_host(value: &str) -> Option<String> {
@@ -975,7 +1612,10 @@ fn cidr_host(value: &str) -> Option<String> {
 }
 
 fn now_ms() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
 }
 
 fn io_error(error: std::io::Error) -> String {
@@ -992,14 +1632,9 @@ fn notify(title: &str, description: &str) {
 }
 
 fn tray_icon() -> Icon {
-    let mut rgba = Vec::with_capacity(32 * 32 * 4);
-    for y in 0..32 {
-        for x in 0..32 {
-            let border = x < 3 || x > 28 || y < 3 || y > 28;
-            let accent = (x > 10 && x < 22 && y > 8 && y < 24) || (x > 7 && x < 25 && y > 13 && y < 19);
-            let pixel = if border { [30, 31, 36, 255] } else if accent { [222, 66, 111, 255] } else { [244, 242, 234, 255] };
-            rgba.extend_from_slice(&pixel);
-        }
-    }
-    Icon::from_rgba(rgba, 32, 32).expect("static tray icon must be valid")
+    let image = image::load_from_memory(EMBEDDED_APP_ICON)
+        .expect("embedded app icon must be valid PNG")
+        .resize_exact(32, 32, image::imageops::FilterType::Lanczos3)
+        .to_rgba8();
+    Icon::from_rgba(image.into_raw(), 32, 32).expect("embedded tray icon must be valid")
 }

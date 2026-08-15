@@ -46,7 +46,8 @@ object StsLaunchSpec {
     private const val DEFAULT_TIERED_STOP_AT_LEVEL = 2
     private const val DEBUG_GPU_GUARDIAN_TEST_PREFS = "sts_debug_gpu_guardian_test"
     private val EFFECTIVE_PERFORMANCE_PROPERTY_KEYS = listOf(
-        "amethyst.gdx.frame_profiler",
+        "amethyst.gdx.frame_ring",
+        "amethyst.bridge.launcher_perf_snapshot",
         "amethyst.gdx.gpu_resource_summary",
         "amethyst.gdx.gpu_resource_diag"
     )
@@ -122,6 +123,7 @@ object StsLaunchSpec {
         autoplayMode: AutoplayMode = AutoplayMode.DEFAULT,
         autoplaySingleRoomSpecPath: String = "",
         autoplayChoiceDelayMs: Long = 0L,
+        autoplaySingleRoomBenchMode: Boolean = false,
         cardObtainEffectOwnershipCompatEnabled: Boolean = true
     ): List<String> {
         val stsRoot = RuntimePaths.stsRoot(context)
@@ -192,10 +194,11 @@ object StsLaunchSpec {
             args.add("-XX:+UnlockDiagnosticVMOptions")
             args.add("-verbose:gc")
             args.add("-Xloggc:${RuntimePaths.jvmGcLog(context).absolutePath}")
-            args.add("-Damethyst.gdx.frame_profiler=true")
-            args.add("-Damethyst.gdx.frame_profiler.stack=true")
-            args.add("-Damethyst.gdx.frame_profiler.slow_ms=33")
-            args.add("-Damethyst.gdx.frame_profiler.summary_frames=300")
+            // Single switch activates FrameRingBuffer + amethyst-frame-probe HUD.
+            // Budget defaults to 1000ms/foregroundFPS; override with frame_ring.budget_ms.
+            args.add("-Damethyst.gdx.frame_ring=true")
+            val budgetMs = 1000 / LauncherConfig.readTargetFps(context).coerceAtLeast(1)
+            args.add("-Damethyst.gdx.frame_ring.budget_ms=$budgetMs")
         }
         if (isMtsLaunchMode(launchMode)) {
             // BaseMod bytecode can fail verification on some Android/OpenJDK 8 combos after MTS patching.
@@ -694,6 +697,19 @@ object StsLaunchSpec {
         if (performanceDeepDiagnostics) {
             args.add("-Damethyst.gdx.gpu_resource_summary=true")
         }
+        if (ramSaverEnabled) {
+            // Scale ram-saver's hot-pin texture budget with the heap size.
+            // The default 384 MB was calibrated for a 512 MB heap (75%).
+            // At 1024 MB the same ratio gives ~768 MB, keeping the proportion
+            // consistent so the hot-pin set doesn't shrink relative to available
+            // memory and cause DrawCardAction flush-spikes from atlas re-uploads.
+            val hotBudgetMb = (heapMaxMb * 0.75).toLong().coerceIn(256L, 1536L)
+            args.add("-Dramsaver.hot.budget_mb=$hotBudgetMb")
+            // Pin textures for the full combat duration (up to 10 min).
+            // 120 s was too short — textures were age-dropped mid-combat and
+            // re-materialized during DrawCardAction, multiplying SpriteBatch flushes.
+            args.add("-Dramsaver.hot.pin_seconds=600")
+        }
         val debugPropertyResult = addDebugGpuGuardianTestProperties(context, args)
         logEffectivePerformanceProperties(
             args = args,
@@ -746,7 +762,15 @@ object StsLaunchSpec {
                     "0"
                 }
         )
-        args.add("-Damethyst.autoplay.wait_for_agent=${if (effectiveAutoplay) "true" else "false"}")
+        // bench mode: played by perf-bench harness — infinite energy + HP, full autoplay
+        args.add(
+            "-Damethyst.debug.autoplay.single_room_bench_mode=" +
+                if (effectiveAutoplay && autoplayMode == AutoplayMode.SINGLE_ROOM
+                    && autoplaySingleRoomBenchMode) "true" else "false"
+        )
+        // wait_for_agent=false: perf-bench and normal smoke autoplay do not use an agent.
+        // Only set true when an external agent is explicitly requested.
+        args.add("-Damethyst.autoplay.wait_for_agent=false")
         args.add("-Damethyst.bridge.events=${RuntimePaths.bootBridgeEventsLog(context).absolutePath}")
         if (isMtsLaunchMode(launchMode)) {
             args.add("-Damethyst.mts.mod_file_list=${RuntimePaths.mtsModFileList(context).absolutePath}")
@@ -758,6 +782,7 @@ object StsLaunchSpec {
         }
         if (showPerformanceOverlay) {
             args.add("-Damethyst.bridge.heap_snapshot=${RuntimePaths.jvmHeapSnapshot(context).absolutePath}")
+            args.add("-Damethyst.bridge.launcher_perf_snapshot=${RuntimePaths.launcherPerfSnapshot(context).absolutePath}")
         }
         if (performanceDeepDiagnostics) {
             args.add("-Damethyst.bridge.gc_histogram_dir=${RuntimePaths.jvmHistogramsDir(context).absolutePath}")

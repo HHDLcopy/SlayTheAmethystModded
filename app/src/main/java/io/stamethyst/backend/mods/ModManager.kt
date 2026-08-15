@@ -26,6 +26,7 @@ object ModManager {
     const val MOD_ID_AMETHYST_RUNTIME_COMPAT = "amethystruntimecompat"
     const val MOD_ID_AMETHYST_FLOATING_TOOLS = "amethystfloatingtools"
     const val MOD_ID_RAM_SAVER = "ramsaver"
+    const val MOD_ID_AMETHYST_FRAME_PROBE = "amethystframeprobe"
     const val MOD_ID_TEXTURE_REPLACER = "texturereplacer"
     const val OPTIONAL_MOD_PRIORITY_MIN = 0
     const val OPTIONAL_MOD_PRIORITY_MAX = 10
@@ -36,7 +37,8 @@ object ModManager {
             MOD_ID_STSLIB,
             MOD_ID_AMETHYST_RUNTIME_COMPAT,
             MOD_ID_AMETHYST_FLOATING_TOOLS,
-            MOD_ID_RAM_SAVER
+            MOD_ID_RAM_SAVER,
+            MOD_ID_AMETHYST_FRAME_PROBE
         )
     )
 
@@ -183,6 +185,9 @@ object ModManager {
         if (MOD_ID_RAM_SAVER == normalized) {
             return hasBundledAsset(context, "components/mods/RamSaver.jar")
         }
+        if (MOD_ID_AMETHYST_FRAME_PROBE == normalized) {
+            return hasBundledAsset(context, "components/mods/AmethystFrameProbe.jar")
+        }
         return false
     }
 
@@ -203,6 +208,9 @@ object ModManager {
         }
         if (MOD_ID_RAM_SAVER == normalized) {
             return RuntimePaths.importedRamSaverJar(context)
+        }
+        if (MOD_ID_AMETHYST_FRAME_PROBE == normalized) {
+            return RuntimePaths.importedAmethystFrameProbeJar(context)
         }
         OptionalModStorageCoordinator.ensureOptionalModLibraryReady(context)
         return File(RuntimePaths.optionalModsLibraryDir(context), "${sanitizeFileName(normalized)}.jar")
@@ -541,6 +549,14 @@ object ModManager {
                 RuntimePaths.importedRamSaverJar(context)
             )
         )
+        result.add(
+            buildRequiredEntry(
+                context,
+                MOD_ID_AMETHYST_FRAME_PROBE,
+                "Amethyst Frame Probe",
+                RuntimePaths.importedAmethystFrameProbeJar(context)
+            )
+        )
 
         val optionalModFiles = findOptionalModFiles(context)
         val rawSelection = readEnabledOptionalModKeysSafely(context)
@@ -634,6 +650,14 @@ object ModManager {
                 )
             )
         }
+        // frame-probe is always in the launch list; it is a no-op when the ring is disabled.
+        requiredEntries.add(
+            resolveRequiredLaunchModEntry(
+                RuntimePaths.importedAmethystFrameProbeJar(context),
+                MOD_ID_AMETHYST_FRAME_PROBE,
+                "AmethystFrameProbe.jar"
+            )
+        )
 
         val optionalSelection = resolveOptionalLaunchSelection(context)
         val launchModFiles = ArrayList<File>()
@@ -743,6 +767,12 @@ object ModManager {
                 )
             )
         }
+        launchModFiles.add(
+            resolveRequiredLaunchModFile(
+                RuntimePaths.importedAmethystFrameProbeJar(context),
+                "AmethystFrameProbe.jar"
+            )
+        )
         resolveOptionalLaunchSelection(context).launchEntries.forEach { entry ->
             launchModFiles.add(entry.jarFile)
         }

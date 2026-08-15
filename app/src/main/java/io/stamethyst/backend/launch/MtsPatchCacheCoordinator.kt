@@ -31,7 +31,12 @@ internal object MtsPatchCacheCoordinator {
         stsLibJar = RuntimePaths.importedStsLibJar(context),
         bootBridgeJar = RuntimePaths.bootBridgeJar(context),
         gdxPatchJar = RuntimePaths.gdxPatchJar(context),
-        modFileList = RuntimePaths.mtsModFileList(context)
+        modFileList = RuntimePaths.mtsModFileList(context),
+        bundledMods = listOf(
+            RuntimePaths.importedAmethystRuntimeCompatJar(context),
+            RuntimePaths.importedAmethystFloatingToolsJar(context),
+            RuntimePaths.importedRamSaverJar(context)
+        )
     )
 
     @JvmStatic
@@ -149,10 +154,11 @@ internal object MtsPatchCacheCoordinator {
         stsLibJar: File,
         bootBridgeJar: File,
         gdxPatchJar: File,
-        modFileList: File
+        modFileList: File,
+        bundledMods: List<File> = emptyList()
     ): String {
         val rawMarker = buildString {
-            append("schema|7").append('\n')
+            append("schema|8").append('\n')
             append(jarFingerprint("desktop", desktopJar)).append('\n')
             append(jarFingerprint("modthespire", mtsJar)).append('\n')
             append(jarFingerprint("basemod", baseModJar)).append('\n')
@@ -162,6 +168,9 @@ internal object MtsPatchCacheCoordinator {
             append(textFileFingerprint("mod_file_list", modFileList)).append('\n')
             readModFiles(modFileList).forEachIndexed { index, modFile ->
                 append(jarFingerprint("mod[$index]", modFile)).append('\n')
+            }
+            bundledMods.forEachIndexed { index, modFile ->
+                append(jarFingerprint("bundled[$index]", modFile)).append('\n')
             }
         }.trimEnd()
         return sha256(rawMarker)

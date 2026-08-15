@@ -342,6 +342,15 @@ object ComponentInstaller {
             validator = ModJarSupport::validateRamSaverJar,
             replaceExisting = forceReplaceExisting
         )
+        ensureBundledMod(
+            context = context,
+            modLabel = "AmethystFrameProbe.jar",
+            resources = resources,
+            assetPath = "components/mods/AmethystFrameProbe.jar",
+            targetFile = RuntimePaths.importedAmethystFrameProbeJar(context),
+            validator = ModJarSupport::validateAmethystFrameProbeJar,
+            replaceExisting = forceReplaceExisting
+        )
         logDiagnostic(
             context = context,
             event = "component_install_bundled_mods_completed",
@@ -352,7 +361,8 @@ object ComponentInstaller {
                     RuntimePaths.importedStsLibJar(context),
                     RuntimePaths.importedAmethystRuntimeCompatJar(context),
                     RuntimePaths.importedAmethystFloatingToolsJar(context),
-                    RuntimePaths.importedRamSaverJar(context)
+                    RuntimePaths.importedRamSaverJar(context),
+                    RuntimePaths.importedAmethystFrameProbeJar(context)
                 ).map(::buildFileState)
             )
         )

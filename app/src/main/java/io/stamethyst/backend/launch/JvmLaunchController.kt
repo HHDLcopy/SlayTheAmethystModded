@@ -40,6 +40,7 @@ class JvmLaunchController(
     private val autoplayMode: AutoplayMode,
     private val autoplaySingleRoomSpecPath: String,
     private val autoplayChoiceDelayMs: Long,
+    private val autoplaySingleRoomBenchMode: Boolean = false,
     private val cardObtainEffectOwnershipCompatEnabled: Boolean,
     private val mirrorJvmLogsToLogcat: Boolean,
     private val onProgressUpdate: (Int, String) -> Unit,
@@ -69,7 +70,7 @@ class JvmLaunchController(
         private const val LOGCAT_TAG = "STS-JVM"
         private val PERFORMANCE_AUDIT_JVM_PROPERTIES = listOf(
             "amethyst.gdx.active_refresh_rate",
-            "amethyst.gdx.frame_profiler",
+            "amethyst.gdx.frame_ring",
             "amethyst.gdx.gpu_resource_summary",
             "amethyst.gdx.gpu_resource_diag",
             "amethyst.bridge.heap_snapshot",
@@ -374,6 +375,7 @@ class JvmLaunchController(
                             autoplayMode,
                             autoplaySingleRoomSpecPath,
                             autoplayChoiceDelayMs,
+                            autoplaySingleRoomBenchMode,
                             cardObtainEffectOwnershipCompatEnabled
                         )
                     )

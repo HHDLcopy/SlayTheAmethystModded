@@ -22,6 +22,7 @@ object RuntimePaths {
     private const val PERFORMANCE_LAUNCH_AUDIT_LOG_FILE_NAME = "performance_launch_audit.log"
     private const val JVM_GC_LOG_FILE_NAME = "jvm_gc.log"
     private const val JVM_HEAP_SNAPSHOT_FILE_NAME = "jvm_heap_snapshot.txt"
+    private const val LAUNCHER_PERF_SNAPSHOT_FILE_NAME = "launcher_perf_snapshot.txt"
     private const val JVM_SIGNAL_DUMP_FILE_NAME = "last_signal_dump.txt"
     private const val EXPECTED_GAME_EXIT_MARKER_FILE_NAME = ".expected_game_exit_marker"
     private const val EXTERNAL_RESOURCES_DIR_NAME = "external_resources"
@@ -144,6 +145,10 @@ object RuntimePaths {
 
     @JvmStatic
     fun importedRamSaverJar(context: Context): File = File(requiredModsDir(context), "RamSaver.jar")
+
+    @JvmStatic
+    fun importedAmethystFrameProbeJar(context: Context): File =
+        File(requiredModsDir(context), "AmethystFrameProbe.jar")
 
     @JvmStatic
     fun mtsModFileList(context: Context): File = File(stsRoot(context), MTS_MOD_FILE_LIST_FILE_NAME)
@@ -289,6 +294,10 @@ object RuntimePaths {
 
     @JvmStatic
     fun jvmHeapSnapshot(context: Context): File = File(stsRoot(context), JVM_HEAP_SNAPSHOT_FILE_NAME)
+
+    @JvmStatic
+    fun launcherPerfSnapshot(context: Context): File =
+        File(stsRoot(context), LAUNCHER_PERF_SNAPSHOT_FILE_NAME)
 
     @JvmStatic
     fun jvmSignalDump(context: Context): File = File(stsRoot(context), JVM_SIGNAL_DUMP_FILE_NAME)

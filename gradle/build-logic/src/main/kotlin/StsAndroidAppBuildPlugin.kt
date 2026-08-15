@@ -441,7 +441,8 @@ private fun Project.registerRuntimeAssetTasks(
         val bundledModProjectPaths = listOf(
             ":mods:amethyst-runtime-compat",
             ":mods:amethyst-floating-tools",
-            ":mods:ram-saver"
+            ":mods:ram-saver",
+            ":mods:amethyst-frame-probe"
         )
         dependsOn(bundledModProjectPaths.map { projectPath -> "$projectPath:jar" })
         bundledModProjectPaths.forEach { projectPath ->

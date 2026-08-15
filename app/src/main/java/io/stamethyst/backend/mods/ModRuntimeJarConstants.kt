@@ -89,6 +89,10 @@ internal const val STS_PATCH_LWJGL_HOT_LOOP_CONFIG_CLASS =
     "com/badlogic/gdx/backends/lwjgl/LwjglHotLoopConfig.class"
 internal const val STS_PATCH_LWJGL_FRAME_PACER_SCHEDULE_CLASS =
     "com/badlogic/gdx/backends/lwjgl/LwjglFramePacerSchedule.class"
+internal const val STS_PATCH_FRAME_RING_BUFFER_CLASS =
+    "com/badlogic/gdx/backends/lwjgl/FrameRingBuffer.class"
+internal const val STS_PATCH_SPRITE_BATCH_CLASS =
+    "com/badlogic/gdx/graphics/g2d/SpriteBatch.class"
 internal const val STS_PATCH_PIXEL_SCALE_CLASS =
     "com/badlogic/gdx/backends/lwjgl/PixelScaleCompat.class"
 internal const val STS_PATCH_LWJGL_INPUT_CLASS =
@@ -182,6 +186,8 @@ internal val REQUIRED_STS_PATCH_CLASSES: Set<String> = HashSet(
         STS_PATCH_LWJGL_APPLICATION_CLASS,
         STS_PATCH_LWJGL_HOT_LOOP_CONFIG_CLASS,
         STS_PATCH_LWJGL_FRAME_PACER_SCHEDULE_CLASS,
+        STS_PATCH_FRAME_RING_BUFFER_CLASS,
+        STS_PATCH_SPRITE_BATCH_CLASS,
         "com/badlogic/gdx/backends/lwjgl/LwjglGraphics.class",
         STS_PATCH_PIXEL_SCALE_CLASS,
         STS_PATCH_LWJGL_INPUT_CLASS,

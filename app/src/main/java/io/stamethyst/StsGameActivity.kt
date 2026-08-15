@@ -58,6 +58,7 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
         const val EXTRA_AUTOPLAY_SAVE_MODE = "io.stamethyst.autoplay_save_mode"
         const val EXTRA_AUTOPLAY_MODE = "io.stamethyst.autoplay_mode"
         const val EXTRA_AUTOPLAY_SINGLE_ROOM_SPEC = "io.stamethyst.autoplay_single_room_spec"
+        const val EXTRA_AUTOPLAY_SINGLE_ROOM_BENCH_MODE = "io.stamethyst.autoplay_single_room_bench_mode"
         const val EXTRA_AUTOPLAY_CHOICE_DELAY_MS = "io.stamethyst.autoplay_choice_delay_ms"
         const val EXTRA_CARD_OBTAIN_EFFECT_OWNERSHIP_COMPAT_ENABLED =
             "io.stamethyst.card_obtain_effect_ownership_compat_enabled"
@@ -75,6 +76,7 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
             autoplayMode: AutoplayMode = AutoplayMode.DEFAULT,
             autoplaySingleRoomSpecPath: String = "",
             autoplayChoiceDelayMs: Long = 0L,
+            autoplaySingleRoomBenchMode: Boolean = false,
             cardObtainEffectOwnershipCompatEnabled: Boolean = true,
             debugMode: Boolean = false
         ) {
@@ -94,6 +96,7 @@ class StsGameActivity : AppCompatActivity(), SensorEventListener {
             intent.putExtra(EXTRA_AUTOPLAY_MODE, autoplayMode.persistedValue)
             intent.putExtra(EXTRA_AUTOPLAY_SINGLE_ROOM_SPEC, autoplaySingleRoomSpecPath)
             intent.putExtra(EXTRA_AUTOPLAY_CHOICE_DELAY_MS, autoplayChoiceDelayMs)
+            intent.putExtra(EXTRA_AUTOPLAY_SINGLE_ROOM_BENCH_MODE, autoplaySingleRoomBenchMode)
             intent.putExtra(
                 EXTRA_CARD_OBTAIN_EFFECT_OWNERSHIP_COMPAT_ENABLED,
                 cardObtainEffectOwnershipCompatEnabled

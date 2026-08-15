@@ -30,12 +30,14 @@ internal data class GameSessionConfig(
     val autoplay: Boolean,
     val autoplaySaveMode: AutoplaySaveMode,
     val autoplayMode: AutoplayMode,
+    val autoplaySingleRoomBenchMode: Boolean,
     val autoplaySingleRoomSpecPath: String,
     val autoplayChoiceDelayMs: Long,
     val cardObtainEffectOwnershipCompatEnabled: Boolean,
     val specialKeyInputMode: SpecialKeyInputMode,
     val showFloatingMouseWindow: Boolean,
     val showGamePerformanceOverlay: Boolean,
+    val performanceDeepDiagnostics: Boolean,
     val mirrorJvmLogsToLogcat: Boolean,
     val touchMouseInteractionMode: TouchMouseInteractionMode,
     val touchDoubleClickAsRightClick: Boolean,
@@ -103,6 +105,9 @@ internal data class GameSessionConfig(
                 autoplayMode = AutoplayMode.fromPersistedValue(
                     intent.getStringExtra(StsGameActivity.EXTRA_AUTOPLAY_MODE)
                 ),
+                autoplaySingleRoomBenchMode = intent.getBooleanExtra(
+                    StsGameActivity.EXTRA_AUTOPLAY_SINGLE_ROOM_BENCH_MODE, false
+                ),
                 autoplaySingleRoomSpecPath =
                     intent.getStringExtra(StsGameActivity.EXTRA_AUTOPLAY_SINGLE_ROOM_SPEC)
                         .orEmpty(),
@@ -118,6 +123,7 @@ internal data class GameSessionConfig(
                 showFloatingMouseWindow =
                     specialKeyInputMode == SpecialKeyInputMode.LEGACY_FLOATING_WINDOW,
                 showGamePerformanceOverlay = LauncherConfig.isGamePerformanceOverlayEnabled(context),
+                performanceDeepDiagnostics = LauncherConfig.isGamePerformanceDeepDiagnosticsEnabled(context),
                 mirrorJvmLogsToLogcat = LauncherConfig.isJvmLogcatMirrorEnabled(context),
                 touchMouseInteractionMode = LauncherConfig.readTouchMouseInteractionMode(context),
                 touchDoubleClickAsRightClick = LauncherConfig.readTouchDoubleClickAsRightClick(context),

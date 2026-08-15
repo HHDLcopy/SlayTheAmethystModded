@@ -288,6 +288,23 @@ tasks.matching {
     enabled = false
 }
 
+val marketNetworkAcceptanceTestClass =
+    "io.stamethyst.backend.steamcloud.SteamCommunityMarketNetworkAcceptanceTest"
+
+tasks.matching { it.name == "testDebugUnitTest" }.configureEach {
+    if (gradle.startParameter.taskNames.any { it.endsWith("marketNetworkAcceptanceTest") }) {
+        (this as org.gradle.api.tasks.testing.Test).filter {
+            includeTestsMatching(marketNetworkAcceptanceTestClass)
+        }
+    }
+}
+
+tasks.register("marketNetworkAcceptanceTest") {
+    group = "verification"
+    description = "Runs the opt-in live Watt Steam Community market acceptance test only."
+    dependsOn("testDebugUnitTest")
+}
+
 dependencies {
     implementation(project(":lan-core"))
     implementation(libs.androidx.appcompat)

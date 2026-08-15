@@ -181,7 +181,6 @@ STS_RUN_MARKET_NETWORK_ACCEPTANCE=true ./gradlew :app:marketNetworkAcceptanceTes
 更多文档：
 
 - [英文版 README](./docs/README.en.md)
-- [系统架构设计图集](./docs/system-architecture-report.md)
 - [架构总览](./docs/architecture-overview.md)
 - [调试自动化指南](./docs/debug-automation/README.md)
 - [发布自动化指南](./docs/release-automation/README.md)

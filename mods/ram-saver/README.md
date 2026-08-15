@@ -85,6 +85,9 @@ Preloads BaseMod's first card-glow FBO/ShapeRenderer setup and Chinese dynamic-v
 25. `optispire.patches.FirstCombatLogConsolePrewarm`
 Pre-initializes Swing text-document insertion, the AWT event queue lookup, and ModTheSpire's redirected stdout/stderr console output path during splash/black-screen loading, with a first-monster-room fallback. This addresses first-combat entry hitches where early combat logging such as monster power application can stall the render thread inside `MessageConsole$ConsoleOutputStream.clearBuffer`, `DefaultCaret`, and `Toolkit.getEventQueue` before the battle-start banner is published. Type: performance mitigation implemented by `FirstCombatLogConsolePrewarm`.
 
+26. `optispire.patches.CombatTexturePrewarm`
+Keeps the shared `vfx/vfx.png` atlas resident with the existing combat prewarm set so card animations and other combat effects do not repeatedly materialize the lazy atlas during draw actions. This addresses SpriteBatch flush spikes and render hitches caused by effect-region draws switching between fake and real textures. Type: rendering performance mitigation implemented by `CombatTexturePrewarm`.
+
 ## Maintenance rule
 
 If you add another runtime/gameplay fix through this mod, update this README in the same change and describe:

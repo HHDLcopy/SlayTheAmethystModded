@@ -14,7 +14,7 @@ import java.util.zip.ZipFile
 object ModJarSupport {
     private const val EXPECTED_AMETHYST_RUNTIME_COMPAT_VERSION = "1.0.38"
     private const val EXPECTED_AMETHYST_FLOATING_TOOLS_VERSION = "1.0.0"
-    private const val EXPECTED_RAM_SAVER_VERSION = "0.3.1-amethyst.3"
+    private const val EXPECTED_RAM_SAVER_VERSION = "0.3.1-amethyst.5"
 
     class ModManifestInfo(
         @JvmField val modId: String,

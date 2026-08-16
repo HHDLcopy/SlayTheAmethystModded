@@ -4,6 +4,7 @@ import posixpath
 import re
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1836,6 +1837,11 @@ rm -rf files/sts/package files/sts/mts_patch_cache
             exit_code = 1
             self.result["error"] = {"type": f"{exc.__class__.__module__}.{exc.__class__.__name__}", "message": str(exc)}
             self.set_result_success(False, "ERROR", str(exc))
+            print(
+                f"Harness error [{exc.__class__.__name__}]: {exc}",
+                file=sys.stderr,
+                flush=True,
+            )
         finally:
             self.write_result(result_path)
         return exit_code

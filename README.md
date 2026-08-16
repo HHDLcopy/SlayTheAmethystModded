@@ -159,11 +159,14 @@ APK 输出目录：
 
 该任务将会自动启动 app，自动跑真实的运行场景，一并收集性能信息。
 
-建议使用`-PdeviceSerial`和`-PharnessOutDir`来指定设备和结论输出目录。
+建议使用 `-PdeviceSerial` 和 `-PharnessOutDir` 指定设备和结论输出目录。
 
 ```shell
-./gradlew :app:stsHarnessPerfBench -PdeviceSerial=10.126.126.1:5555 -PharnessOutDir=agent–tmp/perf-bench
+./gradlew :app:stsHarnessPerfBench -PdeviceSerial=10.126.126.1:5555 -PharnessOutDir=agent-tmp/perf-bench
 ```
+
+完整参数、默认值、固定行为和输出文件见
+[perf-bench 参数参考](./scripts/tools/harness/README.md#stsHarnessPerfBench)。
 
 GPU 诊断开销应使用固定战斗做关闭/开启配对测试；方法、指标定义和阈值限制见
 [GPU 性能诊断与配对基准](./docs/gpu-performance-diagnostics.md)。

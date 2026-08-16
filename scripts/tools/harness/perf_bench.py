@@ -127,6 +127,7 @@ def run_perf_bench(ctx: HarnessContext, resolved_out_dir: Path) -> int:
                     obs == "READY"
                     and not tracer_started
                     and ctx.connector is not None
+                    and getattr(ctx.options, "perf_bench_enable_profiler", False)
                 ):
                     tracer_started = True
                     try:
@@ -181,7 +182,7 @@ def run_perf_bench(ctx: HarnessContext, resolved_out_dir: Path) -> int:
                                "make sure performanceDeepDiagnostics is enabled.")
             _print_error_summary(
                 "No incidents file found.\n"
-                "  Enable: Settings → Performance Overlay + GPU Resource Diagnostics"
+                "  Enable: Developer settings -> Deep performance diagnostics"
             )
             return 0
 

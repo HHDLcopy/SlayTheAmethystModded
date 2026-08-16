@@ -36,6 +36,21 @@ internal object DiagnosticsProcessClient {
         return parseArchiveResult(result)
     }
 
+    fun exportPerformanceLogBundle(context: Context, destination: Uri): Int {
+        val result = execute(context) { serviceIntent ->
+            serviceIntent.action = DiagnosticsProcessService.ACTION_EXPORT_PERFORMANCE_LOG_BUNDLE
+            serviceIntent.putExtra(DiagnosticsProcessService.EXTRA_DESTINATION_URI, destination)
+        }
+        return result.getInt(DiagnosticsProcessService.EXTRA_ENTRY_COUNT, 0)
+    }
+
+    fun buildPerformanceLogShareArchive(context: Context): DiagnosticsArchiveResult {
+        val result = execute(context) { serviceIntent ->
+            serviceIntent.action = DiagnosticsProcessService.ACTION_BUILD_PERFORMANCE_LOG_SHARE
+        }
+        return parseArchiveResult(result)
+    }
+
     fun buildCrashShareArchive(
         context: Context,
         crashContext: CrashArchiveContext

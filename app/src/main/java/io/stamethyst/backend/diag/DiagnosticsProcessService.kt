@@ -15,6 +15,8 @@ class DiagnosticsProcessService : Service() {
         const val ACTION_EXPORT_JVM_LOG_BUNDLE = "io.stamethyst.action.EXPORT_JVM_LOG_BUNDLE"
         const val ACTION_BUILD_JVM_LOG_SHARE = "io.stamethyst.action.BUILD_JVM_LOG_SHARE"
         const val ACTION_BUILD_CRASH_SHARE = "io.stamethyst.action.BUILD_CRASH_SHARE"
+        const val ACTION_EXPORT_PERFORMANCE_LOG_BUNDLE = "io.stamethyst.action.EXPORT_PERFORMANCE_LOG_BUNDLE"
+        const val ACTION_BUILD_PERFORMANCE_LOG_SHARE = "io.stamethyst.action.BUILD_PERFORMANCE_LOG_SHARE"
         /** No ResultReceiver required. Writes archive to staging dir, then writes sentinel. */
         const val ACTION_ADB_STAGE_JVM_LOG = "io.stamethyst.action.ADB_STAGE_JVM_LOG"
 
@@ -140,6 +142,26 @@ class DiagnosticsProcessService : Service() {
                         applicationContext,
                         crashContext
                     )
+                    Bundle().apply {
+                        putString(EXTRA_OUTPUT_PATH, result.archiveFile.absolutePath)
+                        putInt(EXTRA_ENTRY_COUNT, result.entryCount)
+                    }
+                }
+
+                ACTION_EXPORT_PERFORMANCE_LOG_BUNDLE -> {
+                    val destination = extractDestinationUri(intent)
+                        ?: throw IllegalArgumentException("Missing export destination URI")
+                    val exportedCount = DiagnosticsArchiveBuilder.exportPerformanceDiagnosticsBundle(
+                        applicationContext,
+                        destination
+                    )
+                    Bundle().apply {
+                        putInt(EXTRA_ENTRY_COUNT, exportedCount)
+                    }
+                }
+
+                ACTION_BUILD_PERFORMANCE_LOG_SHARE -> {
+                    val result = DiagnosticsArchiveBuilder.createPerformanceShareArchive(applicationContext)
                     Bundle().apply {
                         putString(EXTRA_OUTPUT_PATH, result.archiveFile.absolutePath)
                         putInt(EXTRA_ENTRY_COUNT, result.entryCount)

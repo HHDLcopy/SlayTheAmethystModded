@@ -24,10 +24,12 @@ import java.io.File;
 public class AmethystFrameProbe implements PostRenderSubscriber, PostUpdateSubscriber {
 
     private static final String PROP_STS_ROOT = "user.dir";
+	private static final String PROP_FRAME_HUD = "amethyst.gdx.frame_hud";
 
     private final FrameHud       hud;
     private final IncidentWriter writer;
     private final boolean        active;
+	private final boolean        hudVisible;
 
     public static void initialize() {
         BaseMod.subscribe(new AmethystFrameProbe());
@@ -35,6 +37,7 @@ public class AmethystFrameProbe implements PostRenderSubscriber, PostUpdateSubsc
 
     public AmethystFrameProbe() {
         active = FrameRingBuffer.ENABLED;
+		hudVisible = Boolean.parseBoolean(System.getProperty(PROP_FRAME_HUD, "true"));
         if (!active) {
             hud    = null;
             writer = null;
@@ -60,7 +63,7 @@ public class AmethystFrameProbe implements PostRenderSubscriber, PostUpdateSubsc
 
     @Override
     public void receivePostRender(SpriteBatch sb) {
-        if (!active) return;
+        if (!active || !hudVisible) return;
         hud.render(sb);
     }
 }

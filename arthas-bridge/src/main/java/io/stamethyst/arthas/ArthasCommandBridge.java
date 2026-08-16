@@ -79,7 +79,9 @@ public class ArthasCommandBridge {
                 return new Listener(serverSocket, true);
             }
             try {
-                java.net.ServerSocket server = new java.net.ServerSocket(port);
+                java.net.ServerSocket server = new java.net.ServerSocket();
+                server.bind(new java.net.InetSocketAddress(
+                    java.net.InetAddress.getLoopbackAddress(), port));
                 serverSocket = server;
                 listeningPort = port;
                 return new Listener(server, false);

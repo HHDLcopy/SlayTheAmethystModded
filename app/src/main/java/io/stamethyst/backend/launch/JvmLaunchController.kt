@@ -72,6 +72,7 @@ class JvmLaunchController(
         private val PERFORMANCE_AUDIT_JVM_PROPERTIES = listOf(
             "amethyst.gdx.active_refresh_rate",
             "amethyst.gdx.frame_ring",
+            "amethyst.gdx.frame_hud",
             "amethyst.gdx.gpu_resource_summary",
             "amethyst.gdx.gpu_resource_diag",
             "amethyst.bridge.heap_snapshot",

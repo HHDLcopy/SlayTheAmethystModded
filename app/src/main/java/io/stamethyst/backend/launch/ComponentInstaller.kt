@@ -80,6 +80,7 @@ object ComponentInstaller {
         throwIfInterrupted()
         RuntimePaths.ensureBaseDirs(context)
         removeLegacyMarketNatives(RuntimePaths.gdxPatchNativesDir(context))
+        removeLegacyBundledArthas(RuntimePaths.agentConnectorDir(context))
         val resources = RuntimeResourceProvider(context)
         val packagedComponentsState = evaluatePackagedComponentsState(
             context = context,
@@ -163,6 +164,12 @@ object ComponentInstaller {
             100,
             context.getString(R.string.startup_progress_components_ready)
         )
+    }
+
+    private fun removeLegacyBundledArthas(gameProbeDir: File) {
+        listOf("arthas-core.jar", "arthas-spy.jar", "arthas-bridge.jar").forEach { name ->
+            File(gameProbeDir, name).delete()
+        }
     }
 
     @Throws(IOException::class)
@@ -759,6 +766,9 @@ object ComponentInstaller {
         }
         if (!RuntimePaths.bootBridgeJar(context).isFile) {
             missing += "boot_bridge"
+        }
+        if (!RuntimePaths.agentConnectorJar(context).isFile) {
+            missing += "game_probe"
         }
         if (!File(RuntimePaths.lwjgl2InjectorDir(context), "version").isFile ||
             !RuntimePaths.lwjgl2InjectorJar(context).isFile

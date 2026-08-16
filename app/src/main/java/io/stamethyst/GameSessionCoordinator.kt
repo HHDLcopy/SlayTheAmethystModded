@@ -1081,12 +1081,12 @@ internal class GameSessionCoordinator(
     }
 
     private fun updatePerformanceOverlayVisibility() {
-        val shouldShow = !backExitRequested &&
-            config.showGamePerformanceOverlay &&
+        val shouldCollect = !backExitRequested &&
+            (config.showGamePerformanceOverlay || config.performanceDeepDiagnostics) &&
             jvmLaunchController.runtimeLifecycleReady &&
             bootOverlayController.isDismissed &&
             activity.hasWindowFocus()
-        performanceOverlayController?.setVisible(shouldShow)
+        performanceOverlayController?.setVisible(shouldCollect)
     }
 
     private fun updateSystemGameState() {

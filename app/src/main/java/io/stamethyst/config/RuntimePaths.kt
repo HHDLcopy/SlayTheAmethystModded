@@ -23,6 +23,8 @@ object RuntimePaths {
     private const val JVM_GC_LOG_FILE_NAME = "jvm_gc.log"
     private const val JVM_HEAP_SNAPSHOT_FILE_NAME = "jvm_heap_snapshot.txt"
     private const val LAUNCHER_PERF_SNAPSHOT_FILE_NAME = "launcher_perf_snapshot.txt"
+    private const val FRAME_PROBE_INCIDENTS_FILE_NAME = "frame-probe-incidents.jsonl"
+    private const val FRAME_PROBE_PREVIOUS_INCIDENTS_FILE_NAME = "frame-probe-incidents.prev.jsonl"
     private const val JVM_SIGNAL_DUMP_FILE_NAME = "last_signal_dump.txt"
     private const val EXPECTED_GAME_EXIT_MARKER_FILE_NAME = ".expected_game_exit_marker"
     private const val EXTERNAL_RESOURCES_DIR_NAME = "external_resources"
@@ -300,6 +302,14 @@ object RuntimePaths {
         File(stsRoot(context), LAUNCHER_PERF_SNAPSHOT_FILE_NAME)
 
     @JvmStatic
+    fun frameProbeIncidents(context: Context): File =
+        File(stsRoot(context), FRAME_PROBE_INCIDENTS_FILE_NAME)
+
+    @JvmStatic
+    fun frameProbePreviousIncidents(context: Context): File =
+        File(stsRoot(context), FRAME_PROBE_PREVIOUS_INCIDENTS_FILE_NAME)
+
+    @JvmStatic
     fun jvmSignalDump(context: Context): File = File(stsRoot(context), JVM_SIGNAL_DUMP_FILE_NAME)
 
     @JvmStatic
@@ -522,6 +532,37 @@ object RuntimePaths {
     @JvmStatic
     fun agentConnectorJar(context: Context): File =
         File(agentConnectorDir(context), "game-probe.jar")
+
+    @JvmStatic
+    fun arthasResourceRoot(context: Context): File = File(context.filesDir, "arthas_resources")
+
+    @JvmStatic
+    fun arthasResourceCurrentDir(context: Context): File = File(arthasResourceRoot(context), "current")
+
+    @JvmStatic
+    fun arthasResourcePreviousDir(context: Context): File = File(arthasResourceRoot(context), "previous")
+
+    @JvmStatic
+    fun arthasResourceStagingDir(context: Context): File = File(arthasResourceRoot(context), "staging")
+
+    @JvmStatic
+    fun offlineArthasCoreJar(context: Context): File =
+        File(arthasResourceCurrentDir(context), "arthas-core.jar")
+
+    @JvmStatic
+    fun offlineArthasSpyJar(context: Context): File =
+        File(arthasResourceCurrentDir(context), "arthas-spy.jar")
+
+    @JvmStatic
+    fun offlineArthasBridgeJar(context: Context): File =
+        File(arthasResourceCurrentDir(context), "arthas-bridge.jar")
+
+    @JvmStatic
+    fun offlineArthasOutputDir(context: Context): File =
+        File(stsRoot(context), "performance/arthas")
+
+    @JvmStatic
+    fun arthasBridgeLog(context: Context): File = File(context.filesDir, "arthas-bridge.log")
 
     @JvmStatic
     fun bootBridgeDir(context: Context): File = File(componentRoot(context), "boot_bridge")

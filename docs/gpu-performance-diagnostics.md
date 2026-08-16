@@ -1,5 +1,23 @@
 # GPU 性能诊断与配对基准
 
+## Arthas 资源模块
+
+深度性能诊断必须安装可选的 `arthas-resource.zip`。APK 只内置
+`game-probe.jar`；Arthas core、spy 和 bridge 由独立版本的资源包安装。
+在开发者设置中，模块未安装时不会显示深度性能诊断和性能日志。点击
+“Arthas 诊断模块”后，启动器通过 GitHub 加速候选链下载资源包；只有归档
+SHA-256、manifest、精确文件列表、文件大小和各文件 SHA-256 全部校验通过后，
+才会显示深度性能诊断和性能日志。
+
+上传包通过以下命令生成：
+
+```bash
+./gradlew :app:packageArthasResources
+```
+
+输出为 `app/build/outputs/arthas/arthas-resource.zip`。上传时不要重新打包，
+否则云端配置使用的归档 SHA-256 会改变。
+
 ## 配对方法
 
 目标是只改变 GPU 资源计数插桩，避免把诊断自身或战斗随机性算成开销。
@@ -31,6 +49,8 @@ cards=Strike_R,Strike_R,Strike_R,Strike_R,Strike_R
 ```
 
 标准 `frame-probe-incidents.jsonl` 只写入超过预算的帧，适合定位卡顿，不适合计算全量 p50/p95 或亚毫秒插桩成本。量化小开销时必须使用临时全帧采集版本，并保证 OFF/ON 使用同一版本；测试后恢复标准阈值。
+
+手机端可在“开发者设置 > 性能日志”中直接导出或分享独立 ZIP。归档包含当前和上一轮 frame incidents、`latest.log`、GC 日志、堆与 launcher 性能快照、启动审计、内存诊断、最近 10 份 JVM histogram，以及设备端 Arthas stack/trace 和状态日志；缺失文件会自动略过。
 
 ## 指标含义
 

@@ -103,6 +103,8 @@ agent，不能通过 `load_agent()` 调用。资源包必须包含
 
 MTS 可能同时保留多个同名类副本。bridge 因此关闭 Arthas batch retransform，并在 JVM 仅拒绝其中一个重复副本时保留其他副本的成功增强。`nativeDiagnostics` 默认是 `false`；只有显式传入 `nativeDiagnostics=true` 才会尝试 procfs 和 async-profiler 原生诊断。
 
+深度性能诊断还支持设备端自动执行 core/bridge 两阶段加载。自动模式仅绑定 loopback、保持 `nativeDiagnostics=false`，并将有界 stack/trace 结果写到 `sts/performance/arthas/`；电脑端 `arthas_ensure` 会优先复用该实例。
+
 ## 快速开始
 
 ### 前置条件

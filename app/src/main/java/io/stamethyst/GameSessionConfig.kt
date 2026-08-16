@@ -123,7 +123,11 @@ internal data class GameSessionConfig(
                 showFloatingMouseWindow =
                     specialKeyInputMode == SpecialKeyInputMode.LEGACY_FLOATING_WINDOW,
                 showGamePerformanceOverlay = LauncherConfig.isGamePerformanceOverlayEnabled(context),
-                performanceDeepDiagnostics = LauncherConfig.isGamePerformanceDeepDiagnosticsEnabled(context),
+                performanceDeepDiagnostics = if (intent.hasExtra(StsGameActivity.EXTRA_PERFORMANCE_DEEP_DIAGNOSTICS)) {
+                    intent.getBooleanExtra(StsGameActivity.EXTRA_PERFORMANCE_DEEP_DIAGNOSTICS, false)
+                } else {
+                    LauncherConfig.isGamePerformanceDeepDiagnosticsEnabled(context)
+                },
                 mirrorJvmLogsToLogcat = LauncherConfig.isJvmLogcatMirrorEnabled(context),
                 touchMouseInteractionMode = LauncherConfig.readTouchMouseInteractionMode(context),
                 touchDoubleClickAsRightClick = LauncherConfig.readTouchDoubleClickAsRightClick(context),

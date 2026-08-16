@@ -612,6 +612,7 @@ private fun Project.registerAdbTasks(adb: Provider<String>, packageName: String)
     val autoplaySaveMode = readGradleProperty("autoplaySaveMode", "fresh")
     val autoplayMode = readGradleProperty("autoplayMode", "normal")
     val autoplaySingleRoomSpec = readGradleProperty("autoplaySingleRoomSpec")
+    val performanceDeepDiagnostics = readGradleProperty("performanceDeepDiagnostics")
     val disableCardObtainEffectOwnershipCompat =
         readGradleProperty("disableCardObtainEffectOwnershipCompat", "false")
     val deviceSerial = readGradleProperty("deviceSerial")
@@ -638,6 +639,7 @@ private fun Project.registerAdbTasks(adb: Provider<String>, packageName: String)
         autoplaySaveMode: String,
         autoplayMode: String,
         autoplaySingleRoomSpec: String,
+        performanceDeepDiagnostics: String,
         disableCardObtainEffectOwnershipCompat: String
     ): List<String> = buildList {
         addAll(
@@ -670,6 +672,11 @@ private fun Project.registerAdbTasks(adb: Provider<String>, packageName: String)
                 autoplayMode
             )
         )
+        if (performanceDeepDiagnostics.isNotEmpty()) {
+            add("--ez")
+            add("io.stamethyst.debug_performance_deep_diagnostics")
+            add(performanceDeepDiagnostics)
+        }
         if (autoplaySingleRoomSpec.isNotEmpty()) {
             add("--es")
             add("io.stamethyst.debug_autoplay_single_room_spec")
@@ -693,6 +700,7 @@ private fun Project.registerAdbTasks(adb: Provider<String>, packageName: String)
                 autoplaySaveMode = autoplaySaveMode,
                 autoplayMode = autoplayMode,
                 autoplaySingleRoomSpec = autoplaySingleRoomSpec,
+                performanceDeepDiagnostics = performanceDeepDiagnostics,
                 disableCardObtainEffectOwnershipCompat = disableCardObtainEffectOwnershipCompat
             )
         )
@@ -717,6 +725,7 @@ private fun Project.registerAdbTasks(adb: Provider<String>, packageName: String)
                 autoplaySaveMode = autoplaySaveMode,
                 autoplayMode = autoplayMode,
                 autoplaySingleRoomSpec = autoplaySingleRoomSpec,
+                performanceDeepDiagnostics = performanceDeepDiagnostics,
                 disableCardObtainEffectOwnershipCompat = disableCardObtainEffectOwnershipCompat
             )
         )

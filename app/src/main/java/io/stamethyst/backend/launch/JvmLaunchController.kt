@@ -41,6 +41,7 @@ class JvmLaunchController(
     private val autoplaySingleRoomSpecPath: String,
     private val autoplayChoiceDelayMs: Long,
     private val autoplaySingleRoomBenchMode: Boolean = false,
+    private val performanceDeepDiagnostics: Boolean,
     private val cardObtainEffectOwnershipCompatEnabled: Boolean,
     private val mirrorJvmLogsToLogcat: Boolean,
     private val onProgressUpdate: (Int, String) -> Unit,
@@ -376,7 +377,8 @@ class JvmLaunchController(
                             autoplaySingleRoomSpecPath,
                             autoplayChoiceDelayMs,
                             autoplaySingleRoomBenchMode,
-                            cardObtainEffectOwnershipCompatEnabled
+                            cardObtainEffectOwnershipCompatEnabled,
+                            performanceDeepDiagnostics
                         )
                     )
                     args
@@ -1032,8 +1034,6 @@ class JvmLaunchController(
     private fun logPerformanceLaunchAudit(launchArgs: List<String>) {
         val extras = LinkedHashMap<String, String>()
         val showPerformanceOverlay = LauncherConfig.isGamePerformanceOverlayEnabled(activity)
-        val performanceDeepDiagnostics =
-            LauncherConfig.isGamePerformanceDeepDiagnosticsEnabled(activity)
         extras["launchMode"] = launchMode
         extras["showPerformanceOverlay"] = showPerformanceOverlay.toString()
         extras["performanceDeepDiagnostics"] = performanceDeepDiagnostics.toString()

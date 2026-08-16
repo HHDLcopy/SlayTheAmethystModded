@@ -76,6 +76,7 @@ def run_perf_bench(ctx: HarnessContext, resolved_out_dir: Path) -> int:
     logcat_capture: Any = None
     logcat_since = ""
     tracer: Any = None
+    tracer_collected = False
     try:
         # ── 1. Optionally install ─────────────────────────────────────────
         if not ctx.options.skip_install:
@@ -119,8 +120,14 @@ def run_perf_bench(ctx: HarnessContext, resolved_out_dir: Path) -> int:
                 break
             if game_pid:
                 saw_game = True
-                # ── 4a. Start Arthas tracer once the game process is alive ─
-                if not tracer_started and ctx.connector is not None:
+                # MTS is still defining patched classes while the game PID first
+                # appears. Retransforming SpriteBatch before READY can split its
+                # libGDX types across class loaders, so defer Arthas until boot.
+                if (
+                    obs == "READY"
+                    and not tracer_started
+                    and ctx.connector is not None
+                ):
                     tracer_started = True
                     try:
                         from scripts.tools.harness.perf_trace import start_tracer
@@ -147,10 +154,10 @@ def run_perf_bench(ctx: HarnessContext, resolved_out_dir: Path) -> int:
         ctx.result["statusSnapshot"] = status
 
         observed = (status or {}).get("observedState", "")
-        if observed in ("FAIL", "CRASH_MARKER", "LOGCAT_CRASH") and not saw_game:
+        if observed in ("FAIL", "CRASH_MARKER", "LOGCAT_CRASH"):
             set_result_success(ctx, False, observed,
-                               f"perf-bench: game crashed before starting ({observed})")
-            _print_error_summary(f"Game crashed before starting: {observed}")
+                               f"perf-bench: game failed during startup ({observed})")
+            _print_error_summary(f"Game failed during startup: {observed}")
             return 0
 
         if not saw_game:
@@ -220,6 +227,7 @@ def run_perf_bench(ctx: HarnessContext, resolved_out_dir: Path) -> int:
                     join_timeout=30.0,
                 )
                 ctx.result.setdefault("artifacts", {})["flushSpikeReport"] = str(trace_report_path)
+                tracer_collected = True
             except Exception as exc:
                 ctx.result.setdefault("artifacts", {})["tracerCollectError"] = str(exc)
 
@@ -237,6 +245,19 @@ def run_perf_bench(ctx: HarnessContext, resolved_out_dir: Path) -> int:
             _stop_game(ctx)
         except Exception:
             pass
+        if tracer is not None and not tracer_collected:
+            try:
+                from scripts.tools.harness.perf_trace import collect_tracer_report
+                _, trace_report_path = collect_tracer_report(
+                    tracer,
+                    resolved_out_dir / "arthas-trace",
+                    join_timeout=10.0,
+                )
+                ctx.result.setdefault("artifacts", {})[
+                    "flushSpikeReport"
+                ] = str(trace_report_path)
+            except Exception as exc:
+                ctx.result.setdefault("artifacts", {})["tracerCollectError"] = str(exc)
         try:
             if logcat_capture is not None:
                 stop_logcat_capture(ctx, logcat_capture)

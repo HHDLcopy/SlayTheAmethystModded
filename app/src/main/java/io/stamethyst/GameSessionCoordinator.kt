@@ -214,6 +214,7 @@ internal class GameSessionCoordinator(
         autoplaySingleRoomSpecPath = config.autoplaySingleRoomSpecPath,
         autoplayChoiceDelayMs = config.autoplayChoiceDelayMs,
         autoplaySingleRoomBenchMode = config.autoplaySingleRoomBenchMode,
+        performanceDeepDiagnostics = config.performanceDeepDiagnostics,
         cardObtainEffectOwnershipCompatEnabled = config.cardObtainEffectOwnershipCompatEnabled,
         mirrorJvmLogsToLogcat = config.mirrorJvmLogsToLogcat,
         onProgressUpdate = { percent, message ->

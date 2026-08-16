@@ -124,7 +124,8 @@ object StsLaunchSpec {
         autoplaySingleRoomSpecPath: String = "",
         autoplayChoiceDelayMs: Long = 0L,
         autoplaySingleRoomBenchMode: Boolean = false,
-        cardObtainEffectOwnershipCompatEnabled: Boolean = true
+        cardObtainEffectOwnershipCompatEnabled: Boolean = true,
+        performanceDeepDiagnosticsOverride: Boolean? = null
     ): List<String> {
         val stsRoot = RuntimePaths.stsRoot(context)
         val stsHome = RuntimePaths.stsHome(context)
@@ -137,8 +138,8 @@ object StsLaunchSpec {
         val classTraceFlag = File(stsRoot, "classload_trace.flag")
         val is64BitRuntime = is64BitRuntime(javaHome)
         val showPerformanceOverlay = LauncherConfig.isGamePerformanceOverlayEnabled(context)
-        val performanceDeepDiagnostics =
-            LauncherConfig.isGamePerformanceDeepDiagnosticsEnabled(context)
+        val performanceDeepDiagnostics = performanceDeepDiagnosticsOverride
+            ?: LauncherConfig.isGamePerformanceDeepDiagnosticsEnabled(context)
 
         val args = ArrayList<String>()
         // Performance-first by default, with a compatibility fallback file switch.

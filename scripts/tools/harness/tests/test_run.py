@@ -64,12 +64,14 @@ class HarnessRunTest(unittest.TestCase):
     def test_perf_start_uses_clean_autoplay_task(self, gradle):
         ctx = self._ctx()
         ctx.options.autoplay = True
+        ctx.options.command = "perf-bench"
 
         run_start(ctx, use_autoplay_task=True)
 
         args = gradle.call_args.args[1]
         self.assertEqual(args[0], ":app:stsStartAutoplay")
         self.assertIn("-Pautoplay=true", args)
+        self.assertIn("-PperformanceDeepDiagnostics=true", args)
         self.assertEqual(gradle.call_args.kwargs["timeout_seconds"], 120)
 
 

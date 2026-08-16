@@ -162,7 +162,6 @@ class Daemon:
     def _handle(self, conn: _socket.socket) -> None:
         session: dict[str, Any] = {"serial": None}
         try:
-            conn.settimeout(30)
             reader = conn.makefile("r", encoding="utf-8", newline="\n")
             while self._running:
                 line = reader.readline()

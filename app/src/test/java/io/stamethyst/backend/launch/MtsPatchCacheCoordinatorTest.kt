@@ -109,6 +109,63 @@ class MtsPatchCacheCoordinatorTest {
     }
 
     @Test
+    fun cacheMarkerChangesWhenGdxPatchArchiveBytesChange() {
+        val root = Files.createTempDirectory("mts-patch-cache-gdx-patch-").toFile()
+        try {
+            val desktopJar = writeJar(root, "desktop-1.0.jar", "a.class" to "desktop")
+            val mtsJar = writeJar(root, "ModTheSpire.jar", "b.class" to "mts")
+            val baseModJar = writeJar(root, "BaseMod.jar", "c.class" to "basemod")
+            val stsLibJar = writeJar(root, "StSLib.jar", "d.class" to "stslib")
+            val bootBridgeJar = writeJar(root, "boot-bridge.jar", "e.class" to "bootbridge")
+            val gdxPatchJar = writeJarWithComment(
+                root,
+                "gdx-patch.jar",
+                "same-length-comment-v1",
+                "f.class" to "gdx"
+            )
+            val modJar = writeJar(root, "ExampleMod.jar", "Mod.class" to "mod")
+            val modFileList = writeFile(root, ".mts_mod_file_list", modJar.absolutePath + "\n")
+
+            val first = buildMarkerForTest(
+                desktopJar,
+                mtsJar,
+                baseModJar,
+                stsLibJar,
+                bootBridgeJar,
+                gdxPatchJar,
+                modFileList
+            )
+            val originalLength = gdxPatchJar.length()
+            val originalMtime = gdxPatchJar.lastModified()
+
+            writeJarWithComment(
+                root,
+                "gdx-patch.jar",
+                "same-length-comment-v2",
+                "f.class" to "gdx"
+            )
+            gdxPatchJar.setLastModified(originalMtime)
+
+            assertEquals(originalLength, gdxPatchJar.length())
+            assertEquals(originalMtime, gdxPatchJar.lastModified())
+            assertNotEquals(
+                first,
+                buildMarkerForTest(
+                    desktopJar,
+                    mtsJar,
+                    baseModJar,
+                    stsLibJar,
+                    bootBridgeJar,
+                    gdxPatchJar,
+                    modFileList
+                )
+            )
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun cacheMarkerStillDistinguishesNonZipFiles() {
         val root = Files.createTempDirectory("mts-patch-cache-nonzip-").toFile()
         try {
@@ -469,9 +526,19 @@ class MtsPatchCacheCoordinatorTest {
     }
 
     private fun writeJar(root: File, name: String, vararg entries: Pair<String, String>): File {
+        return writeJarWithComment(root, name, null, *entries)
+    }
+
+    private fun writeJarWithComment(
+        root: File,
+        name: String,
+        comment: String?,
+        vararg entries: Pair<String, String>
+    ): File {
         val file = File(root, name)
         file.parentFile?.mkdirs()
         ZipOutputStream(file.outputStream()).use { zip ->
+            zip.setComment(comment)
             entries.forEach { (entryName, content) ->
                 zip.putNextEntry(ZipEntry(entryName))
                 zip.write(content.toByteArray(StandardCharsets.UTF_8))
@@ -480,6 +547,24 @@ class MtsPatchCacheCoordinatorTest {
         }
         return file
     }
+
+    private fun buildMarkerForTest(
+        desktopJar: File,
+        mtsJar: File,
+        baseModJar: File,
+        stsLibJar: File,
+        bootBridgeJar: File,
+        gdxPatchJar: File,
+        modFileList: File
+    ): String = MtsPatchCacheCoordinator.buildCacheMarkerValue(
+        desktopJar = desktopJar,
+        mtsJar = mtsJar,
+        baseModJar = baseModJar,
+        stsLibJar = stsLibJar,
+        bootBridgeJar = bootBridgeJar,
+        gdxPatchJar = gdxPatchJar,
+        modFileList = modFileList
+    )
 
     private fun writeFile(file: File, text: String): File {
         file.parentFile?.mkdirs()

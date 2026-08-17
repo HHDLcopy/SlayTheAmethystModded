@@ -237,6 +237,7 @@ internal fun createWattToolkitRuntime(
     connectTimeoutMs: Long,
     readTimeoutMs: Long,
     requireHttps: Boolean = false,
+    allowInsecureUrl: (HttpUrl) -> Boolean = { false },
 ): ExperimentalGithubDirectAccessRuntime {
     val forwardDns = WattToolkitForwardDns()
     val routeClient = defaultWattToolkitRouteClient(requireHttps = requireHttps)
@@ -275,7 +276,7 @@ internal fun createWattToolkitRuntime(
         .trustWattToolkitForwardCertificates(unsafeHostProvider)
         .apply {
             if (requireHttps) {
-                addHttpsOnlyTransport()
+                addHttpsOnlyTransport(allowInsecureUrl)
             }
         }
         .followRedirects(false)
@@ -295,9 +296,10 @@ internal fun createWattToolkitRuntime(
 internal fun OkHttpClient.Builder.addExperimentalGithubDirectAccess(
     runtime: ExperimentalGithubDirectAccessRuntime,
     enabledProvider: () -> Boolean = { true },
+    allowInsecureUrl: (HttpUrl) -> Boolean = { false },
 ): OkHttpClient.Builder = apply {
     if (runtime.requireHttps) {
-        addHttpsOnlyTransport()
+        addHttpsOnlyTransport(allowInsecureUrl)
     }
     addInterceptor(
         ExperimentalGithubDirectAccessInterceptor(
@@ -306,6 +308,7 @@ internal fun OkHttpClient.Builder.addExperimentalGithubDirectAccess(
             forwardDns = runtime.forwardDns,
             enabledProvider = enabledProvider,
             requireHttps = runtime.requireHttps,
+            allowInsecureUrl = allowInsecureUrl,
         ),
     )
 }
@@ -407,6 +410,12 @@ internal class ExperimentalGithubDirectAccessInterceptor(
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
         ensureUrlAllowed(request.url)
+        // A caller may explicitly allow a cleartext origin such as a public SteamPipe CDN.
+        // Keep that request on the official path: forwarding it could replace the approved
+        // origin with an unrelated cleartext proxy target.
+        if (!request.url.isHttps && allowInsecureUrl(request.url)) {
+            return chain.proceed(request)
+        }
         if (!enabledProvider()) {
             return chain.proceed(request)
         }

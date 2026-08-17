@@ -210,7 +210,7 @@ object MtsClasspathWarmupCoordinator {
      * build could still compare equal to a newer one field-for-field.
      */
     private fun buildCacheMarkerValue(context: Context): String = buildString {
-        append("schema|1").append('\n')
+        append("schema|2").append('\n')
         append(jarFingerprint("desktop", RuntimePaths.importedStsJar(context))).append('\n')
         append(jarFingerprint("modthespire", RuntimePaths.importedMtsJar(context))).append('\n')
         append(jarFingerprint("basemod", RuntimePaths.importedBaseModJar(context))).append('\n')

@@ -65,6 +65,11 @@ internal val REQUIRED_GDX_CLASSES: Set<String> = HashSet(
     listOf(
         "com/badlogic/gdx/Application.class",
         "com/badlogic/gdx/graphics/g2d/Batch.class",
+        // Batch.getColor() is resolved while SpriteBatch's itable is built.
+        // Keep this signature type in the parent classloader so both classes
+        // use the same Color identity. Texture must stay MTS-owned because
+        // Ram Saver replaces it there.
+        "com/badlogic/gdx/graphics/Color.class",
         "com/badlogic/gdx/utils/Disposable.class"
     )
 )

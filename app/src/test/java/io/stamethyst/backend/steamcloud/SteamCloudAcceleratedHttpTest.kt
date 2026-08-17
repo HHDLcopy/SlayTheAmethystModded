@@ -10,6 +10,7 @@ import io.stamethyst.backend.github.WattToolkitGithubRoute
 import io.stamethyst.backend.github.WattToolkitGithubRouteResolver
 import io.stamethyst.backend.github.WattToolkitGithubRouteStore
 import io.stamethyst.backend.github.WattToolkitRouteProfile
+import io.stamethyst.backend.github.addHttpsOnlyTransport
 import io.stamethyst.backend.github.addExperimentalGithubDirectAccess
 import io.stamethyst.backend.github.withAcceleratedCookieJar
 import java.net.InetAddress
@@ -364,6 +365,40 @@ class SteamCloudAcceleratedHttpTest {
         assertTrue(
             SteamContentCdnWattToolkitRouteProfile.supportedHosts.containsAll(expectedHosts),
         )
+    }
+
+    @Test
+    fun steamContentCdnHttpTransport_allowsManifestAndChunkPathsButRejectsOtherHosts() {
+        steamContentForwardServer.enqueue(MockResponse.Builder().code(200).body("manifest").build())
+        steamContentForwardServer.enqueue(MockResponse.Builder().code(200).body("chunk").build())
+        val dns = Dns { listOf(InetAddress.getByName("127.0.0.1")) }
+        val client = OkHttpClient.Builder()
+            .dns(dns)
+            .addHttpsOnlyTransport(::allowsSteamContentCdnHttp)
+            .build()
+
+        listOf(
+            "/depot/646570/manifest/4615174550123654200/5",
+            "/depot/646570/chunk/abcdef",
+        ).forEach { path ->
+            client.newCall(
+                Request.Builder()
+                    .url("http://st.dl.eccdnx.com:${steamContentForwardServer.port}$path")
+                    .build(),
+            ).execute().use { response ->
+                assertEquals(200, response.code)
+            }
+        }
+
+        val error = runCatching {
+            client.newCall(
+                Request.Builder()
+                    .url("http://api.steampowered.com:${steamContentForwardServer.port}/ISteamNews/GetNewsForApp/v2/")
+                    .build(),
+            ).execute()
+        }.exceptionOrNull()
+
+        assertTrue(error is ProtocolException)
     }
 
     @Test

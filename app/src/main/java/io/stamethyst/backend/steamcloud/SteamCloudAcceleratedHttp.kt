@@ -17,6 +17,7 @@ import io.stamethyst.backend.network.NetworkAccelerationPolicy
 import io.stamethyst.config.LauncherConfig
 import java.io.File
 import java.net.ProtocolException
+import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import okhttp3.HttpUrl
@@ -114,6 +115,13 @@ internal val SteamContentCdnWattToolkitRouteProfile = WattToolkitRouteProfile(
     allowUncheckedRoutes = true,
 )
 
+/**
+ * SteamPipe returns cleartext endpoints for some workshop CDN edges. These hosts only serve
+ * public depot manifests and chunks; Steam web sessions and account endpoints remain HTTPS-only.
+ */
+internal fun allowsSteamContentCdnHttp(url: HttpUrl): Boolean =
+    !url.isHttps && url.host.lowercase(Locale.ROOT) in SteamContentCdnWattToolkitRouteProfile.supportedHosts
+
 internal val SteamCmWattToolkitRouteProfile = WattToolkitRouteProfile(
     name = "steam-cm",
     cacheFileName = "watt-steam-cm-route-cache-v2.json",
@@ -178,9 +186,12 @@ object SteamCloudAcceleratedHttp {
             .hostnameVerifier(runtime.hostnameVerifier)
             .followRedirects(false)
             .followSslRedirects(false)
-            .addHttpsOnlyTransport()
+            .addHttpsOnlyTransport(::allowsSteamContentCdnHttp)
             .addInterceptor(
-                CredentialSafeRedirectInterceptor(requireHttps = true),
+                CredentialSafeRedirectInterceptor(
+                    requireHttps = true,
+                    allowInsecureUrl = ::allowsSteamContentCdnHttp,
+                ),
             )
             .addInterceptor(
                 ExperimentalGithubDirectAccessInterceptor(
@@ -189,6 +200,7 @@ object SteamCloudAcceleratedHttp {
                     forwardDns = runtime.forwardDns,
                     enabledProvider = accelerationEnabledProvider,
                     requireHttps = runtime.requireHttps,
+                    allowInsecureUrl = ::allowsSteamContentCdnHttp,
                 ),
             )
             .build()
@@ -417,6 +429,7 @@ internal fun createSteamCloudWattToolkitRuntime(
     connectTimeoutMs = STEAM_CLOUD_DIRECT_ACCESS_CONNECT_TIMEOUT_MS,
     readTimeoutMs = STEAM_CLOUD_DIRECT_ACCESS_READ_TIMEOUT_MS,
     requireHttps = true,
+    allowInsecureUrl = ::allowsSteamContentCdnHttp,
 )
 
 private const val STEAM_CLOUD_DIRECT_ACCESS_CONNECT_TIMEOUT_MS = 8_000L

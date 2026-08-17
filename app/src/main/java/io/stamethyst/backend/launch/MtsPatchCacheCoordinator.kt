@@ -4,6 +4,7 @@ import android.content.Context
 import io.stamethyst.backend.fs.FileTreeCleaner
 import io.stamethyst.config.RuntimePaths
 import java.io.File
+import java.io.FileInputStream
 import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
@@ -158,13 +159,13 @@ internal object MtsPatchCacheCoordinator {
         bundledMods: List<File> = emptyList()
     ): String {
         val rawMarker = buildString {
-            append("schema|8").append('\n')
+            append("schema|9").append('\n')
             append(jarFingerprint("desktop", desktopJar)).append('\n')
             append(jarFingerprint("modthespire", mtsJar)).append('\n')
             append(jarFingerprint("basemod", baseModJar)).append('\n')
             append(jarFingerprint("stslib", stsLibJar)).append('\n')
             append(jarFingerprint("bootbridge", bootBridgeJar)).append('\n')
-            append(jarFingerprint("gdxpatch", gdxPatchJar)).append('\n')
+            append(fileFingerprint("gdxpatch", gdxPatchJar)).append('\n')
             append(textFileFingerprint("mod_file_list", modFileList)).append('\n')
             readModFiles(modFileList).forEachIndexed { index, modFile ->
                 append(jarFingerprint("mod[$index]", modFile)).append('\n')
@@ -224,7 +225,7 @@ internal object MtsPatchCacheCoordinator {
                     digest.update(entry.crc.toString().toByteArray(StandardCharsets.UTF_8))
                     digest.update(SEPARATOR_BYTE)
                 }
-                digest.digest().toHex()
+                digestToHex(digest.digest())
             }
         } catch (_: Throwable) {
             null
@@ -233,6 +234,33 @@ internal object MtsPatchCacheCoordinator {
             return "$label|${file.absolutePath}|${file.length()}|${file.lastModified()}|nozip"
         }
         return "$label|${file.absolutePath}|${file.length()}|$entryDigest"
+    }
+
+    /**
+     * The GDX patch is merged into the cached desktop jar, so every byte of it is
+     * relevant to the generated class set. Unlike the central-directory shortcut
+     * used for ordinary jars, this also invalidates the cache when only archive
+     * metadata or compressed bytes change.
+     */
+    private fun fileFingerprint(label: String, file: File): String {
+        if (!file.isFile) {
+            return "$label|${file.absolutePath}|-1|missing"
+        }
+        val digest = try {
+            val messageDigest = MessageDigest.getInstance("SHA-256")
+            FileInputStream(file).use { input ->
+                val buffer = ByteArray(8192)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    messageDigest.update(buffer, 0, count)
+                }
+            }
+            digestToHex(messageDigest.digest())
+        } catch (_: Throwable) {
+            "unreadable"
+        }
+        return "$label|${file.absolutePath}|${file.length()}|$digest"
     }
 
     private fun textFileFingerprint(label: String, file: File): String {
@@ -253,7 +281,8 @@ internal object MtsPatchCacheCoordinator {
     private fun sha256(text: String): String =
         MessageDigest.getInstance("SHA-256")
             .digest(text.toByteArray(StandardCharsets.UTF_8))
-            .toHex()
+            .let(::digestToHex)
 
-    private fun ByteArray.toHex(): String = joinToString(separator = "") { byte -> "%02x".format(byte) }
+    private fun digestToHex(bytes: ByteArray): String =
+        bytes.joinToString(separator = "") { byte -> "%02x".format(byte) }
 }

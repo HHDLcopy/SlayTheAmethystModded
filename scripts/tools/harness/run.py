@@ -36,6 +36,8 @@ def run_start(
         f"-PautoplaySaveMode={ctx.options.autoplay_save_mode}",
         f"-PautoplayMode={ctx.options.autoplay_mode}",
         f"-PautoplaySingleRoomSpec={single_room_spec}",
+        *(["-PperformanceDeepDiagnostics=true"]
+          if getattr(ctx.options, "command", "") == "perf-bench" else []),
         "-PdisableCardObtainEffectOwnershipCompat="
         + str(ctx.options.disable_card_obtain_effect_ownership_compat).lower(),
         *_gradle_device_properties(ctx),

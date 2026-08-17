@@ -1,14 +1,15 @@
 # amethyst-frame-probe
 
-Bundled mod that provides zero-overhead per-frame timing, an in-game bar-chart HUD, and structured JSONL incident output — all behind a single property switch.
+Bundled mod that provides per-frame timing, an optional in-game bar-chart HUD, and structured JSONL incident output.
 
 ## Activation
 
-Enable in Settings → **GPU Resource Diagnostics** (which also turns on **Performance Overlay**). Both toggles must be on; this flips `performanceDeepDiagnostics` in `StsLaunchSpec`, which adds:
+Enable **Deep performance diagnostics** in developer settings. Collection does not depend on **Performance overlay**; that separate switch only controls HUD visibility. `StsLaunchSpec` adds:
 
 ```
 -Damethyst.gdx.frame_ring=true
 -Damethyst.gdx.frame_ring.budget_ms=<1000/targetFps>
+-Damethyst.gdx.frame_hud=<true when Performance overlay is enabled>
 ```
 
 Nothing runs when `amethyst.gdx.frame_ring` is absent.
@@ -26,8 +27,8 @@ Nothing runs when `amethyst.gdx.frame_ring` is absent.
 **Patch class**: `io.stamethyst.frameprobe.AmethystFrameProbe` (SpireInitializer).
 
 ### 3. `FrameHud` (in-game bar chart)
-**What it does**: Renders a 180-bar scrolling chart (bottom-left corner) coloured green/yellow/red relative to the configured budget. One-line text summary shows live FPS, last-frame ms, p99 ms, and over-budget count.
-**Symptom addressed**: The old 1 Hz overlay could not show individual frame spikes; a 25 ms frame averaged away entirely.
+**What it does**: When `amethyst.gdx.frame_hud=true`, renders a 180-bar scrolling chart (bottom-left corner) coloured green/yellow/red relative to the configured budget. Collection and incident output continue when the HUD is hidden.
+**Symptom addressed**: The old 1 Hz overlay could not show individual frame spikes, while requiring a visible overlay prevented headless diagnostics collection.
 **Patch class**: `io.stamethyst.frameprobe.FrameHud` (no SpirePatch, rendered via PostRenderSubscriber).
 
 ### 4. `IncidentWriter` (JSONL output)
@@ -55,6 +56,6 @@ Parse with `jq` or the `tools/perf-harness` schema at `tools/perf-harness/testda
 ## Design constraints
 
 - **No threshold in the ring**: every frame is written unconditionally; thresholding happens in `FrameHud`/`IncidentWriter` at read time, not write time.
-- **Single property switch**: `amethyst.gdx.frame_ring=true` controls all layers. The old five-property scheme (`frame_profiler`, `frame_profiler.stack`, `frame_profiler.slow_ms`, `frame_profiler.summary_frames`, `frame_profiler.stack`) is removed.
+- **Independent collection and display**: `amethyst.gdx.frame_ring=true` controls collection and incident output; `amethyst.gdx.frame_hud=true` only controls HUD rendering. The old five-property profiler scheme is removed.
 - **Render-thread only**: `FrameRingBuffer` has no locks; single writer and reader on the same thread.
 - **No patch in a single file per this repo's AGENTS.md rules**: `CardUsePatch`, `RoomTransitionPatch`, and `ActionUpdatePatch` are separate inner classes in `FrameProbePatches.java`, each addressing one distinct domain.

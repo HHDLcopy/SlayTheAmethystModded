@@ -23,6 +23,7 @@ import android.provider.MediaStore
 import android.provider.OpenableColumns
 import androidx.annotation.RequiresApi
 import io.stamethyst.R
+import io.stamethyst.backend.diag.DiagnosticsArchiveBuilder
 import io.stamethyst.backend.diag.DiagnosticsProcessClient
 import io.stamethyst.backend.file_interactive.FileShareCompat
 import io.stamethyst.backend.launch.JvmLogRotationManager
@@ -85,6 +86,10 @@ internal object SettingsFileService {
         return "sts-jvm-logs-export-${formatter.format(Date())}.zip"
     }
 
+    fun buildPerformanceLogExportFileName(): String {
+        return DiagnosticsArchiveBuilder.buildPerformanceExportFileName()
+    }
+
     fun buildModsExportFileName(): String {
         val formatter = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US)
         return "sts-mods-export-${formatter.format(Date())}.zip"
@@ -99,6 +104,11 @@ internal object SettingsFileService {
     @Throws(IOException::class)
     fun exportJvmLogBundle(host: Activity, uri: Uri): Int {
         return DiagnosticsProcessClient.exportJvmLogBundle(host, uri)
+    }
+
+    @Throws(IOException::class)
+    fun exportPerformanceLogBundle(host: Activity, uri: Uri): Int {
+        return DiagnosticsProcessClient.exportPerformanceLogBundle(host, uri)
     }
 
     @Throws(IOException::class)

@@ -72,6 +72,7 @@ import io.stamethyst.backend.nativelib.NativeLibraryMarketInstallProgress
 import io.stamethyst.backend.nativelib.NativeLibraryMarketPackageState
 import io.stamethyst.backend.nativelib.NativeLibraryMarketService
 import io.stamethyst.backend.resources.RuntimeResourceProvider
+import io.stamethyst.backend.resources.ArthasResourcePackService
 import io.stamethyst.backend.render.MobileGluesAnglePolicy
 import io.stamethyst.backend.render.MobileGluesAngleDepthClearFixMode
 import io.stamethyst.backend.render.MobileGluesConfigFile
@@ -221,8 +222,10 @@ class SettingsScreenViewModel : ViewModel() {
         data class OpenExportModsPicker(val fileName: String) : Effect
         data class OpenExportSavesPicker(val fileName: String) : Effect
         data class OpenExportLogsPicker(val fileName: String) : Effect
+        data class OpenExportPerformanceLogsPicker(val fileName: String) : Effect
         data class OpenBootOverlayImagePicker(val slot: BootOverlayImageSlot) : Effect
         data class ShareJvmLogsBundle(val payload: JvmLogsSharePayload) : Effect
+        data class SharePerformanceLogsBundle(val payload: JvmLogsSharePayload) : Effect
         data object OpenCompatibility : Effect
         data object OpenMobileGluesSettings : Effect
         data object OpenFeedback : Effect
@@ -407,6 +410,8 @@ class SettingsScreenViewModel : ViewModel() {
             LauncherPreferences.DEFAULT_LAUNCHER_LOGCAT_CAPTURE_ENABLED,
         val jvmLogcatMirrorEnabled: Boolean = LauncherPreferences.DEFAULT_JVM_LOGCAT_MIRROR_ENABLED,
         val gpuResourceDiagEnabled: Boolean = LauncherPreferences.DEFAULT_GPU_RESOURCE_DIAG_ENABLED,
+        val arthasResourceInstalled: Boolean = false,
+        val arthasResourceVersion: String = "",
         val gdxPadCursorDebugEnabled: Boolean = LauncherPreferences.DEFAULT_GDX_PAD_CURSOR_DEBUG,
         val glBridgeSwapHeartbeatDebugEnabled: Boolean = LauncherPreferences.DEFAULT_GLBRIDGE_SWAP_HEARTBEAT_DEBUG,
         val touchscreenInputMode: TouchscreenInputMode =
@@ -576,6 +581,7 @@ class SettingsScreenViewModel : ViewModel() {
             applySnapshot(activity, snapshot)
         }
         refreshStatus(activity, clearBusy = false)
+        refreshArthasResourceState(activity)
     }
 
     fun startGameReturnAutoUpdateCheck(host: Activity) {
@@ -2602,6 +2608,80 @@ class SettingsScreenViewModel : ViewModel() {
         }
     }
 
+    fun onExportPerformanceLogsToFile() {
+        if (uiState.busy) {
+            return
+        }
+        _effects.tryEmit(
+            Effect.OpenExportPerformanceLogsPicker(
+                SettingsFileService.buildPerformanceLogExportFileName()
+            )
+        )
+    }
+
+    fun onSharePerformanceLogs(host: Activity) {
+        if (uiState.busy) {
+            return
+        }
+        setBusy(true, UiText.StringResource(R.string.settings_busy_preparing_performance_logs))
+        executor.execute {
+            try {
+                val payload = JvmLogShareService.preparePerformanceSharePayload(host)
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    _effects.tryEmit(Effect.SharePerformanceLogsBundle(payload))
+                }
+            } catch (error: Throwable) {
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    showToast(
+                        host,
+                        UiText.DynamicString(
+                            StsExternalStorageAccess.buildFailureMessage(
+                                host,
+                                host.getString(R.string.settings_performance_logs_failed_prefix),
+                                error
+                            )
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    fun onPerformanceLogsExportPicked(host: Activity, uri: Uri?) {
+        if (uri == null) {
+            return
+        }
+        setBusy(true, UiText.StringResource(R.string.settings_busy_exporting_performance_logs))
+        executor.execute {
+            try {
+                val exportedCount = SettingsFileService.exportPerformanceLogBundle(host, uri)
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    showToast(
+                        host,
+                        UiText.StringResource(R.string.settings_performance_logs_exported, exportedCount)
+                    )
+                }
+            } catch (error: Throwable) {
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    showToast(
+                        host,
+                        UiText.DynamicString(
+                            StsExternalStorageAccess.buildFailureMessage(
+                                host,
+                                host.getString(R.string.settings_performance_logs_failed_prefix),
+                                error
+                            )
+                        )
+                    )
+                }
+            }
+        }
+    }
+
     fun onLogsExportPicked(host: Activity, uri: Uri?) {
         if (uri == null) {
             return
@@ -3230,9 +3310,74 @@ class SettingsScreenViewModel : ViewModel() {
         if (uiState.busy) {
             return
         }
+        if (enabled && !ArthasResourcePackService.isInstalled(host)) {
+            return
+        }
         uiState = uiState.copy(gpuResourceDiagEnabled = enabled)
         saveGpuResourceDiagSelection(host, enabled)
         refreshStatus(host)
+    }
+
+    fun onInstallArthasResourceRequested(host: Activity) {
+        if (uiState.busy) return
+        setBusy(true, UiText.StringResource(R.string.settings_busy_installing_arthas_resource))
+        val preferredSource = UpdateMirrorManager.current(host)
+        executor.execute {
+            try {
+                var lastProgressPercent: Int? = null
+                val state = ArthasResourcePackService.downloadAndInstall(
+                    context = host,
+                    preferredSource = preferredSource,
+                    onProgress = { progress ->
+                        if (progress.percent == lastProgressPercent) return@downloadAndInstall
+                        lastProgressPercent = progress.percent
+                        host.runOnUiThread {
+                            setBusy(
+                                true,
+                                UiText.StringResource(R.string.settings_busy_installing_arthas_resource),
+                                progressPercent = progress.percent,
+                            )
+                        }
+                    },
+                )
+                host.runOnUiThread {
+                    uiState = uiState.copy(
+                        arthasResourceInstalled = state.valid,
+                        arthasResourceVersion = state.version,
+                    )
+                    setBusy(false, null)
+                    showToast(host, UiText.StringResource(R.string.settings_arthas_resource_installed))
+                    refreshStatus(host)
+                }
+            } catch (error: Throwable) {
+                host.runOnUiThread {
+                    setBusy(false, null)
+                    showToast(
+                        host,
+                        UiText.DynamicString(
+                            host.getString(
+                                R.string.settings_arthas_resource_install_failed,
+                                error.message ?: error.javaClass.simpleName
+                            )
+                        ),
+                        Toast.LENGTH_LONG
+                    )
+                    refreshArthasResourceState(host)
+                }
+            }
+        }
+    }
+
+    private fun refreshArthasResourceState(host: Activity) {
+        val state = ArthasResourcePackService.state(host)
+        if (!state.valid && uiState.gpuResourceDiagEnabled) {
+            saveGpuResourceDiagSelection(host, false)
+        }
+        uiState = uiState.copy(
+            gpuResourceDiagEnabled = uiState.gpuResourceDiagEnabled && state.valid,
+            arthasResourceInstalled = state.valid,
+            arthasResourceVersion = state.version,
+        )
     }
 
     fun onGdxPadCursorDebugChanged(host: Activity, enabled: Boolean) {

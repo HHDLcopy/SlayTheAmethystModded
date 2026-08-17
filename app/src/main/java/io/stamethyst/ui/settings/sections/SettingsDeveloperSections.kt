@@ -55,6 +55,10 @@ import kotlinx.coroutines.delay
 
 
 internal data class DeveloperRuntimeSettingsActions(
+    val onGpuResourceDiagChanged: (Boolean) -> Unit,
+    val onSharePerformanceLogs: () -> Unit,
+    val onExportPerformanceLogs: () -> Unit,
+    val onInstallArthasResource: () -> Unit,
     val onManualDismissBootOverlayChanged: (Boolean) -> Unit,
     val onSustainedPerformanceModeChanged: (Boolean) -> Unit,
     val onCompendiumUpgradeTouchFixEnabledChanged: (Boolean) -> Unit,
@@ -85,7 +89,6 @@ internal data class StatusSettingsActions(
     val onLogcatCaptureChanged: (Boolean) -> Unit,
     val onLauncherLogcatCaptureChanged: (Boolean) -> Unit,
     val onJvmLogcatMirrorChanged: (Boolean) -> Unit,
-    val onGpuResourceDiagChanged: (Boolean) -> Unit,
     val onGdxPadCursorDebugChanged: (Boolean) -> Unit,
     val onGlBridgeSwapHeartbeatDebugChanged: (Boolean) -> Unit,
     val onClearJunkFiles: () -> Unit,
@@ -122,6 +125,9 @@ internal fun LauncherDeveloperSettingsScreenContent(
     onLauncherLogcatCaptureChanged: (Boolean) -> Unit = {},
     onJvmLogcatMirrorChanged: (Boolean) -> Unit = {},
     onGpuResourceDiagChanged: (Boolean) -> Unit = {},
+    onSharePerformanceLogs: () -> Unit = {},
+    onExportPerformanceLogs: () -> Unit = {},
+    onInstallArthasResource: () -> Unit = {},
     onGdxPadCursorDebugChanged: (Boolean) -> Unit = {},
     onGlBridgeSwapHeartbeatDebugChanged: (Boolean) -> Unit = {},
     onClearJunkFiles: () -> Unit = {},
@@ -164,6 +170,10 @@ internal fun LauncherDeveloperSettingsScreenContent(
                 SettingsDeveloperRuntimeSection(
                     uiState = uiState,
                     actions = DeveloperRuntimeSettingsActions(
+                        onGpuResourceDiagChanged = onGpuResourceDiagChanged,
+                        onSharePerformanceLogs = onSharePerformanceLogs,
+                        onExportPerformanceLogs = onExportPerformanceLogs,
+                        onInstallArthasResource = onInstallArthasResource,
                         onManualDismissBootOverlayChanged = onManualDismissBootOverlayChanged,
                         onSustainedPerformanceModeChanged = onSustainedPerformanceModeChanged,
                         onCompendiumUpgradeTouchFixEnabledChanged =
@@ -314,7 +324,6 @@ internal fun LauncherDeveloperSettingsScreenContent(
                         onLogcatCaptureChanged = onLogcatCaptureChanged,
                         onLauncherLogcatCaptureChanged = onLauncherLogcatCaptureChanged,
                         onJvmLogcatMirrorChanged = onJvmLogcatMirrorChanged,
-                        onGpuResourceDiagChanged = onGpuResourceDiagChanged,
                         onGdxPadCursorDebugChanged = onGdxPadCursorDebugChanged,
                         onGlBridgeSwapHeartbeatDebugChanged = onGlBridgeSwapHeartbeatDebugChanged,
                         onClearJunkFiles = onClearJunkFiles,
@@ -488,6 +497,32 @@ internal fun SettingsDeveloperRuntimeSection(
     actions: DeveloperRuntimeSettingsActions,
 ) {
     var showGameModeDialog by rememberSaveable { mutableStateOf(false) }
+    var showPerformanceLogsDialog by rememberSaveable { mutableStateOf(false) }
+
+    if (!uiState.arthasResourceInstalled) {
+        SettingsActionListItem(
+            title = stringResource(R.string.settings_arthas_resource_title),
+            supportingText = stringResource(R.string.settings_arthas_resource_install_summary),
+            enabled = !uiState.busy,
+            onClick = actions.onInstallArthasResource
+        )
+    } else {
+        SettingsSwitchItem(
+            SettingsSwitchSpec(
+                checked = uiState.gpuResourceDiagEnabled,
+                enabled = !uiState.busy,
+                title = stringResource(R.string.settings_gpu_resource_diag_enabled),
+                description = stringResource(R.string.settings_gpu_resource_diag_desc),
+                onCheckedChange = actions.onGpuResourceDiagChanged
+            )
+        )
+        SettingsActionListItem(
+            title = stringResource(R.string.settings_performance_logs_title),
+            supportingText = stringResource(R.string.settings_performance_logs_desc),
+            enabled = !uiState.busy,
+            onClick = { showPerformanceLogsDialog = true }
+        )
+    }
 
     SettingsSwitchItem(
         SettingsSwitchSpec(
@@ -554,6 +589,38 @@ internal fun SettingsDeveloperRuntimeSection(
             confirmButton = {
                 TextButton(onClick = { showGameModeDialog = false }) {
                     Text(stringResource(R.string.settings_system_game_mode_acknowledge))
+                }
+            }
+        )
+    }
+
+    if (showPerformanceLogsDialog) {
+        AlertDialog(
+            onDismissRequest = { showPerformanceLogsDialog = false },
+            title = { Text(stringResource(R.string.settings_performance_logs_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SettingsActionListItem(
+                        title = stringResource(R.string.settings_performance_logs_share),
+                        enabled = !uiState.busy,
+                        onClick = {
+                            showPerformanceLogsDialog = false
+                            actions.onSharePerformanceLogs()
+                        }
+                    )
+                    SettingsActionListItem(
+                        title = stringResource(R.string.settings_performance_logs_export),
+                        enabled = !uiState.busy,
+                        onClick = {
+                            showPerformanceLogsDialog = false
+                            actions.onExportPerformanceLogs()
+                        }
+                    )
+                }
+            },
+            confirmButton = {
+                HapticTextButton(onClick = { showPerformanceLogsDialog = false }) {
+                    Text(stringResource(android.R.string.cancel))
                 }
             }
         )
@@ -858,15 +925,6 @@ internal fun SettingsStatusSection(
             title = stringResource(R.string.settings_jvm_logcat_mirror_enabled),
             description = stringResource(R.string.settings_jvm_logcat_mirror_desc),
             onCheckedChange = actions.onJvmLogcatMirrorChanged
-        )
-    )
-    SettingsSwitchItem(
-        SettingsSwitchSpec(
-            checked = uiState.gpuResourceDiagEnabled,
-            enabled = !uiState.busy,
-            title = stringResource(R.string.settings_gpu_resource_diag_enabled),
-            description = stringResource(R.string.settings_gpu_resource_diag_desc),
-            onCheckedChange = actions.onGpuResourceDiagChanged
         )
     )
     SettingsSwitchItem(

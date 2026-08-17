@@ -43,6 +43,7 @@ class JvmLaunchController(
     private val autoplaySingleRoomSpecPath: String,
     private val autoplayChoiceDelayMs: Long,
     private val autoplaySingleRoomBenchMode: Boolean = false,
+    private val performanceDeepDiagnostics: Boolean,
     private val cardObtainEffectOwnershipCompatEnabled: Boolean,
     private val mirrorJvmLogsToLogcat: Boolean,
     private val onProgressUpdate: (Int, String) -> Unit,
@@ -73,6 +74,7 @@ class JvmLaunchController(
         private val PERFORMANCE_AUDIT_JVM_PROPERTIES = listOf(
             "amethyst.gdx.active_refresh_rate",
             "amethyst.gdx.frame_ring",
+            "amethyst.gdx.frame_hud",
             "amethyst.gdx.gpu_resource_summary",
             "amethyst.gdx.gpu_resource_diag",
             "amethyst.bridge.heap_snapshot",
@@ -387,7 +389,8 @@ class JvmLaunchController(
                             autoplaySingleRoomSpecPath,
                             autoplayChoiceDelayMs,
                             autoplaySingleRoomBenchMode,
-                            cardObtainEffectOwnershipCompatEnabled
+                            cardObtainEffectOwnershipCompatEnabled,
+                            performanceDeepDiagnostics
                         )
                     )
                     args
@@ -1057,8 +1060,6 @@ class JvmLaunchController(
     private fun logPerformanceLaunchAudit(launchArgs: List<String>) {
         val extras = LinkedHashMap<String, String>()
         val showPerformanceOverlay = LauncherConfig.isGamePerformanceOverlayEnabled(activity)
-        val performanceDeepDiagnostics =
-            LauncherConfig.isGamePerformanceDeepDiagnosticsEnabled(activity)
         extras["launchMode"] = launchMode
         extras["showPerformanceOverlay"] = showPerformanceOverlay.toString()
         extras["performanceDeepDiagnostics"] = performanceDeepDiagnostics.toString()

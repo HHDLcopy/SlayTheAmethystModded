@@ -45,6 +45,7 @@ internal data class DiagnosticsArchiveResult(
 internal object DiagnosticsArchiveBuilder {
     private const val SHARE_DIR_NAME = "share"
     private const val MAX_WORKSHOP_DOWNLOAD_TASKS_IN_ARCHIVE = 10
+    private const val MAX_JVM_HISTOGRAMS_IN_PERFORMANCE_ARCHIVE = 10
 
     fun buildJvmLogExportFileName(): String {
         val formatter = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US)
@@ -54,6 +55,11 @@ internal object DiagnosticsArchiveBuilder {
     fun buildCrashExportFileName(): String {
         val formatter = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US)
         return "sts-crash-report-${formatter.format(Date())}.zip"
+    }
+
+    fun buildPerformanceExportFileName(): String {
+        val formatter = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US)
+        return "sts-performance-logs-${formatter.format(Date())}.zip"
     }
 
     @Throws(IOException::class)
@@ -77,6 +83,15 @@ internal object DiagnosticsArchiveBuilder {
         return DiagnosticsArchiveResult(archiveFile, entryCount)
     }
 
+    @Throws(IOException::class)
+    fun createPerformanceShareArchive(context: Context): DiagnosticsArchiveResult {
+        val archiveFile = allocateShareArchiveFile(context, buildPerformanceExportFileName())
+        val entryCount = FileOutputStream(archiveFile, false).use { output ->
+            writePerformanceDiagnosticsBundle(context, output)
+        }
+        return DiagnosticsArchiveResult(archiveFile, entryCount)
+    }
+
     /**
      * Called by [io.stamethyst.backend.diag.DiagnosticsProcessService.runAdbStage] via the
      * adb staging path. Uses the same bundle as Share Logs / exportJvmLogBundle.
@@ -93,6 +108,83 @@ internal object DiagnosticsArchiveBuilder {
             }
             return writeDiagnosticsBundle(context, output, null)
         }
+    }
+
+    @Throws(IOException::class)
+    fun exportPerformanceDiagnosticsBundle(context: Context, destination: Uri): Int {
+        context.contentResolver.openOutputStream(destination).use { output ->
+            if (output == null) {
+                throw IOException("Unable to open destination file")
+            }
+            return writePerformanceDiagnosticsBundle(context, output)
+        }
+    }
+
+    @Throws(IOException::class)
+    internal fun writePerformanceDiagnosticsBundle(context: Context, output: OutputStream): Int {
+        var exportedCount = 0
+        ZipOutputStream(output).use { zipOutput ->
+            exportedCount += writeTextEntryAndCount(
+                zipOutput,
+                "sts/performance/readme.txt",
+                "Performance diagnostics captured on-device. Missing files were not generated in the latest session.\n"
+            )
+            exportedCount += writeTextEntryAndCount(
+                zipOutput,
+                "sts/performance/device_info.txt",
+                buildJvmLogDeviceInfo(context)
+            )
+            exportedCount += writeTextEntryAndCount(
+                zipOutput,
+                "sts/performance/launcher_settings.txt",
+                runCatching {
+                    LauncherSettingsDiagnosticsFormatter.buildFromContext(context)
+                }.getOrElse { error ->
+                    "launcher_settings_unavailable=${error.javaClass.simpleName}: ${error.message.orEmpty()}\n"
+                }
+            )
+            val files = listOf(
+                RuntimePaths.frameProbeIncidents(context),
+                RuntimePaths.frameProbePreviousIncidents(context),
+                RuntimePaths.latestLog(context),
+                RuntimePaths.jvmGcLog(context),
+                RuntimePaths.jvmHeapSnapshot(context),
+                RuntimePaths.launcherPerfSnapshot(context),
+            RuntimePaths.performanceLaunchAuditLog(context),
+            RuntimePaths.arthasBridgeLog(context),
+            )
+            files.forEach { file ->
+                exportedCount += writeOptionalFile(
+                    zipOutput,
+                    file,
+                    "sts/performance/${file.name}"
+                )
+            }
+            RuntimePaths.listMemoryDiagnosticsFiles(context).forEach { file ->
+                exportedCount += writeOptionalFile(
+                    zipOutput,
+                    file,
+                    "sts/performance/memory_diagnostics/${file.name}"
+                )
+            }
+            exportedCount += writeOptionalDirectoryFiles(
+                zipOutput,
+                RuntimePaths.jvmHistogramsDir(context),
+                "sts/performance/jvm_histograms",
+                limit = MAX_JVM_HISTOGRAMS_IN_PERFORMANCE_ARCHIVE,
+                predicate = { it.name.endsWith(".txt", ignoreCase = true) }
+            )
+            exportedCount += writeOptionalDirectoryFiles(
+                zipOutput,
+                RuntimePaths.offlineArthasOutputDir(context),
+                "sts/performance/arthas",
+                predicate = { file ->
+                    file.name.endsWith(".txt", ignoreCase = true) ||
+                        file.name.endsWith(".log", ignoreCase = true)
+                }
+            )
+        }
+        return exportedCount
     }
 
     @Throws(IOException::class)
@@ -663,7 +755,9 @@ internal object DiagnosticsArchiveBuilder {
         append("android.release=").append(normalizeInfoValue(Build.VERSION.RELEASE)).append('\n')
         append("android.sdkInt=").append(Build.VERSION.SDK_INT).append('\n')
         append("android.securityPatch=").append(normalizeInfoValue(Build.VERSION.SECURITY_PATCH)).append('\n')
-        append("device.abis=").append(Build.SUPPORTED_ABIS.joinToString(", ").ifBlank { "unknown" }).append('\n')
+        append("device.abis=")
+            .append((Build.SUPPORTED_ABIS ?: emptyArray()).joinToString(", ").ifBlank { "unknown" })
+            .append('\n')
         append("device.fingerprint=").append(normalizeInfoValue(Build.FINGERPRINT)).append('\n')
     }
 

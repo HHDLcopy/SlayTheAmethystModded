@@ -1305,16 +1305,14 @@ object LauncherConfig {
 
     fun isGamePerformanceDeepDiagnosticsEnabled(context: Context): Boolean {
         return resolveGamePerformanceDeepDiagnosticsEnabled(
-            showPerformanceOverlay = isGamePerformanceOverlayEnabled(context),
             gpuResourceDiagEnabled = isGpuResourceDiagEnabled(context)
         )
     }
 
     fun resolveGamePerformanceDeepDiagnosticsEnabled(
-        showPerformanceOverlay: Boolean,
         gpuResourceDiagEnabled: Boolean
     ): Boolean {
-        return showPerformanceOverlay && gpuResourceDiagEnabled
+        return gpuResourceDiagEnabled
     }
 
     fun isSustainedPerformanceModeEnabled(context: Context): Boolean {

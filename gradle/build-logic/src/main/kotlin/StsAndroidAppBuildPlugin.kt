@@ -26,6 +26,7 @@ import org.gradle.kotlin.dsl.register
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 import java.util.zip.ZipFile
 import javax.swing.filechooser.FileSystemView
 
@@ -112,6 +113,7 @@ private fun Project.configureStsAndroidAppBuild() {
     val adb = androidComponents().sdkComponents.adb.map { it.asFile.absolutePath }
     registerAdbTasks(adb, packageName)
     registerHarnessTasks()
+    registerArthasResourcePackageTask()
 
     tasks.named("preBuild").configure {
         dependsOn(packagedAssetTasks.prepareCommonAssets)
@@ -126,6 +128,54 @@ private fun Project.configureStsAndroidAppBuild() {
         )
     }.configureEach {
         finalizedBy(copyResourcesZipToDesktop)
+    }
+}
+
+private fun Project.registerArthasResourcePackageTask() {
+    val core = rootProject.layout.projectDirectory.file("scripts/tools/arthas/resource/arthas-core.jar")
+    val spy = rootProject.layout.projectDirectory.file("scripts/tools/arthas/resource/arthas-spy.jar")
+    val bridge = project(":arthas-bridge").layout.buildDirectory.file("libs/arthas-bridge.jar")
+    val manifest = layout.buildDirectory.file("generated/arthas-resource/arthas-resource.properties")
+    val generateManifest = tasks.register<DefaultTask>("generateArthasResourceManifest") {
+        dependsOn(":arthas-bridge:fatJar")
+        inputs.files(core, spy, bridge)
+        outputs.file(manifest)
+        doLast {
+            val files = listOf(core.asFile, spy.asFile, bridge.get().asFile)
+            val output = manifest.get().asFile
+            output.parentFile.mkdirs()
+            output.writeText(buildString {
+                append("schemaVersion=1\n")
+                append("packageVersion=arthas-3.6.9-bridge-1\n")
+                files.forEach { file ->
+                    val digest = MessageDigest.getInstance("SHA-256")
+                    file.inputStream().use { input ->
+                        val buffer = ByteArray(8192)
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read < 0) break
+                            digest.update(buffer, 0, read)
+                        }
+                    }
+                    val hash = digest.digest().joinToString("") { "%02x".format(it) }
+                    append(file.name).append(".size=").append(file.length()).append('\n')
+                    append(file.name).append(".sha256=").append(hash).append('\n')
+                }
+            }, StandardCharsets.UTF_8)
+        }
+    }
+    tasks.register<Zip>("packageArthasResources") {
+        group = "distribution"
+        description = "Build the optional Arthas resource pack for deep diagnostics."
+        dependsOn(generateManifest)
+        archiveFileName.set("arthas-resource.zip")
+        destinationDirectory.set(layout.buildDirectory.dir("outputs/arthas"))
+        isPreserveFileTimestamps = false
+        isReproducibleFileOrder = true
+        from(core)
+        from(spy)
+        from(bridge)
+        from(manifest)
     }
 }
 
@@ -332,8 +382,8 @@ private fun Project.registerRuntimeAssetTasks(
         into(generatedRuntimeAssetsDir.map { it.dir("components/boot_bridge") })
     }
 
-    val installGameProbeJar = tasks.register<Copy>("installGameProbeJar") {
-        dependsOn(":game-probe:jar")
+    val installGameProbeJar = tasks.register<Sync>("installGameProbeJar") {
+        dependsOn(":game-probe:fatJar")
         from(project(":game-probe").layout.buildDirectory.file("libs/game-probe.jar"))
         into(generatedRuntimeAssetsDir.map { it.dir("components/game_probe") })
     }
@@ -612,6 +662,7 @@ private fun Project.registerAdbTasks(adb: Provider<String>, packageName: String)
     val autoplaySaveMode = readGradleProperty("autoplaySaveMode", "fresh")
     val autoplayMode = readGradleProperty("autoplayMode", "normal")
     val autoplaySingleRoomSpec = readGradleProperty("autoplaySingleRoomSpec")
+    val performanceDeepDiagnostics = readGradleProperty("performanceDeepDiagnostics")
     val disableCardObtainEffectOwnershipCompat =
         readGradleProperty("disableCardObtainEffectOwnershipCompat", "false")
     val deviceSerial = readGradleProperty("deviceSerial")
@@ -638,6 +689,7 @@ private fun Project.registerAdbTasks(adb: Provider<String>, packageName: String)
         autoplaySaveMode: String,
         autoplayMode: String,
         autoplaySingleRoomSpec: String,
+        performanceDeepDiagnostics: String,
         disableCardObtainEffectOwnershipCompat: String
     ): List<String> = buildList {
         addAll(
@@ -670,6 +722,11 @@ private fun Project.registerAdbTasks(adb: Provider<String>, packageName: String)
                 autoplayMode
             )
         )
+        if (performanceDeepDiagnostics.isNotEmpty()) {
+            add("--ez")
+            add("io.stamethyst.debug_performance_deep_diagnostics")
+            add(performanceDeepDiagnostics)
+        }
         if (autoplaySingleRoomSpec.isNotEmpty()) {
             add("--es")
             add("io.stamethyst.debug_autoplay_single_room_spec")
@@ -693,6 +750,7 @@ private fun Project.registerAdbTasks(adb: Provider<String>, packageName: String)
                 autoplaySaveMode = autoplaySaveMode,
                 autoplayMode = autoplayMode,
                 autoplaySingleRoomSpec = autoplaySingleRoomSpec,
+                performanceDeepDiagnostics = performanceDeepDiagnostics,
                 disableCardObtainEffectOwnershipCompat = disableCardObtainEffectOwnershipCompat
             )
         )
@@ -717,6 +775,7 @@ private fun Project.registerAdbTasks(adb: Provider<String>, packageName: String)
                 autoplaySaveMode = autoplaySaveMode,
                 autoplayMode = autoplayMode,
                 autoplaySingleRoomSpec = autoplaySingleRoomSpec,
+                performanceDeepDiagnostics = performanceDeepDiagnostics,
                 disableCardObtainEffectOwnershipCompat = disableCardObtainEffectOwnershipCompat
             )
         )

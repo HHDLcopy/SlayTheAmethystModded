@@ -214,6 +214,7 @@ internal class GameSessionCoordinator(
         autoplaySingleRoomSpecPath = config.autoplaySingleRoomSpecPath,
         autoplayChoiceDelayMs = config.autoplayChoiceDelayMs,
         autoplaySingleRoomBenchMode = config.autoplaySingleRoomBenchMode,
+        performanceDeepDiagnostics = config.performanceDeepDiagnostics,
         cardObtainEffectOwnershipCompatEnabled = config.cardObtainEffectOwnershipCompatEnabled,
         mirrorJvmLogsToLogcat = config.mirrorJvmLogsToLogcat,
         onProgressUpdate = { percent, message ->
@@ -1080,12 +1081,12 @@ internal class GameSessionCoordinator(
     }
 
     private fun updatePerformanceOverlayVisibility() {
-        val shouldShow = !backExitRequested &&
-            config.showGamePerformanceOverlay &&
+        val shouldCollect = !backExitRequested &&
+            (config.showGamePerformanceOverlay || config.performanceDeepDiagnostics) &&
             jvmLaunchController.runtimeLifecycleReady &&
             bootOverlayController.isDismissed &&
             activity.hasWindowFocus()
-        performanceOverlayController?.setVisible(shouldShow)
+        performanceOverlayController?.setVisible(shouldCollect)
     }
 
     private fun updateSystemGameState() {

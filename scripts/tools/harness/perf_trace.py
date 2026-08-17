@@ -45,6 +45,14 @@ class SlowRenderEntry:
 
 
 @dataclass
+class FunctionHotspot:
+    frame: str
+    count: int = 0
+    total_ms: float = 0.0
+    max_ms: float = 0.0
+
+
+@dataclass
 class TracerResult:
     raw_stack_output: str = ""
     raw_trace_output: str = ""
@@ -53,6 +61,7 @@ class TracerResult:
     error: str = ""
     duration_s: float = 0.0
     arthas_pid: str = ""
+    function_hotspots: list[FunctionHotspot] = field(default_factory=list)
 
 
 _MAX_STACK_SAMPLES   = 300
@@ -139,19 +148,27 @@ class FlushTracer:
             )
             self._result.arthas_pid = str(ensure.get("pid", ""))
 
-            stream = conn.connect_arthas_stream(
-                agent_port=self._agent_port,
-                arthas_port=self._arthas_port,
-            )
-            shell = ArthasShell(stream=stream)
-            try:
-                self._collect_stacks(shell)
-                self._collect_traces(shell)
-            finally:
-                try:
-                    stream.close()
-                except Exception:
-                    pass
+            # A streaming command owns its shell connection. Run both samplers
+            # concurrently so the short autoplay window is shared by stack and
+            # trace instead of being consumed serially.
+            workers = [
+                threading.Thread(
+                    target=self._sample_stack_connection,
+                    args=(ArthasShell, ConnectorClient),
+                    daemon=True,
+                    name="arthas-stack-sampler",
+                ),
+                threading.Thread(
+                    target=self._sample_trace_connection,
+                    args=(ArthasShell, ConnectorClient),
+                    daemon=True,
+                    name="arthas-trace-sampler",
+                ),
+            ]
+            for worker in workers:
+                worker.start()
+            for worker in workers:
+                worker.join()
         finally:
             try:
                 conn.close()
@@ -159,6 +176,58 @@ class FlushTracer:
                 pass
 
         self._result.duration_s = time.monotonic() - self._started_at
+
+    def _open_shell(self, shell_type: Any, connector_type: Any) -> tuple[Any, Any, Any]:
+        conn = connector_type(port=self._connector.port)
+        conn.connect()
+        if not conn.select(self._device_serial):
+            conn.close()
+            raise RuntimeError(f"failed to select device {self._device_serial}")
+        ensure = conn.arthas_ensure(
+            agent_port=self._agent_port,
+            arthas_port=self._arthas_port,
+        )
+        if not self._result.arthas_pid:
+            self._result.arthas_pid = str(ensure.get("pid", ""))
+        stream = conn.connect_arthas_stream(
+            agent_port=self._agent_port,
+            arthas_port=self._arthas_port,
+        )
+        shell = shell_type(stream=stream)
+        return conn, stream, shell
+
+    def _sample_stack_connection(self, shell_type: Any, connector_type: Any) -> None:
+        conn = stream = None
+        try:
+            conn, stream, shell = self._open_shell(shell_type, connector_type)
+            shell.command("options disable-sub-class true")
+            self._collect_stacks(shell)
+        except Exception as exc:
+            self._result.raw_stack_output = f"[error: {exc}]"
+            self._append_error(f"Arthas stack failed: {exc}")
+        finally:
+            self._close_sample_connection(conn, stream)
+
+    def _sample_trace_connection(self, shell_type: Any, connector_type: Any) -> None:
+        conn = stream = None
+        try:
+            conn, stream, shell = self._open_shell(shell_type, connector_type)
+            shell.command("options disable-sub-class true")
+            self._collect_traces(shell)
+        except Exception as exc:
+            self._result.raw_trace_output = f"[error: {exc}]"
+            self._append_error(f"Arthas trace failed: {exc}")
+        finally:
+            self._close_sample_connection(conn, stream)
+
+    @staticmethod
+    def _close_sample_connection(conn: Any, stream: Any) -> None:
+        for resource in (stream, conn):
+            if resource is not None:
+                try:
+                    resource.close()
+                except Exception:
+                    pass
 
     def _collect_stacks(self, shell: Any) -> None:
         """Run `stack SpriteBatch flush` and save raw output."""
@@ -290,11 +359,33 @@ def parse_trace_output(raw: str) -> list[SlowRenderEntry]:
     return sorted(entries, key=lambda e: e.cost_ms, reverse=True)
 
 
+def aggregate_trace_hotspots(entries: list[SlowRenderEntry]) -> list[FunctionHotspot]:
+    """Rank traced functions by accumulated and worst observed cost."""
+    hotspots: dict[str, FunctionHotspot] = {}
+    for entry in entries:
+        samples = [(entry.method, entry.cost_ms)]
+        for subframe in entry.subframes:
+            match = re.match(r"\s*(\d+(?:\.\d+)?)ms\s+(.+)", subframe)
+            if match:
+                samples.append((match.group(2).strip(), float(match.group(1))))
+        for frame, cost_ms in samples:
+            hotspot = hotspots.setdefault(frame, FunctionHotspot(frame=frame))
+            hotspot.count += 1
+            hotspot.total_ms += cost_ms
+            hotspot.max_ms = max(hotspot.max_ms, cost_ms)
+    return sorted(
+        hotspots.values(),
+        key=lambda item: (item.total_ms, item.max_ms, item.count),
+        reverse=True,
+    )
+
+
 def _shorten_frame(frame: str) -> str:
     """Turn 'com.megacrit.cardcrawl.cards.AbstractCard.renderGlow(AbstractCard.java:123)'
     into 'AbstractCard.renderGlow (AbstractCard.java:123)'."""
     # strip line-number annotation like "(AbstractCard.java:123)"
-    m = re.match(r"^(.+?)(?:\((.+?)\))?$", frame.strip())
+    frame = frame.strip().replace(":", ".")
+    m = re.match(r"^(.+?)(?:\((.+?)\))?$", frame)
     if not m:
         return frame
     fqn  = m.group(1).rstrip("()")
@@ -318,6 +409,7 @@ def format_report(result: TracerResult, top_n: int = 15) -> str:
     """Build a human-readable flush + trace report."""
     callers = parse_stack_output(result.raw_stack_output)
     slow_renders = parse_trace_output(result.raw_trace_output)
+    result.function_hotspots = aggregate_trace_hotspots(slow_renders)
 
     w = 70
     lines: list[str] = []
@@ -358,6 +450,22 @@ def format_report(result: TracerResult, top_n: int = 15) -> str:
             for frame in top.stacks[0]:
                 lines.append(f"      at {frame}")
         lines.append("")
+
+    lines.append("  Functions contributing most trace time")
+    lines.append("")
+    if not result.function_hotspots:
+        lines.append("    (no function hotspots captured)")
+    else:
+        lines.append(
+            f"    {'function':<44}  {'calls':>6}  {'total ms':>9}  {'max ms':>8}"
+        )
+        lines.append(f"    {'-'*44}  {'-'*6}  {'-'*9}  {'-'*8}")
+        for hotspot in result.function_hotspots[:top_n]:
+            lines.append(
+                f"    {hotspot.frame:<44}  {hotspot.count:>6}  "
+                f"{hotspot.total_ms:>9.1f}  {hotspot.max_ms:>8.1f}"
+            )
+    lines.append("")
 
     # ── slow render table ───────────────────────────────────────────────────
     lines.append(

@@ -1,10 +1,10 @@
 package io.stamethyst.arthas;
 
-import org.objectweb.asm.ClassReader;
-import org.objectweb.asm.ClassVisitor;
-import org.objectweb.asm.ClassWriter;
-import org.objectweb.asm.MethodVisitor;
-import org.objectweb.asm.Opcodes;
+import com.alibaba.deps.org.objectweb.asm.ClassReader;
+import com.alibaba.deps.org.objectweb.asm.ClassVisitor;
+import com.alibaba.deps.org.objectweb.asm.ClassWriter;
+import com.alibaba.deps.org.objectweb.asm.MethodVisitor;
+import com.alibaba.deps.org.objectweb.asm.Opcodes;
 
 import java.lang.instrument.ClassFileTransformer;
 import java.security.ProtectionDomain;
@@ -17,9 +17,14 @@ public class ClassLoaderUtilsTransformer implements ClassFileTransformer {
     public byte[] transform(ClassLoader loader, String internalName,
                             Class<?> classBeingRedefined,
                             ProtectionDomain pd, byte[] classfileBuffer) {
-        if (!TARGET.equals(internalName)) {
+        String name = internalName;
+        if (name == null && classBeingRedefined != null) {
+            name = classBeingRedefined.getName();
+        }
+        if (name == null || !TARGET.equals(name.replace('.', '/'))) {
             return null;
         }
+        ArthasCommandBridge.log("transforming " + TARGET + " loader=" + loader);
         ClassReader cr = new ClassReader(classfileBuffer);
         ClassWriter cw = new ClassWriter(cr, 0);
         cr.accept(new PatchVisitor(cw), 0);

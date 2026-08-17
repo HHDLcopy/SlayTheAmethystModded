@@ -22,6 +22,7 @@ import io.stamethyst.backend.render.RendererDecision
 import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.backend.render.VirtualResolutionPolicy
 import io.stamethyst.backend.render.VirtualResolutionMode
+import io.stamethyst.backend.resources.ArthasResourcePackService
 import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
@@ -47,6 +48,7 @@ object StsLaunchSpec {
     private const val DEBUG_GPU_GUARDIAN_TEST_PREFS = "sts_debug_gpu_guardian_test"
     private val EFFECTIVE_PERFORMANCE_PROPERTY_KEYS = listOf(
         "amethyst.gdx.frame_ring",
+        "amethyst.gdx.frame_hud",
         "amethyst.bridge.launcher_perf_snapshot",
         "amethyst.gdx.gpu_resource_summary",
         "amethyst.gdx.gpu_resource_diag"
@@ -124,7 +126,8 @@ object StsLaunchSpec {
         autoplaySingleRoomSpecPath: String = "",
         autoplayChoiceDelayMs: Long = 0L,
         autoplaySingleRoomBenchMode: Boolean = false,
-        cardObtainEffectOwnershipCompatEnabled: Boolean = true
+        cardObtainEffectOwnershipCompatEnabled: Boolean = true,
+        performanceDeepDiagnosticsOverride: Boolean? = null
     ): List<String> {
         val stsRoot = RuntimePaths.stsRoot(context)
         val stsHome = RuntimePaths.stsHome(context)
@@ -137,8 +140,10 @@ object StsLaunchSpec {
         val classTraceFlag = File(stsRoot, "classload_trace.flag")
         val is64BitRuntime = is64BitRuntime(javaHome)
         val showPerformanceOverlay = LauncherConfig.isGamePerformanceOverlayEnabled(context)
-        val performanceDeepDiagnostics =
-            LauncherConfig.isGamePerformanceDeepDiagnosticsEnabled(context)
+        val requestedPerformanceDeepDiagnostics = performanceDeepDiagnosticsOverride
+            ?: LauncherConfig.isGamePerformanceDeepDiagnosticsEnabled(context)
+        val performanceDeepDiagnostics = requestedPerformanceDeepDiagnostics &&
+            ArthasResourcePackService.isInstalled(context)
 
         val args = ArrayList<String>()
         // Performance-first by default, with a compatibility fallback file switch.
@@ -696,6 +701,7 @@ object StsLaunchSpec {
         )
         if (performanceDeepDiagnostics) {
             args.add("-Damethyst.gdx.gpu_resource_summary=true")
+            args.add("-Damethyst.gdx.frame_hud=$showPerformanceOverlay")
         }
         if (ramSaverEnabled) {
             // Scale ram-saver's hot-pin texture budget with the heap size.
@@ -780,7 +786,7 @@ object StsLaunchSpec {
                 enabled = LauncherConfig.isMtsPatchCacheEnabled(context)
             )
         }
-        if (showPerformanceOverlay) {
+        if (showPerformanceOverlay || performanceDeepDiagnostics) {
             args.add("-Damethyst.bridge.heap_snapshot=${RuntimePaths.jvmHeapSnapshot(context).absolutePath}")
             args.add("-Damethyst.bridge.launcher_perf_snapshot=${RuntimePaths.launcherPerfSnapshot(context).absolutePath}")
         }
@@ -800,7 +806,22 @@ object StsLaunchSpec {
                 performanceDeepDiagnostics = performanceDeepDiagnostics
             )
         ) {
-            args.add("-javaagent:${RuntimePaths.agentConnectorJar(context).absolutePath}=port=9099")
+            val gameProbeArgs = buildString {
+                append("port=9099")
+                if (performanceDeepDiagnostics) {
+                    val outputDir = RuntimePaths.offlineArthasOutputDir(context)
+                    if (!outputDir.exists()) {
+                        outputDir.mkdirs()
+                    }
+                    append(",arthas=true")
+                    append(",arthasPort=8099")
+                    append(",arthasDelaySeconds=15")
+                    append(",arthasOutputDir=").append(outputDir.absolutePath)
+                    append(",arthasHome=")
+                        .append(RuntimePaths.arthasResourceCurrentDir(context).absolutePath)
+                }
+            }
+            args.add("-javaagent:${RuntimePaths.agentConnectorJar(context).absolutePath}=$gameProbeArgs")
         }
         args.add("-cp")
         if (isMtsLaunchMode(launchMode)) {

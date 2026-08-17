@@ -21,16 +21,47 @@ internal object SteamCloudAuthCoordinator {
     private const val AUTH_COMPLETION_TIMEOUT_MS = 4L * 60L * 1000L
     private const val LOGIN_CANCELLED_MESSAGE = "Steam Cloud login cancelled by user."
 
+    interface AuthPrompt {
+        fun getDeviceCode(previousCodeWasIncorrect: Boolean): CompletableFuture<String>
+
+        fun getEmailCode(
+            email: String?,
+            previousCodeWasIncorrect: Boolean,
+        ): CompletableFuture<String>
+
+        fun getDeviceConfirmationDecision(
+            deviceCodeAvailable: Boolean,
+        ): CompletableFuture<SteamCloudDeviceConfirmationDecision>
+    }
+
     class CancellationHandle {
         private val cancelled = AtomicBoolean(false)
         private val session = AtomicReference<SteamCredentialAuthSession?>()
+        private val loginAttemptId = AtomicReference<String?>(null)
+        private val cancellationCleanupScheduled = AtomicBoolean(false)
+        @Volatile
+        private var onLoginAttemptCancelled: ((String) -> Unit)? = null
 
         val isCancelled: Boolean
             get() = cancelled.get()
 
         fun cancel() {
-            cancelled.set(true)
+            val wasCancelled = cancelled.getAndSet(true)
             session.getAndSet(null)?.close()
+            if (!wasCancelled) {
+                scheduleLoginAttemptCleanup()
+            }
+        }
+
+        internal fun bindLoginAttempt(
+            attemptId: String,
+            onCancelled: (String) -> Unit,
+        ) {
+            loginAttemptId.set(attemptId)
+            onLoginAttemptCancelled = onCancelled
+            if (cancelled.get()) {
+                scheduleLoginAttemptCleanup()
+            }
         }
 
         internal fun attach(session: SteamCredentialAuthSession) {
@@ -51,6 +82,19 @@ internal object SteamCloudAuthCoordinator {
                 throw CancellationException(LOGIN_CANCELLED_MESSAGE)
             }
         }
+
+        internal fun <T> runIfActive(block: () -> T): T {
+            throwIfCancellationRequested()
+            return block()
+        }
+
+        private fun scheduleLoginAttemptCleanup() {
+            val attemptId = loginAttemptId.get()?.trim().orEmpty()
+            val callback = onLoginAttemptCancelled ?: return
+            if (attemptId.isNotEmpty() && cancellationCleanupScheduled.compareAndSet(false, true)) {
+                callback(attemptId)
+            }
+        }
     }
 
     data class AuthResult(
@@ -69,7 +113,7 @@ internal object SteamCloudAuthCoordinator {
         username: String,
         password: String,
         existingGuardData: String,
-        prompt: SteamCloudClient.AuthPrompt,
+        prompt: AuthPrompt,
         cancellationHandle: CancellationHandle = CancellationHandle(),
     ): AuthResult {
         val startedAtMs = System.currentTimeMillis()
@@ -151,7 +195,7 @@ internal object SteamCloudAuthCoordinator {
         username: String,
         password: String,
         guardData: String?,
-        prompt: SteamCloudClient.AuthPrompt,
+        prompt: AuthPrompt,
         diagnosticsClient: SteamCloudClient,
         cancellationHandle: CancellationHandle,
     ): SteamCloudClient.AuthMaterial = runBlocking {
@@ -197,8 +241,26 @@ internal object SteamCloudAuthCoordinator {
                     SteamGuardChallengeType.DeviceConfirmation -> {
                         lastPrompt.set("device_confirmation")
                         diagnosticsClient.recordProtocolAuthDiagnostic("auth_prompt device_confirmation")
-                        if (!prompt.acceptDeviceConfirmation().get()) {
-                            throw CancellationException(LOGIN_CANCELLED_MESSAGE)
+                        when (
+                            prompt.getDeviceConfirmationDecision(
+                                challenges.any { it.type == SteamGuardChallengeType.DeviceCode }
+                            ).get()
+                        ) {
+                            SteamCloudDeviceConfirmationDecision.APPROVE_ON_TRUSTED_DEVICE -> Unit
+                            SteamCloudDeviceConfirmationDecision.USE_DEVICE_CODE -> {
+                                if (challenges.none { it.type == SteamGuardChallengeType.DeviceCode }) {
+                                    throw IllegalStateException("Steam 未提供可用的 Steam Guard 2FA 验证码方式。")
+                                }
+                                submitGuardCodeWithPromptRetry(
+                                    session = session,
+                                    challengeType = SteamGuardChallengeType.DeviceCode,
+                                    promptState = lastPrompt,
+                                    diagnosticsClient = diagnosticsClient,
+                                    codeProvider = { previousCodeWasIncorrect ->
+                                        prompt.getDeviceCode(previousCodeWasIncorrect)
+                                    },
+                                )
+                            }
                         }
                     }
 

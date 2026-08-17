@@ -106,9 +106,6 @@ internal fun LauncherDeveloperSettingsScreenContent(
     onLocalTestCloudControlEnabledChanged: (Boolean) -> Unit = {},
     onSteamAchievementDebugModeEnabledChanged: (Boolean) -> Unit = {},
     onLocalTestEndpointsChanged: (String, String, String) -> Boolean = { _, _, _ -> false },
-    onSaveSteamCloudPhase0Credentials: (String, String, String) -> Boolean = { _, _, _ -> false },
-    onRunSteamCloudPhase0Probe: () -> Unit = {},
-    onClearSteamCloudPhase0Credentials: () -> Unit = {},
     onRendererSelectionModeChanged: (RendererSelectionMode) -> Unit = {},
     onManualRendererBackendChanged: (RendererBackend) -> Unit = {},
     onOpenMobileGluesSettings: () -> Unit = {},
@@ -275,17 +272,6 @@ internal fun LauncherDeveloperSettingsScreenContent(
                         }
                     }
                 }
-            }
-        }
-
-        item {
-            SettingsSectionCard(title = stringResource(R.string.settings_steam_cloud_phase0_title)) {
-                SettingsSteamCloudPhase0Section(
-                    uiState = uiState,
-                    onSaveCredentials = onSaveSteamCloudPhase0Credentials,
-                    onRunProbe = onRunSteamCloudPhase0Probe,
-                    onClearCredentials = onClearSteamCloudPhase0Credentials,
-                )
             }
         }
 
@@ -474,115 +460,6 @@ internal fun SettingsResetDefaultsSection(
                     enabled = !busy,
                     onClick = { showConfirmDialog = false }
                 ) {
-                    Text(stringResource(R.string.main_folder_dialog_cancel))
-                }
-            }
-        )
-    }
-}
-
-
-@Composable
-internal fun SettingsSteamCloudPhase0Section(
-    uiState: SettingsScreenViewModel.UiState,
-    onSaveCredentials: (String, String, String) -> Boolean,
-    onRunProbe: () -> Unit,
-    onClearCredentials: () -> Unit,
-) {
-    var showCredentialsDialog by rememberSaveable { mutableStateOf(false) }
-    var pendingAccountName by rememberSaveable { mutableStateOf("") }
-    var pendingRefreshToken by rememberSaveable { mutableStateOf("") }
-    var pendingProxyUrl by rememberSaveable { mutableStateOf("") }
-
-    Text(
-        text = uiState.steamCloudPhase0StatusText.ifBlank {
-            stringResource(R.string.settings_steam_cloud_phase0_status_idle)
-        },
-        style = MaterialTheme.typography.bodySmall
-    )
-
-    SettingsActionListItem(
-        title = stringResource(R.string.settings_steam_cloud_phase0_credentials_title),
-        supportingText = uiState.steamCloudPhase0CredentialsSummary,
-        enabled = !uiState.busy,
-        onClick = {
-            pendingAccountName = uiState.steamCloudPhase0AccountName
-            pendingRefreshToken = ""
-            pendingProxyUrl = uiState.steamCloudPhase0ProxyUrl
-            showCredentialsDialog = true
-        }
-    )
-
-    SettingsActionListItem(
-        title = stringResource(R.string.settings_steam_cloud_phase0_run_title),
-        supportingText = stringResource(R.string.settings_steam_cloud_phase0_run_desc),
-        enabled = !uiState.busy,
-        onClick = onRunProbe
-    )
-
-    SettingsActionListItem(
-        title = stringResource(R.string.settings_steam_cloud_phase0_clear_title),
-        supportingText = stringResource(R.string.settings_steam_cloud_phase0_clear_desc),
-        enabled = !uiState.busy,
-        onClick = onClearCredentials
-    )
-
-    if (showCredentialsDialog) {
-        AlertDialog(
-            onDismissRequest = { showCredentialsDialog = false },
-            title = { Text(stringResource(R.string.settings_steam_cloud_phase0_credentials_title)) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = pendingAccountName,
-                        onValueChange = { pendingAccountName = it },
-                        singleLine = true,
-                        enabled = !uiState.busy,
-                        label = { Text(stringResource(R.string.settings_steam_cloud_phase0_account_label)) }
-                    )
-                    OutlinedTextField(
-                        value = pendingRefreshToken,
-                        onValueChange = { pendingRefreshToken = it },
-                        singleLine = false,
-                        minLines = 3,
-                        maxLines = 5,
-                        enabled = !uiState.busy,
-                        label = { Text(stringResource(R.string.settings_steam_cloud_phase0_token_label)) }
-                    )
-                    OutlinedTextField(
-                        value = pendingProxyUrl,
-                        onValueChange = { pendingProxyUrl = it },
-                        singleLine = true,
-                        enabled = !uiState.busy,
-                        label = { Text(stringResource(R.string.settings_steam_cloud_phase0_proxy_label)) }
-                    )
-                    Text(
-                        text = if (uiState.steamCloudPhase0RefreshTokenConfigured) {
-                            stringResource(R.string.settings_steam_cloud_phase0_credentials_dialog_keep_token)
-                        } else {
-                            stringResource(R.string.settings_steam_cloud_phase0_credentials_dialog_new_token)
-                        },
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    Text(
-                        text = stringResource(R.string.settings_steam_cloud_phase0_credentials_dialog_proxy_hint),
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-            },
-            confirmButton = {
-                HapticTextButton(
-                    onClick = {
-                        if (onSaveCredentials(pendingAccountName, pendingRefreshToken, pendingProxyUrl)) {
-                            showCredentialsDialog = false
-                        }
-                    }
-                ) {
-                    Text(stringResource(R.string.main_folder_dialog_confirm))
-                }
-            },
-            dismissButton = {
-                HapticTextButton(onClick = { showCredentialsDialog = false }) {
                     Text(stringResource(R.string.main_folder_dialog_cancel))
                 }
             }

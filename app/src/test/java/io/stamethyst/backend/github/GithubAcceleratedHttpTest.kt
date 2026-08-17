@@ -1,6 +1,7 @@
 package io.stamethyst.backend.github
 
 import java.net.InetAddress
+import java.net.ProtocolException
 import java.io.File
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
@@ -8,10 +9,12 @@ import okhttp3.Dns
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -198,6 +201,63 @@ class GithubAcceleratedHttpTest {
             assertEquals(42L, restored.cachedAtMs)
         } finally {
             file.delete()
+        }
+    }
+
+    @Test
+    fun secureOriginComparison_includesEffectiveHttpsPort() {
+        val defaultPort = "https://github.example.test/releases".toHttpUrl()
+        val explicitDefaultPort = "https://github.example.test:443/releases".toHttpUrl()
+        val alternatePort = "https://github.example.test:8443/releases".toHttpUrl()
+
+        assertTrue(defaultPort.hasSameSecureOrigin(explicitDefaultPort))
+        assertFalse(defaultPort.hasSameSecureOrigin(alternatePort))
+    }
+
+    @Test
+    fun crossOrigin307And308_redirectsDropBodyAndCredentials() {
+        listOf(307, 308).forEach { responseCode ->
+            val previous = Request.Builder()
+                .url("https://github.example.test:8443/upload")
+                .post("release-payload".toRequestBody())
+                .header("Authorization", "Bearer secret")
+                .header("Cookie", "session=secret")
+                .build()
+            val redirected = buildCredentialSafeRedirectRequest(
+                previousLogicalRequest = previous,
+                redirectUrl = "https://mirror.example.test:8443/upload".toHttpUrl(),
+                responseCode = responseCode,
+                preserveSensitiveHeaders = false,
+            )
+
+            assertEquals("GET", redirected.method)
+            assertNull(redirected.body)
+            assertNull(redirected.header("Authorization"))
+            assertNull(redirected.header("Cookie"))
+            assertNull(redirected.header("Content-Type"))
+        }
+    }
+
+    @Test
+    fun httpsRequiredRouteClient_rejectsCleartextBeforeNetwork() {
+        val server = MockWebServer()
+        server.start()
+        try {
+            val error = runCatching {
+                defaultWattToolkitRouteClient(requireHttps = true)
+                    .newCall(
+                        Request.Builder()
+                            .url(server.url("/route"))
+                            .head()
+                            .build(),
+                    )
+                    .execute()
+            }.exceptionOrNull()
+
+            assertTrue(error is ProtocolException)
+            assertEquals(0, server.requestCount)
+        } finally {
+            server.close()
         }
     }
 

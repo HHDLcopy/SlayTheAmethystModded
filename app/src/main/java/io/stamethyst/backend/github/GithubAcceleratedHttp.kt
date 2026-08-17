@@ -49,6 +49,7 @@ internal data class WattToolkitRouteProfile(
     val cacheFileName: String,
     val supportedHosts: Set<String>,
     val bootstrapForwardTargets: List<String>,
+    val bootstrapSupportedHosts: Set<String> = emptySet(),
     val supportedProxyTypes: Set<Int> = setOf(WATT_PROXY_TYPE_DIRECT),
     val allowUncheckedRoutes: Boolean = false,
     val officialProbePath: String = "/",
@@ -65,7 +66,7 @@ internal data class WattToolkitRouteProfile(
 
 internal val GithubApiWattToolkitRouteProfile = WattToolkitRouteProfile(
     name = "github-api",
-    cacheFileName = "watt-github-api-route-cache-v2.json",
+    cacheFileName = "watt-github-api-route-cache-v3.json",
     supportedHosts = setOf("api.github.com"),
     bootstrapForwardTargets = listOf("githubapi.rmbgame.net"),
     officialProbePath = "/rate_limit",
@@ -107,6 +108,8 @@ internal data class ExperimentalGithubDirectAccessRuntime(
     val hostnameVerifier: HostnameVerifier,
     val directHttpClient: OkHttpClient,
     val forwardDns: WattToolkitForwardDns? = null,
+    val requireHttps: Boolean = false,
+    val forwardHostnameVerifier: HostnameVerifier = hostnameVerifier,
 )
 
 internal object GithubAcceleratedHttp {
@@ -150,17 +153,19 @@ internal object GithubAcceleratedHttp {
         val runtime = runtimeCache.getOrPut(filesDir.absolutePath) {
             createExperimentalGithubDirectAccessRuntime(filesDir)
         }
-        return createPlainClient(
-            connectTimeoutMs = connectTimeoutMs,
-            readTimeoutMs = readTimeoutMs,
-            followRedirects = followRedirects,
-        ).newBuilder()
+        return OkHttpClient.Builder()
             .connectTimeout(connectTimeoutMs.toLong(), TimeUnit.MILLISECONDS)
             .readTimeout(readTimeoutMs.toLong(), TimeUnit.MILLISECONDS)
             .writeTimeout(readTimeoutMs.toLong(), TimeUnit.MILLISECONDS)
-            .followRedirects(followRedirects)
-            .followSslRedirects(followRedirects)
+            .followRedirects(false)
+            .followSslRedirects(false)
             .hostnameVerifier(runtime.hostnameVerifier)
+            .addHttpsOnlyTransport()
+            .apply {
+                if (followRedirects) {
+                    addInterceptor(CredentialSafeRedirectInterceptor(requireHttps = true))
+                }
+            }
             .addExperimentalGithubDirectAccess(
                 runtime = runtime,
                 enabledProvider = {
@@ -193,13 +198,17 @@ internal fun createPlainClient(
     readTimeoutMs: Int,
     followRedirects: Boolean = true,
 ): OkHttpClient {
-    return OkHttpClient.Builder()
+    val builder = OkHttpClient.Builder()
         .connectTimeout(connectTimeoutMs.toLong(), TimeUnit.MILLISECONDS)
         .readTimeout(readTimeoutMs.toLong(), TimeUnit.MILLISECONDS)
         .writeTimeout(readTimeoutMs.toLong(), TimeUnit.MILLISECONDS)
-        .followRedirects(followRedirects)
-        .followSslRedirects(followRedirects)
-        .build()
+        .followRedirects(false)
+        .followSslRedirects(false)
+        .addHttpsOnlyTransport()
+    if (followRedirects) {
+        builder.addInterceptor(CredentialSafeRedirectInterceptor(requireHttps = true))
+    }
+    return builder.build()
 }
 
 internal fun createExperimentalGithubDirectAccessRuntime(
@@ -211,6 +220,7 @@ internal fun createExperimentalGithubDirectAccessRuntime(
     routeProfiles = routeProfiles,
     connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS,
     readTimeoutMs = DEFAULT_READ_TIMEOUT_MS,
+    requireHttps = true,
 )
 
 /**
@@ -226,9 +236,10 @@ internal fun createWattToolkitRuntime(
     routeProfiles: List<WattToolkitRouteProfile>,
     connectTimeoutMs: Long,
     readTimeoutMs: Long,
+    requireHttps: Boolean = false,
 ): ExperimentalGithubDirectAccessRuntime {
     val forwardDns = WattToolkitForwardDns()
-    val routeClient = defaultWattToolkitRouteClient()
+    val routeClient = defaultWattToolkitRouteClient(requireHttps = requireHttps)
     val resolvers = routeProfiles.map { routeProfile ->
         WattToolkitGithubRouteResolver(
             routeProfile = routeProfile,
@@ -239,33 +250,45 @@ internal fun createWattToolkitRuntime(
                 fallbackLogicalHostSuffixes = routeProfile.supportedHostSuffixes,
             ),
             forwardTargetProbe = { target ->
-                probeWattToolkitForwardTarget(routeClient, target)
+                probeWattToolkitForwardTarget(routeClient, target, requireHttps = requireHttps)
             },
             officialTargetProbe = { host, path ->
-                probeWattToolkitOfficialTarget(routeClient, host, path)
+                probeWattToolkitOfficialTarget(routeClient, host, path, requireHttps = requireHttps)
             },
+            requireHttps = requireHttps,
         )
     }
     val unsafeHostProvider: (String) -> Boolean = { host ->
         resolvers.any { resolver -> resolver.allowsUnsafeHostnameBypass(host) }
     }
-    val hostnameVerifier = GithubDirectHostnameVerifier(unsafeHostBypassProvider = unsafeHostProvider)
+    val platformHostnameVerifier = HttpsURLConnection.getDefaultHostnameVerifier()
+    val forwardHostnameVerifier = GithubDirectHostnameVerifier(
+        defaultVerifier = platformHostnameVerifier,
+        unsafeHostBypassProvider = unsafeHostProvider,
+    )
     val directHttpClient = OkHttpClient.Builder()
         .connectTimeout(connectTimeoutMs, TimeUnit.MILLISECONDS)
         .readTimeout(readTimeoutMs, TimeUnit.MILLISECONDS)
         .writeTimeout(readTimeoutMs, TimeUnit.MILLISECONDS)
-        .hostnameVerifier(hostnameVerifier)
+        .hostnameVerifier(forwardHostnameVerifier)
         .dns(forwardDns)
         .trustWattToolkitForwardCertificates(unsafeHostProvider)
+        .apply {
+            if (requireHttps) {
+                addHttpsOnlyTransport()
+            }
+        }
         .followRedirects(false)
         .followSslRedirects(false)
         .protocols(listOf(Protocol.HTTP_1_1))
         .build()
     return ExperimentalGithubDirectAccessRuntime(
         resolvers = resolvers,
-        hostnameVerifier = hostnameVerifier,
+        hostnameVerifier = platformHostnameVerifier,
         directHttpClient = directHttpClient,
         forwardDns = forwardDns,
+        requireHttps = requireHttps,
+        forwardHostnameVerifier = forwardHostnameVerifier,
     )
 }
 
@@ -273,12 +296,16 @@ internal fun OkHttpClient.Builder.addExperimentalGithubDirectAccess(
     runtime: ExperimentalGithubDirectAccessRuntime,
     enabledProvider: () -> Boolean = { true },
 ): OkHttpClient.Builder = apply {
+    if (runtime.requireHttps) {
+        addHttpsOnlyTransport()
+    }
     addInterceptor(
         ExperimentalGithubDirectAccessInterceptor(
             routeResolvers = runtime.resolvers,
             directCallFactory = runtime.directHttpClient,
             forwardDns = runtime.forwardDns,
             enabledProvider = enabledProvider,
+            requireHttps = runtime.requireHttps,
         ),
     )
 }
@@ -354,6 +381,8 @@ internal class ExperimentalGithubDirectAccessInterceptor(
     private val enabledProvider: () -> Boolean = { true },
     private val forwardDns: WattToolkitForwardDns? = null,
     private val cookieJar: CookieJar = CookieJar.NO_COOKIES,
+    private val requireHttps: Boolean = false,
+    private val allowInsecureUrl: (HttpUrl) -> Boolean = { false },
 ) : Interceptor {
     /**
      * Returns a copy bound to [cookieJar].
@@ -371,10 +400,13 @@ internal class ExperimentalGithubDirectAccessInterceptor(
             enabledProvider = enabledProvider,
             forwardDns = forwardDns,
             cookieJar = cookieJar,
+            requireHttps = requireHttps,
+            allowInsecureUrl = allowInsecureUrl,
         )
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
+        ensureUrlAllowed(request.url)
         if (!enabledProvider()) {
             return chain.proceed(request)
         }
@@ -391,6 +423,8 @@ internal class ExperimentalGithubDirectAccessInterceptor(
                 },
                 officialRequestAttemptedProvider = { officialRequestAttempted },
             )
+        } catch (error: ProtocolException) {
+            throw error
         } catch (error: IOException) {
             if (officialRequestAttempted) {
                 routeResolvers
@@ -409,8 +443,10 @@ internal class ExperimentalGithubDirectAccessInterceptor(
     ): Response {
         var logicalRequest = initialLogicalRequest
         var followUpCount = 0
+        var credentialsAllowed = true
         val failedForwardTargets = LinkedHashSet<String>()
         while (true) {
+            ensureUrlAllowed(logicalRequest.url)
             val resolver = routeResolvers.firstOrNull { candidate -> candidate.supports(logicalRequest.url.host) }
             val route = resolver?.resolveRouteForHost(logicalRequest.url.host)
             var effectiveRoute = route
@@ -419,7 +455,7 @@ internal class ExperimentalGithubDirectAccessInterceptor(
             // Cookies are keyed on the logical URL so they are never handed to the
             // forward target's own hostname.
             val logicalUrl = logicalRequest.url
-            val cookieRequest = applyCookieHeader(logicalRequest, logicalUrl)
+            val cookieRequest = applyCookieHeader(logicalRequest, logicalUrl, credentialsAllowed)
             val response = try {
                 val executed = executeWithForwardTargetFallback(
                     logicalRequest = logicalRequest,
@@ -459,19 +495,22 @@ internal class ExperimentalGithubDirectAccessInterceptor(
                 resolver?.confirmSuccessfulOfficialPath(logicalRequest.url.host)
                 return response
             }
-            persistResponseCookies(logicalUrl, response)
-            if (
-                resolver != null &&
+            var responseTransferred = false
+            try {
+                persistResponseCookies(logicalUrl, response)
+                if (
+                    resolver != null &&
                 effectiveRoute != null &&
                 usedForwardTarget != null &&
                 response.isStaleForwardRouteResponse(logicalRequest.url) &&
                 failedForwardTargets.add(usedForwardTarget)
-            ) {
-                response.close()
-                resolver.refreshRouteForHost(
-                    host = logicalRequest.url.host,
-                    excludedForwardTargets = failedForwardTargets,
-                )
+                ) {
+                    responseTransferred = true
+                    response.close()
+                    resolver.refreshRouteForHost(
+                        host = logicalRequest.url.host,
+                        excludedForwardTargets = failedForwardTargets,
+                    )
                 continue
             }
             if (
@@ -485,25 +524,48 @@ internal class ExperimentalGithubDirectAccessInterceptor(
                     host = logicalRequest.url.host,
                     successfulTarget = usedForwardTarget,
                 )
+                }
+                val redirectTarget = response.redirectTarget(logicalRequest.url, effectiveRoute)
+                if (redirectTarget == null) {
+                    responseTransferred = true
+                    return response.newBuilder()
+                        .request(logicalRequest)
+                        .build()
+                }
+                if (followUpCount >= maxRedirects) {
+                    responseTransferred = true
+                    response.close()
+                    throw ProtocolException("Too many GitHub direct-access redirects: $maxRedirects")
+                }
+                val nextCredentialsAllowed = credentialsAllowed &&
+                    logicalRequest.url.hasSameSecureOrigin(redirectTarget)
+                val nextLogicalRequest = try {
+                    ensureUrlAllowed(redirectTarget)
+                    buildCredentialSafeRedirectRequest(
+                        previousLogicalRequest = logicalRequest,
+                        redirectUrl = redirectTarget,
+                        responseCode = response.code,
+                        preserveSensitiveHeaders = nextCredentialsAllowed,
+                    )
+                } finally {
+                    responseTransferred = true
+                    response.close()
+                }
+                logicalRequest = nextLogicalRequest
+                credentialsAllowed = nextCredentialsAllowed
+                followUpCount++
+            } finally {
+                if (!responseTransferred) {
+                    responseTransferred = true
+                    response.close()
+                }
             }
-            val redirectTarget = response.redirectTarget(logicalRequest.url, effectiveRoute)
-            if (redirectTarget == null) {
-                return response.newBuilder()
-                    .request(logicalRequest)
-                    .build()
-            }
-            if (followUpCount >= maxRedirects) {
-                response.close()
-                throw ProtocolException("Too many GitHub direct-access redirects: $maxRedirects")
-            }
-            val nextLogicalRequest = buildRedirectRequest(
-                previousLogicalRequest = logicalRequest,
-                redirectUrl = redirectTarget,
-                responseCode = response.code,
-            )
-            response.close()
-            logicalRequest = nextLogicalRequest
-            followUpCount++
+        }
+    }
+
+    private fun ensureUrlAllowed(url: HttpUrl) {
+        if (requireHttps && !url.isHttps && !allowInsecureUrl(url)) {
+            throw ProtocolException("HTTPS is required for accelerated request: $url")
         }
     }
 
@@ -516,7 +578,16 @@ internal class ExperimentalGithubDirectAccessInterceptor(
      * any cookie jar configured on the calling client is silently ignored. Steam workshop
      * browsing then loses its `steamLoginSecure` cookie and Steam serves the logged-out view.
      */
-    private fun applyCookieHeader(request: Request, logicalUrl: HttpUrl): Request {
+    private fun applyCookieHeader(
+        request: Request,
+        logicalUrl: HttpUrl,
+        credentialsAllowed: Boolean,
+    ): Request {
+        if (!credentialsAllowed) {
+            return request.newBuilder()
+                .removeSensitiveCredentialHeaders()
+                .build()
+        }
         if (cookieJar == CookieJar.NO_COOKIES) return request
         val cookies = runCatching { cookieJar.loadForRequest(logicalUrl) }.getOrDefault(emptyList())
         if (cookies.isEmpty()) return request
@@ -633,6 +704,7 @@ internal class ExperimentalGithubDirectAccessInterceptor(
         val shouldForward = route.matchesLogicalHost(logicalUrl.host)
         val networkUrl = if (shouldForward) route.buildForwardedUrl(logicalUrl) else logicalUrl
         if (shouldForward) {
+            ensureUrlAllowed(networkUrl)
             forwardDns?.register(route)
         }
         return logicalRequest.newBuilder()
@@ -647,30 +719,131 @@ internal class ExperimentalGithubDirectAccessInterceptor(
             .build()
     }
 
-    private fun buildRedirectRequest(
-        previousLogicalRequest: Request,
-        redirectUrl: HttpUrl,
-        responseCode: Int,
-    ): Request {
-        val preserveBody = responseCode == HTTP_TEMP_REDIRECT || responseCode == HTTP_PERM_REDIRECT
-        val originalMethod = previousLogicalRequest.method
-        val redirectMethod = when {
-            preserveBody -> originalMethod
-            originalMethod == HTTP_METHOD_GET || originalMethod == HTTP_METHOD_HEAD -> originalMethod
-            else -> HTTP_METHOD_GET
-        }
-        val redirectBody: RequestBody? = if (redirectMethod == originalMethod) previousLogicalRequest.body else null
-        return previousLogicalRequest.newBuilder()
-            .url(redirectUrl)
-            .method(redirectMethod, redirectBody)
-            .apply {
-                if (redirectBody == null) {
-                    removeHeader("Transfer-Encoding")
-                    removeHeader("Content-Length")
-                    removeHeader("Content-Type")
-                }
+}
+
+internal fun Request.Builder.removeSensitiveCredentialHeaders(): Request.Builder {
+    build().headers.names()
+        .filter(::isSensitiveCredentialHeader)
+        .forEach(::removeHeader)
+    return this
+}
+
+internal fun buildCredentialSafeRedirectRequest(
+    previousLogicalRequest: Request,
+    redirectUrl: HttpUrl,
+    responseCode: Int,
+    preserveSensitiveHeaders: Boolean,
+): Request {
+    val preserveBody = responseCode == HTTP_TEMP_REDIRECT || responseCode == HTTP_PERM_REDIRECT
+    val preserveRequestBody = preserveBody && preserveSensitiveHeaders
+    val originalMethod = previousLogicalRequest.method
+    val redirectMethod = when {
+        preserveRequestBody -> originalMethod
+        originalMethod == HTTP_METHOD_GET || originalMethod == HTTP_METHOD_HEAD -> originalMethod
+        else -> HTTP_METHOD_GET
+    }
+    val redirectBody: RequestBody? = if (
+        redirectMethod == originalMethod && (!preserveBody || preserveSensitiveHeaders)
+    ) {
+        previousLogicalRequest.body
+    } else {
+        null
+    }
+    return previousLogicalRequest.newBuilder()
+        .url(redirectUrl)
+        .method(redirectMethod, redirectBody)
+        .apply {
+            if (!preserveSensitiveHeaders) {
+                removeSensitiveCredentialHeaders()
             }
-            .build()
+            if (redirectBody == null) {
+                removeHeader("Transfer-Encoding")
+                removeHeader("Content-Length")
+                removeHeader("Content-Type")
+            }
+        }
+        .build()
+}
+
+internal fun HttpUrl.hasSameSecureOrigin(other: HttpUrl): Boolean =
+    isHttps && other.isHttps &&
+        host.equals(other.host, ignoreCase = true) &&
+        port == other.port
+
+internal fun HttpUrl.hasSameLogicalHost(other: HttpUrl): Boolean = hasSameSecureOrigin(other)
+
+private fun isSensitiveCredentialHeader(name: String): Boolean {
+    val normalized = name.lowercase(Locale.ROOT)
+    return normalized == "authorization" ||
+        normalized == "proxy-authorization" ||
+        normalized == "cookie" ||
+        normalized.contains("steam") ||
+        normalized.contains("session")
+}
+
+internal class HttpsOnlyInterceptor(
+    private val allowInsecureUrl: (HttpUrl) -> Boolean = { false },
+) : Interceptor {
+    override fun intercept(chain: Interceptor.Chain): Response {
+        val url = chain.request().url
+        if (!url.isHttps && !allowInsecureUrl(url)) {
+            throw ProtocolException("HTTPS is required for Steam request: $url")
+        }
+        return chain.proceed(chain.request())
+    }
+}
+
+internal fun OkHttpClient.Builder.addHttpsOnlyTransport(
+    allowInsecureUrl: (HttpUrl) -> Boolean = { false },
+): OkHttpClient.Builder = apply {
+    val interceptor = HttpsOnlyInterceptor(allowInsecureUrl)
+    addInterceptor(interceptor)
+    addNetworkInterceptor(interceptor)
+}
+
+internal class CredentialSafeRedirectInterceptor(
+    private val maxRedirects: Int = MAX_FOLLOW_UPS,
+    private val requireHttps: Boolean = false,
+    private val allowInsecureUrl: (HttpUrl) -> Boolean = { false },
+) : Interceptor {
+    override fun intercept(chain: Interceptor.Chain): Response {
+        var logicalRequest = chain.request()
+        var followUpCount = 0
+        var credentialsAllowed = true
+        while (true) {
+            ensureRedirectUrlAllowed(logicalRequest.url)
+            val response = chain.proceed(logicalRequest)
+            val redirectTarget = response.redirectTarget(logicalRequest.url, route = null)
+            if (redirectTarget == null) {
+                return response
+            }
+            if (followUpCount >= maxRedirects) {
+                response.close()
+                throw ProtocolException("Too many secure redirects: $maxRedirects")
+            }
+            val nextCredentialsAllowed = credentialsAllowed &&
+                logicalRequest.url.hasSameSecureOrigin(redirectTarget)
+            val nextRequest = try {
+                ensureRedirectUrlAllowed(redirectTarget)
+                buildCredentialSafeRedirectRequest(
+                    previousLogicalRequest = logicalRequest,
+                    redirectUrl = redirectTarget,
+                    responseCode = response.code,
+                    preserveSensitiveHeaders = nextCredentialsAllowed,
+                )
+            } finally {
+                response.close()
+            }
+            logicalRequest = nextRequest
+            credentialsAllowed = nextCredentialsAllowed
+            followUpCount++
+        }
+    }
+
+    private fun ensureRedirectUrlAllowed(url: HttpUrl) {
+        if (requireHttps && !url.isHttps && !allowInsecureUrl(url)) {
+            throw ProtocolException("HTTPS is required for redirected request: $url")
+        }
     }
 }
 
@@ -694,6 +867,7 @@ internal class WattToolkitGithubRouteResolver(
     private val nowProvider: () -> Long = System::currentTimeMillis,
     private val sleepProvider: (Long) -> Unit = { delayMs -> Thread.sleep(delayMs) },
     private val backgroundExecutor: Executor = sharedBestPathBackgroundExecutor,
+    private val requireHttps: Boolean = false,
 ) {
     private val lock = Any()
     private val normalizedSupportedHosts = routeProfile.supportedHosts.map { it.lowercase(Locale.ROOT) }.toSet()
@@ -927,6 +1101,7 @@ internal class WattToolkitGithubRouteResolver(
             ?.takeIf { it.matchesLogicalHost(normalizedHost) }
         val merged = mergeDiscoveredRoutes(fetched, bootstrap)
             ?.withoutExcludedForwardTargets(excludedForwardTargets)
+            ?.restrictForwardTargets()
         val rankedForwardRoute = merged?.copy(isOfficial = false)
         val officialProbe = if (excludedForwardTargets.contains(OFFICIAL_ROUTE_TARGET)) {
             WattToolkitForwardTargetProbe.failed()
@@ -973,16 +1148,25 @@ internal class WattToolkitGithubRouteResolver(
         val mergedTargets = LinkedHashSet<String>()
         // Keep probe-ranked Watt order, then append bootstrap hops as fallback.
         rankForwardTargets(fetched.forwardTargets).forEach { mergedTargets += it }
-        bootstrap.forwardTargets.forEach { target ->
-            if (mergedTargets.none { existing -> forwardTargetsEquivalent(existing, target) }) {
-                mergedTargets += target
+        val bootstrapCoversFetchedHosts = fetched.logicalHosts.all { host ->
+            bootstrap.matchesLogicalHost(host)
+        }
+        if (bootstrapCoversFetchedHosts) {
+            bootstrap.forwardTargets.forEach { target ->
+                if (isAllowedForwardTarget(target) &&
+                    mergedTargets.none { existing -> forwardTargetsEquivalent(existing, target) }
+                ) {
+                    mergedTargets += target
+                }
             }
         }
         return fetched.copy(
             forwardTargets = mergedTargets.toList(),
             ignoreSslCertVerification = fetched.ignoreSslCertVerification ||
-                bootstrap.ignoreSslCertVerification,
-            fakeServerName = fetched.fakeServerName.ifBlank { bootstrap.fakeServerName },
+                (bootstrapCoversFetchedHosts && bootstrap.ignoreSslCertVerification),
+            fakeServerName = fetched.fakeServerName.ifBlank {
+                if (bootstrapCoversFetchedHosts) bootstrap.fakeServerName else ""
+            },
         )
     }
 
@@ -1020,7 +1204,8 @@ internal class WattToolkitGithubRouteResolver(
         }
         persistedRouteLoaded = true
         val persisted = routeStore.load() ?: return
-        cachedRoute = persisted.route
+        cachedRoute = persisted.route.restrictForwardTargets()
+            ?: return
         cachedAtMs = persisted.cachedAtMs
         // Treat restored cache as recently searched so cold start does not immediately
         // re-hit projectgroups; TTL/force still triggers background revalidation.
@@ -1227,6 +1412,9 @@ internal class WattToolkitGithubRouteResolver(
     }
 
     private fun fetchSupportedRoute(): WattToolkitGithubRoute {
+        if (requireHttps && !projectGroupsUrl.isHttps) {
+            throw ProtocolException("HTTPS is required for Watt Toolkit route discovery: $projectGroupsUrl")
+        }
         val request = Request.Builder()
             .url(projectGroupsUrl)
             .post("{}".toRequestBody(JSON_MEDIA_TYPE))
@@ -1317,7 +1505,9 @@ internal class WattToolkitGithubRouteResolver(
     )
 
     private fun rankForwardTargets(targets: List<String>): List<String> {
-        val distinctTargets = targets.distinct()
+        val distinctTargets = targets
+            .filter(::isAllowedForwardTarget)
+            .distinct()
         if (distinctTargets.size < 2) {
             return distinctTargets
         }
@@ -1336,6 +1526,36 @@ internal class WattToolkitGithubRouteResolver(
                     .thenBy { it.originalIndex },
             )
             .map(RankedWattForwardTarget::target)
+    }
+
+    private fun isAllowedForwardTarget(target: String): Boolean {
+        if (!requireHttps) {
+            return true
+        }
+        val normalized = target.trim()
+        if (normalized.isEmpty()) {
+            return false
+        }
+        val url = if (normalized.contains("://")) {
+            normalized.toHttpUrlOrNull()
+        } else {
+            "https://$normalized".toHttpUrlOrNull()
+        }
+        return url?.isHttps == true
+    }
+
+    private fun WattToolkitGithubRoute.restrictForwardTargets(): WattToolkitGithubRoute? {
+        if (!requireHttps) {
+            return this
+        }
+        val allowedTargets = forwardTargets.filter(::isAllowedForwardTarget)
+        return if (isOfficial) {
+            copy(forwardTargets = allowedTargets)
+        } else if (allowedTargets.isEmpty()) {
+            null
+        } else {
+            copy(forwardTargets = allowedTargets)
+        }
     }
 
     private data class RankedWattForwardTarget(
@@ -1566,7 +1786,7 @@ internal data class PersistedWattToolkitGithubRoute(
     val cachedAtMs: Long,
 )
 
-internal fun defaultWattToolkitRouteClient(): OkHttpClient =
+internal fun defaultWattToolkitRouteClient(requireHttps: Boolean = false): OkHttpClient =
     OkHttpClient.Builder()
         .connectTimeout(DEFAULT_CONNECT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         .readTimeout(DEFAULT_READ_TIMEOUT_MS, TimeUnit.MILLISECONDS)
@@ -1574,16 +1794,25 @@ internal fun defaultWattToolkitRouteClient(): OkHttpClient =
         .proxy(Proxy.NO_PROXY)
         .protocols(listOf(Protocol.HTTP_1_1))
         .connectionPool(ConnectionPool(0, 1, TimeUnit.MILLISECONDS))
+        .apply {
+            if (requireHttps) {
+                addHttpsOnlyTransport()
+            }
+        }
         .build()
 
 private fun defaultBootstrapRouteForProfile(routeProfile: WattToolkitRouteProfile): WattToolkitGithubRoute? =
     routeProfile.bootstrapForwardTargets
         .takeIf(List<String>::isNotEmpty)
         ?.let { forwardTargets ->
+            val bootstrapHosts = routeProfile.bootstrapSupportedHosts
+                .ifEmpty { routeProfile.supportedHosts }
+                .map { it.lowercase(Locale.ROOT) }
+                .toSet()
             WattToolkitGithubRoute(
-                logicalHosts = routeProfile.supportedHosts.map { it.lowercase(Locale.ROOT) }.toSet(),
+                logicalHosts = bootstrapHosts,
                 forwardTargets = forwardTargets,
-                ignoreSslCertVerification = true,
+                ignoreSslCertVerification = false,
                 fakeServerName = "",
             )
         }
@@ -1634,28 +1863,37 @@ internal data class WattToolkitForwardTargetProbe(
 private fun probeWattToolkitForwardTarget(
     client: OkHttpClient,
     target: String,
+    requireHttps: Boolean = false,
 ): WattToolkitForwardTargetProbe {
     val url = target.toHttpUrlOrNull()
         ?: "https://$target".toHttpUrlOrNull()
         ?: return WattToolkitForwardTargetProbe.failed()
-    return probeWattToolkitHttpTarget(client, url)
+    if (requireHttps && !url.isHttps) {
+        return WattToolkitForwardTargetProbe.failed()
+    }
+    return probeWattToolkitHttpTarget(client, url, requireHttps)
 }
 
 private fun probeWattToolkitOfficialTarget(
     client: OkHttpClient,
     host: String,
     path: String,
+    requireHttps: Boolean = false,
 ): WattToolkitForwardTargetProbe {
     val normalizedPath = if (path.startsWith('/')) path else "/$path"
     val url = "https://${host.trim()}$normalizedPath".toHttpUrlOrNull()
         ?: return WattToolkitForwardTargetProbe.failed()
-    return probeWattToolkitHttpTarget(client, url)
+    return probeWattToolkitHttpTarget(client, url, requireHttps)
 }
 
 private fun probeWattToolkitHttpTarget(
     client: OkHttpClient,
     url: HttpUrl,
+    requireHttps: Boolean = false,
 ): WattToolkitForwardTargetProbe {
+    if (requireHttps && !url.isHttps) {
+        return WattToolkitForwardTargetProbe.failed()
+    }
     val probeClient = client.newBuilder()
         .connectTimeout(FORWARD_TARGET_PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         .readTimeout(FORWARD_TARGET_PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)

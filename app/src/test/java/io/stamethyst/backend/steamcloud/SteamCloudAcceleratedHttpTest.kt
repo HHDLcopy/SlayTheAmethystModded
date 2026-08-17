@@ -9,9 +9,11 @@ import io.stamethyst.backend.github.WattToolkitForwardTargetProbe
 import io.stamethyst.backend.github.WattToolkitGithubRoute
 import io.stamethyst.backend.github.WattToolkitGithubRouteResolver
 import io.stamethyst.backend.github.WattToolkitGithubRouteStore
+import io.stamethyst.backend.github.WattToolkitRouteProfile
 import io.stamethyst.backend.github.addExperimentalGithubDirectAccess
 import io.stamethyst.backend.github.withAcceleratedCookieJar
 import java.net.InetAddress
+import java.net.ProtocolException
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import okhttp3.Cookie
@@ -22,6 +24,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.WebSocketListener
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -144,6 +147,53 @@ class SteamCloudAcceleratedHttpTest {
         assertEquals("/cmsocket/", forwarded.url.encodedPath)
         assertEquals("transport=websocket", forwarded.url.encodedQuery)
         assertEquals("cmp2-hkg1.steamserver.net", forwarded.header("Host"))
+    }
+
+    @Test
+    fun steamCmWebSocketFactory_rejectsCleartextBeforeOfficialOrForwardPath() {
+        val factory = SteamCmAcceleratedWebSocketFactory(
+            officialClient = OkHttpClient(),
+            forwardClient = OkHttpClient(),
+            routeResolvers = emptyList(),
+        )
+
+        val error = runCatching {
+            factory.newWebSocket(
+                Request.Builder()
+                    .url("http://cm0-ord.steamserver.net/cmsocket/")
+                    .build(),
+                object : WebSocketListener() {},
+            )
+        }.exceptionOrNull()
+
+        assertTrue(error is ProtocolException)
+    }
+
+    @Test
+    fun requireHttpsResolver_dropsCleartextBootstrapRouteWithoutForwardRequest() {
+        val profile = WattToolkitRouteProfile(
+            name = "https-only-bootstrap",
+            cacheFileName = "unused.json",
+            supportedHosts = setOf("steamcommunity.com"),
+            bootstrapForwardTargets = listOf("http://cleartext-forward.test"),
+        )
+        val resolver = WattToolkitGithubRouteResolver(
+            routeProfile = profile,
+            client = OkHttpClient(),
+            projectGroupsUrl = apiServer.url("/accelerator/projectgroups"),
+            bootstrapRouteProvider = {
+                WattToolkitGithubRoute(
+                    logicalHosts = setOf("steamcommunity.com"),
+                    forwardTargets = listOf("http://cleartext-forward.test"),
+                )
+            },
+            sleepProvider = {},
+            backgroundExecutor = Executor { },
+            requireHttps = true,
+        )
+
+        assertNull(resolver.resolveRouteForHost("steamcommunity.com"))
+        assertEquals(0, apiServer.requestCount)
     }
 
     @Test
@@ -628,7 +678,7 @@ class SteamCloudAcceleratedHttpTest {
         assertNotNull(route)
         // Probe-ranked Watt order first, then bootstrap fallback hops.
         assertEquals(
-            listOf("fast-node.test", "slow-node.test", "steamstore.rmbgame.net"),
+            listOf("fast-node.test", "slow-node.test", "https://steamstore.rmbgame.net"),
             route!!.forwardTargets,
         )
     }

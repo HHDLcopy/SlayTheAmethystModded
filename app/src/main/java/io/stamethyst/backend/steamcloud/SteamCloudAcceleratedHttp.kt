@@ -9,13 +9,17 @@ import io.stamethyst.backend.github.WattToolkitForwardDns
 import io.stamethyst.backend.github.WattToolkitGithubRoute
 import io.stamethyst.backend.github.WattToolkitGithubRouteResolver
 import io.stamethyst.backend.github.WattToolkitRouteProfile
+import io.stamethyst.backend.github.CredentialSafeRedirectInterceptor
+import io.stamethyst.backend.github.addHttpsOnlyTransport
 import io.stamethyst.backend.github.createWattToolkitRuntime
 import io.stamethyst.backend.github.trustWattToolkitForwardCertificates
 import io.stamethyst.backend.network.NetworkAccelerationPolicy
 import io.stamethyst.config.LauncherConfig
 import java.io.File
+import java.net.ProtocolException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Request
@@ -26,15 +30,16 @@ import top.apricityx.workshop.steam.protocol.SteamWebSocketFactory
 
 internal val SteamCommunityWattToolkitRouteProfile = WattToolkitRouteProfile(
     name = "steam-community",
-    // v4 invalidates caches created before official-link candidates were persisted.
-    cacheFileName = "watt-steam-community-route-cache-v4.json",
+    // v5 invalidates caches created before bootstrap host scoping and HTTPS enforcement.
+    cacheFileName = "watt-steam-community-route-cache-v5.json",
     supportedHosts = setOf("steamcommunity.com", "www.steamcommunity.com"),
     bootstrapForwardTargets = listOf("https://steamcommunity.rmbgame.net"),
+    bootstrapSupportedHosts = setOf("steamcommunity.com", "www.steamcommunity.com"),
 )
 
 internal val SteamStoreWattToolkitRouteProfile = WattToolkitRouteProfile(
     name = "steam-store",
-    cacheFileName = "watt-steam-store-route-cache-v3.json",
+    cacheFileName = "watt-steam-store-route-cache-v4.json",
     supportedHosts = setOf(
         "api.steampowered.com",
         "store.steampowered.com",
@@ -42,13 +47,19 @@ internal val SteamStoreWattToolkitRouteProfile = WattToolkitRouteProfile(
         "login.steampowered.com",
         "checkout.steampowered.com",
     ),
-    bootstrapForwardTargets = listOf("steamstore.rmbgame.net"),
+    bootstrapForwardTargets = listOf("https://steamstore.rmbgame.net"),
+    bootstrapSupportedHosts = setOf(
+        "api.steampowered.com",
+        "store.steampowered.com",
+        "help.steampowered.com",
+        "checkout.steampowered.com",
+    ),
 )
 
 internal val SteamImageCdnWattToolkitRouteProfile = WattToolkitRouteProfile(
     name = "steam-image-cdn",
     // v3 invalidates caches created before the suffix families were declared.
-    cacheFileName = "watt-steam-image-cdn-route-cache-v3.json",
+    cacheFileName = "watt-steam-image-cdn-route-cache-v4.json",
     supportedHosts = setOf(
         "steamcdn-a.akamaihd.net",
         "steamuserimages-a.akamaihd.net",
@@ -60,7 +71,8 @@ internal val SteamImageCdnWattToolkitRouteProfile = WattToolkitRouteProfile(
         "store.akamai.steamstatic.com",
         "avatars.fastly.steamstatic.com",
     ),
-    bootstrapForwardTargets = listOf("steamimage.rmbgame.net"),
+    bootstrapForwardTargets = listOf("https://steamimage.rmbgame.net"),
+    bootstrapSupportedHosts = emptySet(),
     // Upstream publishes one rule per image CDN family. Enumerating hosts exactly left
     // siblings such as avatars.steamstatic.com and avatars.cloudflare.steamstatic.com
     // unaccelerated, which is precisely where logged-in profile avatars resolve to.
@@ -73,14 +85,15 @@ internal val SteamImageCdnWattToolkitRouteProfile = WattToolkitRouteProfile(
 
 internal val SteamMediaWattToolkitRouteProfile = WattToolkitRouteProfile(
     name = "steam-media",
-    cacheFileName = "watt-steam-media-route-cache-v2.json",
+    cacheFileName = "watt-steam-media-route-cache-v3.json",
     supportedHosts = setOf("media.steampowered.com"),
-    bootstrapForwardTargets = listOf("steammedia.rmbgame.net"),
+    bootstrapForwardTargets = listOf("https://steammedia.rmbgame.net"),
+    bootstrapSupportedHosts = setOf("media.steampowered.com"),
 )
 
 internal val SteamContentCdnWattToolkitRouteProfile = WattToolkitRouteProfile(
     name = "steam-content-cdn",
-    cacheFileName = "watt-steam-content-cdn-route-cache-v3.json",
+    cacheFileName = "watt-steam-content-cdn-route-cache-v4.json",
     supportedHosts = setOf(
         "st.dl.eccdnx.com",
         "shared.st.dl.eccdnx.com",
@@ -103,7 +116,7 @@ internal val SteamContentCdnWattToolkitRouteProfile = WattToolkitRouteProfile(
 
 internal val SteamCmWattToolkitRouteProfile = WattToolkitRouteProfile(
     name = "steam-cm",
-    cacheFileName = "watt-steam-cm-route-cache-v1.json",
+    cacheFileName = "watt-steam-cm-route-cache-v2.json",
     supportedHosts = setOf("steamserver.net"),
     bootstrapForwardTargets = emptyList(),
     supportedHostSuffixes = setOf(".steamserver.net"),
@@ -163,12 +176,19 @@ object SteamCloudAcceleratedHttp {
         }
         return builder
             .hostnameVerifier(runtime.hostnameVerifier)
+            .followRedirects(false)
+            .followSslRedirects(false)
+            .addHttpsOnlyTransport()
+            .addInterceptor(
+                CredentialSafeRedirectInterceptor(requireHttps = true),
+            )
             .addInterceptor(
                 ExperimentalGithubDirectAccessInterceptor(
                     routeResolvers = runtime.resolvers,
                     directCallFactory = runtime.directHttpClient,
                     forwardDns = runtime.forwardDns,
                     enabledProvider = accelerationEnabledProvider,
+                    requireHttps = runtime.requireHttps,
                 ),
             )
             .build()
@@ -185,21 +205,24 @@ object SteamCloudAcceleratedHttp {
         context: Context,
         client: OkHttpClient,
     ): SteamWebSocketFactory {
-        val officialClient = client.newBuilder().apply {
-            interceptors().removeAll { interceptor ->
-                interceptor is ExperimentalGithubDirectAccessInterceptor
-            }
-        }.build()
         val filesDir = context.filesDir
         val runtime = runtimeCache.getOrPut(filesDir.absolutePath) {
             createSteamCloudWattToolkitRuntime(filesDir)
         }
-        val forwardClient = officialClient.newBuilder()
+        val officialClient = client.newBuilder().apply {
+            interceptors().removeAll { interceptor ->
+                interceptor is ExperimentalGithubDirectAccessInterceptor
+            }
+        }
             .hostnameVerifier(runtime.hostnameVerifier)
+            .build()
+        val forwardClient = officialClient.newBuilder()
+            .hostnameVerifier(runtime.forwardHostnameVerifier)
             .dns(runtime.forwardDns ?: WattToolkitForwardDns())
             .trustWattToolkitForwardCertificates { host ->
                 runtime.resolvers.any { resolver -> resolver.allowsUnsafeHostnameBypass(host) }
             }
+            .addHttpsOnlyTransport()
             .protocols(listOf(Protocol.HTTP_1_1))
             .build()
         return SteamCmAcceleratedWebSocketFactory(
@@ -226,6 +249,7 @@ internal class SteamCmAcceleratedWebSocketFactory(
     private val enabledProvider: () -> Boolean = { true },
 ) : SteamWebSocketFactory {
     override fun newWebSocket(request: Request, listener: WebSocketListener): WebSocket {
+        requireSecureWebSocketUrl(request.url)
         val resolver = routeResolvers.firstOrNull { candidate -> candidate.supports(request.url.host) }
         if (!enabledProvider() || resolver == null) {
             return officialClient.newWebSocket(request, listener)
@@ -258,7 +282,9 @@ internal class SteamCmAcceleratedWebSocketFactory(
     ): WebSocket {
         val route = candidateRoutes[attemptIndex]
         val target = route.forwardTargets.first()
+        requireSecureWebSocketUrl(logicalRequest.url)
         val forwardedRequest = buildSteamCmForwardedWebSocketRequest(logicalRequest, route, forwardDns)
+        requireSecureWebSocketUrl(forwardedRequest.url)
         val opened = java.util.concurrent.atomic.AtomicBoolean(false)
         val terminal = java.util.concurrent.atomic.AtomicBoolean(false)
         val forwardedListener = object : WebSocketListener() {
@@ -375,6 +401,12 @@ internal fun buildSteamCmForwardedWebSocketRequest(
         .build()
 }
 
+internal fun requireSecureWebSocketUrl(url: HttpUrl) {
+    if (!url.isHttps) {
+        throw ProtocolException("WSS is required for Steam CM WebSocket: $url")
+    }
+}
+
 internal fun createSteamCloudWattToolkitRuntime(
     filesDir: File,
     routeProfiles: List<WattToolkitRouteProfile> = defaultSteamCloudWattToolkitRouteProfiles,
@@ -384,6 +416,7 @@ internal fun createSteamCloudWattToolkitRuntime(
     routeProfiles = routeProfiles,
     connectTimeoutMs = STEAM_CLOUD_DIRECT_ACCESS_CONNECT_TIMEOUT_MS,
     readTimeoutMs = STEAM_CLOUD_DIRECT_ACCESS_READ_TIMEOUT_MS,
+    requireHttps = true,
 )
 
 private const val STEAM_CLOUD_DIRECT_ACCESS_CONNECT_TIMEOUT_MS = 8_000L

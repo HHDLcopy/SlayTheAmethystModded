@@ -46,8 +46,17 @@ object SteamAchievementSyncService {
         Request(id, ids, slot)
     }.getOrNull()
 
-    fun pendingIds(context: Context): Set<String> = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        .getStringSet(PENDING_IDS, emptySet()).orEmpty().toSet()
+    fun pendingIds(context: Context): Set<String> {
+        val appContext = context.applicationContext ?: context
+        val steamId64 = SteamCloudAuthStore.readAuthMaterial(appContext)?.steamId64
+            ?.takeIf(::isValidSteamId64)
+            ?: return emptySet()
+        val file = pendingFile(appContext, steamId64)
+        if (file.isFile) {
+            return readPendingFileWithBackup(file)
+        }
+        return emptySet()
+    }
 
     fun syncRequestAsync(context: Context, request: Request, onFinished: (Throwable?) -> Unit = {}) {
         val appContext = context.applicationContext
@@ -100,19 +109,49 @@ object SteamAchievementSyncService {
         require(normalizedApiName in SteamAchievementCatalog.apiNames) {
             "Unknown Steam achievement: $apiName"
         }
-        lockAchievementInFiles(achievementFiles(context), normalizedApiName)
-        removePending(context, normalizedApiName)
-        val commandFile = RuntimePaths.achievementLockCommandFile(context)
-        val queuedCommands = runCatching {
-            commandFile.takeIf { it.isFile }
-                ?.readLines()
-                .orEmpty()
-                .map { it.trim().lowercase() }
-                .filter { it in SteamAchievementCatalog.apiNames }
-                .toMutableSet()
-        }.getOrDefault(mutableSetOf())
-        queuedCommands += normalizedApiName
-        SteamCloudAtomicFileStore.writeText(commandFile, queuedCommands.sorted().joinToString("\n"))
+        SteamCloudOperationMutex.runExclusive(context) {
+            SteamCloudLiveSaveLease.runMutation(context) {
+                lockAchievementInAllLocalSavesExclusive(context, normalizedApiName)
+            }
+        }
+    }
+
+    internal fun setAchievementUnlocked(
+        context: Context,
+        expectedAuth: SteamCloudAuthStore.SavedAuthMaterial,
+        apiName: String,
+        unlocked: Boolean,
+    ): SteamAchievementService.Snapshot = SteamCloudOperationMutex.runExclusive(context) {
+        val currentAuth = SteamCloudAuthStore.readAuthMaterial(context)
+        if (currentAuth != expectedAuth) {
+            error("Steam authentication changed before the achievement update started.")
+        }
+        if (unlocked) {
+            return@runExclusive SteamAchievementService.setAchievementUnlockedViaCm(
+                context = context,
+                accountName = currentAuth.accountName,
+                refreshToken = currentAuth.refreshToken,
+                steamId64 = currentAuth.steamId64,
+                apiName = apiName,
+                unlocked = true,
+            )
+        }
+
+        SteamCloudLiveSaveLease.runMutation(context) {
+            val snapshot = SteamAchievementService.setAchievementUnlockedViaCm(
+                context = context,
+                accountName = currentAuth.accountName,
+                refreshToken = currentAuth.refreshToken,
+                steamId64 = currentAuth.steamId64,
+                apiName = apiName,
+                unlocked = false,
+            )
+            lockAchievementInAllLocalSavesExclusive(
+                context,
+                apiName.trim().lowercase(Locale.ROOT),
+            )
+            snapshot
+        }
     }
 
     internal fun plan(localUnlocked: Set<String>, remoteUnlocked: Set<String>, files: List<File>): SyncPlan =
@@ -137,40 +176,42 @@ object SteamAchievementSyncService {
     }
 
     private fun syncLocalAchievements(context: Context, source: String) {
-        AchievementSyncLogStore.append(context, "auth_read_started", "source=$source")
-        val auth = SteamCloudAuthStore.readAuthMaterial(context)
-            ?: error("Steam authentication is unavailable")
-        AchievementSyncLogStore.append(context, "remote_fetch_started", "source=$source")
-        val remote = SteamAchievementService.fetchViaCm(
-            context, auth.accountName, auth.refreshToken, auth.steamId64
-        ).achievements.filter { it.unlocked }.map { it.apiName }.toSet()
-        AchievementSyncLogStore.append(
-            context,
-            "remote_fetch_completed",
-            "source=$source unlocked_count=${remote.size}",
-        )
-        val upload = localAchievementsMissingFromSteam(context, remote)
-        AchievementSyncLogStore.append(
-            context,
-            "upload_plan",
-            "source=$source count=${upload.size} ids=${upload.sorted().joinToString(",")}",
-        )
-        upload.forEach { addPending(context, it) }
-        upload.forEach { apiName ->
-            AchievementSyncLogStore.append(context, "upload_started", "source=$source id=$apiName")
-            try {
-                SteamAchievementService.setAchievementUnlockedViaCm(
-                    context, auth.accountName, auth.refreshToken, auth.steamId64, apiName, true
-                )
-                removePending(context, apiName)
-                AchievementSyncLogStore.append(context, "upload_completed", "source=$source id=$apiName")
-            } catch (error: Throwable) {
-                AchievementSyncLogStore.append(
-                    context,
-                    "upload_failed",
-                    "source=$source id=$apiName error=${AchievementSyncLogStore.errorType(error)}",
-                )
-                throw error
+        SteamCloudOperationMutex.runExclusive(context) {
+            AchievementSyncLogStore.append(context, "auth_read_started", "source=$source")
+            val auth = SteamCloudAuthStore.readAuthMaterial(context)
+                ?: error("Steam authentication is unavailable")
+            AchievementSyncLogStore.append(context, "remote_fetch_started", "source=$source")
+            val remote = SteamAchievementService.fetchViaCm(
+                context, auth.accountName, auth.refreshToken, auth.steamId64
+            ).achievements.filter { it.unlocked }.map { it.apiName }.toSet()
+            AchievementSyncLogStore.append(
+                context,
+                "remote_fetch_completed",
+                "source=$source unlocked_count=${remote.size}",
+            )
+            val upload = localAchievementsMissingFromSteam(context, remote)
+            AchievementSyncLogStore.append(
+                context,
+                "upload_plan",
+                "source=$source count=${upload.size} ids=${upload.sorted().joinToString(",")}",
+            )
+            replacePending(context, auth.steamId64, upload)
+            upload.forEach { apiName ->
+                AchievementSyncLogStore.append(context, "upload_started", "source=$source id=$apiName")
+                try {
+                    SteamAchievementService.setAchievementUnlockedViaCm(
+                        context, auth.accountName, auth.refreshToken, auth.steamId64, apiName, true
+                    )
+                    removePending(context, auth.steamId64, apiName)
+                    AchievementSyncLogStore.append(context, "upload_completed", "source=$source id=$apiName")
+                } catch (error: Throwable) {
+                    AchievementSyncLogStore.append(
+                        context,
+                        "upload_failed",
+                        "source=$source id=$apiName error=${AchievementSyncLogStore.errorType(error)}",
+                    )
+                    throw error
+                }
             }
         }
     }
@@ -202,6 +243,24 @@ object SteamAchievementSyncService {
         }
     }
 
+    private fun lockAchievementInAllLocalSavesExclusive(context: Context, apiName: String) {
+        lockAchievementInFiles(achievementFiles(context), apiName)
+        SteamCloudAuthStore.readAuthMaterial(context)?.steamId64?.let { steamId64 ->
+            removePending(context, steamId64, apiName)
+        }
+        val commandFile = RuntimePaths.achievementLockCommandFile(context)
+        val queuedCommands = runCatching {
+            commandFile.takeIf { it.isFile }
+                ?.readLines()
+                .orEmpty()
+                .map { it.trim().lowercase(Locale.ROOT) }
+                .filter { it in SteamAchievementCatalog.apiNames }
+                .toMutableSet()
+        }.getOrDefault(mutableSetOf())
+        queuedCommands += apiName
+        SteamCloudAtomicFileStore.writeText(commandFile, queuedCommands.sorted().joinToString("\n"))
+    }
+
     private fun isUnlockedValue(value: Any?): Boolean = when (value) {
         is Number -> value.toInt() != 0
         is Boolean -> value
@@ -209,13 +268,66 @@ object SteamAchievementSyncService {
         else -> false
     }
 
-    private fun addPending(context: Context, apiName: String) {
-        val ids = pendingIds(context) + apiName
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putStringSet(PENDING_IDS, ids).apply()
+    private fun replacePending(context: Context, steamId64: String, ids: Set<String>) {
+        updatePending(context, steamId64) { ids }
     }
 
-    private fun removePending(context: Context, apiName: String) {
-        val ids = pendingIds(context) - apiName
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putStringSet(PENDING_IDS, ids).apply()
+    private fun removePending(context: Context, steamId64: String, apiName: String) {
+        updatePending(context, steamId64) { ids -> ids - apiName }
     }
+
+    private fun updatePending(
+        context: Context,
+        steamId64: String,
+        transform: (Set<String>) -> Set<String>,
+    ) {
+        require(isValidSteamId64(steamId64)) { "Steam account is required for pending achievements." }
+        val appContext = context.applicationContext ?: context
+        SteamCloudOperationMutex.runExclusive(appContext) {
+            clearLegacyPendingState(appContext)
+            val file = pendingFile(appContext, steamId64)
+            val current = if (file.isFile) {
+                readPendingFileWithBackup(file)
+            } else {
+                emptySet()
+            }
+            val updated = transform(current)
+                .filterTo(sortedSetOf()) { it in SteamAchievementCatalog.apiNames }
+            SteamCloudAtomicFileStore.writeText(
+                file,
+                updated.joinToString(separator = "\n", postfix = if (updated.isEmpty()) "" else "\n"),
+            )
+        }
+    }
+
+    internal fun readPendingFile(file: File): Set<String>? {
+        if (!file.isFile) {
+            return null
+        }
+        val lines = runCatching { file.readLines(Charsets.UTF_8) }.getOrNull() ?: return null
+        val normalized = lines.map { it.trim().lowercase(Locale.ROOT) }.filter { it.isNotEmpty() }
+        if (normalized.any { it !in SteamAchievementCatalog.apiNames }) {
+            return null
+        }
+        return normalized.toSet()
+    }
+
+    private fun readPendingFileWithBackup(file: File): Set<String> {
+        readPendingFile(file)?.let { return it }
+        return readPendingFile(SteamCloudAtomicFileStore.backupFile(file)).orEmpty()
+    }
+
+    private fun clearLegacyPendingState(context: Context) {
+        val legacyFile = File(File(context.filesDir, "steam-achievements"), "pending-uploads.txt")
+        legacyFile.delete()
+        SteamCloudAtomicFileStore.backupFile(legacyFile).delete()
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().commit()
+        context.deleteSharedPreferences(PREFS)
+    }
+
+    private fun pendingFile(context: Context, steamId64: String): File =
+        File(File(File(context.filesDir, "steam-achievements"), "pending-uploads"), "$steamId64.txt")
+
+    private fun isValidSteamId64(value: String): Boolean =
+        value.trim().toULongOrNull()?.let { it > 0uL } == true
 }

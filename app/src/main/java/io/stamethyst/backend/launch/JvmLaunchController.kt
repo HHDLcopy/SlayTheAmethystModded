@@ -13,6 +13,8 @@ import io.stamethyst.backend.render.MobileGluesConfigFile
 import io.stamethyst.backend.render.RendererBackend
 import io.stamethyst.backend.render.RendererDecision
 import io.stamethyst.backend.runtime.RuntimePackInstaller
+import io.stamethyst.backend.steamcloud.SteamCloudLiveSaveLease
+import io.stamethyst.backend.steamcloud.SteamCloudSaveProfileManager
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
 import net.kdt.pojavlaunch.utils.JREUtils
@@ -202,7 +204,16 @@ class JvmLaunchController(
 
         val launchThread = Thread({
             val threadStartedAtMs = SystemClock.elapsedRealtime()
+            var liveSaveLease: SteamCloudLiveSaveLease.Lease? = null
+            var launchExitCode: Int? = null
+            var launchFailure: Throwable? = null
             try {
+                throwIfCancelled()
+                if (LauncherConfig.isSteamCloudIndependentSwitchPending(activity)) {
+                    SteamCloudSaveProfileManager.completeDeferredIndependentSwitch(activity)
+                }
+                throwIfCancelled()
+                liveSaveLease = SteamCloudLiveSaveLease.acquireForGame(activity)
                 throwIfCancelled()
                 val runtimeRoot = RuntimePaths.runtimeRoot(activity)
                 val resolvedJavaHome = measureStartupStep("resolve_java_home") {
@@ -428,13 +439,21 @@ class JvmLaunchController(
                 }
 
                 throwIfCancelled()
-                val exitCode = VMLauncher.launchJVM(launchArgs.toTypedArray())
-                onLaunchComplete(exitCode)
+                launchExitCode = VMLauncher.launchJVM(launchArgs.toTypedArray())
 
             } catch (t: Throwable) {
                 runtimeLifecycleReady = false
-                onLaunchFailed(t)
+                launchFailure = t
             } finally {
+                runCatching { liveSaveLease?.close() }
+                    .onFailure { cleanupError ->
+                        val currentFailure = launchFailure
+                        if (currentFailure == null) {
+                            launchFailure = cleanupError
+                        } else {
+                            currentFailure.addSuppressed(cleanupError)
+                        }
+                    }
                 runtimeLifecycleReady = false
                 runtimeMemorySnapshot = null
                 peakRuntimeMemorySnapshot = null
@@ -445,6 +464,12 @@ class JvmLaunchController(
                 stopBootBridgeEventMonitor()
                 jvmLaunchThread = null
                 lastLoggedHeapPressureBucket = -1
+            }
+            val failure = launchFailure
+            if (failure != null) {
+                onLaunchFailed(failure)
+            } else {
+                onLaunchComplete(requireNotNull(launchExitCode))
             }
         }, "STS-JVM-Thread")
 

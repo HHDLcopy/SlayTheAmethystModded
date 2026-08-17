@@ -41,15 +41,16 @@ import io.stamethyst.backend.steamcloud.SteamCloudFailureClassifier
 import io.stamethyst.backend.steamcloud.SteamCloudAvatarCacheStore
 import io.stamethyst.backend.steamcloud.SteamCloudBaselineStore
 import io.stamethyst.backend.steamcloud.SteamCloudClient
+import io.stamethyst.backend.steamcloud.SteamCloudCredentialsMissingException
 import io.stamethyst.backend.steamcloud.SteamCloudDiagnosticsStore
 import io.stamethyst.backend.steamcloud.SteamCloudLoginChallenge
 import io.stamethyst.backend.steamcloud.SteamCloudLoginChallengeKind
+import io.stamethyst.backend.steamcloud.SteamCloudDeviceConfirmationDecision
+import io.stamethyst.backend.steamcloud.SteamCloudLiveSaveLease
 import io.stamethyst.backend.steamcloud.SteamCloudManifestSnapshot
 import io.stamethyst.backend.steamcloud.SteamCloudManifestStore
 import io.stamethyst.backend.steamcloud.SteamCloudNetworkEnvironment
 import io.stamethyst.backend.steamcloud.SteamCloudOperationMutex
-import io.stamethyst.backend.steamcloud.SteamCloudPhase0ManifestProbe
-import io.stamethyst.backend.steamcloud.SteamCloudPhase0Store
 import io.stamethyst.backend.steamcloud.SteamCloudProfileService
 import io.stamethyst.backend.steamcloud.SteamCloudPullCoordinator
 import io.stamethyst.backend.steamcloud.SteamCloudPullResult
@@ -125,6 +126,7 @@ import io.stamethyst.config.CloudControlConfig
 import io.stamethyst.config.GpuResourceGuardianMode
 import io.stamethyst.config.LauncherIconController
 import io.stamethyst.config.LauncherIconMode
+import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.LauncherThemeColor
 import io.stamethyst.config.LauncherThemeController
 import io.stamethyst.config.LauncherThemeMode
@@ -475,11 +477,6 @@ class SettingsScreenViewModel : ViewModel() {
         val steamCloudUploadPlanDialogSnapshot: SteamCloudUploadPlan? = null,
         val steamCloudUploadConfirmPlan: SteamCloudUploadPlan? = null,
         val steamCloudLoginChallenge: SteamCloudLoginChallenge? = null,
-        val steamCloudPhase0AccountName: String = "",
-        val steamCloudPhase0RefreshTokenConfigured: Boolean = false,
-        val steamCloudPhase0ProxyUrl: String = "",
-        val steamCloudPhase0CredentialsSummary: String = "",
-        val steamCloudPhase0StatusText: String = "",
         val easyTierSettings: EasyTierSettingsUiState = EasyTierSettingsUiState(),
     )
 
@@ -534,10 +531,11 @@ class SettingsScreenViewModel : ViewModel() {
     }
 
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val steamCloudLoginCleanupExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val _effects = MutableSharedFlow<Effect>(extraBufferCapacity = 16)
     private var nativeLibraryMarketCatalog: List<NativeLibraryMarketCatalogEntry> = emptyList()
     private var pendingSteamCloudCodeFuture: CompletableFuture<String>? = null
-    private var pendingSteamCloudConfirmationFuture: CompletableFuture<Boolean>? = null
+    private var pendingSteamCloudConfirmationFuture: CompletableFuture<SteamCloudDeviceConfirmationDecision>? = null
     private var pendingSteamCloudLoginTask: Future<*>? = null
     private var pendingSteamCloudLoginCancellationHandle: SteamCloudAuthCoordinator.CancellationHandle? = null
     private var steamCloudLoginGeneration: Long = 0L
@@ -1275,13 +1273,14 @@ class SettingsScreenViewModel : ViewModel() {
                     )
                 }
                 val steamCloudManifestSnapshot = runCatching {
-                    SteamCloudManifestStore.readSnapshot(host)
+                    SteamCloudManifestStore.readSnapshot(host, steamCloudAuthSnapshot.steamId64)
                 }.getOrNull()
                 val steamCloudBaselineSnapshot = runCatching {
-                    SteamCloudBaselineStore.readSnapshot(host)
+                    SteamCloudBaselineStore.readSnapshot(host, steamCloudAuthSnapshot.steamId64)
                 }.getOrNull()
-                val steamCloudPhase0Snapshot = SteamCloudPhase0Store.readSnapshot(host)
                 var steamCloudSaveMode = LauncherPreferences.readSteamCloudSaveMode(host)
+                val steamCloudIndependentSwitchPending =
+                    LauncherConfig.isSteamCloudIndependentSwitchPending(host)
                 val steamCloudSyncBlacklistPaths =
                     LauncherPreferences.readSteamCloudSyncBlacklistPaths(host)
                 val steamCloudSyncBlacklistCandidates =
@@ -1293,20 +1292,33 @@ class SettingsScreenViewModel : ViewModel() {
                     }.getOrElse {
                         steamCloudSyncBlacklistPaths.toList().sorted()
                     }
-                if (!steamCloudAuthSnapshot.isComplete &&
+                if ((!steamCloudAuthSnapshot.isComplete || steamCloudIndependentSwitchPending) &&
                     steamCloudSaveMode == SteamCloudSaveMode.STEAM_CLOUD
                 ) {
                     runCatching {
-                        SteamCloudSaveProfileManager.switchMode(
-                            context = host,
-                            fromMode = SteamCloudSaveMode.STEAM_CLOUD,
-                            toMode = SteamCloudSaveMode.INDEPENDENT,
-                        )
-                        LauncherPreferences.saveSteamCloudSaveMode(
-                            host,
-                            SteamCloudSaveMode.INDEPENDENT,
-                        )
-                        steamCloudSaveMode = SteamCloudSaveMode.INDEPENDENT
+                        SteamCloudOperationMutex.runExclusive(host) {
+                            val currentMode = LauncherPreferences.readSteamCloudSaveMode(host)
+                            val pendingSwitch =
+                                LauncherConfig.isSteamCloudIndependentSwitchPending(host)
+                            if (!pendingSwitch && SteamCloudAuthStore.readSnapshot(host).isComplete) {
+                                steamCloudSaveMode = currentMode
+                                return@runExclusive
+                            }
+                            if (currentMode != SteamCloudSaveMode.STEAM_CLOUD) {
+                                steamCloudSaveMode = currentMode
+                                return@runExclusive
+                            }
+                            if (pendingSwitch) {
+                                SteamCloudSaveProfileManager.completeDeferredIndependentSwitch(host)
+                            } else {
+                                SteamCloudSaveProfileManager.switchMode(
+                                    context = host,
+                                    fromMode = currentMode,
+                                    toMode = SteamCloudSaveMode.INDEPENDENT,
+                                )
+                            }
+                            steamCloudSaveMode = SteamCloudSaveMode.INDEPENDENT
+                        }
                     }
                 }
 
@@ -1329,10 +1341,6 @@ class SettingsScreenViewModel : ViewModel() {
                     steamCloudAuthSnapshot,
                     steamCloudManifestSnapshot,
                     steamCloudBaselineSnapshot,
-                )
-                val steamCloudPhase0StatusText = buildSteamCloudPhase0StatusText(
-                    host,
-                    steamCloudPhase0Snapshot
                 )
                 val easyTierSettings = buildEasyTierSettingsUiState()
 
@@ -1377,14 +1385,6 @@ class SettingsScreenViewModel : ViewModel() {
                             steamCloudManifestSnapshot
                         ),
                         steamCloudManifestAvailable = steamCloudManifestSnapshot != null,
-                        steamCloudPhase0AccountName = steamCloudPhase0Snapshot.accountName,
-                        steamCloudPhase0RefreshTokenConfigured = steamCloudPhase0Snapshot.hasRefreshToken,
-                        steamCloudPhase0ProxyUrl = steamCloudPhase0Snapshot.proxyUrl,
-                        steamCloudPhase0CredentialsSummary = buildSteamCloudPhase0CredentialsSummary(
-                            host,
-                            steamCloudPhase0Snapshot
-                        ),
-                        steamCloudPhase0StatusText = steamCloudPhase0StatusText,
                         easyTierSettings = easyTierSettings,
                     )
                 }
@@ -1438,10 +1438,42 @@ class SettingsScreenViewModel : ViewModel() {
         steamCloudLoginGeneration = loginGeneration
         pendingSteamCloudLoginCancellationHandle = cancellationHandle
         val loginTask = FutureTask<Unit> {
+            var loginAttemptId = ""
+            var savedAuthMaterial: SteamCloudAuthStore.SavedAuthMaterial? = null
             try {
-                val savedAuthMaterial = runCatching {
-                    SteamCloudAuthStore.readAuthMaterial(host)
-                }.getOrNull()
+                cancellationHandle.throwIfCancellationRequested()
+                SteamCloudSaveProfileManager.completeDeferredIndependentSwitch(host)
+                cancellationHandle.throwIfCancellationRequested()
+                val loginStart = SteamCloudOperationMutex.runExclusive(host) {
+                    val existingAuth = SteamCloudAuthStore.readAuthMaterial(host)
+                    val currentMode = LauncherPreferences.readSteamCloudSaveMode(host)
+                    if (currentMode == SteamCloudSaveMode.STEAM_CLOUD &&
+                        (existingAuth == null ||
+                            !existingAuth.accountName.equals(normalizedUsername, ignoreCase = true))
+                    ) {
+                        SteamCloudSaveProfileManager.switchMode(
+                            context = host,
+                            fromMode = currentMode,
+                            toMode = SteamCloudSaveMode.INDEPENDENT,
+                        )
+                    }
+                    existingAuth to SteamCloudAuthStore.beginLoginAttempt(host)
+                }
+                savedAuthMaterial = loginStart.first
+                loginAttemptId = loginStart.second
+                cancellationHandle.bindLoginAttempt(loginAttemptId) { cancelledAttemptId ->
+                    runCatching {
+                        steamCloudLoginCleanupExecutor.execute {
+                            runCatching {
+                                SteamCloudAuthStore.finishLoginAttempt(
+                                    context = host.applicationContext,
+                                    attemptId = cancelledAttemptId,
+                                )
+                            }
+                        }
+                    }
+                }
+                cancellationHandle.throwIfCancellationRequested()
                 val existingGuardData = reusableGuardDataForCredentials(
                     savedAccountName = savedAuthMaterial?.accountName.orEmpty(),
                     savedGuardData = savedAuthMaterial?.guardData.orEmpty(),
@@ -1461,15 +1493,6 @@ class SettingsScreenViewModel : ViewModel() {
                         cancellationHandle = cancellationHandle,
                     )
                 }
-                val hadIncompleteAuth = runCatching {
-                    val snapshot = SteamCloudAuthStore.readSnapshot(host)
-                    snapshot.refreshTokenConfigured && !snapshot.isComplete
-                }.getOrDefault(false)
-                if (hadIncompleteAuth) {
-                    runCatching { SteamCloudAuthStore.clear(host) }
-                    runCatching { SteamCloudManifestStore.clear(host) }
-                    runCatching { SteamCloudBaselineStore.clear(host) }
-                }
                 var retriedWithoutGuardData = false
                 val authResult = try {
                     authenticateWithGuardData(existingGuardData)
@@ -1485,14 +1508,6 @@ class SettingsScreenViewModel : ViewModel() {
                     runCatching { SteamCloudAuthStore.clearGuardData(host) }
                     authenticateWithGuardData("")
                 }
-                SteamCloudAuthStore.recordAuthSuccess(
-                    host,
-                    authResult.accountName,
-                    authResult.refreshToken,
-                    authResult.guardData,
-                    authResult.steamId64,
-                )
-                SteamAuthenticationCircuitBreaker.reset()
                 val loginDiagnosticsExtraLines = mutableListOf(
                     "Refresh token received: ${authResult.refreshToken.length} chars",
                     "Guard data returned: ${if (authResult.guardData.isBlank()) "no" else "yes"}",
@@ -1507,17 +1522,16 @@ class SettingsScreenViewModel : ViewModel() {
                     loginDiagnosticsExtraLines +=
                         "Stored guard data was cleared and the credential login was retried without it after Steam rejected the remembered device state."
                 }
-                if (authResult.steamId64.isNotBlank()) {
-                    val profileResult = runCatching {
+                val profileResult = if (authResult.steamId64.isNotBlank()) {
+                    cancellationHandle.throwIfCancellationRequested()
+                    runCatching {
                         SteamCloudProfileService.fetchProfile(host, authResult.steamId64)
                     }
+                } else {
+                    null
+                }
+                if (profileResult != null) {
                     profileResult.getOrNull()?.let { profile ->
-                        SteamCloudAuthStore.recordProfile(
-                            host,
-                            profile.steamId64,
-                            profile.personaName,
-                            profile.avatarUrl,
-                        )
                         loginDiagnosticsExtraLines +=
                             "Profile fetch result: success for ${profile.steamId64.ifBlank { "<blank>" }}"
                         loginDiagnosticsExtraLines +=
@@ -1535,6 +1549,23 @@ class SettingsScreenViewModel : ViewModel() {
                 } else {
                     loginDiagnosticsExtraLines += "Profile fetch skipped: SteamID64 was blank after refresh-token logon"
                 }
+                cancellationHandle.throwIfCancellationRequested()
+                val profile = profileResult?.getOrNull()
+                SteamCloudOperationMutex.runExclusive(host) {
+                    cancellationHandle.throwIfCancellationRequested()
+                    SteamCloudAuthStore.recordAuthSuccess(
+                        context = host,
+                        loginAttemptId = loginAttemptId,
+                        cancellationHandle = cancellationHandle,
+                        accountName = authResult.accountName,
+                        refreshToken = authResult.refreshToken,
+                        guardData = authResult.guardData,
+                        steamId64 = authResult.steamId64,
+                        personaName = profile?.personaName.orEmpty(),
+                        avatarUrl = profile?.avatarUrl.orEmpty(),
+                    )
+                }
+                SteamAuthenticationCircuitBreaker.reset()
                 runCatching {
                     SteamCloudDiagnosticsStore.writeSummary(
                         context = host,
@@ -1547,8 +1578,6 @@ class SettingsScreenViewModel : ViewModel() {
                         extraLines = loginDiagnosticsExtraLines,
                     )
                 }
-                SteamCloudManifestStore.clear(host)
-                SteamCloudBaselineStore.clear(host)
                 val shouldPromptSteamCloudSaveModeSwitch =
                     LauncherPreferences.readSteamCloudSaveMode(host) != SteamCloudSaveMode.STEAM_CLOUD
                 host.runOnUiThread {
@@ -1595,7 +1624,9 @@ class SettingsScreenViewModel : ViewModel() {
                     null
                 }
                 if (!loginCancelled) {
-                    runCatching { SteamCloudAuthStore.recordFailure(host, summary) }
+                    savedAuthMaterial?.let { authMaterial ->
+                        runCatching { SteamCloudAuthStore.recordFailure(host, summary, authMaterial) }
+                    }
                 }
                 host.runOnUiThread {
                     if (steamCloudLoginGeneration != loginGeneration) {
@@ -1640,6 +1671,12 @@ class SettingsScreenViewModel : ViewModel() {
                     refreshStatus(host)
                 }
             } finally {
+                runCatching {
+                    SteamCloudAuthStore.finishLoginAttempt(
+                        context = host,
+                        attemptId = loginAttemptId,
+                    )
+                }
                 if (pendingSteamCloudLoginCancellationHandle === cancellationHandle &&
                     steamCloudLoginGeneration == loginGeneration
                 ) {
@@ -1665,8 +1702,11 @@ class SettingsScreenViewModel : ViewModel() {
         setBusy(true, UiText.StringResource(R.string.settings_busy_steam_cloud_refresh))
         executor.execute {
             try {
-                val snapshot = SteamCloudOperationMutex.runExclusive {
-                    SteamCloudPullCoordinator.refreshManifest(host, authMaterial)
+                val snapshot = SteamCloudOperationMutex.runExclusive(host) {
+                    SteamCloudPullCoordinator.refreshManifest(
+                        host,
+                        requireCurrentSteamCloudAuthMaterial(host, authMaterial),
+                    )
                 }
                 host.runOnUiThread {
                     showToast(
@@ -1680,7 +1720,7 @@ class SettingsScreenViewModel : ViewModel() {
                 }
             } catch (error: Throwable) {
                 val summary = summarizeSteamCloudError(host, error)
-                runCatching { SteamCloudAuthStore.recordFailure(host, summary) }
+                runCatching { SteamCloudAuthStore.recordFailure(host, summary, authMaterial) }
                 host.runOnUiThread {
                     showToast(
                         host,
@@ -1699,12 +1739,21 @@ class SettingsScreenViewModel : ViewModel() {
         if (uiState.busy) {
             return
         }
-        val snapshot = runCatching { SteamCloudManifestStore.readSnapshot(host) }.getOrNull()
-        if (snapshot == null) {
-            showToast(host, UiText.StringResource(R.string.settings_steam_cloud_manifest_missing))
-            return
+        setBusy(true, null)
+        executor.execute {
+            val steamId64 = SteamCloudAuthStore.readSnapshot(host).steamId64
+            val snapshot = runCatching {
+                SteamCloudManifestStore.readSnapshot(host, steamId64)
+            }.getOrNull()
+            host.runOnUiThread {
+                setBusy(false, null)
+                if (snapshot == null) {
+                    showToast(host, UiText.StringResource(R.string.settings_steam_cloud_manifest_missing))
+                } else {
+                    uiState = uiState.copy(steamCloudManifestDialogSnapshot = snapshot)
+                }
+            }
         }
-        uiState = uiState.copy(steamCloudManifestDialogSnapshot = snapshot)
     }
 
     fun dismissSteamCloudManifestDialog() {
@@ -1725,8 +1774,11 @@ class SettingsScreenViewModel : ViewModel() {
         setBusy(true, UiText.StringResource(R.string.settings_busy_steam_cloud_plan_upload))
         executor.execute {
             try {
-                val plan = SteamCloudOperationMutex.runExclusive {
-                    SteamCloudPushCoordinator.buildUploadPlan(host, authMaterial)
+                val plan = SteamCloudOperationMutex.runExclusive(host) {
+                    SteamCloudPushCoordinator.buildUploadPlan(
+                        host,
+                        requireCurrentSteamCloudAuthMaterial(host, authMaterial),
+                    )
                 }
                 host.runOnUiThread {
                     dismissSteamCloudPushConfirmDialog()
@@ -1735,7 +1787,7 @@ class SettingsScreenViewModel : ViewModel() {
                 }
             } catch (error: Throwable) {
                 val summary = summarizeSteamCloudError(host, error)
-                runCatching { SteamCloudAuthStore.recordFailure(host, summary) }
+                runCatching { SteamCloudAuthStore.recordFailure(host, summary, authMaterial) }
                 host.runOnUiThread {
                     showToast(
                         host,
@@ -1768,8 +1820,11 @@ class SettingsScreenViewModel : ViewModel() {
         setBusy(true, UiText.StringResource(R.string.settings_busy_steam_cloud_plan_upload))
         executor.execute {
             try {
-                val plan = SteamCloudOperationMutex.runExclusive {
-                    SteamCloudPushCoordinator.buildUploadPlan(host, authMaterial)
+                val plan = SteamCloudOperationMutex.runExclusive(host) {
+                    SteamCloudPushCoordinator.buildUploadPlan(
+                        host,
+                        requireCurrentSteamCloudAuthMaterial(host, authMaterial),
+                    )
                 }
                 host.runOnUiThread {
                     dismissSteamCloudPushConfirmDialog()
@@ -1802,7 +1857,7 @@ class SettingsScreenViewModel : ViewModel() {
                 }
             } catch (error: Throwable) {
                 val summary = summarizeSteamCloudError(host, error)
-                runCatching { SteamCloudAuthStore.recordFailure(host, summary) }
+                runCatching { SteamCloudAuthStore.recordFailure(host, summary, authMaterial) }
                 host.runOnUiThread {
                     showToast(
                         host,
@@ -1830,8 +1885,12 @@ class SettingsScreenViewModel : ViewModel() {
         setBusy(true, UiText.StringResource(R.string.settings_busy_steam_cloud_push))
         executor.execute {
             try {
-                val result = SteamCloudOperationMutex.runExclusive {
-                    SteamCloudPushCoordinator.pushLocalChanges(host, authMaterial, plan)
+                val result = SteamCloudOperationMutex.runExclusive(host) {
+                    SteamCloudPushCoordinator.pushLocalChanges(
+                        host,
+                        requireCurrentSteamCloudAuthMaterial(host, authMaterial),
+                        plan,
+                    )
                 }
                 host.runOnUiThread {
                     dismissSteamCloudPushConfirmDialog()
@@ -1848,7 +1907,7 @@ class SettingsScreenViewModel : ViewModel() {
                 }
             } catch (error: Throwable) {
                 val summary = summarizeSteamCloudError(host, error)
-                runCatching { SteamCloudAuthStore.recordFailure(host, summary) }
+                runCatching { SteamCloudAuthStore.recordFailure(host, summary, authMaterial) }
                 host.runOnUiThread {
                     showToast(
                         host,
@@ -1881,8 +1940,16 @@ class SettingsScreenViewModel : ViewModel() {
         setBusy(true, UiText.StringResource(R.string.settings_busy_steam_cloud_pull))
         executor.execute {
             try {
-                val result = SteamCloudOperationMutex.runExclusive {
-                    SteamCloudPullCoordinator.pullAll(host, authMaterial)
+                val result = SteamCloudOperationMutex.runExclusive(host) {
+                    val currentMode = LauncherPreferences.readSteamCloudSaveMode(host)
+                    if (currentMode != SteamCloudSaveMode.STEAM_CLOUD) {
+                        SteamCloudSaveProfileManager.saveActiveProfile(host, currentMode)
+                    }
+                    SteamCloudPullCoordinator.pullAll(
+                        host = host,
+                        authMaterial = requireCurrentSteamCloudAuthMaterial(host, authMaterial),
+                        saveModeAfterPull = SteamCloudSaveMode.STEAM_CLOUD,
+                    )
                 }
                 host.runOnUiThread {
                     showToast(
@@ -1896,7 +1963,7 @@ class SettingsScreenViewModel : ViewModel() {
                 }
             } catch (error: Throwable) {
                 val summary = summarizeSteamCloudError(host, error)
-                runCatching { SteamCloudAuthStore.recordFailure(host, summary) }
+                runCatching { SteamCloudAuthStore.recordFailure(host, summary, authMaterial) }
                 host.runOnUiThread {
                     showToast(
                         host,
@@ -1953,10 +2020,15 @@ class SettingsScreenViewModel : ViewModel() {
         if (uiState.busy) {
             return
         }
-        SteamCloudNetworkEnvironment.clearNetworkCache(host)
-        SteamCloudAvatarCacheStore.clear(host)
-        showToast(host, UiText.StringResource(R.string.settings_steam_cloud_network_cache_cleared))
-        refreshStatus(host)
+        setBusy(true, null)
+        executor.execute {
+            SteamCloudNetworkEnvironment.clearNetworkCache(host)
+            SteamCloudAvatarCacheStore.clear(host)
+            host.runOnUiThread {
+                showToast(host, UiText.StringResource(R.string.settings_steam_cloud_network_cache_cleared))
+                refreshStatus(host)
+            }
+        }
     }
 
     fun onWorkshopMaxConcurrentDownloadsChanged(host: Activity, value: Int) {
@@ -2167,16 +2239,33 @@ class SettingsScreenViewModel : ViewModel() {
             refreshStatus(host)
             return
         }
+        if (targetMode == SteamCloudSaveMode.STEAM_CLOUD &&
+            !SteamCloudSaveProfileManager.profileIsInitialized(host, targetMode)
+        ) {
+            onPullSteamCloudFromManifest(host)
+            return
+        }
 
         setBusy(true, UiText.StringResource(R.string.settings_busy_steam_cloud_save_mode_switch))
         executor.execute {
             try {
-                SteamCloudSaveProfileManager.switchMode(
-                    context = host,
-                    fromMode = currentMode,
-                    toMode = targetMode,
-                )
-                LauncherPreferences.saveSteamCloudSaveMode(host, targetMode)
+                SteamCloudOperationMutex.runExclusive(host) {
+                    val authoritativeMode = LauncherPreferences.readSteamCloudSaveMode(host)
+                    if (targetMode == SteamCloudSaveMode.STEAM_CLOUD &&
+                        !SteamCloudAuthStore.readSnapshot(host).isComplete
+                    ) {
+                        throw SteamCloudCredentialsMissingException(
+                            host.getString(R.string.settings_steam_cloud_credentials_missing)
+                        )
+                    }
+                    if (authoritativeMode != targetMode) {
+                        SteamCloudSaveProfileManager.switchMode(
+                            context = host,
+                            fromMode = authoritativeMode,
+                            toMode = targetMode,
+                        )
+                    }
+                }
                 host.runOnUiThread {
                     showToast(
                         host,
@@ -2216,15 +2305,19 @@ class SettingsScreenViewModel : ViewModel() {
                 refreshStatus(host)
                 return
             }
-        val nextPaths = LauncherPreferences.readSteamCloudSyncBlacklistPaths(host)
-            .toMutableSet()
-        if (selected) {
-            nextPaths += normalizedPath
-        } else {
-            nextPaths -= normalizedPath
+        executor.execute {
+            SteamCloudOperationMutex.runExclusive(host) {
+                val nextPaths = LauncherPreferences.readSteamCloudSyncBlacklistPaths(host)
+                    .toMutableSet()
+                if (selected) {
+                    nextPaths += normalizedPath
+                } else {
+                    nextPaths -= normalizedPath
+                }
+                LauncherPreferences.saveSteamCloudSyncBlacklistPaths(host, nextPaths)
+            }
+            refreshStatus(host)
         }
-        LauncherPreferences.saveSteamCloudSyncBlacklistPaths(host, nextPaths)
-        refreshStatus(host)
     }
 
     fun onForceIndependentSaveOverwriteCloud(host: Activity) {
@@ -2254,10 +2347,17 @@ class SettingsScreenViewModel : ViewModel() {
         )
         executor.execute {
             try {
-                val (remoteBackupLabel, result) = SteamCloudOperationMutex.runExclusive {
+                val (remoteBackupLabel, result) = SteamCloudOperationMutex.runExclusive(host) {
+                    val currentAuthMaterial = requireCurrentSteamCloudAuthMaterial(host, authMaterial)
+                    check(
+                        SteamCloudSaveProfileManager.profileHasRegularFiles(
+                            host,
+                            SteamCloudSaveMode.INDEPENDENT,
+                        )
+                    ) { host.getString(R.string.settings_steam_cloud_independent_profile_missing) }
                     SteamCloudSaveProfileManager.saveActiveProfile(host, SteamCloudSaveMode.STEAM_CLOUD)
                     val timestamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
-                    val remoteBackupLabel = backupRemoteSteamCloudProfile(host, authMaterial, timestamp)
+                    val remoteBackupLabel = backupRemoteSteamCloudProfile(host, currentAuthMaterial, timestamp)
                     SettingsSaveBackupService.backupSaveProfileToDownloads(
                         host = host,
                         sourceRoot = SteamCloudSaveProfileManager.profileRoot(
@@ -2268,18 +2368,33 @@ class SettingsScreenViewModel : ViewModel() {
                         relativeSubdirectory = STEAM_CLOUD_BACKUP_DOWNLOAD_SUBDIR,
                     )
 
-                    val result = SteamCloudPushCoordinator.overwriteRemoteWithLocal(
-                        host = host,
-                        authMaterial = authMaterial,
-                        sourceRoot = SteamCloudSaveProfileManager.profileRoot(
-                            host,
-                            SteamCloudSaveMode.INDEPENDENT
-                        ),
-                    )
-                    SteamCloudSaveProfileManager.restoreProfile(host, SteamCloudSaveMode.INDEPENDENT)
-                    SteamCloudSaveProfileManager.saveActiveProfile(host, SteamCloudSaveMode.STEAM_CLOUD)
-                    LauncherPreferences.saveSteamCloudSaveMode(host, SteamCloudSaveMode.STEAM_CLOUD)
-                    remoteBackupLabel to result
+                    try {
+                        val result = SteamCloudPushCoordinator.overwriteRemoteWithLocal(
+                            host = host,
+                            authMaterial = currentAuthMaterial,
+                            sourceRoot = SteamCloudSaveProfileManager.profileRoot(
+                                host,
+                                SteamCloudSaveMode.INDEPENDENT
+                            ),
+                        )
+                        try {
+                            completeIndependentSaveOverwriteTransition(host)
+                        } catch (transitionError: Throwable) {
+                            throw io.stamethyst.backend.steamcloud.SteamCloudPushReconciliationException(
+                                "Steam Cloud was overwritten, but the local save profile transition failed.",
+                                transitionError,
+                            )
+                        }
+                        remoteBackupLabel to result
+                    } catch (error: Throwable) {
+                        val recovery = if (error is io.stamethyst.backend.steamcloud.SteamCloudPushReconciliationException) {
+                            runCatching { completeIndependentSaveOverwriteTransition(host) }
+                        } else {
+                            Result.success(Unit)
+                        }
+                        recovery.exceptionOrNull()?.let(error::addSuppressed)
+                        throw error
+                    }
                 }
 
                 host.runOnUiThread {
@@ -2298,13 +2413,8 @@ class SettingsScreenViewModel : ViewModel() {
                     refreshStatus(host)
                 }
             } catch (error: Throwable) {
-                runCatching {
-                    if (LauncherPreferences.readSteamCloudSaveMode(host) == SteamCloudSaveMode.STEAM_CLOUD) {
-                        SteamCloudSaveProfileManager.restoreProfile(host, SteamCloudSaveMode.STEAM_CLOUD)
-                    }
-                }
                 val summary = summarizeSteamCloudError(host, error)
-                runCatching { SteamCloudAuthStore.recordFailure(host, summary) }
+                runCatching { SteamCloudAuthStore.recordFailure(host, summary, authMaterial) }
                 host.runOnUiThread {
                     showToast(
                         host,
@@ -2320,11 +2430,19 @@ class SettingsScreenViewModel : ViewModel() {
         }
     }
 
+    private fun completeIndependentSaveOverwriteTransition(host: Activity) {
+        SteamCloudLiveSaveLease.runMutation(host) {
+            SteamCloudSaveProfileManager.restoreProfile(host, SteamCloudSaveMode.INDEPENDENT)
+            SteamCloudSaveProfileManager.saveActiveProfile(host, SteamCloudSaveMode.STEAM_CLOUD)
+            LauncherPreferences.saveSteamCloudSaveMode(host, SteamCloudSaveMode.STEAM_CLOUD)
+        }
+    }
+
     fun onClearSteamCloudCredentials(host: Activity) {
         if (uiState.busy) {
             return
         }
-        cancelPendingSteamCloudChallenge("Steam Cloud credentials cleared.")
+        cancelActiveSteamCloudLogin("Steam Cloud credentials cleared.", clearBusy = false)
         setBusy(true, UiText.StringResource(R.string.settings_busy_steam_cloud_save_mode_switch))
         executor.execute {
             try {
@@ -2366,7 +2484,14 @@ class SettingsScreenViewModel : ViewModel() {
         val future = pendingSteamCloudConfirmationFuture ?: return
         pendingSteamCloudConfirmationFuture = null
         uiState = uiState.copy(steamCloudLoginChallenge = null)
-        future.complete(true)
+        future.complete(SteamCloudDeviceConfirmationDecision.APPROVE_ON_TRUSTED_DEVICE)
+    }
+
+    fun onUseSteamCloudDeviceCode() {
+        val future = pendingSteamCloudConfirmationFuture ?: return
+        pendingSteamCloudConfirmationFuture = null
+        uiState = uiState.copy(steamCloudLoginChallenge = null)
+        future.complete(SteamCloudDeviceConfirmationDecision.USE_DEVICE_CODE)
     }
 
     fun onCancelSteamCloudChallenge(host: Activity? = null) {
@@ -2374,104 +2499,6 @@ class SettingsScreenViewModel : ViewModel() {
         host?.let {
             showToast(it, UiText.StringResource(R.string.settings_steam_cloud_login_cancelled))
         }
-    }
-
-    fun onSaveSteamCloudPhase0Credentials(
-        host: Activity,
-        accountName: String,
-        refreshToken: String,
-        proxyUrl: String,
-    ): Boolean {
-        if (uiState.busy) {
-            return false
-        }
-        val normalizedAccountName = accountName.trim()
-        val normalizedRefreshToken = refreshToken.trim()
-        val normalizedProxyUrl = proxyUrl.trim()
-        val existingSnapshot = SteamCloudPhase0Store.readSnapshot(host)
-        if (normalizedAccountName.isEmpty()) {
-            showToast(host, UiText.StringResource(R.string.settings_steam_cloud_phase0_account_required))
-            return false
-        }
-        if (normalizedRefreshToken.isEmpty() && !existingSnapshot.hasRefreshToken) {
-            showToast(host, UiText.StringResource(R.string.settings_steam_cloud_phase0_token_required))
-            return false
-        }
-        SteamCloudPhase0Store.saveCredentials(
-            host,
-            normalizedAccountName,
-            normalizedRefreshToken.ifEmpty { null },
-            normalizedProxyUrl
-        )
-        showToast(host, UiText.StringResource(R.string.settings_steam_cloud_phase0_credentials_saved))
-        refreshStatus(host)
-        return true
-    }
-
-    fun onRunSteamCloudPhase0Probe(host: Activity) {
-        if (uiState.busy) {
-            return
-        }
-        val credentials = SteamCloudPhase0Store.readCredentials(host)
-        if (credentials == null) {
-            showToast(host, UiText.StringResource(R.string.settings_steam_cloud_phase0_credentials_missing))
-            return
-        }
-        setBusy(
-            true,
-            UiText.StringResource(R.string.settings_busy_steam_cloud_phase0_probe)
-        )
-        executor.execute {
-            try {
-                val result = SteamCloudPhase0ManifestProbe.run(
-                    host,
-                    credentials.accountName,
-                    credentials.refreshToken,
-                    credentials.proxyUrl
-                )
-                SteamCloudPhase0Store.recordSuccess(host, result)
-                host.runOnUiThread {
-                    showToast(
-                        host,
-                        UiText.StringResource(
-                            R.string.settings_steam_cloud_phase0_probe_succeeded,
-                            result.fileCount
-                        )
-                    )
-                    refreshStatus(host)
-                }
-            } catch (error: Throwable) {
-                val probeFailure = error as? SteamCloudPhase0ManifestProbe.ProbeFailureException
-                val summary = probeFailure?.message?.trim()
-                    ?.takeIf { it.isNotEmpty() }
-                    ?: error.message?.trim()?.takeIf { it.isNotEmpty() }
-                    ?: error.javaClass.simpleName
-                SteamCloudPhase0Store.recordFailure(
-                    host,
-                    summary,
-                    probeFailure?.summaryFile?.absolutePath
-                )
-                host.runOnUiThread {
-                    showToast(
-                        host,
-                        UiText.StringResource(
-                            R.string.settings_steam_cloud_phase0_probe_failed,
-                            summary
-                        )
-                    )
-                    refreshStatus(host)
-                }
-            }
-        }
-    }
-
-    fun onClearSteamCloudPhase0Credentials(host: Activity) {
-        if (uiState.busy) {
-            return
-        }
-        SteamCloudPhase0Store.clearCredentials(host)
-        showToast(host, UiText.StringResource(R.string.settings_steam_cloud_phase0_credentials_cleared))
-        refreshStatus(host)
     }
 
     fun onRenderScaleSelected(host: Activity, value: Float) {
@@ -3823,16 +3850,17 @@ class SettingsScreenViewModel : ViewModel() {
                 progressPercent = null,
             )
         }
-        return SteamCloudOperationMutex.runExclusive {
+        return SteamCloudOperationMutex.runExclusive(host) {
+            val currentAuthMaterial = requireCurrentSteamCloudAuthMaterial(host, authMaterial)
             val currentMode = LauncherPreferences.readSteamCloudSaveMode(host)
             if (currentMode != SteamCloudSaveMode.STEAM_CLOUD) {
                 SteamCloudSaveProfileManager.saveActiveProfile(host, currentMode)
             }
-            SteamCloudRootKind.entries.forEach { rootKind ->
-                File(RuntimePaths.stsRoot(host), rootKind.directoryName).deleteRecursively()
-            }
-            LauncherPreferences.saveSteamCloudSaveMode(host, SteamCloudSaveMode.STEAM_CLOUD)
-            SteamCloudPullCoordinator.pullAll(host, authMaterial)
+            SteamCloudPullCoordinator.pullAll(
+                host = host,
+                authMaterial = currentAuthMaterial,
+                saveModeAfterPull = SteamCloudSaveMode.STEAM_CLOUD,
+            )
         }
     }
 
@@ -4032,7 +4060,7 @@ class SettingsScreenViewModel : ViewModel() {
         importSavesArchive(
             host = host,
             uri = uri,
-            targetRoot = RuntimePaths.stsRoot(host),
+            targetMode = SteamCloudSaveMode.INDEPENDENT,
             targetLabel = SteamCloudSaveMode.INDEPENDENT.displayName(host),
         )
     }
@@ -4048,10 +4076,7 @@ class SettingsScreenViewModel : ViewModel() {
                 importSavesArchive(
                     host = host,
                     uri = uri,
-                    targetRoot = SteamCloudSaveProfileManager.profileRoot(
-                        host,
-                        SteamCloudSaveMode.INDEPENDENT
-                    ),
+                    targetMode = SteamCloudSaveMode.INDEPENDENT,
                     targetLabel = SteamCloudSaveMode.INDEPENDENT.displayName(host),
                 )
             }
@@ -4062,13 +4087,22 @@ class SettingsScreenViewModel : ViewModel() {
     private fun importSavesArchive(
         host: Activity,
         uri: Uri,
-        targetRoot: File,
+        targetMode: SteamCloudSaveMode,
         targetLabel: String,
     ) {
         setBusy(true, UiText.StringResource(R.string.settings_busy_importing_save_archive))
         executor.execute {
             try {
-                val result = SettingsFileService.importSaveArchive(host, uri, targetRoot)
+                val result = SteamCloudOperationMutex.runExclusive(host) {
+                    val targetRoot = if (
+                        LauncherPreferences.readSteamCloudSaveMode(host) == targetMode
+                    ) {
+                        RuntimePaths.stsRoot(host)
+                    } else {
+                        SteamCloudSaveProfileManager.profileRoot(host, targetMode)
+                    }
+                    SettingsFileService.importSaveArchive(host, uri, targetRoot)
+                }
                 host.runOnUiThread {
                     val message = if (result.backupLabel.isNullOrEmpty()) {
                         UiText.StringResource(
@@ -4346,7 +4380,7 @@ class SettingsScreenViewModel : ViewModel() {
                 )
             )
             .setPositiveButton(R.string.settings_steam_cloud_switch_prompt_confirm) { _, _ ->
-                onSteamCloudSaveModeChanged(host, SteamCloudSaveMode.STEAM_CLOUD)
+                onPullSteamCloudFromManifest(host)
             }
             .setNegativeButton(R.string.settings_steam_cloud_switch_prompt_keep_independent, null)
             .setCancelable(false)
@@ -5537,6 +5571,7 @@ class SettingsScreenViewModel : ViewModel() {
     override fun onCleared() {
         cancelActiveSteamCloudLogin("Settings screen cleared.", clearBusy = false)
         executor.shutdownNow()
+        steamCloudLoginCleanupExecutor.shutdown()
         super.onCleared()
     }
 
@@ -5544,8 +5579,8 @@ class SettingsScreenViewModel : ViewModel() {
         host: Activity,
         cancellationHandle: SteamCloudAuthCoordinator.CancellationHandle,
         loginGeneration: Long,
-    ): SteamCloudClient.AuthPrompt {
-        return object : SteamCloudClient.AuthPrompt {
+    ): SteamCloudAuthCoordinator.AuthPrompt {
+        return object : SteamCloudAuthCoordinator.AuthPrompt {
             override fun getDeviceCode(previousCodeWasIncorrect: Boolean): CompletableFuture<String> {
                 val future = CompletableFuture<String>()
                 host.runOnUiThread {
@@ -5592,17 +5627,23 @@ class SettingsScreenViewModel : ViewModel() {
                 return future
             }
 
-            override fun acceptDeviceConfirmation(): CompletableFuture<Boolean> {
-                val future = CompletableFuture.completedFuture(true)
+            override fun getDeviceConfirmationDecision(
+                deviceCodeAvailable: Boolean,
+            ): CompletableFuture<SteamCloudDeviceConfirmationDecision> {
+                val future = CompletableFuture<SteamCloudDeviceConfirmationDecision>()
                 host.runOnUiThread {
                     if (!isActiveSteamCloudLogin(cancellationHandle, loginGeneration)) {
+                        future.completeExceptionally(
+                            CancellationException("Steam Cloud login cancelled by user.")
+                        )
                         return@runOnUiThread
                     }
                     cancelPendingSteamCloudChallenge("Steam Cloud device confirmation prompt replaced.", clearState = false)
-                    pendingSteamCloudConfirmationFuture = null
+                    pendingSteamCloudConfirmationFuture = future
                     uiState = uiState.copy(
                         steamCloudLoginChallenge = SteamCloudLoginChallenge(
-                            kind = SteamCloudLoginChallengeKind.DEVICE_CONFIRMATION
+                            kind = SteamCloudLoginChallengeKind.DEVICE_CONFIRMATION,
+                            deviceCodeAvailable = deviceCodeAvailable,
                         )
                     )
                 }
@@ -5653,6 +5694,19 @@ class SettingsScreenViewModel : ViewModel() {
         return pendingSteamCloudLoginCancellationHandle === cancellationHandle &&
             steamCloudLoginGeneration == loginGeneration &&
             !cancellationHandle.isCancelled
+    }
+
+    private fun requireCurrentSteamCloudAuthMaterial(
+        host: Activity,
+        expected: SteamCloudAuthStore.SavedAuthMaterial,
+    ): SteamCloudAuthStore.SavedAuthMaterial {
+        val current = SteamCloudAuthStore.readAuthMaterial(host)
+        if (current == null || current != expected) {
+            throw SteamCloudCredentialsMissingException(
+                host.getString(R.string.settings_steam_cloud_credentials_missing)
+            )
+        }
+        return current
     }
 
     private fun buildSteamCloudCredentialsSummary(
@@ -5813,86 +5867,6 @@ class SettingsScreenViewModel : ViewModel() {
 
     private fun formatSettingsTimestamp(timestampMs: Long): String {
         return SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(timestampMs))
-    }
-
-    private fun buildSteamCloudPhase0CredentialsSummary(
-        host: Activity,
-        snapshot: SteamCloudPhase0Store.Snapshot,
-    ): String {
-        if (snapshot.accountName.isBlank() && !snapshot.hasRefreshToken) {
-            return host.getString(R.string.settings_steam_cloud_phase0_credentials_not_configured)
-        }
-        val accountSummary = if (snapshot.accountName.isBlank()) {
-            host.getString(R.string.settings_status_unknown)
-        } else {
-            snapshot.accountName
-        }
-        val tokenSummary = if (snapshot.hasRefreshToken) {
-            host.getString(
-                R.string.settings_steam_cloud_phase0_token_saved_summary,
-                snapshot.refreshTokenLength
-            )
-        } else {
-            host.getString(R.string.settings_steam_cloud_phase0_token_missing_summary)
-        }
-        val proxySummary = if (snapshot.proxyUrl.isBlank()) {
-            host.getString(R.string.settings_steam_cloud_phase0_proxy_direct_summary)
-        } else {
-            host.getString(R.string.settings_steam_cloud_phase0_proxy_configured_summary, snapshot.proxyUrl)
-        }
-        return host.getString(
-            R.string.settings_steam_cloud_phase0_credentials_configured_summary,
-            accountSummary,
-            tokenSummary,
-            proxySummary
-        )
-    }
-
-    private fun buildSteamCloudPhase0StatusText(
-        host: Activity,
-        snapshot: SteamCloudPhase0Store.Snapshot,
-    ): String {
-        val lines = mutableListOf<String>()
-        if (snapshot.lastProbeAtMs == null) {
-            lines += if (snapshot.hasRefreshToken && snapshot.accountName.isNotBlank()) {
-                host.getString(R.string.settings_steam_cloud_phase0_status_ready)
-            } else {
-                host.getString(R.string.settings_steam_cloud_phase0_status_idle)
-            }
-        } else {
-            val formattedTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
-                .format(Date(snapshot.lastProbeAtMs))
-            if (snapshot.lastProbeSuccess == true) {
-                lines += host.getString(
-                    R.string.settings_steam_cloud_phase0_status_last_success,
-                    formattedTime,
-                    snapshot.lastFileCount ?: 0,
-                    snapshot.lastPreferencesCount ?: 0,
-                    snapshot.lastSavesCount ?: 0
-                )
-            } else {
-                lines += host.getString(
-                    R.string.settings_steam_cloud_phase0_status_last_failure,
-                    formattedTime,
-                    snapshot.lastError.ifBlank {
-                        host.getString(R.string.settings_status_unknown)
-                    }
-                )
-            }
-        }
-        if (snapshot.lastOutputPath.isNotBlank()) {
-            lines += host.getString(
-                R.string.settings_steam_cloud_phase0_status_report,
-                snapshot.lastOutputPath
-            )
-        }
-        if (snapshot.lastListingPath.isNotBlank()) {
-            lines += host.getString(
-                R.string.settings_steam_cloud_phase0_status_listing,
-                snapshot.lastListingPath
-            )
-        }
-        return lines.joinToString("\n")
     }
 
     private fun BackBehavior.displayName(host: Activity): String {

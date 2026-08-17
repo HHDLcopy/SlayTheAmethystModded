@@ -20,6 +20,7 @@ import io.stamethyst.backend.mods.ImportDownscaleMaterialPolicy
 import io.stamethyst.backend.mods.RuntimeDownscaleMaterialPolicy
 import io.stamethyst.backend.mods.RuntimeTextureAtlasDownscaleQuality
 import io.stamethyst.backend.render.VirtualResolutionMode
+import io.stamethyst.backend.steamcloud.SteamCloudOperationMutex
 import io.stamethyst.config.RuntimePaths
 import java.io.File
 import java.io.FileInputStream
@@ -225,6 +226,10 @@ object LauncherConfig {
         "enabled_mod_size_warning_dismissed"
     private const val PREF_KEY_LAST_WORKSHOP_UPDATE_CHECK_AT_MS = "last_workshop_update_check_at_ms"
     private const val PREF_KEY_STEAM_CLOUD_SAVE_MODE = "steam_cloud_save_mode"
+    private const val PREF_KEY_STEAM_CLOUD_INDEPENDENT_SWITCH_PENDING =
+        "steam_cloud_independent_switch_pending"
+    private const val PREF_KEY_STEAM_CLOUD_PENDING_PROFILE_STEAM_ID =
+        "steam_cloud_pending_profile_steam_id"
     private const val PREF_KEY_STEAM_CLOUD_SYNC_BLACKLIST_PATHS =
         "steam_cloud_sync_blacklist_paths"
     private const val PREF_KEY_PREFERRED_UPDATE_MIRROR_ID = "preferred_update_mirror_id"
@@ -2213,7 +2218,7 @@ object LauncherConfig {
 
     fun readSteamCloudSaveMode(context: Context): SteamCloudSaveMode {
         return SteamCloudSaveMode.fromPersistedValue(
-            prefs(context).getString(
+            prefs(context, crossProcess = true).getString(
                 PREF_KEY_STEAM_CLOUD_SAVE_MODE,
                 DEFAULT_STEAM_CLOUD_SAVE_MODE.persistedValue
             )
@@ -2221,13 +2226,67 @@ object LauncherConfig {
     }
 
     fun saveSteamCloudSaveMode(context: Context, mode: SteamCloudSaveMode) {
-        prefs(context).edit {
-            putString(PREF_KEY_STEAM_CLOUD_SAVE_MODE, mode.persistedValue)
+        SteamCloudOperationMutex.runExclusive(context) {
+            check(
+                prefs(context, crossProcess = true)
+                    .edit()
+                    .putString(PREF_KEY_STEAM_CLOUD_SAVE_MODE, mode.persistedValue)
+                    .commit()
+            ) { "Failed to persist Steam Cloud save mode." }
+        }
+    }
+
+    fun isSteamCloudIndependentSwitchPending(context: Context): Boolean {
+        return prefs(context, crossProcess = true).getBoolean(
+            PREF_KEY_STEAM_CLOUD_INDEPENDENT_SWITCH_PENDING,
+            false,
+        )
+    }
+
+    fun readSteamCloudPendingProfileSteamId(context: Context): String {
+        return prefs(context, crossProcess = true)
+            .getString(PREF_KEY_STEAM_CLOUD_PENDING_PROFILE_STEAM_ID, "")
+            ?.trim()
+            .orEmpty()
+    }
+
+    fun saveSteamCloudIndependentSwitchPending(
+        context: Context,
+        pending: Boolean,
+        cloudProfileSteamId: String = "",
+    ) {
+        SteamCloudOperationMutex.runExclusive(context) {
+            check(
+                prefs(context, crossProcess = true)
+                    .edit()
+                    .putBoolean(PREF_KEY_STEAM_CLOUD_INDEPENDENT_SWITCH_PENDING, pending)
+                    .putString(
+                        PREF_KEY_STEAM_CLOUD_PENDING_PROFILE_STEAM_ID,
+                        cloudProfileSteamId.trim().takeIf { pending }.orEmpty(),
+                    )
+                    .commit()
+            ) { "Failed to persist deferred Steam Cloud profile switch state." }
+        }
+    }
+
+    internal fun completeSteamCloudIndependentSwitch(context: Context) {
+        SteamCloudOperationMutex.runExclusive(context) {
+            check(
+                prefs(context, crossProcess = true)
+                    .edit()
+                    .putString(
+                        PREF_KEY_STEAM_CLOUD_SAVE_MODE,
+                        SteamCloudSaveMode.INDEPENDENT.persistedValue,
+                    )
+                    .putBoolean(PREF_KEY_STEAM_CLOUD_INDEPENDENT_SWITCH_PENDING, false)
+                    .remove(PREF_KEY_STEAM_CLOUD_PENDING_PROFILE_STEAM_ID)
+                    .commit()
+            ) { "Failed to persist completed Steam Cloud profile switch." }
         }
     }
 
     fun readSteamCloudSyncBlacklistPaths(context: Context): Set<String> {
-        val preferences = prefs(context)
+        val preferences = prefs(context, crossProcess = true)
         if (!preferences.contains(PREF_KEY_STEAM_CLOUD_SYNC_BLACKLIST_PATHS)) {
             return LinkedHashSet(DEFAULT_STEAM_CLOUD_SYNC_BLACKLIST_PATHS)
         }
@@ -2237,13 +2296,18 @@ object LauncherConfig {
     }
 
     fun saveSteamCloudSyncBlacklistPaths(context: Context, localRelativePaths: Set<String>) {
-        prefs(context).edit {
-            putStringSet(
-                PREF_KEY_STEAM_CLOUD_SYNC_BLACKLIST_PATHS,
-                LinkedHashSet(
-                    SteamCloudSyncBlacklist.normalizeLocalRelativePaths(localRelativePaths)
-                )
-            )
+        SteamCloudOperationMutex.runExclusive(context) {
+            check(
+                prefs(context, crossProcess = true)
+                    .edit()
+                    .putStringSet(
+                        PREF_KEY_STEAM_CLOUD_SYNC_BLACKLIST_PATHS,
+                        LinkedHashSet(
+                            SteamCloudSyncBlacklist.normalizeLocalRelativePaths(localRelativePaths)
+                        )
+                    )
+                    .commit()
+            ) { "Failed to persist Steam Cloud sync blacklist." }
         }
     }
 

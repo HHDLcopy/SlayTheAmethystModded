@@ -5312,7 +5312,8 @@ internal fun shouldShowSteamCloudBackgroundUploadAction(
     indicator: MainScreenViewModel.SteamCloudIndicatorUi,
 ): Boolean {
     return indicator.state == MainScreenViewModel.SteamCloudIndicatorState.SYNCING &&
-        indicator.syncDirection == SteamCloudSyncDirection.PUSH_LOCAL_TO_CLOUD
+        indicator.syncDirection == SteamCloudSyncDirection.PUSH_LOCAL_TO_CLOUD &&
+        indicator.backgroundUploadReady
 }
 
 internal fun shouldAutoLaunchAfterSteamCloudUpdate(
@@ -6572,6 +6573,13 @@ private fun localizedSteamCloudPlanWarning(
             resources.getString(
                 R.string.main_steam_cloud_warning_unsupported_remote_path,
                 parsed.remotePath
+            )
+        }
+
+        is SteamCloudUserWarning.DuplicateMappedLocalPath -> {
+            resources.getString(
+                R.string.main_steam_cloud_warning_duplicate_mapped_local_path,
+                parsed.localRelativePath
             )
         }
 

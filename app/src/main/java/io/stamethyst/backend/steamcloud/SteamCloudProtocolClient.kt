@@ -145,7 +145,10 @@ internal class SteamCloudProtocolClient(
 
     fun getAppFileChangelist(appId: Int): SteammessagesCloudSteamclient.CCloud_GetAppFileChangelist_Response = service(
         "Cloud.GetAppFileChangelist#1",
-        SteammessagesCloudSteamclient.CCloud_GetAppFileChangelist_Request.newBuilder().setAppid(appId).build(),
+        SteammessagesCloudSteamclient.CCloud_GetAppFileChangelist_Request.newBuilder()
+            .setAppid(appId)
+            .setSyncedChangeNumber(0L)
+            .build(),
         SteammessagesCloudSteamclient.CCloud_GetAppFileChangelist_Response.parser(),
     )
 
@@ -154,6 +157,11 @@ internal class SteamCloudProtocolClient(
         SteammessagesCloudSteamclient.CCloud_ClientFileDownload_Request.newBuilder()
             .setAppid(appId).setFilename(filename).setRealm(1).setForceProxy(false).build(),
         SteammessagesCloudSteamclient.CCloud_ClientFileDownload_Response.parser(),
+    )
+
+    fun clientDeleteFile(request: SteammessagesCloudSteamclient.CCloud_ClientDeleteFile_Request) = service(
+        "Cloud.ClientDeleteFile#1", request,
+        SteammessagesCloudSteamclient.CCloud_ClientDeleteFile_Response.parser(),
     )
 
     fun beginAppUploadBatch(request: SteammessagesCloudSteamclient.CCloud_BeginAppUploadBatch_Request) = service(
@@ -172,7 +180,7 @@ internal class SteamCloudProtocolClient(
     )
 
     fun completeAppUploadBatch(request: SteammessagesCloudSteamclient.CCloud_CompleteAppUploadBatch_Request) = service(
-        "Cloud.CompleteAppUploadBatch#1", request,
+        "Cloud.CompleteAppUploadBatchBlocking#1", request,
         SteammessagesCloudSteamclient.CCloud_CompleteAppUploadBatch_Response.parser(),
     )
 

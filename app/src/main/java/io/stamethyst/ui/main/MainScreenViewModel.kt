@@ -216,6 +216,7 @@ class MainScreenViewModel : ViewModel() {
         val progressMessage: String = "",
         val progressPercent: Int? = null,
         val progressCurrentPath: String = "",
+        val backgroundUploadReady: Boolean = false,
         val lastCheckedAtMs: Long? = null,
     ) {
         val operationInFlight: Boolean
@@ -406,8 +407,10 @@ class MainScreenViewModel : ViewModel() {
     private var steamCloudSyncCancelRequested = false
     private var lastSteamCloudCheckAtMs: Long? = null
     private var pendingSteamCloudAutoLaunchAfterSync = false
+    private var pendingSteamCloudManualBackgroundLaunch = false
     private var steamCloudProcessEventReceiver: BroadcastReceiver? = null
     private var steamCloudProcessEventReceiverContext: Context? = null
+    private var steamCloudHostActivityReference: WeakReference<Activity>? = null
     private var easyTierProcessEventReceiver: BroadcastReceiver? = null
     private var easyTierProcessEventReceiverContext: Context? = null
     private var easyTierHostActivityReference: WeakReference<Activity>? = null
@@ -648,7 +651,7 @@ class MainScreenViewModel : ViewModel() {
             clearSteamCloudIndicatorState()
             return false
         }
-        ensureSteamCloudProcessEventReceiverRegistered(host.applicationContext)
+        ensureSteamCloudProcessEventReceiverRegistered(host)
         if (steamCloudCheckInFlight || steamCloudSyncInFlight) {
             return false
         }
@@ -679,12 +682,18 @@ class MainScreenViewModel : ViewModel() {
                 progressCurrentPath = "",
             )
         )
-        SteamCloudSyncProcessService.startCheckAndSync(
+        val started = SteamCloudSyncProcessService.startCheckAndSync(
             context = host,
             userInitiated = force,
+            // Freeze upload-only plans before publishing SYNCING so the existing background
+            // launch action remains available without ever exposing live saves to the uploader.
+            allowBackgroundUpload = true,
             receiver = receiver,
         )
-        return true
+        if (!started) {
+            steamCloudCheckInFlight = false
+        }
+        return started
     }
 
     fun onEasyTierVpnPermissionRequired(host: Activity) {
@@ -1201,21 +1210,12 @@ class MainScreenViewModel : ViewModel() {
         )
         steamAchievementExecutor.execute {
             val result = runCatching {
-                val snapshot = SteamAchievementService.setAchievementUnlockedViaCm(
+                SteamAchievementSyncService.setAchievementUnlocked(
                     context = host.applicationContext,
-                    accountName = auth.accountName,
-                    refreshToken = auth.refreshToken,
-                    steamId64 = auth.steamId64,
+                    expectedAuth = auth,
                     apiName = apiName,
                     unlocked = unlocked,
                 )
-                if (!unlocked) {
-                    SteamAchievementSyncService.lockAchievementInAllLocalSaves(
-                        host.applicationContext,
-                        apiName,
-                    )
-                }
-                snapshot
             }
             host.runOnUiThread {
                 steamAchievementLoadInFlight = false
@@ -1670,9 +1670,10 @@ class MainScreenViewModel : ViewModel() {
         if (uiState.busy || launchInFlight) {
             return LaunchRequestAction.NONE
         }
-        if (steamCloudSyncInFlight) {
+        if (steamCloudCheckInFlight || steamCloudSyncInFlight) {
             pendingSteamCloudAutoLaunchAfterSync =
                 LauncherPreferences.isSteamCloudAutoLaunchAfterSyncEnabled(host)
+            pendingSteamCloudManualBackgroundLaunch = false
             return LaunchRequestAction.OPEN_STEAM_CLOUD_SHEET
         }
         if (uiState.steamCloudIndicator.visible &&
@@ -1680,9 +1681,11 @@ class MainScreenViewModel : ViewModel() {
                 uiState.steamCloudIndicator.state == SteamCloudIndicatorState.CONFLICT)
         ) {
             pendingSteamCloudAutoLaunchAfterSync = false
+            pendingSteamCloudManualBackgroundLaunch = false
             return LaunchRequestAction.OPEN_STEAM_CLOUD_SHEET
         }
         pendingSteamCloudAutoLaunchAfterSync = false
+        pendingSteamCloudManualBackgroundLaunch = false
         onLaunch(host)
         return LaunchRequestAction.NONE
     }
@@ -1692,6 +1695,7 @@ class MainScreenViewModel : ViewModel() {
             return
         }
         pendingSteamCloudAutoLaunchAfterSync = false
+        pendingSteamCloudManualBackgroundLaunch = false
         onLaunch(host)
     }
 
@@ -1708,7 +1712,7 @@ class MainScreenViewModel : ViewModel() {
             clearSteamCloudIndicatorState()
             return
         }
-        ensureSteamCloudProcessEventReceiverRegistered(host.applicationContext)
+        ensureSteamCloudProcessEventReceiverRegistered(host)
 
         val syncSessionId = beginSteamCloudSync()
         publishSteamCloudIndicatorSyncing(
@@ -1740,38 +1744,12 @@ class MainScreenViewModel : ViewModel() {
             clearSteamCloudIndicatorState()
             return
         }
-        ensureSteamCloudProcessEventReceiverRegistered(host.applicationContext)
-        if (!tryBeginLaunchRequest()) {
-            return
+        pendingSteamCloudAutoLaunchAfterSync = true
+        pendingSteamCloudManualBackgroundLaunch = true
+        if (!syncSteamCloudIndicatorIfNeeded(host = host, force = true)) {
+            pendingSteamCloudAutoLaunchAfterSync = false
+            pendingSteamCloudManualBackgroundLaunch = false
         }
-        pendingSteamCloudAutoLaunchAfterSync = false
-
-        dismissCrashRecovery()
-        val syncSessionId = beginSteamCloudSync()
-        publishSteamCloudIndicatorSyncing(
-            direction = SteamCloudSyncDirection.PUSH_LOCAL_TO_CLOUD,
-            progressMessage = host.getString(R.string.main_steam_cloud_progress_preparing_background_local_override),
-            progressPercent = 0,
-            currentPath = "",
-        )
-        val started = SteamCloudSyncProcessService.startUseLocal(
-            context = host,
-            receiver = buildSteamCloudSyncReceiver(
-                host = host,
-                syncSessionId = syncSessionId,
-                userInitiated = true,
-            ),
-        )
-        if (!started) {
-            clearLaunchInFlightState()
-            return
-        }
-        beginLaunchFlow(
-            host = host,
-            launchMode = StsLaunchSpec.LAUNCH_MODE_MTS,
-            forceJvmCrash = false,
-            skipEnabledModSizeWarning = true,
-        )
     }
 
     fun onBackgroundSteamCloudSyncAndLaunch(host: Activity) {
@@ -1781,7 +1759,8 @@ class MainScreenViewModel : ViewModel() {
         val indicator = uiState.steamCloudIndicator
         if (!steamCloudSyncInFlight ||
             indicator.state != SteamCloudIndicatorState.SYNCING ||
-            indicator.syncDirection != SteamCloudSyncDirection.PUSH_LOCAL_TO_CLOUD
+            indicator.syncDirection != SteamCloudSyncDirection.PUSH_LOCAL_TO_CLOUD ||
+            !indicator.backgroundUploadReady
         ) {
             return
         }
@@ -1789,6 +1768,7 @@ class MainScreenViewModel : ViewModel() {
             return
         }
         pendingSteamCloudAutoLaunchAfterSync = false
+        pendingSteamCloudManualBackgroundLaunch = false
 
         dismissCrashRecovery()
         beginLaunchFlow(
@@ -1812,7 +1792,7 @@ class MainScreenViewModel : ViewModel() {
             clearSteamCloudIndicatorState()
             return
         }
-        ensureSteamCloudProcessEventReceiverRegistered(host.applicationContext)
+        ensureSteamCloudProcessEventReceiverRegistered(host)
 
         val syncSessionId = beginSteamCloudSync()
         publishSteamCloudIndicatorSyncing(
@@ -3939,6 +3919,10 @@ class MainScreenViewModel : ViewModel() {
                         steamCloudCheckInFlight = false
                         lastSteamCloudCheckAtMs = checkedAtMs
                         publishSteamCloudIndicatorPlan(plan, checkedAtMs)
+                        if (plan.conflicts.isNotEmpty()) {
+                            pendingSteamCloudAutoLaunchAfterSync = false
+                            pendingSteamCloudManualBackgroundLaunch = false
+                        }
                         maybeAutoLaunchAfterSteamCloudUpdate(host)
                     }
 
@@ -3976,6 +3960,10 @@ class MainScreenViewModel : ViewModel() {
                                 ?: appContext.getString(R.string.main_steam_cloud_progress_preparing_auto_sync),
                             progressPercent = currentIndicator.progressPercent ?: 0,
                             currentPath = currentIndicator.progressCurrentPath,
+                            backgroundUploadReady = data.getBoolean(
+                                SteamCloudSyncProcessService.EXTRA_BACKGROUND_UPLOAD_READY,
+                                false,
+                            ),
                         )
                         maybeAutoLaunchAfterSteamCloudUpdate(host)
                     }
@@ -4026,15 +4014,10 @@ class MainScreenViewModel : ViewModel() {
                         if (!isSteamCloudSyncSessionCurrent(activeSessionId)) {
                             return
                         }
-                        val shouldAutoLaunchAfterCompletion = pendingSteamCloudAutoLaunchAfterSync
                         val completedAtMs = data.steamCloudLongOrNull(
                             SteamCloudSyncProcessService.EXTRA_COMPLETED_AT_MS
                         ) ?: System.currentTimeMillis()
-                        completeSteamCloudSync(completedAtMs)
-                        if (shouldAutoLaunchAfterCompletion) {
-                            pendingSteamCloudAutoLaunchAfterSync = true
-                            maybeAutoLaunchAfterSteamCloudUpdate(host)
-                        }
+                        completeSteamCloudSyncAndMaybeLaunch(host, completedAtMs)
                         if (userInitiated ||
                             data.getBoolean(SteamCloudSyncProcessService.EXTRA_USER_INITIATED, false)
                         ) {
@@ -4052,15 +4035,10 @@ class MainScreenViewModel : ViewModel() {
                         if (!isSteamCloudSyncSessionCurrent(activeSessionId)) {
                             return
                         }
-                        val shouldAutoLaunchAfterCompletion = pendingSteamCloudAutoLaunchAfterSync
                         val completedAtMs = data.steamCloudLongOrNull(
                             SteamCloudSyncProcessService.EXTRA_COMPLETED_AT_MS
                         ) ?: System.currentTimeMillis()
-                        completeSteamCloudSync(completedAtMs)
-                        if (shouldAutoLaunchAfterCompletion) {
-                            pendingSteamCloudAutoLaunchAfterSync = true
-                            maybeAutoLaunchAfterSteamCloudUpdate(host)
-                        }
+                        completeSteamCloudSyncAndMaybeLaunch(host, completedAtMs)
                         _effects.tryEmit(
                             Effect.ShowSnackbar(
                                 message = UiText.StringResource(
@@ -4078,15 +4056,10 @@ class MainScreenViewModel : ViewModel() {
                         if (!isSteamCloudSyncSessionCurrent(activeSessionId)) {
                             return
                         }
-                        val shouldAutoLaunchAfterCompletion = pendingSteamCloudAutoLaunchAfterSync
                         val completedAtMs = data.steamCloudLongOrNull(
                             SteamCloudSyncProcessService.EXTRA_COMPLETED_AT_MS
                         ) ?: System.currentTimeMillis()
-                        completeSteamCloudSync(completedAtMs)
-                        if (shouldAutoLaunchAfterCompletion) {
-                            pendingSteamCloudAutoLaunchAfterSync = true
-                            maybeAutoLaunchAfterSteamCloudUpdate(host)
-                        }
+                        completeSteamCloudSyncAndMaybeLaunch(host, completedAtMs)
                         _effects.tryEmit(
                             Effect.ShowSnackbar(
                                 message = UiText.StringResource(
@@ -4114,7 +4087,9 @@ class MainScreenViewModel : ViewModel() {
         }
     }
 
-    private fun ensureSteamCloudProcessEventReceiverRegistered(appContext: Context) {
+    private fun ensureSteamCloudProcessEventReceiverRegistered(host: Activity) {
+        steamCloudHostActivityReference = WeakReference(host)
+        val appContext = host.applicationContext
         if (steamCloudProcessEventReceiver != null && steamCloudProcessEventReceiverContext === appContext) {
             return
         }
@@ -4132,6 +4107,7 @@ class MainScreenViewModel : ViewModel() {
                     appContext = appContext,
                     resultCode = extras.getInt(SteamCloudSyncProcessService.EXTRA_EVENT_RESULT_CODE),
                     data = Bundle(extras),
+                    hostActivity = activeSteamCloudHostActivity(),
                 )
             }
         }
@@ -4167,6 +4143,9 @@ class MainScreenViewModel : ViewModel() {
         } catch (_: Throwable) {
         }
     }
+
+    private fun activeSteamCloudHostActivity(): Activity? =
+        steamCloudHostActivityReference?.get()?.takeUnless { it.isFinishing || it.isDestroyed }
 
     private fun syncEasyTierProcessEventReceiver(host: Activity) {
         easyTierHostActivityReference = WeakReference(host)
@@ -4323,6 +4302,7 @@ class MainScreenViewModel : ViewModel() {
         appContext: Context,
         resultCode: Int,
         data: Bundle,
+        hostActivity: Activity? = null,
     ) {
         when (resultCode) {
             SteamCloudSyncProcessService.RESULT_CHECKING -> {
@@ -4348,6 +4328,11 @@ class MainScreenViewModel : ViewModel() {
                 steamCloudCheckInFlight = false
                 lastSteamCloudCheckAtMs = checkedAtMs
                 publishSteamCloudIndicatorPlan(plan, checkedAtMs)
+                if (plan.conflicts.isNotEmpty()) {
+                    pendingSteamCloudAutoLaunchAfterSync = false
+                    pendingSteamCloudManualBackgroundLaunch = false
+                }
+                hostActivity?.let(::maybeAutoLaunchAfterSteamCloudUpdate)
             }
 
             SteamCloudSyncProcessService.RESULT_SYNC_STARTED -> {
@@ -4371,7 +4356,12 @@ class MainScreenViewModel : ViewModel() {
                         ?: appContext.getString(R.string.main_steam_cloud_progress_preparing_auto_sync),
                     progressPercent = currentIndicator.progressPercent ?: 0,
                     currentPath = currentIndicator.progressCurrentPath,
+                    backgroundUploadReady = data.getBoolean(
+                        SteamCloudSyncProcessService.EXTRA_BACKGROUND_UPLOAD_READY,
+                        false,
+                    ),
                 )
+                hostActivity?.let(::maybeAutoLaunchAfterSteamCloudUpdate)
             }
 
             SteamCloudSyncProcessService.RESULT_PROGRESS -> {
@@ -4411,6 +4401,7 @@ class MainScreenViewModel : ViewModel() {
                         lastCheckedAtMs = checkedAtMs,
                     )
                 )
+                hostActivity?.let(::maybeAutoLaunchAfterSteamCloudUpdate)
             }
 
             SteamCloudSyncProcessService.RESULT_AUTO_SYNC_COMPLETED,
@@ -4422,7 +4413,7 @@ class MainScreenViewModel : ViewModel() {
                 val completedAtMs = data.steamCloudLongOrNull(
                     SteamCloudSyncProcessService.EXTRA_COMPLETED_AT_MS
                 ) ?: System.currentTimeMillis()
-                completeSteamCloudSync(completedAtMs)
+                completeSteamCloudSyncAndMaybeLaunch(hostActivity, completedAtMs)
             }
 
             SteamCloudSyncProcessService.RESULT_FAILURE,
@@ -4474,6 +4465,7 @@ class MainScreenViewModel : ViewModel() {
         steamCloudSyncInFlight = false
         steamCloudSyncCancelRequested = false
         pendingSteamCloudAutoLaunchAfterSync = false
+        pendingSteamCloudManualBackgroundLaunch = false
         lastSteamCloudCheckAtMs = failedAtMs
         if (SteamAuthenticationCircuitBreaker.trip(failureCategory)) {
             forceSteamAccountLogoutAfterCircuitTrip(
@@ -4506,6 +4498,7 @@ class MainScreenViewModel : ViewModel() {
         steamCloudSyncInFlight = false
         steamCloudSyncCancelRequested = false
         pendingSteamCloudAutoLaunchAfterSync = false
+        pendingSteamCloudManualBackgroundLaunch = false
         lastSteamCloudCheckAtMs = completedAtMs
         uiState = uiState.copy(
             steamCloudIndicator = SteamCloudIndicatorUi(
@@ -4514,6 +4507,21 @@ class MainScreenViewModel : ViewModel() {
                 lastCheckedAtMs = completedAtMs,
             )
         )
+    }
+
+    private fun completeSteamCloudSyncAndMaybeLaunch(
+        host: Activity?,
+        completedAtMs: Long,
+    ) {
+        val shouldAutoLaunch = pendingSteamCloudAutoLaunchAfterSync
+        val shouldManuallyLaunch = pendingSteamCloudManualBackgroundLaunch
+        completeSteamCloudSync(completedAtMs)
+        val activeHost = host?.takeUnless { it.isFinishing || it.isDestroyed }
+        if (shouldAutoLaunch && activeHost != null) {
+            pendingSteamCloudAutoLaunchAfterSync = true
+            pendingSteamCloudManualBackgroundLaunch = shouldManuallyLaunch
+            maybeAutoLaunchAfterSteamCloudUpdate(activeHost)
+        }
     }
 
     @Suppress("DEPRECATION")
@@ -4658,6 +4666,7 @@ class MainScreenViewModel : ViewModel() {
         progressMessage: String,
         progressPercent: Int?,
         currentPath: String,
+        backgroundUploadReady: Boolean = uiState.steamCloudIndicator.backgroundUploadReady,
     ) {
         uiState = uiState.copy(
             steamCloudIndicator = SteamCloudIndicatorUi(
@@ -4667,6 +4676,7 @@ class MainScreenViewModel : ViewModel() {
                 progressMessage = progressMessage,
                 progressPercent = progressPercent?.coerceIn(0, 100),
                 progressCurrentPath = currentPath,
+                backgroundUploadReady = backgroundUploadReady,
                 lastCheckedAtMs = uiState.steamCloudIndicator.lastCheckedAtMs,
             )
         )
@@ -4674,7 +4684,8 @@ class MainScreenViewModel : ViewModel() {
 
     private fun maybeAutoLaunchAfterSteamCloudUpdate(host: Activity) {
         if (!pendingSteamCloudAutoLaunchAfterSync ||
-            !LauncherPreferences.isSteamCloudAutoLaunchAfterSyncEnabled(host)
+            (!pendingSteamCloudManualBackgroundLaunch &&
+                !LauncherPreferences.isSteamCloudAutoLaunchAfterSyncEnabled(host))
         ) {
             return
         }
@@ -4682,6 +4693,7 @@ class MainScreenViewModel : ViewModel() {
             return
         }
         pendingSteamCloudAutoLaunchAfterSync = false
+        pendingSteamCloudManualBackgroundLaunch = false
         dismissCrashRecovery()
         if (shouldShowSteamCloudBackgroundUploadAction(uiState.steamCloudIndicator)) {
             onBackgroundSteamCloudSyncAndLaunch(host)
@@ -4699,6 +4711,7 @@ class MainScreenViewModel : ViewModel() {
         steamCloudSyncInFlight = false
         steamCloudSyncCancelRequested = false
         pendingSteamCloudAutoLaunchAfterSync = false
+        pendingSteamCloudManualBackgroundLaunch = false
         lastSteamCloudCheckAtMs = null
         if (uiState.steamCloudIndicator.visible ||
             uiState.steamCloudIndicator.state != SteamCloudIndicatorState.HIDDEN
@@ -5754,6 +5767,7 @@ class MainScreenViewModel : ViewModel() {
     }
 
     override fun onCleared() {
+        steamCloudHostActivityReference = null
         easyTierHostActivityReference = null
         unregisterEasyTierProcessEventReceiver()
         unregisterSteamCloudProcessEventReceiver()

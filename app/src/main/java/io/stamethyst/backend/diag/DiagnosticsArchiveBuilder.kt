@@ -184,23 +184,6 @@ internal object DiagnosticsArchiveBuilder {
                 "sts/steam_login",
                 limit = 5
             )
-            val phase0Dir = File(RuntimePaths.storageRoot(context), "steam-cloud-phase0")
-            exportedCount += writeOptionalFile(
-                zipOutput,
-                File(phase0Dir, "summary.txt"),
-                "sts/steam_cloud/phase0/summary.txt"
-            )
-            exportedCount += writeOptionalFile(
-                zipOutput,
-                File(phase0Dir, "cloud-list.tsv"),
-                "sts/steam_cloud/phase0/cloud-list.tsv"
-            )
-            exportedCount += writeOptionalFile(
-                zipOutput,
-                File(phase0Dir, "last-websocket-cm-endpoint.txt"),
-                "sts/steam_cloud/phase0/last-websocket-cm-endpoint.txt"
-            )
-
             val writtenJvmEntries = LinkedHashSet<String>()
             JvmLogRotationManager.listLogFiles(context).forEach { logFile ->
                 val entryName = "sts/logs/${logFile.name}"

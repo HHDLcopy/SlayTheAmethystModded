@@ -410,15 +410,6 @@ fun LauncherDeveloperSettingsScreen(
                 entryNodeUrl,
             )
         },
-        onSaveSteamCloudPhase0Credentials = { accountName, refreshToken, proxyUrl ->
-            viewModel.onSaveSteamCloudPhase0Credentials(activity, accountName, refreshToken, proxyUrl)
-        },
-        onRunSteamCloudPhase0Probe = {
-            viewModel.onRunSteamCloudPhase0Probe(activity)
-        },
-        onClearSteamCloudPhase0Credentials = {
-            viewModel.onClearSteamCloudPhase0Credentials(activity)
-        },
         onRendererSelectionModeChanged = { mode ->
             viewModel.onRendererSelectionModeChanged(activity, mode)
         },

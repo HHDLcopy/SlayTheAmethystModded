@@ -64,13 +64,17 @@ internal val ALLOWED_PARENT_BACKEND_CLASSES: MutableSet<String> = HashSet()
 internal val REQUIRED_GDX_CLASSES: Set<String> = HashSet(
     listOf(
         "com/badlogic/gdx/Application.class",
-        "com/badlogic/gdx/graphics/g2d/Batch.class",
-        // Batch.getColor() is resolved while SpriteBatch's itable is built.
-        // Keep this signature type in the parent classloader so both classes
-        // use the same Color identity. Texture must stay MTS-owned because
-        // Ram Saver replaces it there.
-        "com/badlogic/gdx/graphics/Color.class",
         "com/badlogic/gdx/utils/Disposable.class"
+    )
+)
+
+// Batch and its method descriptor types must be resolved by MTSClassLoader
+// together with SpriteBatch. In particular, Texture is replaced by Ram Saver
+// and must never be supplied by the parent API classpath.
+internal val GDX_MTS_OWNED_CLASSES: Set<String> = HashSet(
+    listOf(
+        "com/badlogic/gdx/graphics/g2d/Batch.class",
+        "com/badlogic/gdx/graphics/Texture.class"
     )
 )
 

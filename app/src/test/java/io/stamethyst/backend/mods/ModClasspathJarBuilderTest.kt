@@ -11,7 +11,7 @@ import java.util.zip.ZipOutputStream
 
 class ModClasspathJarBuilderTest {
     @Test
-    fun gdxApiRequiresBatchColorType() {
+    fun gdxApiRejectsMtsOwnedBatchAndTextureTypes() {
         val root = Files.createTempDirectory("gdx-api-classpath-").toFile()
         try {
             val entries = REQUIRED_GDX_CLASSES.toList()
@@ -19,7 +19,13 @@ class ModClasspathJarBuilderTest {
             assertFalse(
                 hasRequiredGdxApi(
                     root,
-                    entries.filterNot { it == "com/badlogic/gdx/graphics/Color.class" }
+                    entries + "com/badlogic/gdx/graphics/g2d/Batch.class"
+                )
+            )
+            assertFalse(
+                hasRequiredGdxApi(
+                    root,
+                    entries + "com/badlogic/gdx/graphics/Texture.class"
                 )
             )
         } finally {

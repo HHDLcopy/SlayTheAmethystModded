@@ -1958,10 +1958,27 @@ public final class SteamCloudClient implements AutoCloseable {
                 ensureValidUploadBatchId(batchId, EResult.OK);
                 return response;
             } catch (Exception error) {
-                if (!isRetryableSteamCloudException(error) || attempt >= BEGIN_UPLOAD_BATCH_MAX_ATTEMPTS) {
+                EResult typedResult = steamCloudResultFromException(error);
+                long batchId = response == null ? 0L : response.getBatchId();
+                boolean retryable = typedResult != null
+                    ? isRetryableBeginAppUploadBatchResult(typedResult, batchId)
+                    : isRetryableSteamCloudException(error);
+                if (!retryable || attempt >= BEGIN_UPLOAD_BATCH_MAX_ATTEMPTS) {
                     throw error;
                 }
-                sleepBeforeTransientRetry("BeginAppUploadBatch", error, attempt);
+                if (typedResult != null) {
+                    long delayMs = beginAppUploadBatchRetryDelayMs(typedResult, batchId, attempt);
+                    Log.w(
+                        TAG,
+                        "BeginAppUploadBatch returned " + typedResult +
+                            beginAppUploadBatchRetryHint(typedResult, batchId) +
+                            "; retrying attempt " + (attempt + 1) + "/" +
+                            BEGIN_UPLOAD_BATCH_MAX_ATTEMPTS + " after " + delayMs + "ms."
+                    );
+                    sleepBeforeRetry(delayMs);
+                } else {
+                    sleepBeforeTransientRetry("BeginAppUploadBatch", error, attempt);
+                }
             }
         }
         throw new IllegalStateException("BeginAppUploadBatch failed without a response result.");
@@ -2038,7 +2055,7 @@ public final class SteamCloudClient implements AutoCloseable {
             if (current instanceof top.apricityx.workshop.steam.protocol.SteamServiceMethodException) {
                 int code = ((top.apricityx.workshop.steam.protocol.SteamServiceMethodException) current).getResultCode();
                 // Busy=10, ServiceUnavailable=15, Timeout=16, RemoteCallFailed=71
-                if (code == 10 || code == 15 || code == 16 || code == 71) {
+                if (code == 10 || code == 15 || code == 16 || code == 71 || code == 108) {
                     return true;
                 }
                 // Do not retry other typed results (e.g. Fail=2 for generic cloud calls,
@@ -2062,6 +2079,19 @@ public final class SteamCloudClient implements AutoCloseable {
             current = current.getCause();
         }
         return false;
+    }
+
+    private static EResult steamCloudResultFromException(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof top.apricityx.workshop.steam.protocol.SteamServiceMethodException) {
+                return EResult.from(
+                    ((top.apricityx.workshop.steam.protocol.SteamServiceMethodException) current).getResultCode()
+                );
+            }
+            current = current.getCause();
+        }
+        return null;
     }
 
     private static boolean isRetryableDownloadException(Throwable error) {

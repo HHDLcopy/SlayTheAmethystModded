@@ -328,6 +328,12 @@ public final class SteamCloudClientTest {
     }
 
     @Test
+    public void isRetryableBeginAppUploadBatchResult_recognizesSteamCode108AsTooManyPending() throws Exception {
+        Assert.assertEquals(108, EResult.TooManyPending.code());
+        Assert.assertTrue(invokeIsRetryableBeginAppUploadBatchResult(EResult.from(108), 0L));
+    }
+
+    @Test
     public void beginAppUploadBatchRetryDelayMs_usesLongerBackoffForTooManyPendingAndZeroBatchId() throws Exception {
         Assert.assertEquals(10_000L, invokeBeginAppUploadBatchRetryDelayMs(EResult.TooManyPending, 0L, 1));
         Assert.assertEquals(20_000L, invokeBeginAppUploadBatchRetryDelayMs(EResult.OK, 0L, 2));

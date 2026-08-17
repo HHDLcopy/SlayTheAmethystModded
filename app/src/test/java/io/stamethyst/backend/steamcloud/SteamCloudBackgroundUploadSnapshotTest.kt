@@ -44,6 +44,20 @@ class SteamCloudBackgroundUploadSnapshotTest {
     }
 
     @Test
+    fun isBackgroundCheckSnapshotEligible_allowsFinishedRunAutosaveDeletion() {
+        assertTrue(
+            SteamCloudPushCoordinator.isBackgroundCheckSnapshotEligible(
+                uploadPlan(remoteDeleteCandidates = listOf(deleteCandidate()))
+            )
+        )
+        assertFalse(
+            SteamCloudPushCoordinator.isBackgroundCheckSnapshotEligible(
+                uploadPlan(remoteOnlyChanges = listOf(remoteOnlyChange()))
+            )
+        )
+    }
+
+    @Test
     fun prepareBackgroundUploadSnapshot_freezesSourceBeforeGameCanWrite() {
         val roots = TestRoots.create()
         try {
@@ -110,6 +124,32 @@ class SteamCloudBackgroundUploadSnapshotTest {
         }
     }
 
+    @Test
+    fun prepareBackgroundCheckSnapshot_freezesAllManagedRoots() {
+        val roots = TestRoots.create()
+        try {
+            writeFile(roots.stsRoot, "preferences/STSPlayer", "preferences-before")
+            writeFile(roots.stsRoot, "saves/1_IRONCLAD.autosave", "save-before")
+
+            val snapshot = SteamCloudPushCoordinator.prepareBackgroundCheckSnapshot(roots.context)
+            writeFile(roots.stsRoot, "preferences/STSPlayer", "preferences-after")
+            File(roots.stsRoot, "saves/1_IRONCLAD.autosave").delete()
+
+            assertEquals(
+                "preferences-before",
+                File(snapshot.root, "preferences/STSPlayer").readText(Charsets.UTF_8),
+            )
+            assertEquals(
+                "save-before",
+                File(snapshot.root, "saves/1_IRONCLAD.autosave").readText(Charsets.UTF_8),
+            )
+            assertEquals(2, snapshot.localEntries.size)
+            snapshot.delete()
+        } finally {
+            roots.root.deleteRecursively()
+        }
+    }
+
     private fun uploadPlan(
         candidate: SteamCloudUploadCandidate = defaultCandidate(),
         remoteDeleteCandidates: List<SteamCloudRemoteDeleteCandidate> = emptyList(),
@@ -149,6 +189,12 @@ class SteamCloudBackgroundUploadSnapshotTest {
         currentRemote = null,
         baselineRemote = null,
     )
+
+    private fun writeFile(root: File, relativePath: String, content: String) {
+        val target = File(root, relativePath.replace('/', File.separatorChar))
+        target.parentFile?.mkdirs()
+        target.writeText(content, Charsets.UTF_8)
+    }
 
     private class TestRoots private constructor(
         val root: File,

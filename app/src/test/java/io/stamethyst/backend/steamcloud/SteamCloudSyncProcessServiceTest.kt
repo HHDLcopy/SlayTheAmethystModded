@@ -24,4 +24,23 @@ class SteamCloudSyncProcessServiceTest {
             )
         )
     }
+
+    @Test
+    fun liveSaveLeaseContention_isDeferredInsteadOfReportedAsSyncFailure() {
+        assertTrue(
+            SteamCloudSyncProcessService.shouldDeferForLiveSaveLease(
+                SteamCloudLiveSaveInUseException()
+            )
+        )
+        assertTrue(
+            SteamCloudSyncProcessService.shouldDeferForLiveSaveLease(
+                IllegalStateException("wrapper", SteamCloudLiveSaveInUseException())
+            )
+        )
+        assertFalse(
+            SteamCloudSyncProcessService.shouldDeferForLiveSaveLease(
+                IllegalStateException("unrelated")
+            )
+        )
+    }
 }

@@ -1575,6 +1575,7 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="main_steam_cloud_action_retry_auto">Retry (%1$ds)</string>
     <string name="main_steam_cloud_action_cancel_upload">Cancel upload</string>
     <string name="main_steam_cloud_action_background_upload">Upload in background</string>
+    <string name="main_steam_cloud_action_background_start">Start in background</string>
     <string name="main_steam_cloud_action_start_without_sync">Start game</string>
     <string name="main_steam_cloud_launch_warning_title">Start without Steam Cloud sync?</string>
     <string name="main_steam_cloud_launch_warning_message">Steam Cloud sync failed, so your latest cloud progress could not be verified. Starting now uses the current local saves and may leave cloud progress out of date until the next successful sync.</string>
@@ -1619,6 +1620,8 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="main_steam_cloud_conflict_files_dialog_kind_baseline_required">No baseline</string>
     <string name="main_steam_cloud_conflict_files_dialog_kind_both_changed">Both changed</string>
     <string name="main_steam_cloud_background_upload_hint">Start the game now. The frozen save snapshot will keep uploading to Steam Cloud in the background.</string>
+    <string name="main_steam_cloud_background_upload_failed_cloud_conflict">Background upload failed: Steam Cloud conflict requires resolution.</string>
+    <string name="main_steam_cloud_background_upload_failed_network">Background upload failed: network connection failed.</string>
     <string name="main_steam_cloud_warning_unsupported_local_path">A local file path is unsupported and was not added to the upload plan: %1$s</string>
     <string name="main_steam_cloud_warning_failed_to_map_local_file">A local file could not be mapped to a Steam Cloud path: %1$s</string>
     <string name="main_steam_cloud_warning_baseline_required">No previous Steam Cloud sync baseline is saved yet. Files that already exist on both sides will be treated as conflicts until you complete one full pull.</string>

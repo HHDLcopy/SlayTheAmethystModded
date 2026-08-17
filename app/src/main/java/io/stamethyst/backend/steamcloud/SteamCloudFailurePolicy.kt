@@ -12,6 +12,7 @@ enum class SteamCloudFailureCategory {
     TRANSIENT_NETWORK,
     AUTH_REJECTED,
     RATE_LIMITED,
+    CLOUD_CONFLICT,
     CANCELLED,
     MISSING_AUTH,
     UNKNOWN,

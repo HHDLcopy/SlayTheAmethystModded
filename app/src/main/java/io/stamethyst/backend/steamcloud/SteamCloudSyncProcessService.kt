@@ -19,7 +19,9 @@ import androidx.core.app.NotificationCompat
 import io.stamethyst.LauncherActivity
 import io.stamethyst.R
 import io.stamethyst.backend.launch.GameLaunchReturnTracker
+import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
+import java.io.IOException
 import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -31,6 +33,7 @@ class SteamCloudSyncProcessService : Service() {
         const val ACTION_USE_LOCAL = "io.stamethyst.action.STEAM_CLOUD_USE_LOCAL"
         const val ACTION_USE_CLOUD = "io.stamethyst.action.STEAM_CLOUD_USE_CLOUD"
         const val ACTION_CANCEL = "io.stamethyst.action.STEAM_CLOUD_CANCEL"
+        const val ACTION_REQUEST_BACKGROUND_LAUNCH = "io.stamethyst.action.STEAM_CLOUD_REQUEST_BACKGROUND_LAUNCH"
         const val ACTION_SYNC_EVENT = "io.stamethyst.action.STEAM_CLOUD_SYNC_EVENT"
 
         const val EXTRA_RESULT_RECEIVER = "io.stamethyst.extra.STEAM_CLOUD_RESULT_RECEIVER"
@@ -54,6 +57,7 @@ class SteamCloudSyncProcessService : Service() {
         const val EXTRA_ERROR_SUMMARY = "io.stamethyst.extra.STEAM_CLOUD_ERROR_SUMMARY"
         const val EXTRA_FAILURE_CATEGORY = "io.stamethyst.extra.STEAM_CLOUD_FAILURE_CATEGORY"
         const val EXTRA_BACKGROUND_UPLOAD_READY = "io.stamethyst.extra.STEAM_CLOUD_BACKGROUND_UPLOAD_READY"
+        const val EXTRA_BACKGROUND_LAUNCH_REQUESTED = "io.stamethyst.extra.STEAM_CLOUD_BACKGROUND_LAUNCH_REQUESTED"
 
         const val RESULT_CHECKING = 1
         const val RESULT_PLAN_READY = 2
@@ -65,6 +69,7 @@ class SteamCloudSyncProcessService : Service() {
         const val RESULT_AUTO_SYNC_COMPLETED = 8
         const val RESULT_FAILURE = 9
         const val RESULT_CANCELLED = 10
+        const val RESULT_DEFERRED = 11
 
         private const val CHANNEL_ID = "steam_cloud_sync"
         private const val NOTIFICATION_ID = 646571
@@ -77,7 +82,7 @@ class SteamCloudSyncProcessService : Service() {
         fun startCheckAndSync(
             context: Context,
             userInitiated: Boolean,
-            allowBackgroundUpload: Boolean = false,
+            allowBackgroundUpload: Boolean = true,
             receiver: ResultReceiver? = null,
         ): Boolean {
             return start(context, ACTION_CHECK_AND_SYNC, receiver) {
@@ -101,6 +106,14 @@ class SteamCloudSyncProcessService : Service() {
                 putExtra(EXTRA_RESULT_RECEIVER, receiver)
             }
             appContext.startService(intent)
+        }
+
+        fun requestBackgroundLaunch(context: Context) {
+            val appContext = context.applicationContext
+            LauncherConfig.setSteamCloudBackgroundLaunchRequested(appContext, true)
+            appContext.startService(Intent(appContext, SteamCloudSyncProcessService::class.java).apply {
+                action = ACTION_REQUEST_BACKGROUND_LAUNCH
+            })
         }
 
         private fun start(
@@ -173,9 +186,14 @@ class SteamCloudSyncProcessService : Service() {
             isRunning: Boolean,
             cancellationPending: Boolean,
         ): Boolean = isRunning && cancellationPending
+
+        internal fun shouldDeferForLiveSaveLease(error: Throwable): Boolean =
+            generateSequence(error) { current -> current.cause?.takeUnless { it === current } }
+                .any { it is SteamCloudLiveSaveInUseException }
     }
 
     private val cancelRequested = AtomicBoolean(false)
+    private val backgroundLaunchRequested = AtomicBoolean(false)
     @Volatile
     private var workerThread: Thread? = null
     @Volatile
@@ -188,8 +206,17 @@ class SteamCloudSyncProcessService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         latestStartId = startId
         val safeIntent = intent ?: return START_NOT_STICKY
+        if (safeIntent.action == ACTION_REQUEST_BACKGROUND_LAUNCH) {
+            if (running) {
+                backgroundLaunchRequested.set(true)
+            } else {
+                LauncherConfig.setSteamCloudBackgroundLaunchRequested(applicationContext, false)
+            }
+            return if (running) START_REDELIVER_INTENT else START_NOT_STICKY
+        }
         if (safeIntent.action == ACTION_CANCEL) {
             cancelRequested.set(true)
+            backgroundLaunchRequested.set(false)
             workerThread?.interrupt()
             deliverResult(applicationContext, extractResultReceiver(safeIntent), RESULT_CANCELLED, Bundle().apply {
                 putString(EXTRA_ERROR_SUMMARY, getString(R.string.main_steam_cloud_sync_cancelled_summary))
@@ -224,6 +251,8 @@ class SteamCloudSyncProcessService : Service() {
         }
 
         cancelRequested.set(false)
+        backgroundLaunchRequested.set(false)
+        LauncherConfig.setSteamCloudBackgroundLaunchRequested(applicationContext, false)
         running = true
         startForeground(NOTIFICATION_ID, buildNotification(getString(R.string.main_steam_cloud_progress_preparing_auto_sync)))
         val receiver = extractResultReceiver(safeIntent)
@@ -259,12 +288,25 @@ class SteamCloudSyncProcessService : Service() {
                 ACTION_USE_CLOUD -> runUseCloud(receiver)
             }
         } catch (error: Throwable) {
+            val backgroundRequested = isBackgroundLaunchRequested()
             val category = if (cancelRequested.get()) {
                 SteamCloudFailureCategory.CANCELLED
+            } else if (backgroundRequested &&
+                (error is SteamCloudBackgroundLaunchConflictException ||
+                    error is SteamCloudStalePlanException ||
+                    error is SteamCloudPushReconciliationException)
+            ) {
+                SteamCloudFailureCategory.CLOUD_CONFLICT
             } else {
                 SteamCloudFailureClassifier.classify(error)
             }
-            val summary = summarizeError(error)
+            val summary = when {
+                category == SteamCloudFailureCategory.CLOUD_CONFLICT ->
+                    getString(R.string.main_steam_cloud_background_upload_failed_cloud_conflict)
+                backgroundRequested && category == SteamCloudFailureCategory.TRANSIENT_NETWORK ->
+                    getString(R.string.main_steam_cloud_background_upload_failed_network)
+                else -> summarizeError(error)
+            }
             if (category != SteamCloudFailureCategory.CANCELLED) {
                 operationAuthMaterial?.let { authMaterial ->
                     runCatching {
@@ -290,10 +332,19 @@ class SteamCloudSyncProcessService : Service() {
                 updateNotification(summary)
             }
             if (action == ACTION_CHECK_AND_SYNC && category != SteamCloudFailureCategory.CANCELLED) {
-                maybeShowBackgroundCheckToast(R.string.main_steam_cloud_background_check_failed_toast)
+                val messageRes = when {
+                    category == SteamCloudFailureCategory.CLOUD_CONFLICT ->
+                        R.string.main_steam_cloud_background_upload_failed_cloud_conflict
+                    backgroundRequested && category == SteamCloudFailureCategory.TRANSIENT_NETWORK ->
+                        R.string.main_steam_cloud_background_upload_failed_network
+                    else -> R.string.main_steam_cloud_background_check_failed_toast
+                }
+                maybeShowBackgroundCheckToast(messageRes)
             }
         } finally {
             operationAuthMaterial = null
+            backgroundLaunchRequested.set(false)
+            LauncherConfig.setSteamCloudBackgroundLaunchRequested(applicationContext, false)
             if (workerThread === Thread.currentThread()) {
                 running = false
                 workerThread = null
@@ -314,54 +365,72 @@ class SteamCloudSyncProcessService : Service() {
         val autoSynced = SteamCloudOperationMutex.runExclusive(applicationContext) {
             val authMaterial = requireAuthMaterial()
             var backgroundSnapshot: SteamCloudPushCoordinator.BackgroundUploadSnapshot? = null
-            val plan = SteamCloudPushCoordinator.buildUploadPlan(
-                applicationContext,
-                authMaterial,
-                shouldContinue = ::shouldContinue,
-            )
-            val checkedAtMs = System.currentTimeMillis()
-            ensureNotCancelled()
-            if (plan.conflicts.isNotEmpty() || plan.isAlreadySynced()) {
-                deliverResult(applicationContext, receiver, RESULT_PLAN_READY, Bundle().apply {
-                    putSerializable(EXTRA_PLAN, plan)
-                    putLong(EXTRA_CHECKED_AT_MS, checkedAtMs)
-                })
-                updateNotification(
-                    if (plan.conflicts.isNotEmpty()) {
-                        getString(R.string.main_steam_cloud_bar_title_conflict)
-                    } else {
-                        getString(R.string.main_steam_cloud_bar_title_up_to_date)
-                    }
-                )
-                if (plan.conflicts.isNotEmpty()) {
-                    maybeShowBackgroundCheckToast(R.string.main_steam_cloud_background_check_conflict_toast)
-                }
-                false
-            } else {
-                try {
-                    backgroundSnapshot = if (intent.getBooleanExtra(EXTRA_ALLOW_BACKGROUND_UPLOAD, false) &&
-                        SteamCloudPushCoordinator.isBackgroundUploadEligible(plan)
-                    ) {
-                        SteamCloudPushCoordinator.prepareBackgroundUploadSnapshot(
+            try {
+                if (intent.getBooleanExtra(EXTRA_ALLOW_BACKGROUND_UPLOAD, true)) {
+                    backgroundSnapshot = try {
+                        SteamCloudPushCoordinator.prepareBackgroundCheckSnapshot(
                             host = applicationContext,
-                            plan = plan,
                             shouldContinue = ::shouldContinue,
                         )
-                    } else {
-                        null
+                    } catch (error: Throwable) {
+                        if (!shouldDeferForLiveSaveLease(error)) {
+                            throw error
+                        }
+                        deliverResult(applicationContext, receiver, RESULT_DEFERRED, Bundle().apply {
+                            putLong(EXTRA_CHECKED_AT_MS, System.currentTimeMillis())
+                        })
+                        return@runExclusive false
                     }
-                    val direction = resolveAutomaticSyncDirection(plan)
-                    deliverResult(applicationContext, receiver, RESULT_SYNC_STARTED, Bundle().apply {
-                        putString(EXTRA_SYNC_DIRECTION, direction.name)
-                        putLong(EXTRA_CHECKED_AT_MS, checkedAtMs)
-                        putBoolean(EXTRA_BACKGROUND_UPLOAD_READY, backgroundSnapshot != null)
+                    deliverResult(applicationContext, receiver, RESULT_CHECKING, Bundle().apply {
+                        putBoolean(EXTRA_BACKGROUND_UPLOAD_READY, true)
                     })
-                    performAutomaticSync(authMaterial, plan, receiver, backgroundSnapshot)
-                    true
-                } finally {
-                    backgroundSnapshot?.let { snapshot ->
-                        runCatching { snapshot.delete() }
+                }
+                val plan = SteamCloudPushCoordinator.buildUploadPlan(
+                    applicationContext,
+                    authMaterial,
+                    shouldContinue = ::shouldContinue,
+                    sourceEntries = backgroundSnapshot?.localEntries,
+                )
+                val checkedAtMs = System.currentTimeMillis()
+                ensureNotCancelled()
+                val backgroundRequested = isBackgroundLaunchRequested()
+                if (plan.conflicts.isNotEmpty()) {
+                    if (backgroundRequested) {
+                        throw SteamCloudBackgroundLaunchConflictException()
                     }
+                    deliverResult(applicationContext, receiver, RESULT_PLAN_READY, Bundle().apply {
+                        putSerializable(EXTRA_PLAN, plan)
+                        putLong(EXTRA_CHECKED_AT_MS, checkedAtMs)
+                    })
+                    updateNotification(getString(R.string.main_steam_cloud_bar_title_conflict))
+                    maybeShowBackgroundCheckToast(R.string.main_steam_cloud_background_check_conflict_toast)
+                    return@runExclusive false
+                }
+                if (plan.isAlreadySynced()) {
+                    deliverResult(applicationContext, receiver, RESULT_PLAN_READY, Bundle().apply {
+                        putSerializable(EXTRA_PLAN, plan)
+                        putLong(EXTRA_CHECKED_AT_MS, checkedAtMs)
+                    })
+                    updateNotification(getString(R.string.main_steam_cloud_bar_title_up_to_date))
+                    return@runExclusive false
+                }
+                val backgroundSnapshotForPlan = backgroundSnapshot?.takeIf {
+                    SteamCloudPushCoordinator.isBackgroundCheckSnapshotEligible(plan)
+                }
+                if (backgroundRequested && backgroundSnapshotForPlan == null) {
+                    throw SteamCloudBackgroundLaunchConflictException()
+                }
+                val direction = resolveAutomaticSyncDirection(plan)
+                deliverResult(applicationContext, receiver, RESULT_SYNC_STARTED, Bundle().apply {
+                    putString(EXTRA_SYNC_DIRECTION, direction.name)
+                    putLong(EXTRA_CHECKED_AT_MS, checkedAtMs)
+                    putBoolean(EXTRA_BACKGROUND_UPLOAD_READY, backgroundSnapshotForPlan != null)
+                })
+                performAutomaticSync(authMaterial, plan, receiver, backgroundSnapshotForPlan)
+                true
+            } finally {
+                backgroundSnapshot?.let { snapshot ->
+                    runCatching { snapshot.delete() }
                 }
             }
         }
@@ -383,12 +452,22 @@ class SteamCloudSyncProcessService : Service() {
         })
         val result = SteamCloudOperationMutex.runExclusive(applicationContext) {
             val authMaterial = requireAuthMaterial()
-            SteamCloudPushCoordinator.overwriteRemoteWithLocal(
-                applicationContext,
-                authMaterial,
-                progressCallback = { progress -> reportProgress(receiver, progress) },
-                shouldContinue = ::shouldContinue,
-            )
+            var snapshot: SteamCloudPushCoordinator.BackgroundUploadSnapshot? = null
+            try {
+                snapshot = SteamCloudPushCoordinator.prepareBackgroundCheckSnapshot(
+                    host = applicationContext,
+                    shouldContinue = ::shouldContinue,
+                )
+                SteamCloudPushCoordinator.overwriteRemoteWithLocal(
+                    host = applicationContext,
+                    authMaterial = authMaterial,
+                    sourceRoot = snapshot.root,
+                    progressCallback = { progress -> reportProgress(receiver, progress) },
+                    shouldContinue = ::shouldContinue,
+                )
+            } finally {
+                snapshot?.let { frozen -> runCatching { frozen.delete() } }
+            }
         }
         deliverResult(applicationContext, receiver, RESULT_LOCAL_OVERRIDE_COMPLETED, Bundle().apply {
             putLong(EXTRA_COMPLETED_AT_MS, result.completedAtMs)
@@ -451,14 +530,21 @@ class SteamCloudSyncProcessService : Service() {
         }
         ensureNotCancelled()
         if (currentPlan.uploadCandidates.isNotEmpty() || currentPlan.remoteDeleteCandidates.isNotEmpty()) {
+            // Normal syncs use the frozen copy too.  Only a plan rebuilt after a remote merge
+            // falls back to live files because that merge can change the upload set.
+            val uploadSnapshot = backgroundSnapshot?.takeIf {
+                plan.remoteOnlyChanges.isEmpty() &&
+                    SteamCloudPushCoordinator.isBackgroundCheckSnapshotEligible(currentPlan)
+            }
             SteamCloudPushCoordinator.pushLocalChanges(
                 applicationContext,
                 authMaterial,
                 currentPlan,
                 progressCallback = { progress -> reportProgress(receiver, progress) },
                 shouldContinue = ::shouldContinue,
-                sourceRoot = backgroundSnapshot?.root ?: RuntimePaths.stsRoot(applicationContext),
-                sourceEntries = backgroundSnapshot?.localEntries,
+                sourceRoot = uploadSnapshot?.root ?: RuntimePaths.stsRoot(applicationContext),
+                sourceEntries = uploadSnapshot?.localEntries,
+                allowSnapshotDeletes = uploadSnapshot?.containsAllManagedRoots == true,
             )
         }
     }
@@ -480,6 +566,10 @@ class SteamCloudSyncProcessService : Service() {
         return !cancelRequested.get() && !Thread.currentThread().isInterrupted
     }
 
+    private fun isBackgroundLaunchRequested(): Boolean =
+        backgroundLaunchRequested.get() ||
+            LauncherConfig.isSteamCloudBackgroundLaunchRequested(applicationContext)
+
     private fun requireAuthMaterial(): SteamCloudAuthStore.SavedAuthMaterial {
         val authMaterial = SteamCloudAuthStore.readAuthMaterial(applicationContext)
             ?: throw SteamCloudCredentialsMissingException(
@@ -494,6 +584,10 @@ class SteamCloudSyncProcessService : Service() {
             throw CancellationException("Steam Cloud sync cancelled by user.")
         }
     }
+
+    private class SteamCloudBackgroundLaunchConflictException : IOException(
+        "Steam Cloud background upload cannot continue because cloud changes require resolution."
+    )
 
     private fun buildProgressMessage(progress: SteamCloudSyncProgress): String {
         return when (progress.phase) {

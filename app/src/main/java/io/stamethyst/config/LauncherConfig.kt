@@ -198,6 +198,8 @@ object LauncherConfig {
         "steam_cloud_watt_acceleration_enabled"
     private const val PREF_KEY_STEAM_CLOUD_AUTO_LAUNCH_AFTER_SYNC_ENABLED =
         "steam_cloud_auto_launch_after_sync_enabled"
+    private const val PREF_KEY_STEAM_CLOUD_BACKGROUND_LAUNCH_REQUESTED =
+        "steam_cloud_background_launch_requested"
     private const val PREF_KEY_STEAM_GAME_PRESENCE_ENABLED =
         "steam_game_presence_enabled"
     private const val PREF_KEY_STEAM_RICH_PRESENCE_PREFIX = "steam_rich_presence_prefix"
@@ -2035,6 +2037,18 @@ object LauncherConfig {
     fun setSteamCloudAutoLaunchAfterSyncEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit {
             putBoolean(PREF_KEY_STEAM_CLOUD_AUTO_LAUNCH_AFTER_SYNC_ENABLED, enabled)
+        }
+    }
+
+    fun isSteamCloudBackgroundLaunchRequested(context: Context): Boolean =
+        prefs(context, crossProcess = true).getBoolean(
+            PREF_KEY_STEAM_CLOUD_BACKGROUND_LAUNCH_REQUESTED,
+            false,
+        )
+
+    fun setSteamCloudBackgroundLaunchRequested(context: Context, requested: Boolean) {
+        prefs(context, crossProcess = true).edit(commit = true) {
+            putBoolean(PREF_KEY_STEAM_CLOUD_BACKGROUND_LAUNCH_REQUESTED, requested)
         }
     }
 

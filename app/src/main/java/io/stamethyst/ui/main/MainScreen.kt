@@ -3809,6 +3809,7 @@ internal fun LauncherMainRoute(
                 if (event == Lifecycle.Event.ON_RESUME) {
                     viewModel.refresh(activity)
                     viewModel.syncModSuggestionsIfNeeded(activity)
+                    viewModel.syncSteamCloudIndicatorIfNeeded(activity, force = true)
                 }
             }
             lifecycleOwner.lifecycle.addObserver(observer)
@@ -5316,6 +5317,11 @@ internal fun shouldShowSteamCloudBackgroundUploadAction(
         indicator.backgroundUploadReady
 }
 
+internal fun shouldShowSteamCloudBackgroundLaunchDuringCheck(
+    indicator: MainScreenViewModel.SteamCloudIndicatorUi,
+): Boolean = indicator.state == MainScreenViewModel.SteamCloudIndicatorState.CHECKING &&
+    indicator.backgroundUploadReady
+
 internal fun shouldAutoLaunchAfterSteamCloudUpdate(
     indicator: MainScreenViewModel.SteamCloudIndicatorUi,
 ): Boolean {
@@ -6003,6 +6009,7 @@ private fun SteamCloudBottomSheetContent(
     }
     var showConflictFilesDialog by remember { mutableStateOf(false) }
     val showBackgroundUploadAction = shouldShowSteamCloudBackgroundUploadAction(indicator)
+    val showBackgroundLaunchDuringCheck = shouldShowSteamCloudBackgroundLaunchDuringCheck(indicator)
 
     Column(
         modifier = Modifier
@@ -6270,12 +6277,36 @@ private fun SteamCloudBottomSheetContent(
             }
 
             MainScreenViewModel.SteamCloudIndicatorState.CHECKING -> {
-                OutlinedButton(
-                    onClick = onCancelCheck,
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(text = stringResource(R.string.main_steam_cloud_action_cancel_check))
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (showBackgroundLaunchDuringCheck) {
+                        Text(
+                            text = stringResource(R.string.main_steam_cloud_background_upload_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        OutlinedButton(
+                            onClick = onCancelCheck,
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = if (showBackgroundLaunchDuringCheck) Modifier.weight(1f) else Modifier.fillMaxWidth(),
+                        ) {
+                            Text(text = stringResource(R.string.main_steam_cloud_action_cancel_check))
+                        }
+                        if (showBackgroundLaunchDuringCheck) {
+                            Button(
+                                onClick = onBackgroundUploadAndLaunch,
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Text(text = stringResource(R.string.main_steam_cloud_action_background_start))
+                            }
+                        }
+                    }
                 }
             }
         }

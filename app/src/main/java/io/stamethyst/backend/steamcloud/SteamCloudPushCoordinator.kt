@@ -62,6 +62,7 @@ internal object SteamCloudPushCoordinator {
     internal data class BackgroundUploadSnapshot(
         val root: File,
         val localEntries: List<SteamCloudLocalFileSnapshotEntry>,
+        val containsAllManagedRoots: Boolean,
     ) {
         fun delete() {
             if (root.exists() && !root.deleteRecursively()) {
@@ -75,6 +76,11 @@ internal object SteamCloudPushCoordinator {
             plan.uploadCandidates.isNotEmpty() &&
             plan.remoteOnlyChanges.isEmpty() &&
             plan.remoteDeleteCandidates.isEmpty()
+
+    internal fun isBackgroundCheckSnapshotEligible(plan: SteamCloudUploadPlan): Boolean =
+        plan.conflicts.isEmpty() &&
+            plan.remoteOnlyChanges.isEmpty() &&
+            (plan.uploadCandidates.isNotEmpty() || plan.remoteDeleteCandidates.isNotEmpty())
 
     /**
      * Copies only the already-planned upload inputs while the game is excluded from live saves.
@@ -172,6 +178,62 @@ internal object SteamCloudPushCoordinator {
                                 sha1 = candidate.sha1,
                             )
                         },
+                        containsAllManagedRoots = false,
+                    )
+                }
+            }
+            completed = true
+            return snapshot
+        } finally {
+            snapshotRoot?.takeIf { !completed && it.exists() }?.deleteRecursively()
+        }
+    }
+
+    /**
+     * Freezes the complete managed save set before a background cloud check starts.  The later
+     * diff and upload must use this snapshot once the game is allowed to take the live-save lease.
+     */
+    @Throws(IOException::class)
+    fun prepareBackgroundCheckSnapshot(
+        host: Context,
+        shouldContinue: () -> Boolean = { true },
+    ): BackgroundUploadSnapshot {
+        val snapshotParent = backgroundSnapshotParent(host)
+        if (!snapshotParent.isDirectory && !snapshotParent.mkdirs()) {
+            throw IOException("Failed to create Steam Cloud background upload directory: ${snapshotParent.absolutePath}")
+        }
+        var snapshotRoot: File? = null
+        var completed = false
+        try {
+            val snapshot = SteamCloudOperationMutex.runExclusive(host) {
+                SteamCloudLiveSaveLease.runMutation(host) {
+                    ensureNotCancelled(shouldContinue)
+                    clearStaleBackgroundUploadSnapshots(snapshotParent)
+                    snapshotRoot = File(
+                        snapshotParent,
+                        "$BACKGROUND_UPLOAD_SNAPSHOT_PREFIX${System.currentTimeMillis()}-${System.nanoTime()}",
+                    )
+                    val targetRoot = requireNotNull(snapshotRoot)
+                    if (!targetRoot.mkdirs()) {
+                        throw IOException(
+                            "Failed to create Steam Cloud background upload snapshot: ${targetRoot.absolutePath}"
+                        )
+                    }
+                    SteamCloudRootKind.entries.forEach { rootKind ->
+                        ensureNotCancelled(shouldContinue)
+                        val source = File(RuntimePaths.stsRoot(host), rootKind.directoryName)
+                        if (source.exists()) {
+                            SteamCloudStagedPathStore.copyPath(
+                                source,
+                                File(targetRoot, rootKind.directoryName),
+                            )
+                        }
+                    }
+                    ensureNotCancelled(shouldContinue)
+                    BackgroundUploadSnapshot(
+                        root = targetRoot,
+                        localEntries = SteamCloudLocalSnapshotCollector.collect(targetRoot),
+                        containsAllManagedRoots = true,
                     )
                 }
             }
@@ -211,6 +273,7 @@ internal object SteamCloudPushCoordinator {
         authMaterial: SteamCloudAuthStore.SavedAuthMaterial,
         shouldContinue: () -> Boolean = { true },
         allowReconnectRetry: Boolean = true,
+        sourceEntries: List<SteamCloudLocalFileSnapshotEntry>? = null,
     ): SteamCloudUploadPlan {
         val startedAtMs = System.currentTimeMillis()
         val totalStartedAtNs = System.nanoTime()
@@ -270,7 +333,7 @@ internal object SteamCloudPushCoordinator {
 
                 val localSnapshotStartedAtNs = System.nanoTime()
                 val localEntries = SteamCloudSyncBlacklist.filterLocalEntries(
-                    entries = SteamCloudLocalSnapshotCollector.collect(RuntimePaths.stsRoot(host)),
+                    entries = sourceEntries ?: SteamCloudLocalSnapshotCollector.collect(RuntimePaths.stsRoot(host)),
                     configuredBlacklist = syncBlacklist,
                 )
                 telemetry.localSnapshotMs = elapsedMs(localSnapshotStartedAtNs)
@@ -327,6 +390,7 @@ internal object SteamCloudPushCoordinator {
                     authMaterial = authMaterial,
                     shouldContinue = shouldContinue,
                     allowReconnectRetry = false,
+                    sourceEntries = sourceEntries,
                 )
             }
             SteamCloudAuthStore.recordFailure(host, summarizeError(error), authMaterial)
@@ -362,6 +426,7 @@ internal object SteamCloudPushCoordinator {
         allowReconnectRetry: Boolean = true,
         sourceRoot: File = RuntimePaths.stsRoot(host),
         sourceEntries: List<SteamCloudLocalFileSnapshotEntry>? = null,
+        allowSnapshotDeletes: Boolean = false,
     ): SteamCloudPushResult {
         require(plan.conflicts.isEmpty()) {
             "Steam Cloud push was requested with unresolved conflicts."
@@ -369,8 +434,8 @@ internal object SteamCloudPushCoordinator {
         require(plan.uploadCandidates.isNotEmpty() || plan.remoteDeleteCandidates.isNotEmpty()) {
             "Steam Cloud push was requested with no upload or delete candidates."
         }
-        require(sourceEntries == null || plan.remoteDeleteCandidates.isEmpty()) {
-            "Steam Cloud background upload snapshots cannot delete remote files."
+        require(sourceEntries == null || plan.remoteDeleteCandidates.isEmpty() || allowSnapshotDeletes) {
+            "Steam Cloud partial upload snapshots cannot delete remote files."
         }
         // A supplied source snapshot has already been frozen under the live-save lease. Never
         // re-read the game root for it, or a running game could change the uploaded version.
@@ -533,17 +598,19 @@ internal object SteamCloudPushCoordinator {
             )
             ensureNotCancelled(shouldContinue)
             if (plan.remoteDeleteCandidates.isNotEmpty()) {
-                liveSaveLease = SteamCloudLiveSaveLease.acquireForMutation(host)
-                plan.remoteDeleteCandidates.forEach { candidate ->
-                    val localFile = File(
-                        RuntimePaths.stsRoot(host),
-                        candidate.localRelativePath.replace('/', File.separatorChar),
-                    )
-                    if (localFile.exists()) {
-                        throw SteamCloudStalePlanException(
-                            "Steam Cloud delete source was recreated before commit: " +
-                                candidate.localRelativePath
+                if (!allowSnapshotDeletes) {
+                    liveSaveLease = SteamCloudLiveSaveLease.acquireForMutation(host)
+                    plan.remoteDeleteCandidates.forEach { candidate ->
+                        val localFile = File(
+                            RuntimePaths.stsRoot(host),
+                            candidate.localRelativePath.replace('/', File.separatorChar),
                         )
+                        if (localFile.exists()) {
+                            throw SteamCloudStalePlanException(
+                                "Steam Cloud delete source was recreated before commit: " +
+                                    candidate.localRelativePath
+                            )
+                        }
                     }
                 }
                 ensureNotCancelled(shouldContinue)
@@ -659,6 +726,7 @@ internal object SteamCloudPushCoordinator {
                     allowReconnectRetry = false,
                     sourceRoot = sourceRoot,
                     sourceEntries = sourceEntries,
+                    allowSnapshotDeletes = allowSnapshotDeletes,
                 )
             }
             val surfacedError = if (remoteCommitMayHaveCompleted) {

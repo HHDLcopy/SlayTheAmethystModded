@@ -1574,6 +1574,7 @@
     <string name="main_steam_cloud_action_retry_auto">重试（%1$d 秒）</string>
     <string name="main_steam_cloud_action_cancel_upload">取消上传</string>
     <string name="main_steam_cloud_action_background_upload">后台上传</string>
+    <string name="main_steam_cloud_action_background_start">后台启动游戏</string>
     <string name="main_steam_cloud_action_start_without_sync">直接开始游戏</string>
     <string name="main_steam_cloud_launch_warning_title">跳过云同步并开始游戏？</string>
     <string name="main_steam_cloud_launch_warning_message">Steam Cloud 同步失败，无法确认云端是否有更新进度。现在开始游戏会使用当前本地存档，云存档可能会在下次成功同步前保持不同步。</string>
@@ -1618,6 +1619,8 @@
     <string name="main_steam_cloud_conflict_files_dialog_kind_baseline_required">无基线</string>
     <string name="main_steam_cloud_conflict_files_dialog_kind_both_changed">双端变更</string>
     <string name="main_steam_cloud_background_upload_hint">现在直接开始游戏。已冻结的存档快照会在后台继续上传到 Steam Cloud。</string>
+    <string name="main_steam_cloud_background_upload_failed_cloud_conflict">后台上传失败：Steam Cloud 存档冲突，需要手动处理。</string>
+    <string name="main_steam_cloud_background_upload_failed_network">后台上传失败：网络连接故障。</string>
     <string name="main_steam_cloud_warning_unsupported_local_path">以下本地文件路径不受支持，未加入上传计划：%1$s</string>
     <string name="main_steam_cloud_warning_failed_to_map_local_file">以下本地文件无法映射到 Steam 云存档路径：%1$s</string>
     <string name="main_steam_cloud_warning_baseline_required">当前还没有已保存的 Steam 云存档同步基线。在你先完整拉取一次云存档前，双方都已存在的文件会被视为冲突。</string>

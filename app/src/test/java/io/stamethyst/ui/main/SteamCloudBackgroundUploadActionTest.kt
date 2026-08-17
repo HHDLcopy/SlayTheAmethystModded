@@ -120,4 +120,15 @@ class SteamCloudBackgroundUploadActionTest {
         assertFalse(shouldShowSteamCloudBackgroundUploadAction(notReady))
         assertFalse(shouldAutoLaunchAfterSteamCloudUpdate(notReady))
     }
+
+    @Test
+    fun backgroundLaunchDuringCheck_requiresFrozenSnapshot() {
+        val checking = MainScreenViewModel.SteamCloudIndicatorUi(
+            visible = true,
+            state = MainScreenViewModel.SteamCloudIndicatorState.CHECKING,
+        )
+
+        assertFalse(shouldShowSteamCloudBackgroundLaunchDuringCheck(checking))
+        assertTrue(shouldShowSteamCloudBackgroundLaunchDuringCheck(checking.copy(backgroundUploadReady = true)))
+    }
 }

@@ -75,6 +75,7 @@ class RenderSurfaceManager(
     private var resyncSkipCount = 0
     private var renderRoot: FrameLayout? = null
     private var lastWindowInsets: WindowInsetsCompat? = null
+    private var lastWindowInsetsRotation: Int? = null
     private var postBootSurfaceSoftRefreshScheduled = false
     private var postBootSurfaceSoftRefreshCompleted = false
     private var postBootSurfaceSoftRefreshAttempts = 0
@@ -188,6 +189,7 @@ class RenderSurfaceManager(
         registerDisplayRotationListener()
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
             lastWindowInsets = insets
+            lastWindowInsetsRotation = resolveDisplayRotation()
             applyViewportLayout(insets)
             insets
         }
@@ -236,6 +238,8 @@ class RenderSurfaceManager(
         )
         renderRoot?.let { ViewCompat.setOnApplyWindowInsetsListener(it, null) }
         renderRoot = null
+        lastWindowInsets = null
+        lastWindowInsetsRotation = null
         disconnectBridgeSurfaceIfNeeded()
         renderHost.release()
     }
@@ -834,7 +838,16 @@ class RenderSurfaceManager(
     }
 
     private fun currentWindowInsets(): WindowInsetsCompat? {
-        return lastWindowInsets ?: renderRoot?.let { ViewCompat.getRootWindowInsets(it) }
+        return if (
+            shouldUseCachedWindowInsets(
+                cachedRotation = lastWindowInsetsRotation,
+                currentRotation = resolveDisplayRotation()
+            )
+        ) {
+            lastWindowInsets
+        } else {
+            null
+        }
     }
 
     private fun registerDisplayRotationListener() {
@@ -856,6 +869,9 @@ class RenderSurfaceManager(
             return
         }
         lastDisplayRotation = rotation
+        // Insets are expressed in window coordinates, so they must not survive a rotation.
+        lastWindowInsets = null
+        lastWindowInsetsRotation = null
         if (!::renderView.isInitialized) {
             return
         }
@@ -864,7 +880,7 @@ class RenderSurfaceManager(
             if (!::renderView.isInitialized || activity.isFinishing || activity.isDestroyed) {
                 return@post
             }
-            applyViewportLayout()
+            renderRoot?.let { ViewCompat.requestApplyInsets(it) }
             state.rememberPhysicalSize(renderView.width, renderView.height)
             forceNextBufferApply = true
             requestForegroundResync("display_rotation")
@@ -1176,6 +1192,13 @@ class RenderSurfaceManager(
 
         internal fun shouldApplyManualDisplayCutoutAvoidance(avoidDisplayCutout: Boolean): Boolean {
             return avoidDisplayCutout
+        }
+
+        internal fun shouldUseCachedWindowInsets(
+            cachedRotation: Int?,
+            currentRotation: Int
+        ): Boolean {
+            return cachedRotation == currentRotation
         }
 
         internal fun mergeViewportInsets(

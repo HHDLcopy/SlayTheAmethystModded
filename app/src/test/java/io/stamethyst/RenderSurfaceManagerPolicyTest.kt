@@ -352,6 +352,28 @@ class RenderSurfaceManagerPolicyTest {
     }
 
     @Test
+    fun shouldUseCachedWindowInsets_rejectsInsetsFromPreviousRotation() {
+        assertTrue(
+            RenderSurfaceManager.shouldUseCachedWindowInsets(
+                cachedRotation = 0,
+                currentRotation = 0
+            )
+        )
+        assertFalse(
+            RenderSurfaceManager.shouldUseCachedWindowInsets(
+                cachedRotation = 0,
+                currentRotation = 1
+            )
+        )
+        assertFalse(
+            RenderSurfaceManager.shouldUseCachedWindowInsets(
+                cachedRotation = null,
+                currentRotation = 1
+            )
+        )
+    }
+
+    @Test
     fun mergeViewportInsets_preservesIndependentGameCrops() {
         assertEquals(
             RenderViewportInsets(left = 72, top = 12, right = 96, bottom = 0),

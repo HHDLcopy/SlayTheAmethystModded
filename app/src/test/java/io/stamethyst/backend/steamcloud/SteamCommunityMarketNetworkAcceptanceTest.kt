@@ -10,6 +10,8 @@ import io.stamethyst.backend.github.WattToolkitGithubRouteStore
 import io.stamethyst.backend.github.PersistedWattToolkitGithubRoute
 import io.stamethyst.backend.github.trustWattToolkitForwardCertificates
 import io.stamethyst.backend.workshop.WorkshopBrowseParser
+import java.io.IOException
+import java.nio.file.Files
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeoutException
@@ -87,6 +89,42 @@ class SteamCommunityMarketNetworkAcceptanceTest {
         } finally {
             executor.shutdownNow()
         }
+    }
+
+    @Test
+    fun everyCurrentWattCandidate_canDownloadWorkshopBrowseContentWithoutFallback() {
+        assumeTrue(
+            "Set STS_RUN_MARKET_NETWORK_ACCEPTANCE=true to run the live market acceptance test.",
+            System.getenv(ENABLE_ENVIRONMENT_VARIABLE)?.equals("true", ignoreCase = true) == true,
+        )
+
+        val discoveredRoute = WattToolkitGithubRouteResolver(
+            routeProfile = SteamCommunityWattToolkitRouteProfile,
+            routeStore = NoOpWattToolkitGithubRouteStore,
+            // The real content request below is authoritative. Do not let discovery probes
+            // reorder the published candidates before each one is tested as the only route.
+            forwardTargetProbe = { io.stamethyst.backend.github.WattToolkitForwardTargetProbe.failed() },
+            backgroundExecutor = Executor { },
+        ).resolveRouteForHost(STEAM_COMMUNITY_HOST)
+            ?: error("Watt did not publish a Steam Community route")
+        val candidates = discoveredRoute.forwardTargets.distinct()
+        check(candidates.isNotEmpty()) { "Watt published no Steam Community forward targets" }
+
+        val results = candidates.map { preferredTarget ->
+            downloadWorkshopBrowseContentThroughOnlyTarget(
+                discoveredRoute = discoveredRoute,
+                preferredTarget = preferredTarget,
+            )
+        }
+        results.forEach(::println)
+
+        val failures = results.filterNot(MarketCandidateResult::isSuccessful)
+        assertTrue(
+            "Every Watt candidate must download valid Steam Workshop browse content without " +
+                "using another Watt candidate or the official route. Failures: " +
+                failures.joinToString(),
+            failures.isEmpty(),
+        )
     }
 
     private fun probeCandidateAsPreferredRoute(
@@ -168,7 +206,110 @@ class SteamCommunityMarketNetworkAcceptanceTest {
                 )
             }
         } catch (error: Exception) {
-            MarketCandidateResult(
+            return MarketCandidateResult(
+                preferredTarget = preferredTarget,
+                statusCode = null,
+                validWorkshopPage = false,
+                elapsedMs = elapsedMs(startedAtNs),
+                failure = "${error::class.simpleName}: ${error.message}",
+            )
+        }
+    }
+
+    private fun downloadWorkshopBrowseContentThroughOnlyTarget(
+        discoveredRoute: WattToolkitGithubRoute,
+        preferredTarget: String,
+    ): MarketCandidateResult {
+        val startedAtNs = System.nanoTime()
+        println("Steam market acceptance browseDownloadStart preferredTarget=$preferredTarget")
+        val route = discoveredRoute.copy(
+            // A single target makes this a node capability test. If it fails, the test must not
+            // turn that failure into a false pass by falling through to another Watt node.
+            forwardTargets = listOf(preferredTarget),
+            isOfficial = false,
+        )
+        val store = object : WattToolkitGithubRouteStore {
+            override fun load(): PersistedWattToolkitGithubRoute =
+                PersistedWattToolkitGithubRoute(route = route, cachedAtMs = System.currentTimeMillis())
+
+            override fun save(route: PersistedWattToolkitGithubRoute) = Unit
+
+            override fun clear() = Unit
+        }
+        val resolver = WattToolkitGithubRouteResolver(
+            routeProfile = SteamCommunityWattToolkitRouteProfile,
+            routeStore = store,
+            // The real GET is the health check for this acceptance case.
+            forwardTargetProbe = { io.stamethyst.backend.github.WattToolkitForwardTargetProbe.failed() },
+            backgroundExecutor = Executor { },
+        )
+        try {
+            val forwardDns = WattToolkitForwardDns()
+            val unsafeHostProvider: (String) -> Boolean = resolver::allowsUnsafeHostnameBypass
+            val directClient = OkHttpClient.Builder()
+                .connectTimeout(PER_REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                .readTimeout(PER_REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                .writeTimeout(PER_REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                .callTimeout(PER_REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                .retryOnConnectionFailure(false)
+                .hostnameVerifier(
+                    GithubDirectHostnameVerifier(
+                        unsafeHostBypassProvider = unsafeHostProvider,
+                    ),
+                )
+                .dns(forwardDns)
+                .trustWattToolkitForwardCertificates(unsafeHostProvider)
+                .followRedirects(false)
+                .followSslRedirects(false)
+                .protocols(listOf(Protocol.HTTP_1_1))
+                .build()
+            val client = OkHttpClient.Builder()
+                .connectTimeout(PER_REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                .readTimeout(PER_REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                .writeTimeout(PER_REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                .callTimeout(PER_REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                .retryOnConnectionFailure(false)
+                .addInterceptor(
+                    ExperimentalGithubDirectAccessInterceptor(
+                        routeResolvers = listOf(resolver),
+                        directCallFactory = directClient,
+                        forwardDns = forwardDns,
+                    ),
+                )
+                // The official path is deliberately disabled. A successful result must come from
+                // the candidate being tested, not from the origin after the candidate fails.
+                .addInterceptor { throw IOException("official route disabled for candidate test") }
+                .build()
+
+            val outputFile = Files.createTempFile("steam-market-candidate-", ".html").toFile()
+            return try {
+                client.newCall(
+                    Request.Builder()
+                        .url(WORKSHOP_BROWSE_URL)
+                        .header("Accept-Language", "en-US,en;q=0.9")
+                        .header("User-Agent", USER_AGENT)
+                        .get()
+                        .build(),
+                ).execute().use { response ->
+                    response.body.byteStream().use { input ->
+                        outputFile.outputStream().use { output -> input.copyTo(output) }
+                    }
+                    val body = outputFile.readText()
+                    MarketCandidateResult(
+                        preferredTarget = preferredTarget,
+                        statusCode = response.code,
+                        validWorkshopPage = response.isSuccessful &&
+                            outputFile.length() > 0L &&
+                            body.isValidWorkshopBrowsePage(),
+                        elapsedMs = elapsedMs(startedAtNs),
+                        failure = null,
+                    )
+                }
+            } finally {
+                outputFile.delete()
+            }
+        } catch (error: Exception) {
+            return MarketCandidateResult(
                 preferredTarget = preferredTarget,
                 statusCode = null,
                 validWorkshopPage = false,

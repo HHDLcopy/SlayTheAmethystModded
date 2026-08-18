@@ -2,6 +2,7 @@ package io.stamethyst.backend.steamcloud
 
 import io.stamethyst.backend.github.ExperimentalGithubDirectAccessRuntime
 import io.stamethyst.backend.github.ExperimentalGithubDirectAccessInterceptor
+import io.stamethyst.backend.github.CredentialSafeRedirectInterceptor
 import io.stamethyst.backend.github.GithubDirectHostnameVerifier
 import io.stamethyst.backend.github.PersistedWattToolkitGithubRoute
 import io.stamethyst.backend.github.WattToolkitForwardDns
@@ -1036,6 +1037,114 @@ class SteamCloudAcceleratedHttpTest {
     }
 
     @Test
+    fun interceptor_remembersFailedWorkshopTargetAndSkipsItOnLaterDownload() {
+        val badForwardServer = MockWebServer()
+        val goodForwardServer = MockWebServer()
+        badForwardServer.start()
+        goodForwardServer.start()
+        try {
+            val badTarget = "http://bad-community.test:${badForwardServer.port}"
+            val goodTarget = "http://good-community.test:${goodForwardServer.port}"
+            val routePayload = """
+                {
+                  "🦓": [
+                    {
+                      "Items": [
+                        {
+                          "MatchDomainNames": "steamcommunity.com;www.steamcommunity.com",
+                          "ListenDomainNames": "steamcommunity.com;www.steamcommunity.com",
+                          "ForwardDomainNames": "$badTarget;$goodTarget",
+                          "ProxyType": 0,
+                          "IgnoreSSLCertVerification": true,
+                          "Checked": true
+                        }
+                      ]
+                    }
+                  ]
+                }
+            """.trimIndent()
+            apiServer.enqueue(MockResponse.Builder().code(200).body(routePayload).build())
+            apiServer.enqueue(MockResponse.Builder().code(200).body(routePayload).build())
+            badForwardServer.enqueue(MockResponse.Builder().code(403).body("bad-route").build())
+            goodForwardServer.enqueue(MockResponse.Builder().code(200).body("first-download").build())
+            goodForwardServer.enqueue(MockResponse.Builder().code(200).body("second-download").build())
+
+            val routeStore = object : WattToolkitGithubRouteStore {
+                var persisted: PersistedWattToolkitGithubRoute? = PersistedWattToolkitGithubRoute(
+                    route = WattToolkitGithubRoute(
+                        logicalHosts = setOf("steamcommunity.com", "www.steamcommunity.com"),
+                        forwardTargets = listOf(badTarget, goodTarget),
+                    ),
+                    cachedAtMs = 1_000L,
+                )
+
+                override fun load(): PersistedWattToolkitGithubRoute? = persisted
+
+                override fun save(route: PersistedWattToolkitGithubRoute) {
+                    persisted = route
+                }
+
+                override fun clear() {
+                    persisted = null
+                }
+            }
+            val dns = Dns { listOf(InetAddress.getByName("127.0.0.1")) }
+            val resolver = WattToolkitGithubRouteResolver(
+                routeProfile = SteamCommunityWattToolkitRouteProfile,
+                client = OkHttpClient.Builder().dns(dns).build(),
+                projectGroupsUrl = apiServer.url("/accelerator/projectgroups"),
+                routeStore = routeStore,
+                nowProvider = { 2_000L },
+                forwardTargetProbe = { target ->
+                    if (target == goodTarget) {
+                        WattToolkitForwardTargetProbe(successes = 1, attempts = 1, latencyMs = 1L)
+                    } else {
+                        WattToolkitForwardTargetProbe.failed()
+                    }
+                },
+                officialTargetProbe = { _, _ -> WattToolkitForwardTargetProbe.failed() },
+                backgroundExecutor = Executor { },
+            )
+            val directClient = OkHttpClient.Builder()
+                .dns(dns)
+                .retryOnConnectionFailure(false)
+                .followRedirects(false)
+                .followSslRedirects(false)
+                .build()
+            val client = OkHttpClient.Builder()
+                .dns(dns)
+                .retryOnConnectionFailure(false)
+                .addInterceptor(
+                    ExperimentalGithubDirectAccessInterceptor(
+                        routeResolvers = listOf(resolver),
+                        directCallFactory = directClient,
+                    ),
+                )
+                .build()
+            val request = Request.Builder()
+                .url("https://steamcommunity.com/workshop/browse/?appid=646570")
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                assertEquals(200, response.code)
+                assertEquals("first-download", response.body.string())
+            }
+            client.newCall(request).execute().use { response ->
+                assertEquals(200, response.code)
+                assertEquals("second-download", response.body.string())
+            }
+
+            assertEquals(1, badForwardServer.requestCount)
+            assertEquals(2, goodForwardServer.requestCount)
+            assertEquals(1, apiServer.requestCount)
+            assertEquals(goodTarget, routeStore.persisted!!.route.forwardTargets.first())
+        } finally {
+            badForwardServer.close()
+            goodForwardServer.close()
+        }
+    }
+
+    @Test
     fun interceptor_concurrentWorkshopRequests_probeEveryServerAndAvoidFailed403Route() {
         val badForwardServer = MockWebServer()
         val goodForwardServer = MockWebServer()
@@ -1276,6 +1385,164 @@ class SteamCloudAcceleratedHttpTest {
         assertEquals("/accelerator/projectgroups", apiServer.takeRequest(5, TimeUnit.SECONDS)?.url?.encodedPath)
         assertEquals("/depot/646571/manifest", steamContentForwardServer.takeRequest(5, TimeUnit.SECONDS)?.url?.encodedPath)
         assertEquals("/manifest", steamStoreForwardServer.takeRequest(5, TimeUnit.SECONDS)?.url?.encodedPath)
+    }
+
+    @Test
+    fun steamPipeCdnRedirect_allowsHttpSteamContentDepotChunkDownload() {
+        steamContentForwardServer.enqueue(
+            MockResponse.Builder()
+                .code(302)
+                .addHeader(
+                    "Location",
+                    "http://cache1-steamcontent.test.steamcontent.com:${steamStoreForwardServer.port}/depot/646570/chunk/abcdef",
+                )
+                .build(),
+        )
+        steamStoreForwardServer.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body("chunk-bytes")
+                .build(),
+        )
+
+        val dns = Dns { listOf(InetAddress.getByName("127.0.0.1")) }
+        val client = OkHttpClient.Builder()
+            .dns(dns)
+            .followRedirects(false)
+            .followSslRedirects(false)
+            .addHttpsOnlyTransport(::allowsSteamContentCdnHttp)
+            .addInterceptor(
+                CredentialSafeRedirectInterceptor(
+                    requireHttps = true,
+                    allowInsecureUrl = ::allowsSteamContentCdnHttp,
+                ),
+            )
+            .build()
+
+        client.newCall(
+            Request.Builder()
+                .url("http://st.dl.eccdnx.com:${steamContentForwardServer.port}/depot/646570/chunk/abcdef")
+                .build(),
+        ).execute().use { response ->
+            assertEquals(200, response.code)
+            assertEquals("cache1-steamcontent.test.steamcontent.com", response.request.url.host)
+            assertEquals("chunk-bytes", response.body.string())
+        }
+
+        assertEquals("/depot/646570/chunk/abcdef", steamContentForwardServer.takeRequest().url.encodedPath)
+        assertEquals("/depot/646570/chunk/abcdef", steamStoreForwardServer.takeRequest().url.encodedPath)
+    }
+
+    @Test
+    fun interceptor_remembersFailedSteamPipeCdnTargetAndSkipsItOnLaterChunkDownload() {
+        val badForwardServer = MockWebServer()
+        val goodForwardServer = MockWebServer()
+        badForwardServer.start()
+        goodForwardServer.start()
+        try {
+            val badTarget = "http://bad-cdn.test:${badForwardServer.port}"
+            val goodTarget = "http://good-cdn.test:${goodForwardServer.port}"
+            val routePayload = """
+                {
+                  "🦓": [
+                    {
+                      "Items": [
+                        {
+                          "MatchDomainNames": "st.dl.eccdnx.com;xz.pphimalayanrt.com;dl.steam.clngaa.com;files.steam.nsclouds.cn",
+                          "ListenDomainNames": "st.dl.eccdnx.com;xz.pphimalayanrt.com;dl.steam.clngaa.com;files.steam.nsclouds.cn",
+                          "ForwardDomainNames": "$badTarget;$goodTarget",
+                          "ProxyType": 1,
+                          "IgnoreSSLCertVerification": true,
+                          "Checked": false
+                        }
+                      ]
+                    }
+                  ]
+                }
+            """.trimIndent()
+            apiServer.enqueue(MockResponse.Builder().code(200).body(routePayload).build())
+            badForwardServer.enqueue(MockResponse.Builder().code(404).body("bad-cdn").build())
+            goodForwardServer.enqueue(MockResponse.Builder().code(200).body("first-chunk").build())
+            goodForwardServer.enqueue(MockResponse.Builder().code(200).body("second-chunk").build())
+
+            val routeStore = object : WattToolkitGithubRouteStore {
+                var persisted: PersistedWattToolkitGithubRoute? = PersistedWattToolkitGithubRoute(
+                    route = WattToolkitGithubRoute(
+                        logicalHosts = setOf(
+                            "st.dl.eccdnx.com",
+                            "xz.pphimalayanrt.com",
+                            "dl.steam.clngaa.com",
+                            "files.steam.nsclouds.cn",
+                        ),
+                        forwardTargets = listOf(badTarget, goodTarget),
+                    ),
+                    cachedAtMs = 1_000L,
+                )
+
+                override fun load(): PersistedWattToolkitGithubRoute? = persisted
+
+                override fun save(route: PersistedWattToolkitGithubRoute) {
+                    persisted = route
+                }
+
+                override fun clear() {
+                    persisted = null
+                }
+            }
+            val dns = Dns { listOf(InetAddress.getByName("127.0.0.1")) }
+            val resolver = WattToolkitGithubRouteResolver(
+                routeProfile = SteamContentCdnWattToolkitRouteProfile,
+                client = OkHttpClient.Builder().dns(dns).build(),
+                projectGroupsUrl = apiServer.url("/accelerator/projectgroups"),
+                routeStore = routeStore,
+                nowProvider = { 2_000L },
+                forwardTargetProbe = { target ->
+                    if (target == goodTarget) {
+                        WattToolkitForwardTargetProbe(successes = 1, attempts = 1, latencyMs = 1L)
+                    } else {
+                        WattToolkitForwardTargetProbe.failed()
+                    }
+                },
+                officialTargetProbe = { _, _ -> WattToolkitForwardTargetProbe.failed() },
+                backgroundExecutor = Executor { },
+            )
+            val directClient = OkHttpClient.Builder()
+                .dns(dns)
+                .retryOnConnectionFailure(false)
+                .followRedirects(false)
+                .followSslRedirects(false)
+                .build()
+            val client = OkHttpClient.Builder()
+                .dns(dns)
+                .retryOnConnectionFailure(false)
+                .addInterceptor(
+                    ExperimentalGithubDirectAccessInterceptor(
+                        routeResolvers = listOf(resolver),
+                        directCallFactory = directClient,
+                    ),
+                )
+                .build()
+            val request = Request.Builder()
+                .url("https://st.dl.eccdnx.com/depot/646570/chunk/abcdef")
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                assertEquals(200, response.code)
+                assertEquals("first-chunk", response.body.string())
+            }
+            client.newCall(request).execute().use { response ->
+                assertEquals(200, response.code)
+                assertEquals("second-chunk", response.body.string())
+            }
+
+            assertEquals(1, badForwardServer.requestCount)
+            assertEquals(2, goodForwardServer.requestCount)
+            assertEquals(1, apiServer.requestCount)
+            assertEquals(goodTarget, routeStore.persisted!!.route.forwardTargets.first())
+        } finally {
+            badForwardServer.close()
+            goodForwardServer.close()
+        }
     }
 
     @Test

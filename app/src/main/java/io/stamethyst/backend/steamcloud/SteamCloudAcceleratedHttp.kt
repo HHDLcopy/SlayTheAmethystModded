@@ -120,7 +120,13 @@ internal val SteamContentCdnWattToolkitRouteProfile = WattToolkitRouteProfile(
  * public depot manifests and chunks; Steam web sessions and account endpoints remain HTTPS-only.
  */
 internal fun allowsSteamContentCdnHttp(url: HttpUrl): Boolean =
-    !url.isHttps && url.host.lowercase(Locale.ROOT) in SteamContentCdnWattToolkitRouteProfile.supportedHosts
+    !url.isHttps &&
+        url.encodedPath.startsWith("/depot/") &&
+        url.host.lowercase(Locale.ROOT).let { host ->
+            host in SteamContentCdnWattToolkitRouteProfile.supportedHosts ||
+                host == "steamcontent.com" ||
+                host.endsWith(".steamcontent.com")
+        }
 
 internal val SteamCmWattToolkitRouteProfile = WattToolkitRouteProfile(
     name = "steam-cm",

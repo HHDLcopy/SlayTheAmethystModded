@@ -100,6 +100,8 @@ internal const val STS_PATCH_LWJGL_FRAME_PACER_SCHEDULE_CLASS =
     "com/badlogic/gdx/backends/lwjgl/LwjglFramePacerSchedule.class"
 internal const val STS_PATCH_FRAME_RING_BUFFER_CLASS =
     "com/badlogic/gdx/backends/lwjgl/FrameRingBuffer.class"
+internal const val STS_PATCH_FRAME_RING_BUFFER_PREFIX =
+    "com/badlogic/gdx/backends/lwjgl/FrameRingBuffer$"
 internal const val STS_PATCH_SPRITE_BATCH_CLASS =
     "com/badlogic/gdx/graphics/g2d/SpriteBatch.class"
 internal const val STS_PATCH_PIXEL_SCALE_CLASS =

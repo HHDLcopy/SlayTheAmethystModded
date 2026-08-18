@@ -401,7 +401,11 @@ fun LauncherContent(
         if (refreshPlan.shouldRefreshMain) {
             mainViewModel.refresh(activity)
             if (refreshPlan.shouldForceSyncIndicator) {
-                mainViewModel.syncSteamCloudIndicatorIfNeeded(activity, force = true)
+                mainViewModel.syncSteamCloudIndicatorIfNeeded(
+                    host = activity,
+                    force = true,
+                    userInitiated = false,
+                )
             }
         }
     }

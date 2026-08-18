@@ -1618,7 +1618,7 @@
     <string name="main_steam_cloud_conflict_files_dialog_title">冲突文件列表</string>
     <string name="main_steam_cloud_conflict_files_dialog_kind_baseline_required">无基线</string>
     <string name="main_steam_cloud_conflict_files_dialog_kind_both_changed">双端变更</string>
-    <string name="main_steam_cloud_background_upload_hint">现在直接开始游戏。已冻结的存档快照会在后台继续上传到 Steam Cloud。</string>
+    <string name="main_steam_cloud_background_upload_hint">现在直接开始游戏。存档会在后台继续上传到 Steam Cloud。</string>
     <string name="main_steam_cloud_background_upload_failed_cloud_conflict">后台上传失败：Steam Cloud 存档冲突，需要手动处理。</string>
     <string name="main_steam_cloud_background_upload_failed_network">后台上传失败：网络连接故障。</string>
     <string name="main_steam_cloud_warning_unsupported_local_path">以下本地文件路径不受支持，未加入上传计划：%1$s</string>

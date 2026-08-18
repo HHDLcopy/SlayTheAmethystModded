@@ -26,6 +26,20 @@ class SteamCloudSyncProcessServiceTest {
     }
 
     @Test
+    fun replacementStartReportsTheRunningOperationPhase() {
+        assertTrue(
+            SteamCloudSyncProcessService.replacementResultCodeFor(
+                SteamCloudServiceOperationPhase.CHECKING,
+            ) == SteamCloudSyncProcessService.RESULT_CHECKING,
+        )
+        assertTrue(
+            SteamCloudSyncProcessService.replacementResultCodeFor(
+                SteamCloudServiceOperationPhase.SYNCING,
+            ) == SteamCloudSyncProcessService.RESULT_SYNC_STARTED,
+        )
+    }
+
+    @Test
     fun liveSaveLeaseContention_isDeferredInsteadOfReportedAsSyncFailure() {
         assertTrue(
             SteamCloudSyncProcessService.shouldDeferForLiveSaveLease(

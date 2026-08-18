@@ -24,6 +24,13 @@ import io.stamethyst.config.RuntimePaths
 import java.io.IOException
 import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
+
+internal enum class SteamCloudServiceOperationPhase {
+    IDLE,
+    CHECKING,
+    SYNCING,
+}
 
 class SteamCloudSyncProcessService : Service() {
     companion object {
@@ -38,6 +45,7 @@ class SteamCloudSyncProcessService : Service() {
 
         const val EXTRA_RESULT_RECEIVER = "io.stamethyst.extra.STEAM_CLOUD_RESULT_RECEIVER"
         const val EXTRA_EVENT_RESULT_CODE = "io.stamethyst.extra.STEAM_CLOUD_EVENT_RESULT_CODE"
+        const val EXTRA_EVENT_SEQUENCE = "io.stamethyst.extra.STEAM_CLOUD_EVENT_SEQUENCE"
         const val EXTRA_USER_INITIATED = "io.stamethyst.extra.STEAM_CLOUD_USER_INITIATED"
         const val EXTRA_ALLOW_BACKGROUND_UPLOAD = "io.stamethyst.extra.STEAM_CLOUD_ALLOW_BACKGROUND_UPLOAD"
         const val EXTRA_PLAN = "io.stamethyst.extra.STEAM_CLOUD_PLAN"
@@ -76,6 +84,7 @@ class SteamCloudSyncProcessService : Service() {
 
         @Volatile
         private var running = false
+        private val eventSequence = AtomicLong(0L)
 
         fun isRunning(): Boolean = running
 
@@ -172,12 +181,15 @@ class SteamCloudSyncProcessService : Service() {
             resultCode: Int,
             data: Bundle = Bundle.EMPTY,
         ) {
-            receiver?.send(resultCode, Bundle(data))
+            val eventData = Bundle(data).apply {
+                putLong(EXTRA_EVENT_SEQUENCE, eventSequence.incrementAndGet())
+            }
+            receiver?.send(resultCode, Bundle(eventData))
             context.sendBroadcast(
                 Intent(ACTION_SYNC_EVENT).apply {
                     `package` = context.packageName
                     putExtra(EXTRA_EVENT_RESULT_CODE, resultCode)
-                    putExtras(Bundle(data))
+                    putExtras(eventData)
                 }
             )
         }
@@ -190,6 +202,14 @@ class SteamCloudSyncProcessService : Service() {
         internal fun shouldDeferForLiveSaveLease(error: Throwable): Boolean =
             generateSequence(error) { current -> current.cause?.takeUnless { it === current } }
                 .any { it is SteamCloudLiveSaveInUseException }
+
+        internal fun replacementResultCodeFor(
+            phase: SteamCloudServiceOperationPhase,
+        ): Int = when (phase) {
+            SteamCloudServiceOperationPhase.CHECKING -> RESULT_CHECKING
+            SteamCloudServiceOperationPhase.IDLE,
+            SteamCloudServiceOperationPhase.SYNCING -> RESULT_SYNC_STARTED
+        }
     }
 
     private val cancelRequested = AtomicBoolean(false)
@@ -200,6 +220,10 @@ class SteamCloudSyncProcessService : Service() {
     private var latestStartId = 0
     @Volatile
     private var operationAuthMaterial: SteamCloudAuthStore.SavedAuthMaterial? = null
+    @Volatile
+    private var operationPhase = SteamCloudServiceOperationPhase.IDLE
+    @Volatile
+    private var operationSyncDirection: SteamCloudSyncDirection? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -244,8 +268,14 @@ class SteamCloudSyncProcessService : Service() {
                 })
                 return START_NOT_STICKY
             }
-            deliverResult(applicationContext, extractResultReceiver(safeIntent), RESULT_SYNC_STARTED, Bundle().apply {
-                putString(EXTRA_PROGRESS_MESSAGE, getString(R.string.main_steam_cloud_bar_summary_syncing))
+            val resultCode = replacementResultCodeFor(operationPhase)
+            deliverResult(applicationContext, extractResultReceiver(safeIntent), resultCode, Bundle().apply {
+                if (resultCode == RESULT_SYNC_STARTED) {
+                    putString(EXTRA_PROGRESS_MESSAGE, getString(R.string.main_steam_cloud_bar_summary_syncing))
+                    operationSyncDirection?.let { direction ->
+                        putString(EXTRA_SYNC_DIRECTION, direction.name)
+                    }
+                }
             })
             return START_REDELIVER_INTENT
         }
@@ -254,6 +284,17 @@ class SteamCloudSyncProcessService : Service() {
         backgroundLaunchRequested.set(false)
         LauncherConfig.setSteamCloudBackgroundLaunchRequested(applicationContext, false)
         running = true
+        operationPhase = when (action) {
+            ACTION_CHECK_AND_SYNC -> SteamCloudServiceOperationPhase.CHECKING
+            ACTION_USE_LOCAL,
+            ACTION_USE_CLOUD -> SteamCloudServiceOperationPhase.SYNCING
+            else -> SteamCloudServiceOperationPhase.IDLE
+        }
+        operationSyncDirection = when (action) {
+            ACTION_USE_LOCAL -> SteamCloudSyncDirection.PUSH_LOCAL_TO_CLOUD
+            ACTION_USE_CLOUD -> SteamCloudSyncDirection.PULL_CLOUD_TO_LOCAL
+            else -> null
+        }
         startForeground(NOTIFICATION_ID, buildNotification(getString(R.string.main_steam_cloud_progress_preparing_auto_sync)))
         val receiver = extractResultReceiver(safeIntent)
         val taskIntent = Intent(safeIntent)
@@ -271,6 +312,8 @@ class SteamCloudSyncProcessService : Service() {
         workerThread?.interrupt()
         workerThread = null
         running = false
+        operationPhase = SteamCloudServiceOperationPhase.IDLE
+        operationSyncDirection = null
         super.onDestroy()
     }
 
@@ -348,6 +391,8 @@ class SteamCloudSyncProcessService : Service() {
             if (workerThread === Thread.currentThread()) {
                 running = false
                 workerThread = null
+                operationPhase = SteamCloudServiceOperationPhase.IDLE
+                operationSyncDirection = null
                 stopForegroundCompat()
             }
             // A cancelled operation can finish after a later start command arrives. Stop only after
@@ -421,6 +466,8 @@ class SteamCloudSyncProcessService : Service() {
                     throw SteamCloudBackgroundLaunchConflictException()
                 }
                 val direction = resolveAutomaticSyncDirection(plan)
+                operationPhase = SteamCloudServiceOperationPhase.SYNCING
+                operationSyncDirection = direction
                 deliverResult(applicationContext, receiver, RESULT_SYNC_STARTED, Bundle().apply {
                     putString(EXTRA_SYNC_DIRECTION, direction.name)
                     putLong(EXTRA_CHECKED_AT_MS, checkedAtMs)

@@ -101,9 +101,13 @@ import io.stamethyst.backend.workshop.WorkshopDownloadProcessService
 import io.stamethyst.ui.LauncherTransientNoticeBus
 import io.stamethyst.backend.workshop.WorkshopMetadataStore
 import io.stamethyst.backend.workshop.WorkshopModCardState
+import io.stamethyst.backend.workshop.WorkshopModStateResolver
+import io.stamethyst.backend.workshop.WorkshopResolvedModStateKind
+import io.stamethyst.backend.workshop.WorkshopDownloadBlocklist
 import io.stamethyst.backend.workshop.WorkshopService
 import io.stamethyst.backend.workshop.allLocalJarPaths
 import io.stamethyst.backend.workshop.isActiveDownload
+import io.stamethyst.backend.workshop.shouldShowOnLauncherCards
 import io.stamethyst.config.BackBehavior
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
@@ -634,7 +638,11 @@ class MainScreenViewModel : ViewModel() {
         }
     }
 
-    fun syncSteamCloudIndicatorIfNeeded(host: Activity, force: Boolean = false): Boolean {
+    fun syncSteamCloudIndicatorIfNeeded(
+        host: Activity,
+        force: Boolean = false,
+        userInitiated: Boolean = force,
+    ): Boolean {
         if (uiState.busy) {
             return false
         }
@@ -655,10 +663,11 @@ class MainScreenViewModel : ViewModel() {
         if (steamCloudCheckInFlight || steamCloudSyncInFlight) {
             return false
         }
-        val lastCheckedAtMs = lastSteamCloudCheckAtMs
-        if (!force &&
-            lastCheckedAtMs != null &&
-            System.currentTimeMillis() - lastCheckedAtMs < STEAM_CLOUD_STATUS_REFRESH_INTERVAL_MS
+        if (!force && !isSteamCloudStatusRefreshDue(
+                lastCheckedAtMs = resolveRecentSteamCloudCheckAtMs(host),
+                nowMs = System.currentTimeMillis(),
+                refreshIntervalMs = STEAM_CLOUD_STATUS_REFRESH_INTERVAL_MS,
+            )
         ) {
             return false
         }
@@ -668,7 +677,7 @@ class MainScreenViewModel : ViewModel() {
         val receiver = buildSteamCloudSyncReceiver(
             host = host,
             checkSessionId = checkSessionId,
-            userInitiated = force,
+            userInitiated = userInitiated,
         )
         uiState = uiState.copy(
             steamCloudIndicator = uiState.steamCloudIndicator.copy(
@@ -676,23 +685,24 @@ class MainScreenViewModel : ViewModel() {
                 state = SteamCloudIndicatorState.CHECKING,
                 plan = null,
                 errorSummary = "",
+                failureCategory = null,
                 syncDirection = null,
                 progressMessage = "",
                 progressPercent = null,
                 progressCurrentPath = "",
+                backgroundUploadReady = false,
             )
         )
         val started = SteamCloudSyncProcessService.startCheckAndSync(
             context = host,
-            userInitiated = force,
+            userInitiated = userInitiated,
             // Freeze managed saves before planning so regular and background uploads never read
             // live files after a game JVM is allowed to take their lease.
             allowBackgroundUpload = true,
             receiver = receiver,
         )
-        if (!started) {
-            steamCloudCheckInFlight = false
-        }
+        // startCheckAndSync reports foreground-service launch rejection through the same receiver.
+        // Keep this session current so that failure event can replace CHECKING with FAILED.
         return started
     }
 
@@ -2438,6 +2448,19 @@ class MainScreenViewModel : ViewModel() {
 
     fun onRetryWorkshopDownload(host: Activity, mod: ModItemUi) {
         val workshop = mod.workshop ?: return
+        if (workshop.downloadBlocked || WorkshopDownloadBlocklist.isBlocked(workshop.publishedFileId)) {
+            // The launcher ships and manages these itself. Without this guard the retry request
+            // reaches WorkshopDownloadProcessService, gets silently cancelled by cancelBlockedTask,
+            // and the button looks broken.
+            _effects.tryEmit(
+                Effect.ShowSnackbar(
+                    UiText.StringResource(
+                        R.string.workshop_download_task_message_blocked,
+                    )
+                )
+            )
+            return
+        }
         workshopUpdateExecutor.execute {
             val store = WorkshopMetadataStore(host)
             val record = store.findByPublishedFileId(workshop.appId, workshop.publishedFileId)
@@ -3162,6 +3185,7 @@ class MainScreenViewModel : ViewModel() {
                 clearLaunchInFlightState()
                 dismissCrashRecovery()
                 showExpectedBackExitNotice()
+                syncSteamCloudAfterGameReturn(host)
                 true
             }
 
@@ -3175,6 +3199,7 @@ class MainScreenViewModel : ViewModel() {
                 suppressFutureProcessExitCrashFallback(host, launchStartedAtMs)
                 clearLaunchInFlightState()
                 dismissCrashRecovery()
+                syncSteamCloudAfterGameReturn(host)
                 true
             }
 
@@ -5492,6 +5517,24 @@ class MainScreenViewModel : ViewModel() {
         return uiState.steamCloudIndicator.copy(visible = true)
     }
 
+    private fun resolveRecentSteamCloudCheckAtMs(host: Activity): Long? {
+        lastSteamCloudCheckAtMs?.let { return it }
+        return runCatching {
+            // This snapshot is read without waiting for the operation mutex, unlike the baseline.
+            // It is used only to throttle automatic checks, never as proof that local and cloud
+            // saves are currently identical.
+            SteamCloudAuthStore.readSnapshot(host).lastManifestAtMs?.takeIf { it > 0L }
+        }.getOrNull()
+    }
+
+    private fun syncSteamCloudAfterGameReturn(host: Activity) {
+        syncSteamCloudIndicatorIfNeeded(
+            host = host,
+            force = true,
+            userInitiated = false,
+        )
+    }
+
     private fun resolveEasyTierIndicatorAvailability(host: Activity): EasyTierIndicatorUi {
         val snapshot = EasyTierSessionController.currentSnapshot(host)
         maybeQueueEasyTierKickDialog(snapshot)
@@ -5923,28 +5966,34 @@ internal fun shouldDisconnectEasyTierUiState(
         state == MainScreenViewModel.EasyTierIndicatorState.DISCONNECTING
 }
 
-private fun WorkshopDownloadTaskStatus.shouldShowLightweightWorkshopTask(): Boolean = when (this) {
-    WorkshopDownloadTaskStatus.Queued,
-    WorkshopDownloadTaskStatus.Resolving,
-    WorkshopDownloadTaskStatus.Downloading,
-    WorkshopDownloadTaskStatus.Pausing,
-    WorkshopDownloadTaskStatus.Cancelling,
-    WorkshopDownloadTaskStatus.Paused,
-    WorkshopDownloadTaskStatus.Failed -> true
-    WorkshopDownloadTaskStatus.Completed,
-    WorkshopDownloadTaskStatus.Cancelled -> false
+internal fun isSteamCloudStatusRefreshDue(
+    lastCheckedAtMs: Long?,
+    nowMs: Long,
+    refreshIntervalMs: Long,
+): Boolean {
+    if (lastCheckedAtMs == null || lastCheckedAtMs <= 0L) {
+        return true
+    }
+    return nowMs < lastCheckedAtMs || nowMs - lastCheckedAtMs >= refreshIntervalMs
 }
 
-private fun WorkshopDownloadTaskStatus.toWorkshopModStateOrNull(): WorkshopModState? = when (this) {
-    WorkshopDownloadTaskStatus.Queued,
-    WorkshopDownloadTaskStatus.Resolving,
-    WorkshopDownloadTaskStatus.Downloading,
-    WorkshopDownloadTaskStatus.Pausing,
-    WorkshopDownloadTaskStatus.Cancelling -> WorkshopModState.Downloading
-    WorkshopDownloadTaskStatus.Paused -> WorkshopModState.DownloadPaused
-    WorkshopDownloadTaskStatus.Failed -> WorkshopModState.DownloadFailed
-    WorkshopDownloadTaskStatus.Completed,
-    WorkshopDownloadTaskStatus.Cancelled -> null
+internal fun shouldAcceptSteamCloudEventSequence(
+    lastProcessedSequence: Long,
+    eventSequence: Long?,
+): Boolean = eventSequence == null || eventSequence > lastProcessedSequence
+
+private fun WorkshopDownloadTaskStatus.shouldShowLightweightWorkshopTask(): Boolean =
+    shouldShowOnLauncherCards()
+
+private fun WorkshopDownloadTaskStatus.toWorkshopModStateOrNull(): WorkshopModState? = when (
+    WorkshopModStateResolver.resolveTaskKind(this)
+) {
+    WorkshopResolvedModStateKind.Queued -> WorkshopModState.Queued
+    WorkshopResolvedModStateKind.Downloading -> WorkshopModState.Downloading
+    WorkshopResolvedModStateKind.Cancelling -> WorkshopModState.Cancelling
+    WorkshopResolvedModStateKind.DownloadPaused -> WorkshopModState.DownloadPaused
+    WorkshopResolvedModStateKind.DownloadFailed -> WorkshopModState.DownloadFailed
+    else -> null
 }
 
 private fun WorkshopDownloadTaskStatus.defaultWorkshopStatusText(): String = when (this) {
@@ -5986,6 +6035,7 @@ private fun WorkshopDownloadTaskUi.toStandaloneWorkshopModItem(): ModItemUi {
             state = state,
             statusText = message.ifBlank { status.defaultWorkshopStatusText() },
             downloadProgressPercent = progressPercent,
+            downloadBlocked = WorkshopDownloadBlocklist.isBlocked(publishedFileId),
         ),
     )
 }

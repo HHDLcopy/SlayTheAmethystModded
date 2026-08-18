@@ -3724,7 +3724,12 @@ internal fun LauncherMainRoute(
     val lifecycleOwner = LocalLifecycleOwner.current
     val uiState = viewModel.uiState
     val hasActiveWorkshopDownloads = uiState.optionalMods.any { mod ->
-        mod.workshop?.state == WorkshopModState.Downloading
+        when (mod.workshop?.state) {
+            WorkshopModState.Queued,
+            WorkshopModState.Downloading,
+            WorkshopModState.Cancelling -> true
+            else -> false
+        }
     } || WorkshopDownloadCenterStore.tasks.any { task ->
         task.status.isActiveDownload()
     }
@@ -3782,7 +3787,9 @@ internal fun LauncherMainRoute(
             }
             viewModel.refresh(hostActivity)
             viewModel.syncModSuggestionsIfNeeded(hostActivity)
-            viewModel.syncSteamCloudIndicatorIfNeeded(hostActivity, force = true)
+            // Automatic entry refreshes should respect the normal Steam Cloud cooldown so a
+            // freshly completed sync does not immediately restart on recomposition.
+            viewModel.syncSteamCloudIndicatorIfNeeded(hostActivity, force = false)
         }
     }
 
@@ -3809,7 +3816,7 @@ internal fun LauncherMainRoute(
                 if (event == Lifecycle.Event.ON_RESUME) {
                     viewModel.refresh(activity)
                     viewModel.syncModSuggestionsIfNeeded(activity)
-                    viewModel.syncSteamCloudIndicatorIfNeeded(activity, force = true)
+                    viewModel.syncSteamCloudIndicatorIfNeeded(activity, force = false)
                 }
             }
             lifecycleOwner.lifecycle.addObserver(observer)

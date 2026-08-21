@@ -97,6 +97,12 @@ fun LauncherSteamCloudGuardScreen(
         viewModel.bind(activity)
     }
 
+    LaunchedEffect(challenge?.kind) {
+        if (challenge?.kind == SteamCloudLoginChallengeKind.DEVICE_CONFIRMATION) {
+            viewModel.onAcceptSteamCloudDeviceConfirmation()
+        }
+    }
+
     LaunchedEffect(challenge, uiState.busy, uiState.steamCloudRefreshTokenConfigured) {
         if (challenge == null && !uiState.busy) {
             if (uiState.steamCloudRefreshTokenConfigured) {
@@ -217,26 +223,6 @@ fun LauncherSteamCloudGuardScreen(
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text(stringResource(R.string.settings_steam_cloud_open_steam_action))
-                            }
-                            if (challenge.deviceCodeAvailable) {
-                                Spacer(modifier = Modifier.size(16.dp))
-                                Box(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = stringResource(
-                                            R.string.settings_steam_cloud_use_device_code_action
-                                        ),
-                                        style = MaterialTheme.typography.bodyMedium.copy(
-                                            color = MaterialTheme.colorScheme.primary,
-                                            textDecoration = TextDecoration.Underline,
-                                        ),
-                                        modifier = Modifier.clickable(
-                                            onClick = viewModel::onUseSteamCloudDeviceCode,
-                                        )
-                                    )
-                                }
                             }
                         }
 
@@ -449,4 +435,3 @@ private fun steamCloudChallengeDescription(challenge: SteamCloudLoginChallenge) 
             }
     }
 }
-

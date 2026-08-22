@@ -31,6 +31,9 @@ import io.stamethyst.backend.workshop.WorkshopDownloadTaskStatus
 import io.stamethyst.backend.workshop.WorkshopInstalledModRecord
 import io.stamethyst.backend.workshop.WorkshopItemDetails
 import io.stamethyst.backend.workshop.WorkshopItemSummary
+import io.stamethyst.backend.workshop.WorkshopLoadPhase
+import io.stamethyst.backend.workshop.WorkshopLoadProgress
+import io.stamethyst.backend.workshop.WorkshopLoadProgressReporter
 import io.stamethyst.backend.workshop.WorkshopMetadataStore
 import io.stamethyst.backend.workshop.WorkshopModCategory
 import io.stamethyst.backend.workshop.WorkshopModCardState
@@ -70,6 +73,8 @@ internal class WorkshopViewModel : ViewModel() {
     private var activeTimeFilter: WorkshopBrowseTimeFilter = WorkshopBrowseTimeFilter.OneWeek
     private var activeCategory: WorkshopModCategory = WorkshopModCategory.All
     private var browseRequestGeneration = 0
+    private var progressListenerInstalled = false
+    private var activeProgressSessionId: Long = 0L
     private var refreshDownloadStateJob: Job? = null
     private val detailsCache = mutableMapOf<String, WorkshopItemDetails>()
     private val detailLoadsInFlight = mutableSetOf<String>()
@@ -78,9 +83,23 @@ internal class WorkshopViewModel : ViewModel() {
     private val downloadTaskPersistenceMutex = Mutex()
 
     override fun onCleared() {
+        WorkshopLoadProgressReporter.setListener(null)
         service?.close()
         service = null
         super.onCleared()
+    }
+
+    private fun ensureProgressListener() {
+        if (progressListenerInstalled) return
+        progressListenerInstalled = true
+        WorkshopLoadProgressReporter.setListener { progress ->
+            // Progress arrives from OkHttp/IO threads; hop to the main dispatcher because uiState is
+            // Compose snapshot state owned by the UI thread.
+            viewModelScope.launch(Dispatchers.Main.immediate) {
+                if (progress.sessionId != activeProgressSessionId) return@launch
+                uiState = uiState.copy(loadProgress = progress)
+            }
+        }
     }
 
     fun load(context: Context, initialListMode: WorkshopListMode = WorkshopListMode.Browse) {
@@ -329,6 +348,15 @@ internal class WorkshopViewModel : ViewModel() {
         activeListMode = WorkshopListMode.Browse
         val requestGeneration = ++browseRequestGeneration
         val browseStartedAtMs = SystemClock.elapsedRealtime()
+        // Paged appends load below the fold and must not reopen the header progress bar.
+        val reportProgress = !append
+        val progressSessionId = if (reportProgress) {
+            ensureProgressListener()
+            WorkshopLoadProgressReporter.beginSession().also { activeProgressSessionId = it }
+        } else {
+            null
+        }
+        currentService.beginProgressSession(progressSessionId)
         Log.i(
             WORKSHOP_PERF_TAG,
             "loadBrowsePage start gen=$requestGeneration page=$page append=$append sort=$activeSort time=$activeTimeFilter category=$activeCategory queryLen=${queryText.length}",
@@ -353,6 +381,10 @@ internal class WorkshopViewModel : ViewModel() {
                     items = if (clearItems) emptyList() else uiState.items,
                     nextPage = 1,
                     hasMorePages = true,
+                    loadProgress = WorkshopLoadProgress(
+                        sessionId = progressSessionId ?: 0L,
+                        phase = WorkshopLoadPhase.Preparing,
+                    ),
                 )
             }
             runCatching {
@@ -360,6 +392,11 @@ internal class WorkshopViewModel : ViewModel() {
                     currentService.browse(browseQuery)
                 }
             }.onSuccess { result ->
+                progressSessionId?.let { sessionId ->
+                    WorkshopLoadProgressReporter.report(sessionId, WorkshopLoadPhase.Completed)
+                    WorkshopLoadProgressReporter.endSession(sessionId)
+                }
+                currentService.beginProgressSession(null)
                 if (activeListMode != WorkshopListMode.Browse || requestGeneration != browseRequestGeneration) return@onSuccess
                 val existing = if (append) uiState.items else emptyList()
                 val merged = (existing + result.items).distinctBy { it.publishedFileId }
@@ -376,6 +413,15 @@ internal class WorkshopViewModel : ViewModel() {
                     "loadBrowsePage success gen=$requestGeneration page=$page items=${merged.size} hasNext=${result.hasNextPage} elapsedMs=${SystemClock.elapsedRealtime() - browseStartedAtMs}",
                 )
             }.onFailure { error ->
+                progressSessionId?.let { sessionId ->
+                    WorkshopLoadProgressReporter.report(
+                        sessionId = sessionId,
+                        phase = WorkshopLoadPhase.Failed,
+                        detail = error.message ?: error.javaClass.simpleName,
+                    )
+                    WorkshopLoadProgressReporter.endSession(sessionId)
+                }
+                currentService.beginProgressSession(null)
                 WorkshopBrowseFailureLogStore.writeFailure(
                     context = context,
                     query = browseQuery,
@@ -1772,6 +1818,7 @@ internal class WorkshopViewModel : ViewModel() {
 
 internal data class WorkshopUiState(
     val browseLoading: Boolean = false,
+    val loadProgress: WorkshopLoadProgress? = null,
     val loadingMore: Boolean = false,
     val nextPage: Int = 1,
     val hasMorePages: Boolean = true,

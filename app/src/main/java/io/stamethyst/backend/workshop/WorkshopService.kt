@@ -123,11 +123,28 @@ internal class WorkshopService(
 
     fun authSnapshot(): AuthSnapshot = SteamCloudAuthStore.readSnapshot(context)
 
+    /**
+     * Progress session that stage reports are attributed to, or null when nobody is listening.
+     *
+     * The browse pipeline is a plain suspend chain with no progress parameter, so threading a session
+     * id through every private helper would touch unrelated call sites. Keeping it on the instance is
+     * safe because a [WorkshopService] serves one screen and the market runs one browse at a time.
+     */
+    @Volatile
+    private var progressSessionId: Long? = null
+
+    fun beginProgressSession(sessionId: Long?) {
+        progressSessionId = sessionId
+    }
+
     suspend fun browse(query: WorkshopBrowseQuery): WorkshopBrowseResult = withContext(Dispatchers.IO) {
         val browseStartedAtMs = SystemClock.elapsedRealtime()
         val page = searchWorkshop(query)
         val searchMs = SystemClock.elapsedRealtime() - browseStartedAtMs
         val enrichStartedAtMs = SystemClock.elapsedRealtime()
+        progressSessionId?.let { sessionId ->
+            WorkshopLoadProgressReporter.report(sessionId, WorkshopLoadPhase.Enriching)
+        }
         val items = enrichBrowseMetadata(page.items).take(query.pageSize)
         val enrichMs = SystemClock.elapsedRealtime() - enrichStartedAtMs
         Log.i(
@@ -1129,6 +1146,9 @@ internal class WorkshopService(
         }
             .build()
         val httpStartedAtMs = SystemClock.elapsedRealtime()
+        progressSessionId?.let { sessionId ->
+            WorkshopLoadProgressReporter.report(sessionId, WorkshopLoadPhase.Connecting)
+        }
         var webFailure: Throwable? = null
         val html = try {
             workshopClient.newCall(
@@ -1150,6 +1170,9 @@ internal class WorkshopService(
         val webPage = html?.let { responseHtml ->
             val httpMs = SystemClock.elapsedRealtime() - httpStartedAtMs
             val parseStartedAtMs = SystemClock.elapsedRealtime()
+            progressSessionId?.let { sessionId ->
+                WorkshopLoadProgressReporter.report(sessionId, WorkshopLoadPhase.Parsing)
+            }
             val page = WorkshopBrowseParser.parsePage(responseHtml, query.page)
             val parseMs = SystemClock.elapsedRealtime() - parseStartedAtMs
             Log.i(
@@ -1205,6 +1228,11 @@ internal class WorkshopService(
 
     private suspend fun primeSteamWebSessionIfNeeded() {
         val account = runCatching { readSteamAccountSession(identity) }.getOrNull()
+        if (account != null) {
+            progressSessionId?.let { sessionId ->
+                WorkshopLoadProgressReporter.report(sessionId, WorkshopLoadPhase.Authenticating)
+            }
+        }
         runCatching {
             steamWebSession.ensurePrimed(
                 account = account,

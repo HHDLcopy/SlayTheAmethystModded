@@ -1469,6 +1469,11 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_steam_cloud_remote_only_new">Steam Cloud added this file since the last sync baseline.</string>
     <string name="settings_steam_cloud_remote_only_modified">Steam Cloud changed this file since the last sync baseline.</string>
     <string name="settings_steam_cloud_remote_only_deleted">Steam Cloud deleted this file since the last sync baseline.</string>
+    <string name="settings_steam_cloud_challenge_method_title">Choose Steam Guard verification</string>
+    <string name="settings_steam_cloud_challenge_method_desc">Choose how you want to verify this Steam login.</string>
+    <string name="settings_steam_cloud_method_steam_app_action">Approve in Steam App</string>
+    <string name="settings_steam_cloud_method_device_code_action">Use Steam Guard code</string>
+    <string name="settings_steam_cloud_method_email_code_action">Use Steam email code</string>
     <string name="settings_steam_cloud_challenge_device_confirmation_title">Approve Steam Guard confirmation</string>
     <string name="settings_steam_cloud_challenge_device_code_title">Enter Steam Guard 2FA code</string>
     <string name="settings_steam_cloud_challenge_device_code_retry_title">Enter a new Steam Guard 2FA code</string>

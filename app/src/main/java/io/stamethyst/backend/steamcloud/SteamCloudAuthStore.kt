@@ -45,6 +45,11 @@ internal object SteamCloudAuthStore {
         val credentialRevision: Long,
     )
 
+    data class SavedLoginCredentials(
+        val username: String,
+        val password: String,
+    )
+
     data class AuthSnapshot(
         val accountName: String,
         val refreshTokenConfigured: Boolean,
@@ -76,6 +81,8 @@ internal object SteamCloudAuthStore {
         val credentialRevision: Long = 0L,
         val activeLoginAttemptId: String = "",
         val committedLoginAttemptId: String = "",
+        val loginUsername: String = "",
+        val loginPassword: String = "",
         val accountName: String = "",
         val refreshToken: String = "",
         val guardData: String = "",
@@ -95,6 +102,27 @@ internal object SteamCloudAuthStore {
 
     fun readAuthMaterial(context: Context): SavedAuthMaterial? =
         readStateOrNull(context)?.toAuthMaterialOrNull()
+
+    fun readSavedLoginCredentials(context: Context): SavedLoginCredentials {
+        val state = readStateOrNull(context) ?: return SavedLoginCredentials("", "")
+        return SavedLoginCredentials(
+            username = state.loginUsername.trim(),
+            password = state.loginPassword,
+        )
+    }
+
+    fun saveLoginCredentials(
+        context: Context,
+        username: String,
+        password: String,
+    ) {
+        mutateState(context) { state ->
+            state.copy(
+                loginUsername = username.trim(),
+                loginPassword = password,
+            )
+        }
+    }
 
     fun readSnapshot(context: Context): AuthSnapshot {
         val state = readStateOrNull(context) ?: StoredState()
@@ -553,6 +581,8 @@ internal object SteamCloudAuthStore {
         credentialRevision = credentialRevision,
         activeLoginAttemptId = activeLoginAttemptId,
         committedLoginAttemptId = "",
+        loginUsername = "",
+        loginPassword = "",
         accountName = "",
         refreshToken = "",
         guardData = "",

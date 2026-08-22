@@ -62,6 +62,8 @@ import io.stamethyst.backend.steamcloud.SteamGamePresenceService
 import io.stamethyst.backend.steamcloud.SteamCloudSyncBaseline
 import io.stamethyst.backend.steamcloud.SteamCloudUploadPlan
 import io.stamethyst.backend.steamcloud.reusableGuardDataForCredentials
+import top.apricityx.workshop.steam.protocol.SteamGuardChallenge
+import top.apricityx.workshop.steam.protocol.SteamGuardChallengeType
 import io.stamethyst.backend.steam.SteamStsJarDownloadPhase
 import io.stamethyst.backend.steam.SteamStsJarDownloadProgress
 import io.stamethyst.backend.steam.SteamAnonymousDepotAccessException
@@ -541,6 +543,7 @@ class SettingsScreenViewModel : ViewModel() {
     private var nativeLibraryMarketCatalog: List<NativeLibraryMarketCatalogEntry> = emptyList()
     private var pendingSteamCloudCodeFuture: CompletableFuture<String>? = null
     private var pendingSteamCloudConfirmationFuture: CompletableFuture<SteamCloudDeviceConfirmationDecision>? = null
+    private var pendingSteamCloudSelectionFuture: CompletableFuture<SteamGuardChallengeType>? = null
     private var pendingSteamCloudLoginTask: Future<*>? = null
     private var pendingSteamCloudLoginCancellationHandle: SteamCloudAuthCoordinator.CancellationHandle? = null
     private var steamCloudLoginGeneration: Long = 0L
@@ -1590,6 +1593,10 @@ class SettingsScreenViewModel : ViewModel() {
                     if (steamCloudLoginGeneration != loginGeneration) {
                         return@runOnUiThread
                     }
+                    uiState = uiState.copy(
+                        steamCloudAccountName = authResult.accountName,
+                        steamCloudRefreshTokenConfigured = true,
+                    )
                     clearPendingSteamCloudChallengeState()
                     pendingSteamCloudLoginCancellationHandle = null
                     pendingSteamCloudLoginTask = null
@@ -1694,6 +1701,26 @@ class SettingsScreenViewModel : ViewModel() {
         pendingSteamCloudLoginTask = loginTask
         executor.execute(loginTask)
         return true
+    }
+
+    internal fun readSavedSteamCloudLoginCredentials(host: Activity): SteamCloudAuthStore.SavedLoginCredentials =
+        SteamCloudAuthStore.readSavedLoginCredentials(host)
+
+    fun saveSteamCloudLoginCredentials(
+        host: Activity,
+        username: String,
+        password: String,
+    ) {
+        val normalizedUsername = username.trim()
+        executor.execute {
+            runCatching {
+                SteamCloudAuthStore.saveLoginCredentials(
+                    context = host.applicationContext,
+                    username = normalizedUsername,
+                    password = password,
+                )
+            }
+        }
     }
 
     fun onRefreshSteamCloudManifest(host: Activity) {
@@ -2489,15 +2516,20 @@ class SettingsScreenViewModel : ViewModel() {
     fun onAcceptSteamCloudDeviceConfirmation() {
         val future = pendingSteamCloudConfirmationFuture ?: return
         pendingSteamCloudConfirmationFuture = null
-        uiState = uiState.copy(steamCloudLoginChallenge = null)
         future.complete(SteamCloudDeviceConfirmationDecision.APPROVE_ON_TRUSTED_DEVICE)
     }
 
-    fun onUseSteamCloudDeviceCode() {
-        val future = pendingSteamCloudConfirmationFuture ?: return
-        pendingSteamCloudConfirmationFuture = null
+    fun onSelectSteamCloudLoginMethod(kind: SteamCloudLoginChallengeKind) {
+        val selectedType = when (kind) {
+            SteamCloudLoginChallengeKind.DEVICE_CONFIRMATION -> SteamGuardChallengeType.DeviceConfirmation
+            SteamCloudLoginChallengeKind.DEVICE_CODE -> SteamGuardChallengeType.DeviceCode
+            SteamCloudLoginChallengeKind.EMAIL_CODE -> SteamGuardChallengeType.EmailCode
+            SteamCloudLoginChallengeKind.METHOD_SELECTION -> return
+        }
+        val future = pendingSteamCloudSelectionFuture ?: return
+        pendingSteamCloudSelectionFuture = null
         uiState = uiState.copy(steamCloudLoginChallenge = null)
-        future.complete(SteamCloudDeviceConfirmationDecision.USE_DEVICE_CODE)
+        future.complete(selectedType)
     }
 
     fun onCancelSteamCloudChallenge(host: Activity? = null) {
@@ -5726,6 +5758,29 @@ class SettingsScreenViewModel : ViewModel() {
         loginGeneration: Long,
     ): SteamCloudAuthCoordinator.AuthPrompt {
         return object : SteamCloudAuthCoordinator.AuthPrompt {
+            override fun getChallengeSelection(
+                challenges: List<SteamGuardChallenge>,
+            ): CompletableFuture<SteamGuardChallengeType> {
+                val future = CompletableFuture<SteamGuardChallengeType>()
+                host.runOnUiThread {
+                    if (!isActiveSteamCloudLogin(cancellationHandle, loginGeneration)) {
+                        future.completeExceptionally(
+                            CancellationException("Steam Cloud login cancelled by user.")
+                        )
+                        return@runOnUiThread
+                    }
+                    cancelPendingSteamCloudChallenge("Steam Cloud method selection replaced.", clearState = false)
+                    pendingSteamCloudSelectionFuture = future
+                    uiState = uiState.copy(
+                        steamCloudLoginChallenge = SteamCloudLoginChallenge(
+                            kind = SteamCloudLoginChallengeKind.METHOD_SELECTION,
+                            availableKinds = challenges.mapNotNull(::toSteamCloudLoginChallengeKind).toSet(),
+                        )
+                    )
+                }
+                return future
+            }
+
             override fun getDeviceCode(previousCodeWasIncorrect: Boolean): CompletableFuture<String> {
                 val future = CompletableFuture<String>()
                 host.runOnUiThread {
@@ -5797,9 +5852,19 @@ class SettingsScreenViewModel : ViewModel() {
         }
     }
 
+    private fun toSteamCloudLoginChallengeKind(
+        challenge: SteamGuardChallenge,
+    ): SteamCloudLoginChallengeKind? = when (challenge.type) {
+        SteamGuardChallengeType.DeviceConfirmation -> SteamCloudLoginChallengeKind.DEVICE_CONFIRMATION
+        SteamGuardChallengeType.DeviceCode -> SteamCloudLoginChallengeKind.DEVICE_CODE
+        SteamGuardChallengeType.EmailCode -> SteamCloudLoginChallengeKind.EMAIL_CODE
+        else -> null
+    }
+
     private fun clearPendingSteamCloudChallengeState() {
         pendingSteamCloudCodeFuture = null
         pendingSteamCloudConfirmationFuture = null
+        pendingSteamCloudSelectionFuture = null
         if (uiState.steamCloudLoginChallenge != null) {
             uiState = uiState.copy(steamCloudLoginChallenge = null)
         }
@@ -5808,8 +5873,10 @@ class SettingsScreenViewModel : ViewModel() {
     private fun cancelPendingSteamCloudChallenge(reason: String, clearState: Boolean = true) {
         pendingSteamCloudCodeFuture?.completeExceptionally(CancellationException(reason))
         pendingSteamCloudConfirmationFuture?.completeExceptionally(CancellationException(reason))
+        pendingSteamCloudSelectionFuture?.completeExceptionally(CancellationException(reason))
         pendingSteamCloudCodeFuture = null
         pendingSteamCloudConfirmationFuture = null
+        pendingSteamCloudSelectionFuture = null
         if (clearState) {
             clearPendingSteamCloudChallengeState()
         }

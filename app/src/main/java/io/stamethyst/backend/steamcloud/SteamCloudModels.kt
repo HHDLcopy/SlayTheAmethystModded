@@ -14,6 +14,7 @@ enum class SteamCloudRootKind(val directoryName: String) {
 }
 
 enum class SteamCloudLoginChallengeKind {
+    METHOD_SELECTION,
     DEVICE_CONFIRMATION,
     DEVICE_CODE,
     EMAIL_CODE,
@@ -29,6 +30,7 @@ data class SteamCloudLoginChallenge(
     val emailHint: String = "",
     val previousCodeWasIncorrect: Boolean = false,
     val deviceCodeAvailable: Boolean = false,
+    val availableKinds: Set<SteamCloudLoginChallengeKind> = emptySet(),
 )
 
 @Serializable

@@ -1468,6 +1468,11 @@
     <string name="settings_steam_cloud_remote_only_new">Steam Cloud 在最近一次同步基线之后新增了这个文件。</string>
     <string name="settings_steam_cloud_remote_only_modified">Steam Cloud 在最近一次同步基线之后修改了这个文件。</string>
     <string name="settings_steam_cloud_remote_only_deleted">Steam Cloud 在最近一次同步基线之后删除了这个文件。</string>
+    <string name="settings_steam_cloud_challenge_method_title">选择 Steam Guard 验证方式</string>
+    <string name="settings_steam_cloud_challenge_method_desc">请选择这次 Steam 登录的验证方式。</string>
+    <string name="settings_steam_cloud_method_steam_app_action">在 Steam App 中批准</string>
+    <string name="settings_steam_cloud_method_device_code_action">使用 Steam Guard 验证码</string>
+    <string name="settings_steam_cloud_method_email_code_action">使用 Steam 邮箱验证码</string>
     <string name="settings_steam_cloud_challenge_device_confirmation_title">确认 Steam Guard 设备确认</string>
     <string name="settings_steam_cloud_challenge_device_code_title">输入 Steam Guard 2FA 验证码</string>
     <string name="settings_steam_cloud_challenge_device_code_retry_title">请输入新的 Steam Guard 2FA 验证码</string>

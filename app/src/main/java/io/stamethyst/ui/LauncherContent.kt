@@ -136,6 +136,7 @@ import io.stamethyst.ui.settings.core.LauncherSettingsScreen
 import io.stamethyst.ui.settings.core.LauncherSettingsWorkshopAutoImportDefaultsScreen
 import io.stamethyst.ui.settings.steamcloud.LauncherSteamCloudGuardScreen
 import io.stamethyst.ui.settings.steamcloud.LauncherSteamCloudLoginScreen
+import io.stamethyst.ui.settings.steamcloud.LauncherSteamCloudLoginMethodScreen
 import io.stamethyst.ui.settings.steamcloud.LauncherSteamCloudSaveSettingsScreen
 import io.stamethyst.ui.settings.steamcloud.LauncherSteamCloudSyncBlacklistSettingsScreen
 import io.stamethyst.ui.settings.core.SettingsEffectsHandler
@@ -849,7 +850,9 @@ fun LauncherContent(
                             LauncherSteamCloudLoginScreen(
                                 viewModel = settingsViewModel,
                                 modifier = Modifier.fillMaxSize(),
-                                challengeRoute = Route.QuickStartSteamGuard,
+                                challengeRoute = Route.QuickStartSteamMethod,
+                                guardRoute = Route.QuickStartSteamGuard,
+                                loginRoute = Route.QuickStartSteamLogin,
                                 onLoginCompleted = {
                                     navigator.resetRoot(Route.QuickStartSteamDownload)
                                 },
@@ -861,6 +864,22 @@ fun LauncherContent(
                                 viewModel = settingsViewModel,
                                 modifier = Modifier.fillMaxSize(),
                                 onLoginCompleted = ::handleSteamCloudLoginCompleted,
+                            )
+                        }
+
+                        entry<Route.SteamCloudLoginMethod> {
+                            LauncherSteamCloudLoginMethodScreen(
+                                viewModel = settingsViewModel,
+                                guardRoute = Route.SteamCloudGuard,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+
+                        entry<Route.QuickStartSteamMethod> {
+                            LauncherSteamCloudLoginMethodScreen(
+                                viewModel = settingsViewModel,
+                                guardRoute = Route.QuickStartSteamGuard,
+                                modifier = Modifier.fillMaxSize(),
                             )
                         }
 
@@ -1543,8 +1562,9 @@ private fun Route?.launcherDockRoute(): Route? {
         Route.CrashRecovery,
         is Route.WorkshopDetail,
         Route.WorkshopDownloadCenter,
-        Route.SteamCloudLogin,
-        Route.SteamCloudGuard,
+         Route.SteamCloudLogin,
+         Route.SteamCloudLoginMethod,
+         Route.SteamCloudGuard,
         Route.SteamCloudSaveSettings,
         Route.SteamCloudSyncBlacklistSettings,
         is Route.BaiduTranslationCredentials,
@@ -1554,8 +1574,9 @@ private fun Route?.launcherDockRoute(): Route? {
         Route.MobileGluesSettings,
         Route.QuickStart,
         Route.QuickStartAutoImport,
-        Route.QuickStartSteamLogin,
-        Route.QuickStartSteamGuard,
+         Route.QuickStartSteamLogin,
+         Route.QuickStartSteamMethod,
+         Route.QuickStartSteamGuard,
         Route.QuickStartSteamDownload,
         Route.QuickStartJarImport,
         Route.FirstRunSetup,

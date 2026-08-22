@@ -32,6 +32,10 @@ internal object SteamCloudAuthCoordinator {
         fun getDeviceConfirmationDecision(
             deviceCodeAvailable: Boolean,
         ): CompletableFuture<SteamCloudDeviceConfirmationDecision>
+
+        fun getChallengeSelection(
+            challenges: List<SteamGuardChallenge>,
+        ): CompletableFuture<SteamGuardChallengeType>
     }
 
     class CancellationHandle {
@@ -232,8 +236,11 @@ internal object SteamCloudAuthCoordinator {
                 val challenges = session.challenges
                 val challengeSummary = summarizeChallenges(challenges)
                 val lastPrompt = AtomicReference("<not requested>")
-                val selectedChallenge = chooseSupportedChallenge(challenges)
-                diagnosticsClient.recordProtocolAuthDiagnostic("selected_challenge=${selectedChallenge.type.name}")
+                val supportedChallenges = supportedChallengeOptions(challenges)
+                val selectedChallenge = selectChallenge(prompt, supportedChallenges)
+                diagnosticsClient.recordProtocolAuthDiagnostic(
+                    "selected_challenge=${selectedChallenge.type.name}"
+                )
                 cancellationHandle.throwIfCancellationRequested()
 
                 when (selectedChallenge.type) {
@@ -379,15 +386,35 @@ internal object SteamCloudAuthCoordinator {
             else -> challengeType.name
         }
 
-    private fun chooseSupportedChallenge(challenges: List<SteamGuardChallenge>): SteamGuardChallenge =
-        challenges.firstOrNull { challenge ->
-            challenge.type == SteamGuardChallengeType.None ||
-                challenge.type == SteamGuardChallengeType.DeviceConfirmation ||
-                challenge.type == SteamGuardChallengeType.DeviceCode ||
-                challenge.type == SteamGuardChallengeType.EmailCode
-        } ?: throw IllegalStateException(
-            "Steam 登录没有可用的受支持验证方式：${summarizeChallenges(challenges)}"
-        )
+    private fun supportedChallengeOptions(challenges: List<SteamGuardChallenge>): List<SteamGuardChallenge> =
+        challenges
+            .filter { challenge ->
+                challenge.type == SteamGuardChallengeType.None ||
+                    challenge.type == SteamGuardChallengeType.DeviceConfirmation ||
+                    challenge.type == SteamGuardChallengeType.DeviceCode ||
+                    challenge.type == SteamGuardChallengeType.EmailCode
+            }
+            .distinctBy(SteamGuardChallenge::type)
+            .let { supported ->
+                if (supported.any { it.type == SteamGuardChallengeType.None }) {
+                    listOf(SteamGuardChallenge(SteamGuardChallengeType.None))
+                } else {
+                    supported
+                }
+            }
+            .ifEmpty { listOf(SteamGuardChallenge(SteamGuardChallengeType.None)) }
+
+    private fun selectChallenge(
+        prompt: AuthPrompt,
+        challenges: List<SteamGuardChallenge>,
+    ): SteamGuardChallenge {
+        if (challenges.size == 1) {
+            return challenges.single()
+        }
+        val selectedType = prompt.getChallengeSelection(challenges).get()
+        return challenges.firstOrNull { it.type == selectedType }
+            ?: throw IllegalStateException("Steam 返回了未提供的验证方式：${selectedType.name}")
+    }
 
     private fun summarizeChallenges(challenges: List<SteamGuardChallenge>): String =
         challenges.ifEmpty { listOf(SteamGuardChallenge(SteamGuardChallengeType.Unknown)) }

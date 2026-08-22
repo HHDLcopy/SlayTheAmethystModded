@@ -2,6 +2,7 @@ package io.stamethyst.backend.mods
 
 import android.content.Context
 import io.stamethyst.backend.resources.RuntimeResourceProvider
+import io.stamethyst.backend.resources.ArthasResourcePackService
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.RuntimePaths
 import io.stamethyst.config.SpecialKeyInputMode
@@ -650,14 +651,19 @@ object ModManager {
                 )
             )
         }
-        // frame-probe is always in the launch list; it is a no-op when the ring is disabled.
-        requiredEntries.add(
-            resolveRequiredLaunchModEntry(
-                RuntimePaths.importedAmethystFrameProbeJar(context),
-                MOD_ID_AMETHYST_FRAME_PROBE,
-                "AmethystFrameProbe.jar"
+        // Frame Probe is only launched when deep performance diagnostics is active.
+        // Its SpireInitializer is inert without the frame ring, so keeping it out of the
+        // launch list avoids loading the mod, installing its hooks, and subscribing to
+        // render/update callbacks on every normal launch.
+        if (isFrameProbeEnabled(context)) {
+            requiredEntries.add(
+                resolveRequiredLaunchModEntry(
+                    RuntimePaths.importedAmethystFrameProbeJar(context),
+                    MOD_ID_AMETHYST_FRAME_PROBE,
+                    "AmethystFrameProbe.jar"
+                )
             )
-        )
+        }
 
         val optionalSelection = resolveOptionalLaunchSelection(context)
         val launchModFiles = ArrayList<File>()
@@ -729,6 +735,21 @@ object ModManager {
         }
     }
 
+    /**
+     * True when the Amethyst Frame Probe mod should be loaded into the MTS launch.
+     *
+     * This mirrors the exact condition in [io.stamethyst.backend.launch.StsLaunchSpec.buildArgs]
+     * that sets `-Damethyst.gdx.frame_ring=true`: deep performance diagnostics must be enabled
+     * and the arthas resource pack must be installed (the ring is only meaningful with it).
+     * When either is missing the mod is not enabled, so its SpireInitializer, @SpirePatch2 hooks,
+     * and render/update subscriptions never run.
+     */
+    @JvmStatic
+    fun isFrameProbeEnabled(context: Context): Boolean {
+        return LauncherConfig.isGamePerformanceDeepDiagnosticsEnabled(context) &&
+            ArthasResourcePackService.isInstalled(context)
+    }
+
     @JvmStatic
     @Throws(IOException::class)
     fun listMtsLaunchModFiles(context: Context): List<File> {
@@ -767,12 +788,14 @@ object ModManager {
                 )
             )
         }
-        launchModFiles.add(
-            resolveRequiredLaunchModFile(
-                RuntimePaths.importedAmethystFrameProbeJar(context),
-                "AmethystFrameProbe.jar"
+        if (isFrameProbeEnabled(context)) {
+            launchModFiles.add(
+                resolveRequiredLaunchModFile(
+                    RuntimePaths.importedAmethystFrameProbeJar(context),
+                    "AmethystFrameProbe.jar"
+                )
             )
-        )
+        }
         resolveOptionalLaunchSelection(context).launchEntries.forEach { entry ->
             launchModFiles.add(entry.jarFile)
         }
@@ -817,6 +840,8 @@ object ModManager {
         val enabled = when (expectedModId) {
             MOD_ID_RAM_SAVER ->
                 available && LauncherConfig.isRamSaverEnabled(context)
+            MOD_ID_AMETHYST_FRAME_PROBE ->
+                available && isFrameProbeEnabled(context)
             MOD_ID_AMETHYST_FLOATING_TOOLS ->
                 available && LauncherConfig.readSpecialKeyInputMode(context) == SpecialKeyInputMode.BUILT_IN_MOD
             else ->

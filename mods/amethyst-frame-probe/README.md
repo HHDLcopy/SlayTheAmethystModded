@@ -14,6 +14,14 @@ Enable **Deep performance diagnostics** in developer settings. Collection does n
 
 Nothing runs when `amethyst.gdx.frame_ring` is absent.
 
+## Default-enabled fix (2026-08-22)
+
+**Symptom addressed**: The mod was added to the MTS launch list unconditionally, so on every normal launch it was *enabled* — its `SpireInitializer` ran, the three `@SpirePatch2` hooks in `FrameProbePatches` were installed, and it subscribed to `PostUpdateSubscriber`/`PostRenderSubscriber` — even when deep performance diagnostics was off. The internal `FrameRingBuffer.ENABLED` check only made the probe a no-op; the mod was still loaded, instrumented, and wired into the render/update loop.
+
+**Fix**: The launcher (`ModManager.isFrameProbeEnabled`) now gates the mod behind the same effective condition that `StsLaunchSpec.buildArgs` uses to set `-Damethyst.gdx.frame_ring=true`: deep performance diagnostics enabled **and** the arthas resource pack installed. The mod is no longer added to the launch list (`buildLaunchModSnapshot`, `listMtsLaunchModFiles`) nor reported as enabled in the installed-mod list unless both hold. The internal `FrameRingBuffer.ENABLED` guard in `AmethystFrameProbe` is retained as defense-in-depth.
+
+**Patch class**: `io.stamethyst.backend.mods.ModManager.isFrameProbeEnabled` (launcher-side launch gating).
+
 ## Included fixes / components
 
 ### 1. `FrameRingBuffer` (gdx-patch layer)

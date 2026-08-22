@@ -409,6 +409,7 @@ class MainScreenViewModel : ViewModel() {
     private var steamCloudSyncSessionId = 0L
     @Volatile
     private var steamCloudSyncCancelRequested = false
+    private var lastSteamCloudEventSequence = 0L
     private var lastSteamCloudCheckAtMs: Long? = null
     private var pendingSteamCloudAutoLaunchAfterSync = false
     private var pendingSteamCloudManualBackgroundLaunch = false
@@ -4472,7 +4473,10 @@ class MainScreenViewModel : ViewModel() {
             SteamCloudSyncProcessService.RESULT_AUTO_SYNC_COMPLETED,
             SteamCloudSyncProcessService.RESULT_LOCAL_OVERRIDE_COMPLETED,
             SteamCloudSyncProcessService.RESULT_CLOUD_OVERRIDE_COMPLETED -> {
-                if (!steamCloudCheckInFlight && !steamCloudSyncInFlight) {
+                // A terminal sync event must not complete a newer check. This can happen when a
+                // duplicate broadcast from an older service operation arrives after a new check
+                // has started, so only an active sync session may consume it.
+                if (!steamCloudSyncInFlight || steamCloudSyncCancelRequested) {
                     return
                 }
                 val completedAtMs = data.steamCloudLongOrNull(
@@ -4613,6 +4617,17 @@ class MainScreenViewModel : ViewModel() {
         } else {
             null
         }
+    }
+
+    private fun acceptSteamCloudEvent(data: Bundle): Boolean {
+        val sequence = data.steamCloudLongOrNull(
+            SteamCloudSyncProcessService.EXTRA_EVENT_SEQUENCE,
+        ) ?: return true
+        if (!shouldAcceptSteamCloudEventSequence(lastSteamCloudEventSequence, sequence)) {
+            return false
+        }
+        lastSteamCloudEventSequence = sequence
+        return true
     }
 
     @Suppress("DEPRECATION")

@@ -1,6 +1,8 @@
 package io.stamethyst.backend.github
 
 import android.content.Context
+import io.stamethyst.backend.network.AcceleratedRouteEvent
+import io.stamethyst.backend.network.AcceleratedRouteEvents
 import io.stamethyst.backend.network.NetworkAccelerationPolicy
 import java.io.File
 import java.io.IOException
@@ -515,6 +517,13 @@ internal class ExperimentalGithubDirectAccessInterceptor(
                 failedForwardTargets.add(usedForwardTarget)
                 ) {
                     responseTransferred = true
+                    AcceleratedRouteEvents.emit(
+                        AcceleratedRouteEvent.ForwardTargetFailed(
+                            host = logicalRequest.url.host,
+                            target = usedForwardTarget,
+                            reason = "HTTP ${response.code}",
+                        ),
+                    )
                     response.close()
                     resolver.refreshRouteForHost(
                         host = logicalRequest.url.host,
@@ -657,17 +666,27 @@ internal class ExperimentalGithubDirectAccessInterceptor(
             ) {
                 return@forEach
             }
+            val logicalHost = logicalRequest.url.host
             try {
                 if (candidateRoute == null || candidateRoute.isOfficial) {
+                    AcceleratedRouteEvents.emit(AcceleratedRouteEvent.OfficialAttempt(logicalHost))
+                    val officialResponse = officialRequestExecutor(logicalRequest)
+                    AcceleratedRouteEvents.emit(AcceleratedRouteEvent.OfficialSucceeded(logicalHost))
                     return ForwardedExecution(
-                        response = officialRequestExecutor(logicalRequest),
+                        response = officialResponse,
                         usedForwardTarget = null,
                         usedOfficial = true,
                     )
                 }
+                AcceleratedRouteEvents.emit(
+                    AcceleratedRouteEvent.ForwardTargetAttempt(logicalHost, candidateTarget.orEmpty()),
+                )
                 val response = directCallFactory.newCall(
                     buildNetworkRequest(forwardedRequest, candidateRoute),
                 ).execute()
+                AcceleratedRouteEvents.emit(
+                    AcceleratedRouteEvent.ForwardTargetSucceeded(logicalHost, candidateTarget.orEmpty()),
+                )
                 return ForwardedExecution(
                     response = response,
                     usedForwardTarget = candidateTarget,
@@ -676,9 +695,19 @@ internal class ExperimentalGithubDirectAccessInterceptor(
             } catch (error: IOException) {
                 if (candidateTarget != null) {
                     failedForwardTargets += candidateTarget
+                    AcceleratedRouteEvents.emit(
+                        AcceleratedRouteEvent.ForwardTargetFailed(
+                            host = logicalHost,
+                            target = candidateTarget,
+                            reason = error.routeFailureReason(),
+                        ),
+                    )
                 }
                 lastError = error
                 if (candidateRoute == null || candidateRoute.isOfficial) {
+                    AcceleratedRouteEvents.emit(
+                        AcceleratedRouteEvent.OfficialFailed(logicalHost, error.routeFailureReason()),
+                    )
                     routeResolvers
                         .firstOrNull { resolver -> resolver.supports(logicalRequest.url.host) }
                         ?.markOfficialPathFailed(logicalRequest.url.host)
@@ -1103,6 +1132,7 @@ internal class WattToolkitGithubRouteResolver(
         normalizedHost: String,
         excludedForwardTargets: Set<String> = emptySet(),
     ): WattToolkitGithubRoute? {
+        AcceleratedRouteEvents.emit(AcceleratedRouteEvent.RouteDiscoveryStarted(normalizedHost))
         val fetched = runCatching(::fetchSupportedRouteWithRetries)
             .getOrNull()
             ?.takeIf { it.matchesLogicalHost(normalizedHost) }
@@ -1125,13 +1155,25 @@ internal class WattToolkitGithubRouteResolver(
                 runCatching { effectiveForwardTargetProbe(target) }
                     .getOrDefault(WattToolkitForwardTargetProbe.failed())
             }
-        return when {
+        val resolved = when {
             officialProbe.isBetterThan(forwardProbe) ->
                 (rankedForwardRoute ?: officialRouteForHost(normalizedHost)).copy(isOfficial = true)
             rankedForwardRoute != null -> rankedForwardRoute
             officialProbe.successRate > 0.0 -> officialRouteForHost(normalizedHost)
             else -> null
         }
+        if (resolved == null) {
+            AcceleratedRouteEvents.emit(AcceleratedRouteEvent.RouteDiscoveryFailed(normalizedHost))
+        } else {
+            AcceleratedRouteEvents.emit(
+                AcceleratedRouteEvent.RouteDiscovered(
+                    host = normalizedHost,
+                    forwardTargetCount = resolved.forwardTargets.size,
+                    preferOfficial = resolved.isOfficial,
+                ),
+            )
+        }
+        return resolved
     }
 
     private fun officialRouteForHost(host: String): WattToolkitGithubRoute =
@@ -1938,8 +1980,19 @@ private fun probeWattToolkitHttpTarget(
     )
 }
 
-private fun parseHosts(vararg hostGroups: String): Set<String> {
-    val hosts = LinkedHashSet<String>()
+/**
+ * Short, non-localized cause for route diagnostics.
+ *
+ * Exception messages here can be long TLS dumps, so keep only the leading clause: the progress UI
+ * shows this inline and must not turn into a wall of certificate text.
+ */
+private fun IOException.routeFailureReason(): String {
+    val rawMessage = message?.trim().orEmpty()
+    val firstLine = rawMessage.lineSequence().firstOrNull()?.trim().orEmpty()
+    return firstLine.ifEmpty { this::class.simpleName.orEmpty().ifEmpty { "I/O error" } }
+}
+
+private fun parseHosts(vararg hostGroups: String): Set<String> {    val hosts = LinkedHashSet<String>()
     hostGroups.forEach { group ->
         group.split(';').forEach { rawHost ->
             val normalized = rawHost.trim()

@@ -176,7 +176,9 @@ class SteamCommunityMarketNetworkAcceptanceTest {
             .connectTimeout(PER_REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS)
             .readTimeout(PER_REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS)
             .writeTimeout(PER_REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-            .callTimeout(PER_REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            // Leave a full request budget for the official-origin fallback after a forward hop
+            // consumes its own timeout.
+            .callTimeout(ACCEPTANCE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
             .retryOnConnectionFailure(false)
             .addInterceptor(
                 ExperimentalGithubDirectAccessInterceptor(

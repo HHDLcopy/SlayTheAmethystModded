@@ -232,17 +232,6 @@ internal fun SettingsSteamCloudSection(
     Spacer(modifier = Modifier.size(8.dp))
     SettingsSwitchItem(
         SettingsSwitchSpec(
-            checked = uiState.steamCloudWattAccelerationEnabled,
-            enabled = !uiState.busy,
-            title = stringResource(R.string.settings_steam_cloud_watt_acceleration_enabled_title),
-            description = stringResource(R.string.settings_steam_cloud_watt_acceleration_desc),
-            onCheckedChange = actions.onSteamCloudWattAccelerationChanged,
-        )
-    )
-
-    Spacer(modifier = Modifier.size(8.dp))
-    SettingsSwitchItem(
-        SettingsSwitchSpec(
             checked = uiState.steamCloudAutoLaunchAfterSyncEnabled,
             enabled = !uiState.busy,
             title = stringResource(R.string.settings_steam_cloud_auto_launch_after_sync_title),

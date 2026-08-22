@@ -21,43 +21,36 @@ internal val SettingsSearchEntries: List<SettingsSearchEntry> = listOf(
     ),
     entry(
         titleResId = R.string.settings_theme_mode_title,
-        subtitleResId = R.string.settings_theme_mode_desc,
         categoryTitleResId = R.string.settings_category_launcher_title,
         route = Route.SettingsLauncher,
     ),
     entry(
         titleResId = R.string.settings_app_icon_title,
-        subtitleResId = R.string.settings_app_icon_desc,
         categoryTitleResId = R.string.settings_category_launcher_title,
         route = Route.SettingsLauncher,
     ),
     entry(
         titleResId = R.string.settings_theme_color_title,
-        subtitleResId = R.string.settings_theme_color_desc,
         categoryTitleResId = R.string.settings_category_launcher_title,
         route = Route.SettingsLauncher,
     ),
     entry(
         titleResId = R.string.settings_chrome_background_opacity_title,
-        subtitleResId = R.string.settings_chrome_background_opacity_desc,
         categoryTitleResId = R.string.settings_category_launcher_title,
         route = Route.SettingsLauncher,
     ),
     entry(
         titleResId = R.string.settings_boot_overlay_style_title,
-        subtitleResId = R.string.settings_boot_overlay_style_desc,
         categoryTitleResId = R.string.settings_category_launcher_title,
         route = Route.SettingsLauncher,
     ),
     entry(
         titleResId = R.string.settings_boot_overlay_custom_image_title,
-        subtitleResId = R.string.settings_boot_overlay_custom_image_desc,
         categoryTitleResId = R.string.settings_category_launcher_title,
         route = Route.SettingsLauncher,
     ),
     entry(
         titleResId = R.string.settings_loading_animation_title,
-        subtitleResId = R.string.settings_loading_animation_desc,
         categoryTitleResId = R.string.settings_category_launcher_title,
         route = Route.SettingsLauncher,
     ),
@@ -78,7 +71,6 @@ internal val SettingsSearchEntries: List<SettingsSearchEntry> = listOf(
     ),
     entry(
         titleResId = R.string.settings_first_run_reopen_action,
-        subtitleResId = R.string.settings_first_run_reopen_desc,
         categoryTitleResId = R.string.settings_category_launcher_title,
         route = Route.SettingsLauncher,
     ),
@@ -113,13 +105,11 @@ internal val SettingsSearchEntries: List<SettingsSearchEntry> = listOf(
     ),
     entry(
         titleResId = R.string.settings_touch_double_click_as_right_click_enabled,
-        subtitleResId = R.string.settings_touch_double_click_as_right_click_desc,
         categoryTitleResId = R.string.settings_category_game_title,
         route = Route.SettingsGame,
     ),
     entry(
         titleResId = R.string.settings_ignore_long_press_right_click_while_playing_card_enabled,
-        subtitleResId = R.string.settings_ignore_long_press_right_click_while_playing_card_desc,
         categoryTitleResId = R.string.settings_category_game_title,
         route = Route.SettingsGame,
     ),

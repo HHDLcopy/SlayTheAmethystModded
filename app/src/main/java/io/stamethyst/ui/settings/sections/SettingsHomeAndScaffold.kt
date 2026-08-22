@@ -344,7 +344,7 @@ internal fun LauncherSettingsLauncherScreenContent(
         onGoBack = onGoBack,
     ) {
         item {
-            SettingsSectionCard(title = stringResource(R.string.settings_basic_tutorial_title)) {
+            SettingsSectionCard(title = stringResource(R.string.settings_basic_tutorial_title), iconResId = R.drawable.ic_settings_tutorial) {
                 SettingsActionListItem(
                     title = stringResource(R.string.settings_basic_tutorial_action),
                     supportingText = stringResource(R.string.settings_basic_tutorial_desc),
@@ -354,7 +354,7 @@ internal fun LauncherSettingsLauncherScreenContent(
             }
         }
         item {
-            SettingsSectionCard(title = stringResource(R.string.settings_appearance_section_title)) {
+            SettingsSectionCard(title = stringResource(R.string.settings_appearance_section_title), iconResId = R.drawable.ic_settings_appearance) {
                 SettingsAppearanceSection(
                     uiState = uiState,
                     actions = AppearanceSettingsActions(
@@ -373,7 +373,7 @@ internal fun LauncherSettingsLauncherScreenContent(
             }
         }
         item {
-            SettingsSectionCard(title = stringResource(R.string.update_section_title)) {
+            SettingsSectionCard(title = stringResource(R.string.update_section_title), iconResId = R.drawable.ic_settings_update) {
                 SettingsUpdateSection(
                     uiState = uiState,
                     actions = UpdateSettingsActions(
@@ -387,10 +387,9 @@ internal fun LauncherSettingsLauncherScreenContent(
             }
         }
         item {
-            SettingsSectionCard(title = stringResource(R.string.settings_launcher_other_section_title)) {
+            SettingsSectionCard(title = stringResource(R.string.settings_launcher_other_section_title), iconResId = R.drawable.ic_settings_other) {
                 SettingsActionListItem(
                     title = stringResource(R.string.settings_first_run_reopen_action),
-                    supportingText = stringResource(R.string.settings_first_run_reopen_desc),
                     enabled = !uiState.busy,
                     onClick = onOpenFirstRunSetup,
                 )
@@ -464,7 +463,7 @@ internal fun LauncherSettingsGameScreenContent(
         onGoBack = onGoBack,
     ) {
         item {
-            SettingsSectionCard(title = stringResource(R.string.settings_player_name_title)) {
+            SettingsSectionCard(title = stringResource(R.string.settings_player_name_title), iconResId = R.drawable.ic_settings_player) {
                 SettingsPlayerNameAction(
                     uiState = uiState,
                     onPlayerNameChanged = onPlayerNameChanged,
@@ -472,7 +471,7 @@ internal fun LauncherSettingsGameScreenContent(
             }
         }
         item {
-            SettingsSectionCard(title = stringResource(R.string.settings_section_input)) {
+            SettingsSectionCard(title = stringResource(R.string.settings_section_input), iconResId = R.drawable.ic_settings_input) {
                 SettingsInputSection(
                     uiState = uiState,
                     actions = InputSettingsActions(
@@ -494,7 +493,7 @@ internal fun LauncherSettingsGameScreenContent(
             }
         }
         item {
-            SettingsSectionCard(title = stringResource(R.string.settings_section_game_display)) {
+            SettingsSectionCard(title = stringResource(R.string.settings_section_game_display), iconResId = R.drawable.ic_settings_game_display) {
                 SettingsGameplayDisplaySection(
                     uiState = uiState,
                     actions = GameplayDisplaySettingsActions(
@@ -530,7 +529,7 @@ internal fun LauncherSettingsPerformanceScreenContent(
         onGoBack = onGoBack,
     ) {
         item {
-            SettingsSectionCard(title = stringResource(R.string.settings_section_render)) {
+            SettingsSectionCard(title = stringResource(R.string.settings_section_render), iconResId = R.drawable.ic_settings_render) {
                 SettingsPerformanceSection(
                     uiState = uiState,
                     actions = PerformanceSettingsActions(
@@ -632,6 +631,7 @@ internal fun LauncherSettingsMarketCloudScreenContent(
         item {
             SettingsSectionCard(
                 title = stringResource(R.string.settings_steam_services_presence_section_title),
+                iconResId = R.drawable.ic_settings_presence,
                 trailingAction = requiresPurchaseAction,
             ) {
                 SteamGamePresenceSection(uiState = uiState, actions = steamActions)
@@ -640,6 +640,7 @@ internal fun LauncherSettingsMarketCloudScreenContent(
         item {
             SettingsSectionCard(
                 title = stringResource(R.string.settings_steam_services_achievement_section_title),
+                iconResId = R.drawable.ic_settings_achievement,
                 trailingAction = requiresPurchaseAction,
             ) {
                 SteamAchievementSection(uiState = uiState, actions = steamActions)
@@ -648,6 +649,7 @@ internal fun LauncherSettingsMarketCloudScreenContent(
         item {
             SettingsSectionCard(
                 title = stringResource(R.string.settings_steam_cloud_title),
+                iconResId = R.drawable.ic_settings_cloud,
                 trailingAction = requiresPurchaseAction,
             ) {
                 SettingsSteamCloudSection(
@@ -657,12 +659,12 @@ internal fun LauncherSettingsMarketCloudScreenContent(
             }
         }
         item {
-            SettingsSectionCard(title = stringResource(R.string.settings_steam_services_network_section_title)) {
+            SettingsSectionCard(title = stringResource(R.string.settings_steam_services_network_section_title), iconResId = R.drawable.ic_settings_network) {
                 SteamNetworkSection(uiState = uiState, actions = steamActions)
             }
         }
         item {
-            SettingsSectionCard(title = stringResource(R.string.settings_market_section_title)) {
+            SettingsSectionCard(title = stringResource(R.string.settings_market_section_title), iconResId = R.drawable.ic_settings_market) {
                 SettingsMarketSection(
                     uiState = uiState,
                     actions = MarketSettingsActions(
@@ -789,7 +791,7 @@ internal fun LauncherSettingsFeedbackScreenContent(
             )
         }
         item {
-            SettingsSectionCard(title = stringResource(R.string.settings_section_resources_files)) {
+            SettingsSectionCard(title = stringResource(R.string.settings_section_resources_files), iconResId = R.drawable.ic_settings_resources) {
                 SettingsImportSection(
                     busy = uiState.busy,
                     onImportJar = onImportJar,

@@ -277,7 +277,6 @@ internal fun SettingsGameplayDisplaySection(
         label = stringResource(R.string.settings_keep_screen_on_timeout_title),
         valueText = keepScreenOnTimeoutDisplayName(uiState.keepScreenOnTimeoutMinutes),
         enabled = !uiState.busy,
-        supportingText = stringResource(R.string.settings_keep_screen_on_timeout_desc),
         options = uiState.keepScreenOnTimeoutMinuteOptions,
         optionLabel = { timeoutMinutes -> keepScreenOnTimeoutDisplayName(timeoutMinutes) },
         onOptionSelected = actions.onKeepScreenOnTimeoutSelected,
@@ -370,7 +369,6 @@ internal fun SettingsInputSection(
             label = stringResource(R.string.settings_card_play_optimization_title),
             valueText = uiState.cardPlayOptimizationMode.displayName(),
             enabled = !uiState.busy && uiState.touchscreenInputMode.touchscreenEnabled,
-            supportingText = uiState.cardPlayOptimizationMode.description(),
             options = CardPlayOptimizationMode.entries,
             optionLabel = { mode -> mode.displayName() },
             optionDescription = { mode -> mode.description() },
@@ -381,10 +379,20 @@ internal fun SettingsInputSection(
                 checked = uiState.touchDoubleClickAsRightClick,
                 enabled = !uiState.busy,
                 title = stringResource(R.string.settings_touch_double_click_as_right_click_enabled),
-                description = stringResource(R.string.settings_touch_double_click_as_right_click_desc),
                 onCheckedChange = actions.onTouchDoubleClickAsRightClickChanged,
             )
         )
+        if (uiState.touchDoubleClickAsRightClick) {
+            SettingsSwitchItem(
+                SettingsSwitchSpec(
+                    checked = uiState.ignoreLongPressRightClickWhilePlayingCard,
+                    enabled = !uiState.busy,
+                    title = stringResource(R.string.settings_ignore_long_press_right_click_while_playing_card_enabled),
+                    description = stringResource(R.string.settings_ignore_long_press_right_click_while_playing_card_desc),
+                    onCheckedChange = actions.onIgnoreLongPressRightClickWhilePlayingCardChanged
+                )
+            )
+        }
         SettingsFloatingMouseSection(
             uiState = uiState,
             actions = FloatingMouseSettingsActions(
@@ -426,7 +434,6 @@ internal fun SettingsInputBasicsSection(
             options = BackBehavior.entries,
             optionLabel = { behavior -> backBehaviorDisplayName(behavior) },
             onOptionSelected = actions.onBackBehaviorChanged,
-            description = stringResource(R.string.settings_back_behavior_desc),
             dialogDescription = stringResource(R.string.settings_back_behavior_desc),
         )
     )
@@ -435,24 +442,12 @@ internal fun SettingsInputBasicsSection(
         label = stringResource(R.string.settings_touchscreen_mode_title),
         valueText = uiState.touchscreenInputMode.displayName(),
         enabled = !uiState.busy,
-        supportingText = uiState.touchscreenInputMode.description(),
         options = TouchscreenInputMode.entries,
         optionLabel = { mode -> mode.displayName() },
         optionDescription = { mode -> mode.description() },
         onOptionSelected = actions.onTouchscreenInputModeChanged
     )
 
-    if (uiState.touchDoubleClickAsRightClick) {
-        SettingsSwitchItem(
-            SettingsSwitchSpec(
-                checked = uiState.ignoreLongPressRightClickWhilePlayingCard,
-                enabled = !uiState.busy,
-                title = stringResource(R.string.settings_ignore_long_press_right_click_while_playing_card_enabled),
-                description = stringResource(R.string.settings_ignore_long_press_right_click_while_playing_card_desc),
-                onCheckedChange = actions.onIgnoreLongPressRightClickWhilePlayingCardChanged
-            )
-        )
-    }
 
     SettingsSwitchItem(
         SettingsSwitchSpec(
@@ -527,7 +522,6 @@ internal fun SettingsFloatingMouseSection(
                 checked = uiState.autoSwitchLeftAfterRightClick,
                 enabled = !uiState.busy,
                 title = stringResource(R.string.settings_auto_switch_left_enabled),
-                description = stringResource(R.string.settings_auto_switch_left_desc),
                 onCheckedChange = actions.onAutoSwitchLeftAfterRightClickChanged
             )
         )

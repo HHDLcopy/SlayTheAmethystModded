@@ -11,6 +11,7 @@ import io.stamethyst.ui.settings.services.*
 import io.stamethyst.ui.settings.steamcloud.*
 
 import android.view.HapticFeedbackConstants
+import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
@@ -22,6 +23,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,6 +31,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
@@ -52,6 +55,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -120,7 +124,17 @@ internal fun SettingsSectionCard(
     title: String,
     content: @Composable () -> Unit,
 ) {
-    SettingsSectionCard(title = title, trailingAction = null, content = content)
+    SettingsSectionCard(title = title, iconResId = null, trailingAction = null, content = content)
+}
+
+
+@Composable
+internal fun SettingsSectionCard(
+    title: String,
+    @DrawableRes iconResId: Int?,
+    content: @Composable () -> Unit,
+) {
+    SettingsSectionCard(title = title, iconResId = iconResId, trailingAction = null, content = content)
 }
 
 
@@ -128,6 +142,17 @@ internal fun SettingsSectionCard(
 internal fun SettingsSectionCard(
     title: String,
     trailingAction: (@Composable () -> Unit)?,
+    content: @Composable () -> Unit,
+) {
+    SettingsSectionCard(title = title, iconResId = null, trailingAction = trailingAction, content = content)
+}
+
+
+@Composable
+internal fun SettingsSectionCard(
+    title: String,
+    @DrawableRes iconResId: Int? = null,
+    trailingAction: (@Composable () -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     Card(
@@ -148,6 +173,15 @@ internal fun SettingsSectionCard(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    if (iconResId != null) {
+                        Icon(
+                            painter = painterResource(iconResId),
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
                     Text(
                         text = title,
                         style = MaterialTheme.typography.titleMedium,
@@ -156,7 +190,21 @@ internal fun SettingsSectionCard(
                     trailingAction()
                 }
             } else {
-                Text(text = title, style = MaterialTheme.typography.titleMedium)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (iconResId != null) {
+                        Icon(
+                            painter = painterResource(iconResId),
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+                    Text(text = title, style = MaterialTheme.typography.titleMedium)
+                }
             }
             HorizontalDivider()
             content()

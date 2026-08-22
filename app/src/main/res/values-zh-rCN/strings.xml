@@ -913,8 +913,8 @@
     <string name="settings_theme_color_jibao">故障机器人</string>
     <string name="settings_theme_color_guanjie">观者</string>
     <string name="settings_theme_color_colorless">无色</string>
-    <string name="settings_chrome_background_opacity_title">Header 和 Dock 背景不透明度</string>
-    <string name="settings_chrome_background_opacity_desc">调整启动器所有页面 Header 和 Dock 玻璃背景后面的不透明度。</string>
+    <string name="settings_chrome_background_opacity_title">顶栏和底栏背景不透明度</string>
+    <string name="settings_chrome_background_opacity_desc">调整启动器所有页面顶栏和底栏玻璃背景后面的不透明度。</string>
     <string name="settings_boot_overlay_style_title">启动界面样式</string>
     <string name="settings_boot_overlay_style_desc">选择游戏启动时显示的加载界面。</string>
     <string name="settings_boot_overlay_style_dialog_title">启动界面样式</string>
@@ -2060,7 +2060,7 @@
     <string name="settings_mts_patch_cache_desc">启用后，每次启动游戏会建立缓存，只要不改变模组，即可大幅提升启动游戏的时间。模组越多，效果越明显。启用该功能后，更换模组后的第一次启动会用更多的时间以及一些存储空间。</string>
     <string name="settings_performance_overlay_enabled">性能叠层</string>
     <string name="settings_performance_overlay_disabled">性能叠层：关闭</string>
-    <string name="settings_performance_overlay_desc">控制是否在游戏中显示实时 FPS / 内存叠层，不影响深度性能诊断采集。</string>
+    <string name="settings_performance_overlay_desc">控制是否在游戏中显示实时 FPS / 内存叠层。</string>
     <string name="settings_touchscreen_enabled">触屏输入</string>
     <string name="settings_touchscreen_disabled">触屏输入：关闭</string>
     <string name="settings_touchscreen_desc">控制是否使用原生触控适配模式。关闭后会显示鼠标光标，并使用桌面版 UI。</string>

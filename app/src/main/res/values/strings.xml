@@ -914,8 +914,8 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_theme_color_jibao">Defect</string>
     <string name="settings_theme_color_guanjie">Watcher</string>
     <string name="settings_theme_color_colorless">Colorless</string>
-    <string name="settings_chrome_background_opacity_title">Header and Dock background opacity</string>
-    <string name="settings_chrome_background_opacity_desc">Adds an opaque surface behind the glass Header and Dock on every launcher page.</string>
+    <string name="settings_chrome_background_opacity_title">Top bar and bottom bar background opacity</string>
+    <string name="settings_chrome_background_opacity_desc">Adds an opaque surface behind the glass top bar and bottom bar on every launcher page.</string>
     <string name="settings_boot_overlay_style_title">Loading screen style</string>
     <string name="settings_boot_overlay_style_desc">Choose the loading screen shown while the game starts.</string>
     <string name="settings_boot_overlay_style_dialog_title">Loading screen style</string>
@@ -1762,7 +1762,7 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="settings_mts_patch_cache_desc">启用后，每次启动游戏会建立缓存，只要不改变模组，即可大幅提升启动游戏的时间。</string>
     <string name="settings_performance_overlay_enabled">Performance overlay</string>
     <string name="settings_performance_overlay_disabled">Performance overlay: Disabled</string>
-    <string name="settings_performance_overlay_desc">Shows the real-time FPS / memory overlay in game without affecting deep performance diagnostics collection.</string>
+    <string name="settings_performance_overlay_desc">Shows the real-time FPS / memory overlay in game.</string>
     <string name="settings_touchscreen_enabled">Touchscreen input</string>
     <string name="settings_touchscreen_disabled">Touchscreen input: Disabled</string>
     <string name="settings_touchscreen_desc">Controls whether the native touch adaptation mode is used. When disabled, the mouse cursor is shown and the desktop UI is used.</string>

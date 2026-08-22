@@ -56,7 +56,6 @@ internal fun SettingsUpdateSection(
                 checked = uiState.autoCheckUpdatesEnabled,
                 enabled = !uiState.busy,
                 title = stringResource(R.string.update_auto_check_enabled),
-                description = stringResource(R.string.update_auto_check_desc),
                 onCheckedChange = actions.onAutoCheckUpdatesChanged
             )
         )

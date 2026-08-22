@@ -2057,7 +2057,7 @@
     <string name="settings_mts_patch_cache_desc">啟用後，每次啟動遊戲會建立快取，只要不改變模組，即可大幅提升啟動遊戲的時間。</string>
     <string name="settings_performance_overlay_enabled">效能疊層</string>
     <string name="settings_performance_overlay_disabled">效能疊層：關閉</string>
-    <string name="settings_performance_overlay_desc">控制是否在遊戲中顯示即時 FPS / 記憶體疊層，不影響深度效能診斷採集。</string>
+    <string name="settings_performance_overlay_desc">控制是否在遊戲中顯示即時 FPS / 記憶體疊層。</string>
     <string name="settings_touchscreen_enabled">觸屏輸入</string>
     <string name="settings_touchscreen_disabled">觸屏輸入：關閉</string>
     <string name="settings_touchscreen_desc">控制是否使用原生觸控適配模式。關閉後會顯示滑鼠游標，並使用桌面版 UI。</string>

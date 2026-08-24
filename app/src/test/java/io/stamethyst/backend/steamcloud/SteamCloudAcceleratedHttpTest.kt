@@ -34,6 +34,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import top.apricityx.workshop.steam.protocol.SteamDeclaredCdnHosts
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -59,6 +60,7 @@ class SteamCloudAcceleratedHttpTest {
         steamStoreForwardServer.close()
         steamContentForwardServer.close()
         SteamCloudAcceleratedHttp.clearRuntimeCacheForTests()
+        SteamDeclaredCdnHosts.clear()
     }
 
     @Test
@@ -359,6 +361,7 @@ class SteamCloudAcceleratedHttpTest {
         val expectedHosts = setOf(
             "st.dl.eccdnx.com",
             "xz.pphimalayanrt.com",
+            "xz.sycontroller.com",
             "dl.steam.clngaa.com",
             "files.steam.nsclouds.cn",
         )
@@ -400,6 +403,50 @@ class SteamCloudAcceleratedHttpTest {
         }.exceptionOrNull()
 
         assertTrue(error is ProtocolException)
+    }
+
+    @Test
+    fun steamDeclaredCdnHost_permitsCleartextChunkRedirectForChinaEdge() {
+        val chunkPath = "/depot/646570/chunk/009626FE3E032E23093B6F03483535C8BC832434"
+        val redirectTarget = "http://edge-cdn.steamchina.test:${steamStoreForwardServer.port}$chunkPath?reqhost=ctgslb"
+        steamContentForwardServer.enqueue(
+            MockResponse.Builder().code(302).addHeader("Location", redirectTarget).build(),
+        )
+        steamContentForwardServer.enqueue(
+            MockResponse.Builder().code(302).addHeader("Location", redirectTarget).build(),
+        )
+        steamStoreForwardServer.enqueue(MockResponse.Builder().code(200).body("chunk-bytes").build())
+
+        val dns = Dns { listOf(InetAddress.getByName("127.0.0.1")) }
+        val client = OkHttpClient.Builder()
+            .dns(dns)
+            .followRedirects(false)
+            .followSslRedirects(false)
+            .addHttpsOnlyTransport(::allowsSteamContentCdnHttp)
+            .addInterceptor(
+                CredentialSafeRedirectInterceptor(
+                    requireHttps = true,
+                    allowInsecureUrl = ::allowsSteamContentCdnHttp,
+                ),
+            )
+            .build()
+
+        val request = Request.Builder()
+            .url("http://st.dl.eccdnx.com:${steamContentForwardServer.port}$chunkPath")
+            .build()
+
+        val error = runCatching { client.newCall(request).execute() }.exceptionOrNull()
+        assertTrue("expected undeclared cleartext redirect to be rejected", error is ProtocolException)
+        assertEquals("HTTPS is required for redirected request: $redirectTarget", error?.message)
+        assertEquals(0, steamStoreForwardServer.requestCount)
+
+        SteamDeclaredCdnHosts.register("edge-cdn.steamchina.test")
+
+        client.newCall(request).execute().use { response ->
+            assertEquals(200, response.code)
+            assertEquals("chunk-bytes", response.body.string())
+        }
+        assertEquals(chunkPath, steamStoreForwardServer.takeRequest().url.encodedPath)
     }
 
     @Test

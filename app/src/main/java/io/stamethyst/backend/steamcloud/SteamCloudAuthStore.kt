@@ -30,6 +30,8 @@ internal object SteamCloudAuthStore {
     private const val KEYSTORE_ALIAS = "io.stamethyst.steamcloud.auth.v1"
     private const val GCM_TAG_LENGTH_BITS = 128
     private const val TAG = "SteamCloudAuthStore"
+    private const val AUTH_STATE_READ_ATTEMPTS = 3
+    private const val AUTH_STATE_READ_RETRY_DELAY_MS = 120L
 
     private val authenticatedData = AUTH_STATE_MAGIC.toByteArray(Charsets.UTF_8)
     private val json = Json {
@@ -68,6 +70,11 @@ internal object SteamCloudAuthStore {
                 refreshTokenConfigured &&
                 isValidSteamId64(steamId64)
     }
+
+    data class AuthSnapshotRead(
+        val snapshot: AuthSnapshot,
+        val readFailed: Boolean,
+    )
 
     data class CachedWebAccessToken(
         val accessToken: String,
@@ -124,22 +131,80 @@ internal object SteamCloudAuthStore {
         }
     }
 
-    fun readSnapshot(context: Context): AuthSnapshot {
-        val state = readStateOrNull(context) ?: StoredState()
-        return AuthSnapshot(
-            accountName = state.accountName.trim(),
-            refreshTokenConfigured = state.refreshToken.isNotBlank(),
-            guardDataConfigured = state.guardData.isNotBlank(),
-            steamId64 = state.steamId64.trim(),
-            personaName = state.personaName.trim(),
-            avatarUrl = state.avatarUrl.trim(),
-            lastAuthAtMs = state.lastAuthAtMs?.takeIf { it > 0L },
-            lastManifestAtMs = state.lastManifestAtMs?.takeIf { it > 0L },
-            lastPullAtMs = state.lastPullAtMs?.takeIf { it > 0L },
-            lastPushAtMs = state.lastPushAtMs?.takeIf { it > 0L },
-            lastError = state.lastError.trim(),
-        )
+    fun readSnapshot(context: Context): AuthSnapshot =
+        readSnapshotWithStatus(context).snapshot
+
+    /**
+     * Reads the auth snapshot and reports whether every read attempt failed.
+     *
+     * A successful load always returns a state (a logged-out account reads as a
+     * blank one), so null/throwing reads only happen on transient errors such as
+     * KeyStore contention while the `:steamcloud` process rewrites the encrypted
+     * state file during a sync. Callers use [AuthSnapshotRead.readFailed] to keep
+     * the last known login state instead of flashing "not signed in".
+     */
+    fun readSnapshotWithStatus(
+        context: Context,
+        attempts: Int = AUTH_STATE_READ_ATTEMPTS,
+    ): AuthSnapshotRead {
+        var lastError: Throwable? = null
+        val attemptCount = attempts.coerceAtLeast(1)
+        repeat(attemptCount) { attempt ->
+            if (attempt > 0) {
+                try {
+                    Thread.sleep(AUTH_STATE_READ_RETRY_DELAY_MS * attempt)
+                } catch (interrupted: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    return unreadableSnapshotRead(interrupted)
+                }
+            }
+            runCatching { loadState(context) }
+                .onSuccess { state ->
+                    return AuthSnapshotRead(snapshot = state.toAuthSnapshot(), readFailed = false)
+                }
+                .onFailure { error ->
+                    lastError = error
+                }
+        }
+        val error = lastError
+        if (error != null) {
+            Log.w(TAG, "Steam Cloud auth state is unavailable; treating credentials as absent.", error)
+        }
+        return unreadableSnapshotRead(error)
     }
+
+    private fun unreadableSnapshotRead(error: Throwable?): AuthSnapshotRead =
+        AuthSnapshotRead(
+            snapshot = AuthSnapshot(
+                accountName = "",
+                refreshTokenConfigured = false,
+                guardDataConfigured = false,
+                steamId64 = "",
+                personaName = "",
+                avatarUrl = "",
+                lastAuthAtMs = null,
+                lastManifestAtMs = null,
+                lastPullAtMs = null,
+                lastPushAtMs = null,
+                lastError = error?.message ?: "",
+            ),
+            readFailed = true,
+        )
+
+    private fun StoredState.toAuthSnapshot(): AuthSnapshot =
+        AuthSnapshot(
+            accountName = accountName.trim(),
+            refreshTokenConfigured = refreshToken.isNotBlank(),
+            guardDataConfigured = guardData.isNotBlank(),
+            steamId64 = steamId64.trim(),
+            personaName = personaName.trim(),
+            avatarUrl = avatarUrl.trim(),
+            lastAuthAtMs = lastAuthAtMs?.takeIf { it > 0L },
+            lastManifestAtMs = lastManifestAtMs?.takeIf { it > 0L },
+            lastPullAtMs = lastPullAtMs?.takeIf { it > 0L },
+            lastPushAtMs = lastPushAtMs?.takeIf { it > 0L },
+            lastError = lastError.trim(),
+        )
 
     fun beginLoginAttempt(context: Context): String {
         val attemptId = UUID.randomUUID().toString()

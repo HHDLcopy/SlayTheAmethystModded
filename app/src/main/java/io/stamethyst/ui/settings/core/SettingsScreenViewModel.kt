@@ -1264,23 +1264,33 @@ class SettingsScreenViewModel : ViewModel() {
                     bundledAssetPath = "components/mods/RamSaver.jar"
                 )
                 val deviceRuntimeStatus = collectDeviceRuntimeStatus(host)
-                val steamCloudAuthSnapshot = runCatching {
-                    SteamCloudAuthStore.readSnapshot(host)
+                val previousUiState = uiState
+                val steamCloudAuthRead = runCatching {
+                    SteamCloudAuthStore.readSnapshotWithStatus(host)
                 }.getOrElse { error ->
-                    SteamCloudAuthStore.AuthSnapshot(
-                        accountName = "",
-                        refreshTokenConfigured = false,
-                        guardDataConfigured = false,
-                        steamId64 = "",
-                        personaName = "",
-                        avatarUrl = "",
-                        lastAuthAtMs = null,
-                        lastManifestAtMs = null,
-                        lastPullAtMs = null,
-                        lastPushAtMs = null,
-                        lastError = summarizeSteamCloudError(host, error)
+                    SteamCloudAuthStore.AuthSnapshotRead(
+                        snapshot = SteamCloudAuthStore.AuthSnapshot(
+                            accountName = "",
+                            refreshTokenConfigured = false,
+                            guardDataConfigured = false,
+                            steamId64 = "",
+                            personaName = "",
+                            avatarUrl = "",
+                            lastAuthAtMs = null,
+                            lastManifestAtMs = null,
+                            lastPullAtMs = null,
+                            lastPushAtMs = null,
+                            lastError = summarizeSteamCloudError(host, error)
+                        ),
+                        readFailed = true,
                     )
                 }
+                val steamCloudAuthSnapshot = steamCloudAuthRead.snapshot
+                // A failed auth-state read (e.g. KeyStore contention while the
+                // :steamcloud process syncs) is not proof of being logged out;
+                // keep the last known signed-in display instead of flashing it away.
+                val preserveSteamCloudDisplay =
+                    steamCloudAuthRead.readFailed && previousUiState.steamCloudRefreshTokenConfigured
                 val steamCloudManifestSnapshot = runCatching {
                     SteamCloudManifestStore.readSnapshot(host, steamCloudAuthSnapshot.steamId64)
                 }.getOrNull()
@@ -1301,7 +1311,8 @@ class SettingsScreenViewModel : ViewModel() {
                     }.getOrElse {
                         steamCloudSyncBlacklistPaths.toList().sorted()
                     }
-                if ((!steamCloudAuthSnapshot.isComplete || steamCloudIndependentSwitchPending) &&
+                if (!steamCloudAuthRead.readFailed &&
+                    (!steamCloudAuthSnapshot.isComplete || steamCloudIndependentSwitchPending) &&
                     steamCloudSaveMode == SteamCloudSaveMode.STEAM_CLOUD
                 ) {
                     runCatching {
@@ -1309,7 +1320,13 @@ class SettingsScreenViewModel : ViewModel() {
                             val currentMode = LauncherPreferences.readSteamCloudSaveMode(host)
                             val pendingSwitch =
                                 LauncherConfig.isSteamCloudIndependentSwitchPending(host)
-                            if (!pendingSwitch && SteamCloudAuthStore.readSnapshot(host).isComplete) {
+                            val authoritativeRead = SteamCloudAuthStore.readSnapshotWithStatus(
+                                host,
+                                attempts = 1,
+                            )
+                            if (!pendingSwitch &&
+                                (authoritativeRead.readFailed || authoritativeRead.snapshot.isComplete)
+                            ) {
                                 steamCloudSaveMode = currentMode
                                 return@runExclusive
                             }
@@ -1353,6 +1370,34 @@ class SettingsScreenViewModel : ViewModel() {
                 )
                 val easyTierSettings = buildEasyTierSettingsUiState()
 
+                val displayedAccountName =
+                    if (preserveSteamCloudDisplay) previousUiState.steamCloudAccountName
+                    else steamCloudAuthSnapshot.accountName
+                val displayedRefreshTokenConfigured =
+                    if (preserveSteamCloudDisplay) previousUiState.steamCloudRefreshTokenConfigured
+                    else steamCloudAuthSnapshot.isComplete
+                val displayedGuardDataConfigured =
+                    if (preserveSteamCloudDisplay) previousUiState.steamCloudGuardDataConfigured
+                    else steamCloudAuthSnapshot.guardDataConfigured
+                val displayedPersonaName =
+                    if (preserveSteamCloudDisplay) previousUiState.steamCloudPersonaName
+                    else steamCloudAuthSnapshot.personaName
+                val displayedAvatarUrl =
+                    if (preserveSteamCloudDisplay) previousUiState.steamCloudAvatarUrl
+                    else steamCloudAuthSnapshot.avatarUrl
+                val displayedCredentialsSummary =
+                    if (preserveSteamCloudDisplay) previousUiState.steamCloudCredentialsSummary
+                    else buildSteamCloudCredentialsSummary(host, steamCloudAuthSnapshot)
+                val displayedStatusText =
+                    if (preserveSteamCloudDisplay) previousUiState.steamCloudStatusText
+                    else steamCloudStatusText
+                val displayedManifestSummary =
+                    if (preserveSteamCloudDisplay) previousUiState.steamCloudManifestSummary
+                    else buildSteamCloudManifestSummary(host, steamCloudManifestSnapshot)
+                val displayedManifestAvailable =
+                    if (preserveSteamCloudDisplay) previousUiState.steamCloudManifestAvailable
+                    else steamCloudManifestSnapshot != null
+
                 host.runOnUiThread {
                     applySnapshot(host, snapshot)
                     uiState = uiState.copy(
@@ -1362,11 +1407,11 @@ class SettingsScreenViewModel : ViewModel() {
                         busyProgressPercent = if (clearBusy) null else uiState.busyProgressPercent,
                         statusText = status,
                         logPathText = buildLogPathText(host),
-                        steamCloudAccountName = steamCloudAuthSnapshot.accountName,
-                        steamCloudRefreshTokenConfigured = steamCloudAuthSnapshot.isComplete,
-                        steamCloudGuardDataConfigured = steamCloudAuthSnapshot.guardDataConfigured,
-                        steamCloudPersonaName = steamCloudAuthSnapshot.personaName,
-                        steamCloudAvatarUrl = steamCloudAuthSnapshot.avatarUrl,
+                        steamCloudAccountName = displayedAccountName,
+                        steamCloudRefreshTokenConfigured = displayedRefreshTokenConfigured,
+                        steamCloudGuardDataConfigured = displayedGuardDataConfigured,
+                        steamCloudPersonaName = displayedPersonaName,
+                        steamCloudAvatarUrl = displayedAvatarUrl,
                         steamCloudSaveMode = steamCloudSaveMode,
                         steamCloudSyncBlacklistPaths = steamCloudSyncBlacklistPaths,
                         steamCloudSyncBlacklistCandidates = steamCloudSyncBlacklistCandidates,
@@ -1384,16 +1429,10 @@ class SettingsScreenViewModel : ViewModel() {
                         workshopDownloadThreads = LauncherPreferences.readWorkshopDownloadThreads(host),
                         workshopWattAccelerationEnabled = LauncherPreferences.isWorkshopWattAccelerationEnabled(host),
                         baiduTranslationCredentialsConfigured = BaiduTranslationCredentialsRepository(host).hasConfiguredCredentials(),
-                        steamCloudCredentialsSummary = buildSteamCloudCredentialsSummary(
-                            host,
-                            steamCloudAuthSnapshot
-                        ),
-                        steamCloudStatusText = steamCloudStatusText,
-                        steamCloudManifestSummary = buildSteamCloudManifestSummary(
-                            host,
-                            steamCloudManifestSnapshot
-                        ),
-                        steamCloudManifestAvailable = steamCloudManifestSnapshot != null,
+                        steamCloudCredentialsSummary = displayedCredentialsSummary,
+                        steamCloudStatusText = displayedStatusText,
+                        steamCloudManifestSummary = displayedManifestSummary,
+                        steamCloudManifestAvailable = displayedManifestAvailable,
                         easyTierSettings = easyTierSettings,
                     )
                 }

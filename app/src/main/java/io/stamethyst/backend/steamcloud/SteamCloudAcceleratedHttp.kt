@@ -27,6 +27,7 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import top.apricityx.workshop.steam.protocol.SteamDeclaredCdnHosts
 import top.apricityx.workshop.steam.protocol.SteamWebSocketFactory
 
 internal val SteamCommunityWattToolkitRouteProfile = WattToolkitRouteProfile(
@@ -104,6 +105,7 @@ internal val SteamContentCdnWattToolkitRouteProfile = WattToolkitRouteProfile(
         "media.st.dl.eccdnx.com",
         "video.st.dl.eccdnx.com",
         "xz.pphimalayanrt.com",
+        "xz.sycontroller.com",
         "dl.steam.clngaa.com",
         "files.steam.nsclouds.cn",
     ),
@@ -118,12 +120,15 @@ internal val SteamContentCdnWattToolkitRouteProfile = WattToolkitRouteProfile(
 /**
  * SteamPipe returns cleartext endpoints for some workshop CDN edges. These hosts only serve
  * public depot manifests and chunks; Steam web sessions and account endpoints remain HTTPS-only.
+ * The allowlist is a bootstrap for the well-known China CDN families; hosts Steam itself declares
+ * in its content-server directory are admitted dynamically via [SteamDeclaredCdnHosts].
  */
 internal fun allowsSteamContentCdnHttp(url: HttpUrl): Boolean =
     !url.isHttps &&
         url.encodedPath.startsWith("/depot/") &&
         url.host.lowercase(Locale.ROOT).let { host ->
             host in SteamContentCdnWattToolkitRouteProfile.supportedHosts ||
+                SteamDeclaredCdnHosts.isDeclared(host) ||
                 host == "steamcontent.com" ||
                 host.endsWith(".steamcontent.com")
         }

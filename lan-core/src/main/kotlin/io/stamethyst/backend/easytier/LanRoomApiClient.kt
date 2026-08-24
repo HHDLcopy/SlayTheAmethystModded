@@ -1,6 +1,7 @@
 package io.stamethyst.backend.easytier
 
 import java.io.IOException
+import java.util.concurrent.TimeUnit
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
@@ -33,7 +34,7 @@ data class LanClientIdentity(
 class LanRoomApiClient(
     private val roomApiBaseUrl: String,
     private val identity: LanClientIdentity,
-    private val client: OkHttpClient = OkHttpClient(),
+    private val client: OkHttpClient = sharedHttpClient,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -198,4 +199,24 @@ class LanRoomApiClient(
     @Serializable private data class RoomModResponse(val name: String = "", val workshopId: String = "")
     private data class RoomListPage(val rooms: List<EasyTierRoomListItem>, val nextOffset: Int?)
     private companion object { val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType() }
+}
+
+/**
+ * Single shared client for every Room API call, with explicit timeouts.
+ *
+ * A bare [OkHttpClient] per instance meant two things: no timeouts at all beyond OkHttp's 10s
+ * connect default, and a private connection pool per client. Callers that poll on a fixed interval
+ * therefore reopened a TCP+TLS connection every tick while the server still held the previous one
+ * for its keep-alive window, accumulating idle sockets instead of reusing one.
+ *
+ * The connect budget is deliberately below the launcher's 5s status poll interval so a stalled
+ * connect cannot outlive the tick that scheduled it and push lease renewal past the server lease.
+ */
+private val sharedHttpClient: OkHttpClient by lazy {
+    OkHttpClient.Builder()
+        .connectTimeout(4, TimeUnit.SECONDS)
+        .readTimeout(8, TimeUnit.SECONDS)
+        .writeTimeout(8, TimeUnit.SECONDS)
+        .callTimeout(12, TimeUnit.SECONDS)
+        .build()
 }

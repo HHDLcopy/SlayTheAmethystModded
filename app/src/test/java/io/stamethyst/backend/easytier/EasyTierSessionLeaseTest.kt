@@ -143,4 +143,172 @@ class EasyTierSessionLeaseTest {
         // than absent.
         assertEquals("", EasyTierRoomApiHttpException(statusCode = 404, message = "x").errorCode)
     }
+
+    private fun config(connectTimeoutSeconds: Int = 12) = EasyTierResolvedConfig(
+        enabled = true,
+        defaultMode = EasyTierNetworkMode.Room,
+        roomApiBaseUrl = "https://online.example.com",
+        webConsoleApiBaseUrl = "https://online.example.com",
+        configServerUrl = "udp://online.example.com:22020",
+        entryNodeUrl = "tcp://online.example.com:11010",
+        connectTimeoutSeconds = connectTimeoutSeconds,
+        statusPollIntervalSeconds = 5,
+        allowSharedCommunityNetwork = false,
+    )
+
+    @Test
+    fun failureSnapshot_keepsAddressSoLeaseRenewalSurvives() {
+        // Blanking the address here stopped runtime reports, which are the only lease heartbeat.
+        // The server then expired the session after its TTL and the next poll got a 404, turning
+        // one failed request into a permanent disconnect.
+        val connected = EasyTierConnectionSnapshot(
+            enabled = true,
+            canConnect = true,
+            status = EasyTierConnectionStatus.CONNECTED,
+            mode = EasyTierNetworkMode.Room,
+            sessionId = "lan_abc",
+            startedAtMs = 1_000L,
+            connectedAtMs = 5_000L,
+            assignedIpv4Cidr = "10.126.5.184/24",
+            peerCount = 3,
+            relayServerDescription = "relay-1",
+        )
+
+        val failed = EasyTierSessionController.buildFailureSnapshot(
+            previous = connected,
+            summary = "timeout",
+            nowMs = 30_000L,
+        )
+
+        assertEquals(EasyTierConnectionStatus.FAILED, failed.status)
+        assertEquals("10.126.5.184/24", failed.assignedIpv4Cidr)
+        assertTrue(
+            shouldReportEasyTierRuntime(
+                snapshot = failed,
+                assignedIpv4Cidr = failed.assignedIpv4Cidr,
+            )
+        )
+        // Point-in-time room observations must not be presented as current while broken.
+        assertEquals(null, failed.peerCount)
+        assertEquals("", failed.relayServerDescription)
+    }
+
+    @Test
+    fun failureSnapshot_keepsConnectedAtSoRetriesAreNotKilled() {
+        // connectedAtMs is the only evidence the tunnel ever worked, which is what stops the
+        // connect budget from acting as a kill switch for an established session.
+        val connected = EasyTierConnectionSnapshot(
+            enabled = true,
+            canConnect = true,
+            status = EasyTierConnectionStatus.CONNECTED,
+            mode = EasyTierNetworkMode.Room,
+            sessionId = "lan_abc",
+            startedAtMs = 1_000L,
+            connectedAtMs = 5_000L,
+            assignedIpv4Cidr = "10.126.5.184/24",
+        )
+
+        val failed = EasyTierSessionController.buildFailureSnapshot(
+            previous = connected,
+            summary = "timeout",
+            nowMs = 30_000L,
+        )
+
+        assertEquals(5_000L, failed.connectedAtMs)
+    }
+
+    @Test
+    fun connectTimeout_doesNotFireForSessionThatAlreadyConnected() {
+        // The regression: startedAtMs is set once and never refreshed, so for a session that has
+        // been up for a while the elapsed time is the age of the session, not the age of the
+        // problem. A single failure therefore tripped the connect budget on the very next poll.
+        val failedAfterLongUptime = EasyTierConnectionSnapshot(
+            enabled = true,
+            canConnect = true,
+            status = EasyTierConnectionStatus.FAILED,
+            mode = EasyTierNetworkMode.Room,
+            sessionId = "lan_abc",
+            startedAtMs = 1_000L,
+            connectedAtMs = 6_000L,
+            assignedIpv4Cidr = "10.126.5.184/24",
+        )
+
+        assertFalse(
+            hasEasyTierConnectionTimedOut(
+                snapshot = failedAfterLongUptime,
+                config = config(connectTimeoutSeconds = 12),
+                // 25 minutes after the session started: far beyond the connect budget.
+                nowMs = 1_000L + 25 * 60 * 1_000L,
+            )
+        )
+    }
+
+    @Test
+    fun connectTimeout_doesNotFireWhileReconnectingAnEstablishedSession() {
+        val reconnecting = EasyTierConnectionSnapshot(
+            enabled = true,
+            canConnect = true,
+            status = EasyTierConnectionStatus.RECONNECTING,
+            mode = EasyTierNetworkMode.Room,
+            sessionId = "lan_abc",
+            startedAtMs = 1_000L,
+            connectedAtMs = 6_000L,
+        )
+
+        assertFalse(
+            hasEasyTierConnectionTimedOut(
+                snapshot = reconnecting,
+                config = config(connectTimeoutSeconds = 12),
+                nowMs = 1_000L + 10 * 60 * 1_000L,
+            )
+        )
+    }
+
+    @Test
+    fun connectTimeout_stillFiresForInitialHandshakeThatNeverConnected() {
+        // The budget must keep working for its actual purpose: a session that never got a tunnel.
+        val neverConnected = EasyTierConnectionSnapshot(
+            enabled = true,
+            canConnect = true,
+            status = EasyTierConnectionStatus.SESSION_READY,
+            mode = EasyTierNetworkMode.Room,
+            sessionId = "lan_abc",
+            startedAtMs = 1_000L,
+            connectedAtMs = null,
+        )
+
+        assertTrue(
+            hasEasyTierConnectionTimedOut(
+                snapshot = neverConnected,
+                config = config(connectTimeoutSeconds = 12),
+                nowMs = 1_000L + 12_000L,
+            )
+        )
+        assertFalse(
+            hasEasyTierConnectionTimedOut(
+                snapshot = neverConnected,
+                config = config(connectTimeoutSeconds = 12),
+                nowMs = 1_000L + 11_999L,
+            )
+        )
+    }
+
+    @Test
+    fun connectTimeout_ignoresSnapshotWithoutStartTime() {
+        val idle = EasyTierConnectionSnapshot(
+            enabled = true,
+            canConnect = true,
+            status = EasyTierConnectionStatus.DISCONNECTED,
+            mode = EasyTierNetworkMode.Room,
+            startedAtMs = null,
+        )
+
+        assertFalse(
+            hasEasyTierConnectionTimedOut(
+                snapshot = idle,
+                config = config(),
+                nowMs = 10_000_000L,
+            )
+        )
+    }
 }

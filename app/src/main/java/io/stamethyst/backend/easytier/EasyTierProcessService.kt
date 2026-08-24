@@ -1152,6 +1152,20 @@ class EasyTierProcessService : Service() {
     }
 }
 
+/**
+ * True when a session that has never finished connecting has exhausted its connect budget.
+ *
+ * The budget only applies to the initial handshake. A session that already reached a working tunnel
+ * is never timed out here, no matter how long ago it started: [EasyTierConnectionSnapshot.startedAtMs]
+ * is set once when connecting begins and is never refreshed, so for an established session the
+ * elapsed time is the age of the session rather than the age of the current problem. Treating
+ * [EasyTierConnectionStatus.FAILED] as timeout-eligible on that stale clock meant a single request
+ * failure after the budget had passed — which is every failure on a session older than a few
+ * seconds — tore the tunnel down on the very next poll with no grace period at all.
+ *
+ * Recovery from a broken established session is the retry loop's job, not this check's: the poll loop
+ * keeps renewing the lease and the server's own TTL is the backstop if the client is truly gone.
+ */
 internal fun hasEasyTierConnectionTimedOut(
     snapshot: EasyTierConnectionSnapshot,
     config: EasyTierResolvedConfig,
@@ -1161,6 +1175,11 @@ internal fun hasEasyTierConnectionTimedOut(
     if (snapshot.status == EasyTierConnectionStatus.CONNECTED &&
         snapshot.assignedIpv4Cidr.isNotBlank()
     ) {
+        return false
+    }
+    // A tunnel that was established at any point takes this check out of play. Without it the
+    // connect budget doubles as a kill switch for established sessions.
+    if (snapshot.connectedAtMs != null) {
         return false
     }
     return snapshot.status in setOf(

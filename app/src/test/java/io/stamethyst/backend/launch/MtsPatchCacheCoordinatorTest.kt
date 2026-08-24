@@ -417,7 +417,6 @@ class MtsPatchCacheCoordinatorTest {
         val markerFile = File(".mts_patch_cache")
         val packageDir = File("package")
         val gameDir = File("sts")
-        val loadoutScanCacheDir = File("loadout-scan-cache")
 
         MtsPatchCacheCoordinator.appendRuntimeProperties(
             args = args,
@@ -428,8 +427,7 @@ class MtsPatchCacheCoordinatorTest {
             markerFile = markerFile,
             packageDir = packageDir,
             expectedMarker = "marker",
-            gameDir = gameDir,
-            loadoutScanCacheDir = loadoutScanCacheDir
+            gameDir = gameDir
         )
 
         assertEquals(
@@ -441,9 +439,7 @@ class MtsPatchCacheCoordinatorTest {
                 "-Damethyst.mts.patch_cache.marker=${markerFile.absolutePath}",
                 "-Damethyst.mts.patch_cache.package_dir=${packageDir.absolutePath}",
                 "-Damethyst.mts.patch_cache.expected=marker",
-                "-Damethyst.mts.patch_cache.game_dir=${gameDir.absolutePath}",
-                "-Damethyst.runtime_compat.loadout_class_scan_cache=true",
-                "-Damethyst.loadout.scan_cache_dir=${loadoutScanCacheDir.absolutePath}"
+                "-Damethyst.mts.patch_cache.game_dir=${gameDir.absolutePath}"
             ),
             args
         )
@@ -457,7 +453,6 @@ class MtsPatchCacheCoordinatorTest {
         val markerFile = File(".mts_patch_cache")
         val packageDir = File("package")
         val gameDir = File("sts")
-        val loadoutScanCacheDir = File("loadout-scan-cache")
 
         MtsPatchCacheCoordinator.appendRuntimeProperties(
             args = args,
@@ -468,8 +463,7 @@ class MtsPatchCacheCoordinatorTest {
             markerFile = markerFile,
             packageDir = packageDir,
             expectedMarker = "",
-            gameDir = gameDir,
-            loadoutScanCacheDir = loadoutScanCacheDir
+            gameDir = gameDir
         )
 
         assertEquals(
@@ -481,9 +475,7 @@ class MtsPatchCacheCoordinatorTest {
                 "-Damethyst.mts.patch_cache.marker=${markerFile.absolutePath}",
                 "-Damethyst.mts.patch_cache.package_dir=${packageDir.absolutePath}",
                 "-Damethyst.mts.patch_cache.expected=",
-                "-Damethyst.mts.patch_cache.game_dir=${gameDir.absolutePath}",
-                "-Damethyst.runtime_compat.loadout_class_scan_cache=false",
-                "-Damethyst.loadout.scan_cache_dir=${loadoutScanCacheDir.absolutePath}"
+                "-Damethyst.mts.patch_cache.game_dir=${gameDir.absolutePath}"
             ),
             args
         )
@@ -523,6 +515,99 @@ class MtsPatchCacheCoordinatorTest {
         file.parentFile?.mkdirs()
         file.writeText(text, StandardCharsets.UTF_8)
         return file
+    }
+
+    @Test
+    fun gdxPatchDigestSidecarIsTrustedWhileIdentityMatchesAndRefreshedOnMismatch() {
+        val root = Files.createTempDirectory("mts-patch-cache-gdx-digest-").toFile()
+        try {
+            val desktopJar = writeJar(root, "desktop-1.0.jar", "a.class" to "desktop")
+            val mtsJar = writeJar(root, "ModTheSpire.jar", "b.class" to "mts")
+            val baseModJar = writeJar(root, "BaseMod.jar", "c.class" to "basemod")
+            val stsLibJar = writeJar(root, "StSLib.jar", "d.class" to "stslib")
+            val bootBridgeJar = writeJar(root, "boot-bridge.jar", "e.class" to "bootbridge")
+            val gdxPatchJar = writeJar(root, "gdx-patch.jar", "f.class" to "gdx")
+            val modFileList = writeFile(File(root, ".mts_mod_file_list"), "")
+            val digestCache = File(root, "gdx-patch-digest.txt")
+
+            fun marker(): String = MtsPatchCacheCoordinator.buildCacheMarkerValue(
+                desktopJar = desktopJar,
+                mtsJar = mtsJar,
+                baseModJar = baseModJar,
+                stsLibJar = stsLibJar,
+                bootBridgeJar = bootBridgeJar,
+                gdxPatchJar = gdxPatchJar,
+                modFileList = modFileList,
+                gdxPatchDigestCache = digestCache
+            )
+
+            // First computation records the true digest.
+            val trueMarker = marker()
+            assertTrue(digestCache.isFile)
+            val recorded = digestCache.readText(StandardCharsets.UTF_8).trim()
+            assertEquals(3, recorded.split('|').size)
+
+            // A well-formed sidecar entry for the current size+mtime is trusted without
+            // reading the jar: a forged digest changes the marker.
+            val identity = "${gdxPatchJar.length()}|${gdxPatchJar.lastModified()}"
+            digestCache.writeText("$identity|" + "0".repeat(64), StandardCharsets.UTF_8)
+            assertNotEquals(trueMarker, marker())
+
+            // A mtime change invalidates the recorded entry, so the true digest is
+            // recomputed and re-recorded.
+            gdxPatchJar.setLastModified(gdxPatchJar.lastModified() + 60_000L)
+            assertEquals(trueMarker, marker())
+            assertEquals(
+                "${gdxPatchJar.length()}|${gdxPatchJar.lastModified()}",
+                digestCache.readText(StandardCharsets.UTF_8).trim().split('|').take(2).joinToString("|")
+            )
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun cacheMarkerIsDeterministicAcrossRepeatedComputationsWithManyMods() {
+        val root = Files.createTempDirectory("mts-patch-cache-parallel-").toFile()
+        try {
+            val desktopJar = writeJar(root, "desktop-1.0.jar", "a.class" to "desktop")
+            val mtsJar = writeJar(root, "ModTheSpire.jar", "b.class" to "mts")
+            val baseModJar = writeJar(root, "BaseMod.jar", "c.class" to "basemod")
+            val stsLibJar = writeJar(root, "StSLib.jar", "d.class" to "stslib")
+            val bootBridgeJar = writeJar(root, "boot-bridge.jar", "e.class" to "bootbridge")
+            val gdxPatchJar = writeJar(root, "gdx-patch.jar", "f.class" to "gdx")
+            // Enough mods that the fingerprint fan-out runs on its pool rather than inline.
+            val modJars = (1..12).map { index ->
+                writeJar(root, "Mod$index.jar", "Mod$index.class" to "content-$index")
+            }
+            val modFileList = writeFile(
+                File(root, ".mts_mod_file_list"),
+                modJars.joinToString(separator = "\n", postfix = "\n") { it.absolutePath }
+            )
+
+            fun marker(): String = MtsPatchCacheCoordinator.buildCacheMarkerValue(
+                desktopJar = desktopJar,
+                mtsJar = mtsJar,
+                baseModJar = baseModJar,
+                stsLibJar = stsLibJar,
+                bootBridgeJar = bootBridgeJar,
+                gdxPatchJar = gdxPatchJar,
+                modFileList = modFileList
+            )
+
+            assertEquals(marker(), marker())
+
+            // Changing one mod in the middle of the list must move the marker even when
+            // the fingerprints were computed concurrently.
+            val before = marker()
+            val originalMtime = modJars[6].lastModified()
+            writeJar(root, "Mod7.jar", "Mod7.class" to "changed-content")
+            modJars[6].setLastModified(originalMtime)
+
+            assertNotEquals(before, marker())
+        } finally {
+            root.deleteRecursively()
+        }
     }
 
     private fun writeJar(root: File, name: String, vararg entries: Pair<String, String>): File {

@@ -62,7 +62,7 @@ object RuntimePaths {
     private const val MTS_PATCH_CACHE_MARKER_FILE_NAME = ".mts_patch_cache"
     private const val MTS_PATCH_CACHE_JAR_FILE_NAME = "desktop-1.0-modded.jar"
     private const val MTS_PATCH_CACHE_PACKAGE_DIR_NAME = "package"
-    private const val MTS_PATCH_CACHE_LOADOUT_SCAN_CACHE_DIR_NAME = "loadout-scan-cache"
+    private const val MTS_PATCH_CACHE_GDX_PATCH_DIGEST_CACHE_FILE_NAME = "gdx-patch-digest.txt"
     private const val OPTIONAL_MOD_LIBRARY_MIGRATION_MARKER_FILE_NAME = ".optional_mod_library_migrated"
     private const val ANDROID_EXTERNAL_STORAGE_ROOT = "storage"
     private const val ANDROID_EMULATED_SEGMENT = "emulated"
@@ -470,8 +470,8 @@ object RuntimePaths {
         File(mtsPatchCacheDir(context), MTS_PATCH_CACHE_PACKAGE_DIR_NAME)
 
     @JvmStatic
-    fun mtsPatchCacheLoadoutScanCacheDir(context: Context): File =
-        File(mtsPatchCacheDir(context), MTS_PATCH_CACHE_LOADOUT_SCAN_CACHE_DIR_NAME)
+    fun mtsPatchCacheGdxPatchDigestCache(context: Context): File =
+        File(mtsPatchCacheDir(context), MTS_PATCH_CACHE_GDX_PATCH_DIGEST_CACHE_FILE_NAME)
 
     @JvmStatic
     fun legacyExternalMtsPatchCacheFiles(context: Context): List<File> =

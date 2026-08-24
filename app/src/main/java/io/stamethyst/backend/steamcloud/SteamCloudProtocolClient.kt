@@ -19,8 +19,11 @@ import `in`.dragonbra.javasteam.protobufs.steamclient.SteammessagesClientserver2
 internal class SteamCloudProtocolClient(
     private val httpClient: OkHttpClient,
     webSocketFactory: SteamWebSocketFactory,
+    externalSession: SteamCmSession? = null,
 ) : AutoCloseable {
-    private val session: SteamCmSession = OkHttpSteamCmSession(httpClient, webSocketFactory = webSocketFactory)
+    private val ownsSession = externalSession == null
+    private val session: SteamCmSession =
+        externalSession ?: OkHttpSteamCmSession(httpClient, webSocketFactory = webSocketFactory)
     private val directory = SteamDirectoryClient(httpClient)
 
     fun logOn(accountName: String, refreshToken: String, steamId64: String): Long = runBlocking {
@@ -191,6 +194,8 @@ internal class SteamCloudProtocolClient(
     ): T = runBlocking { session.callServiceMethod(method, request, parser) }
 
     override fun close() {
-        session.close()
+        if (ownsSession) {
+            session.close()
+        }
     }
 }

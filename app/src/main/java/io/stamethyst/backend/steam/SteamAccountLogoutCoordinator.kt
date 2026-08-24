@@ -11,6 +11,7 @@ import io.stamethyst.backend.steamcloud.SteamCloudOperationMutex
 import io.stamethyst.backend.steamcloud.SteamCloudSaveProfileManager
 import io.stamethyst.backend.steamcloud.SteamCloudSyncProcessService
 import io.stamethyst.backend.steamcloud.SteamGamePresenceService
+import io.stamethyst.backend.workshop.SharedSteamCmSessions
 import io.stamethyst.backend.workshop.WorkshopService
 import io.stamethyst.config.LauncherConfig
 import io.stamethyst.config.SteamCloudSaveMode
@@ -29,6 +30,10 @@ internal object SteamAccountLogoutCoordinator {
         runCatching { SteamCloudSyncProcessService.cancel(appContext) }
         WorkshopService.cancelAllActiveCalls()
         OkHttpSteamCmSession.closeAllActiveSessions()
+        // The shared CM transport is closed by closeAllActiveSessions above; also
+        // reset its logon fingerprint so the next connect re-logons instead of
+        // riding the logged-out state.
+        SharedSteamCmSessions.invalidateProcessSession()
 
         SteamCloudOperationMutex.runExclusive(appContext) {
             val cloudProfileSteamId = SteamCloudAuthStore.readAuthMaterial(appContext)

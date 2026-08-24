@@ -3,6 +3,7 @@ package io.stamethyst.backend.steam
 import android.content.Context
 import io.stamethyst.backend.steamcloud.SteamCloudAcceleratedHttp
 import io.stamethyst.backend.steamcloud.SteamCloudAuthStore
+import io.stamethyst.backend.workshop.SharedSteamCmSessions
 import io.stamethyst.backend.workshop.WorkshopSteamClientIdentity
 import io.stamethyst.config.CloudControlConfig
 import io.stamethyst.config.CloudControlSettings
@@ -89,7 +90,7 @@ internal class SteamStsJarDownloadService(
         val directoryClient = SteamDirectoryClient(client)
         val outputFile = prepareOutputFile()
 
-        identity.createSession(client).use { session ->
+        SharedSteamCmSessions.forProcess(context).asCmSession().use { session ->
             waitIfPaused()
             val cmServers = directoryClient.loadServers()
             waitIfPaused()
@@ -116,7 +117,7 @@ internal class SteamStsJarDownloadService(
             val downloader = SteamDepotSingleFileDownloader(
                 client = client,
                 directoryClient = directoryClient,
-                sessionFactory = { identity.createSession(client) },
+                sessionFactory = { SharedSteamCmSessions.forProcess(context).asCmSession() },
                 sessionConnector = { downloadSession, servers ->
                     connectSession(downloadSession, servers, account)
                 },

@@ -201,6 +201,17 @@ public final class SteamCloudClient implements AutoCloseable {
     }
 
     public SteamCloudClient(Context context, DownloadLimits downloadLimits) {
+        this(context, downloadLimits, true);
+    }
+
+    /**
+     * @param useSharedCmSession when true (the default), the CM transport is the
+     *     process-wide shared session from {@code SharedSteamCmSessions}; closing
+     *     this client then only releases the borrowed handle. The credential
+     *     login flow passes {@code false} to keep its dedicated diagnostics
+     *     transport isolated from the shared connection.
+     */
+    public SteamCloudClient(Context context, DownloadLimits downloadLimits, boolean useSharedCmSession) {
         applyProxySystemProperties();
         this.downloadLimits = Objects.requireNonNull(downloadLimits, "downloadLimits");
 
@@ -221,7 +232,10 @@ public final class SteamCloudClient implements AutoCloseable {
         protocolHttpClient = httpClient;
         protocolClient = new SteamCloudProtocolClient(
             httpClient,
-            SteamCloudAcceleratedHttp.createWebSocketFactory(context, httpClient)
+            SteamCloudAcceleratedHttp.createWebSocketFactory(context, httpClient),
+            useSharedCmSession
+                ? io.stamethyst.backend.workshop.SharedSteamCmSessions.forProcess(context).asCmSession()
+                : null
         );
         Log.i(TAG, "Steam Cloud Watt acceleration: " + (wattAccelerationEnabled ? "enabled" : "disabled") + '.');
 

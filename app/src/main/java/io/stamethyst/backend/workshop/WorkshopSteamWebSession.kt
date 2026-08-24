@@ -153,7 +153,7 @@ internal class WorkshopSteamWebSession(
         val webAccessToken = cachedToken?.toWorkshopWebAccessToken() ?: withContext(Dispatchers.IO) {
             val accessToken = SteamAuthenticationClient(
                 directoryClient = SteamDirectoryClient(directoryClient),
-                sessionFactory = { identity.createSession(cmHttpClient) },
+                sessionFactory = { SharedSteamCmSessions.forProcess(appContext).asCmSession() },
             ).generateAccessTokenForApp(
                 account = account,
                 allowRenewal = false,

@@ -123,7 +123,9 @@ internal object SteamCloudAuthCoordinator {
         val startedAtMs = System.currentTimeMillis()
         val normalizedUsername = username.trim()
         val normalizedGuardData = existingGuardData.trim().ifBlank { null }
-        val client = SteamCloudClient(context)
+        // Credential login keeps a dedicated CM transport: it must not ride (or
+        // invalidate) the shared connection while establishing new credentials.
+        val client = SteamCloudClient(context, SteamCloudClient.DownloadLimits.defaults(), false)
         try {
             client.use {
                 client.beginOperationDiagnostics(

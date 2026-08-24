@@ -84,9 +84,7 @@ class JvmLaunchController(
             "amethyst.mts.patch_cache.jar",
             "amethyst.mts.patch_cache.marker",
             "amethyst.mts.patch_cache.package_dir",
-            "amethyst.mts.patch_cache.expected",
-            "amethyst.runtime_compat.loadout_class_scan_cache",
-            "amethyst.loadout.scan_cache_dir"
+            "amethyst.mts.patch_cache.expected"
         )
     }
 

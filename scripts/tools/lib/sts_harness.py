@@ -882,7 +882,6 @@ rm -rf files/sts/package files/sts/mts_patch_cache
             "privatePatchMarker": self.remote_app_path_state("files/mts_patch_cache/.mts_patch_cache"),
             "privatePatchJar": self.remote_app_path_state("files/mts_patch_cache/desktop-1.0-modded.jar"),
             "privatePackageDir": self.remote_app_path_state("files/mts_patch_cache/package"),
-            "loadoutScanCacheDir": self.remote_app_path_state("files/mts_patch_cache/loadout-scan-cache"),
         }
 
     def build_single_room_spec_text(self) -> str:

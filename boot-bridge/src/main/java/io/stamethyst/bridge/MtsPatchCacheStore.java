@@ -3,10 +3,8 @@ package io.stamethyst.bridge;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
-import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.io.Closeable;
 import java.io.PrintWriter;
 import java.io.StringWriter;
@@ -51,12 +49,7 @@ public final class MtsPatchCacheStore {
     private static final String PROPERTY_PACKAGE_DIR = "amethyst.mts.patch_cache.package_dir";
     private static final String PROPERTY_EXPECTED = "amethyst.mts.patch_cache.expected";
     private static final String PROPERTY_PACKAGE_JAR_THREADS = "amethyst.mts.patch_cache.package_jar_threads";
-    private static final String PROPERTY_LOADOUT_SCAN_CACHE_DIR = "amethyst.loadout.scan_cache_dir";
     private static final String PROPERTY_MIN_FREE_BYTES = "amethyst.mts.patch_cache.min_free_bytes";
-    /** Written by LoadoutClassScanCachePatches in the runtime compat mod. */
-    private static final String SCAN_CACHE_FILE_SUFFIX = ".txt";
-    private static final String SCAN_CACHE_IDENTITY_PREFIX = "identity=";
-    private static final int SCAN_CACHE_HEADER_LINES = 3;
     /**
      * The main jar embeds the base game jar and the package jars add roughly another
      * copy spread across mods, so two base-jar equivalents plus headroom for the
@@ -289,9 +282,6 @@ public final class MtsPatchCacheStore {
             long markerWriteStartNs = System.nanoTime();
             writeMarker(markerFile, expectedMarker);
             logStep("writeMarker", markerWriteStartNs);
-            long scanSweepStartNs = System.nanoTime();
-            int sweptScanCacheFiles = deleteStaleLoadoutScanCaches();
-            logStep("sweepLoadoutScanCache deleted=" + sweptScanCacheFiles, scanSweepStartNs);
             log("MTS patch cache is ready: packageJars=" + packageJarCount);
             logStep("store total", storeStartNs);
             deleteIfExists(diagnosticFile);
@@ -1441,92 +1431,6 @@ public final class MtsPatchCacheStore {
         }
         long baseJarBytes = baseJar.isFile() ? baseJar.length() : 0L;
         return Math.max(MIN_CACHE_BUILD_BYTES, baseJarBytes * CACHE_BUILD_SIZE_FACTOR);
-    }
-
-    /**
-     * Deletes Loadout class-scan cache files left behind by earlier cache keys.
-     *
-     * The runtime compat mod names these files after a hash of an identity string that
-     * embeds the whole patch cache marker, so every marker change produces a fresh set
-     * of names and orphans the previous one. Nothing else ever removes them: the mod
-     * only replaces the single file it is about to write, and the launcher only wipes
-     * the directory when the user turns the feature off. Left alone the directory grows
-     * without bound on internal storage.
-     *
-     * A rebuild is the right moment to sweep, because the files the new run will write
-     * are the only ones that can still be read: {@code readCacheFile} rejects any file
-     * whose stored identity does not match, so anything not carrying the current marker
-     * is already dead weight.
-     *
-     * Runs after the marker is committed and never throws — this is housekeeping, and a
-     * failure here must not invalidate a cache that is otherwise complete.
-     */
-    private static int deleteStaleLoadoutScanCaches() {
-        try {
-            String scanCacheDir = System.getProperty(PROPERTY_LOADOUT_SCAN_CACHE_DIR, "").trim();
-            if (scanCacheDir.length() == 0) {
-                return 0;
-            }
-            File directory = new File(scanCacheDir);
-            File[] files = directory.isDirectory() ? directory.listFiles() : null;
-            if (files == null) {
-                return 0;
-            }
-            String currentMarker = System.getProperty(PROPERTY_EXPECTED, "").trim();
-            if (currentMarker.length() == 0) {
-                return 0;
-            }
-            int deleted = 0;
-            for (File file : files) {
-                if (!file.isFile() || !file.getName().endsWith(SCAN_CACHE_FILE_SUFFIX)) {
-                    continue;
-                }
-                if (scanCacheIdentityMatchesMarker(file, currentMarker)) {
-                    continue;
-                }
-                if (file.delete()) {
-                    deleted++;
-                }
-            }
-            return deleted;
-        } catch (Throwable error) {
-            log("Failed to sweep stale Loadout scan caches: " + error);
-            return 0;
-        }
-    }
-
-    /**
-     * Reads only the {@code identity=} header line, which the mod writes third. Files
-     * whose identity embeds the current marker are keepers; anything else — including a
-     * file too short or malformed to have a header — is stale.
-     */
-    private static boolean scanCacheIdentityMatchesMarker(File file, String currentMarker) {
-        BufferedReader reader = null;
-        try {
-            reader = new BufferedReader(
-                    new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8)
-            );
-            for (int i = 0; i < SCAN_CACHE_HEADER_LINES; i++) {
-                String line = reader.readLine();
-                if (line == null) {
-                    return false;
-                }
-                if (line.startsWith(SCAN_CACHE_IDENTITY_PREFIX)) {
-                    return line.indexOf(currentMarker) >= 0;
-                }
-            }
-            return false;
-        } catch (Throwable ignored) {
-            // Unreadable means unusable to the mod as well, so treat it as stale.
-            return false;
-        } finally {
-            if (reader != null) {
-                try {
-                    reader.close();
-                } catch (IOException ignored) {
-                }
-            }
-        }
     }
 
     private static Callable<Void> fsyncTask(final File file) {

@@ -11,6 +11,7 @@ import okhttp3.Request
 internal object SteamCloudAvatarCacheStore {
     private const val DIRECTORY_NAME = "steam-cloud-avatar-cache"
     private const val CACHE_SIZE_BYTES = 2 * 1024 * 1024
+    private const val MAX_DISK_ENTRIES = 8
     private const val CONNECT_TIMEOUT_MS = 8_000L
     private const val READ_TIMEOUT_MS = 15_000L
     private const val CALL_TIMEOUT_MS = 20_000L
@@ -53,7 +54,14 @@ internal object SteamCloudAvatarCacheStore {
         if (!file.isFile) {
             return null
         }
-        return BitmapFactory.decodeFile(file.absolutePath)
+        val bitmap = BitmapFactory.decodeFile(file.absolutePath)
+        if (bitmap == null) {
+            // A file that no longer decodes is corrupt (truncated download or an
+            // error page saved as an image); drop it so the next load re-downloads
+            // instead of failing forever.
+            file.delete()
+        }
+        return bitmap
     }
 
     private fun download(context: Context, avatarUrl: String, cacheKey: String): Bitmap? {
@@ -85,8 +93,27 @@ internal object SteamCloudAvatarCacheStore {
             if (!tempFile.renameTo(outputFile)) {
                 return@runCatching null
             }
-            BitmapFactory.decodeFile(outputFile.absolutePath)
+            val bitmap = BitmapFactory.decodeFile(outputFile.absolutePath)
+            if (bitmap == null) {
+                // Never keep a file we cannot render; otherwise every later load
+                // retries the network against the same poisoned cache entry.
+                outputFile.delete()
+            } else {
+                prune(context, directory)
+            }
+            bitmap
         }.getOrNull()
+    }
+
+    /** Keeps the newest [MAX_DISK_ENTRIES] avatar files; Steam rotates CDN hosts for
+     *  the same image, so URL-keyed entries would otherwise grow without bound. */
+    private fun prune(context: Context, directory: File) {
+        runCatching {
+            directory.listFiles { file -> file.isFile && file.extension == "img" }
+                ?.sortedByDescending(File::lastModified)
+                ?.drop(MAX_DISK_ENTRIES)
+                ?.forEach(File::delete)
+        }
     }
 
     private fun cacheFile(context: Context, cacheKey: String): File =
@@ -95,9 +122,17 @@ internal object SteamCloudAvatarCacheStore {
     private fun cacheDirectory(context: Context): File =
         File(context.applicationContext.filesDir, DIRECTORY_NAME)
 
+    /**
+     * Keys the cache by the URL path instead of the full URL: Steam serves the
+     * same avatar image from rotating CDN hosts (akamai/cloudflare/steamstatic),
+     * so host changes must not produce a second download for identical content.
+     * The path itself carries the unique avatar hash (…/&lt;hash&gt;_full.jpg).
+     */
     private fun cacheKey(avatarUrl: String): String {
+        val path = runCatching { java.net.URI(avatarUrl).path }.getOrNull().orEmpty()
+        val identity = path.ifBlank { avatarUrl }
         val digest = MessageDigest.getInstance("SHA-256")
-            .digest(avatarUrl.toByteArray(Charsets.UTF_8))
+            .digest(identity.toByteArray(Charsets.UTF_8))
         return digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
     }
 }

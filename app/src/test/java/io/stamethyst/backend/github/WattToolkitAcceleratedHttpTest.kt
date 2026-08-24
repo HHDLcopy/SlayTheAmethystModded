@@ -20,7 +20,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
-class GithubAcceleratedHttpTest {
+class WattToolkitAcceleratedHttpTest {
     private lateinit var apiServer: MockWebServer
     private lateinit var githubApiForwardServer: MockWebServer
     private lateinit var githubWebForwardServer: MockWebServer
@@ -44,7 +44,7 @@ class GithubAcceleratedHttpTest {
         githubApiForwardServer.close()
         githubWebForwardServer.close()
         githubAssetForwardServer.close()
-        GithubAcceleratedHttp.clearRuntimeCacheForTests()
+        WattToolkitAcceleratedHttp.clearRuntimeCacheForTests()
     }
 
     @Test

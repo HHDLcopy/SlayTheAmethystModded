@@ -2,7 +2,7 @@ package io.stamethyst.backend.resources
 
 import android.content.Context
 import android.net.Uri
-import io.stamethyst.backend.github.GithubAcceleratedHttp
+import io.stamethyst.backend.github.WattToolkitAcceleratedHttp
 import io.stamethyst.backend.network.NetworkAccelerationPolicy
 import io.stamethyst.backend.update.GithubMirrorFallback
 import io.stamethyst.backend.update.UpdateSource
@@ -79,7 +79,7 @@ internal object ArthasResourcePackService {
     ): ArthasResourcePackState {
         val root = RuntimePaths.arthasResourceRoot(context).apply { mkdirs() }
         val archive = File(root, "download.zip")
-        val clients = GithubAcceleratedHttp.createClientPair(
+        val clients = WattToolkitAcceleratedHttp.createClientPair(
             context = context,
             connectTimeoutMs = CONNECT_TIMEOUT_MS,
             readTimeoutMs = READ_TIMEOUT_MS,

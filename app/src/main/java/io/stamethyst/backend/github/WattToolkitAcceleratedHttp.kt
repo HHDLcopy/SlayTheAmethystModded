@@ -19,7 +19,6 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.net.ssl.HostnameVerifier
-import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSession
 import javax.net.ssl.SSLEngine
@@ -43,6 +42,7 @@ import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
+import okhttp3.internal.tls.OkHostnameVerifier
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -114,7 +114,7 @@ internal data class ExperimentalGithubDirectAccessRuntime(
     val forwardHostnameVerifier: HostnameVerifier = hostnameVerifier,
 )
 
-internal object GithubAcceleratedHttp {
+internal object WattToolkitAcceleratedHttp {
     private val runtimeCache = ConcurrentHashMap<String, ExperimentalGithubDirectAccessRuntime>()
 
     fun createClientPair(
@@ -264,7 +264,7 @@ internal fun createWattToolkitRuntime(
     val unsafeHostProvider: (String) -> Boolean = { host ->
         resolvers.any { resolver -> resolver.allowsUnsafeHostnameBypass(host) }
     }
-    val platformHostnameVerifier = HttpsURLConnection.getDefaultHostnameVerifier()
+    val platformHostnameVerifier: HostnameVerifier = OkHostnameVerifier
     val forwardHostnameVerifier = GithubDirectHostnameVerifier(
         defaultVerifier = platformHostnameVerifier,
         unsafeHostBypassProvider = unsafeHostProvider,
@@ -886,7 +886,7 @@ internal class CredentialSafeRedirectInterceptor(
 }
 
 internal class GithubDirectHostnameVerifier(
-    private val defaultVerifier: HostnameVerifier = HttpsURLConnection.getDefaultHostnameVerifier(),
+    private val defaultVerifier: HostnameVerifier = OkHostnameVerifier,
     private val unsafeHostBypassProvider: (String) -> Boolean,
 ) : HostnameVerifier {
     override fun verify(hostname: String, session: SSLSession): Boolean {

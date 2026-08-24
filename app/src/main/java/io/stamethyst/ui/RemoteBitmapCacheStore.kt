@@ -4,7 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
-import io.stamethyst.backend.github.GithubAcceleratedHttp
+import io.stamethyst.backend.github.WattToolkitAcceleratedHttp
 import io.stamethyst.backend.steamcloud.SteamCloudAcceleratedHttp
 import java.io.File
 import java.security.MessageDigest
@@ -88,7 +88,7 @@ internal object RemoteBitmapCacheStore {
                 callTimeoutMs = READ_TIMEOUT_MS.toLong() + CONNECT_TIMEOUT_MS.toLong(),
             )
         } else {
-            GithubAcceleratedHttp.createClient(
+            WattToolkitAcceleratedHttp.createClient(
                 context = context,
                 connectTimeoutMs = CONNECT_TIMEOUT_MS,
                 readTimeoutMs = READ_TIMEOUT_MS,

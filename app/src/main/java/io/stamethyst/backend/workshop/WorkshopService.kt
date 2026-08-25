@@ -137,6 +137,18 @@ internal class WorkshopService(
         progressSessionId = sessionId
     }
 
+    /**
+     * Closes a stage-report session only when it is still the installed one.
+     *
+     * A detail load that was superseded by a newer load (browse restart, another detail open) must
+     * not tear down the newer load's narration when it finishes.
+     */
+    fun endProgressSession(sessionId: Long) {
+        if (progressSessionId == sessionId) {
+            progressSessionId = null
+        }
+    }
+
     suspend fun browse(query: WorkshopBrowseQuery): WorkshopBrowseResult = withContext(Dispatchers.IO) {
         val browseStartedAtMs = SystemClock.elapsedRealtime()
         val page = searchWorkshop(query)
@@ -505,6 +517,13 @@ internal class WorkshopService(
                         loadLocalizedDetailPageWithCache(
                             publishedFileId = publishedFileId,
                             languageRequestValue = languagePreference.requestValue,
+                            shouldRetryWithoutUsefulContent = {
+                                // A retry costs a full second page download. Only pay it when the
+                                // API payload cannot cover the description gap; missing comment
+                                // context degrades gracefully and stays retriable from the UI.
+                                runCatching { apiDetail.await().first.description.isNullOrBlank() }
+                                    .getOrDefault(true)
+                            },
                         )
                     }.onFailure { error ->
                         Log.w(
@@ -526,6 +545,25 @@ internal class WorkshopService(
                 null
             }
             val (detail, payload) = apiDetail.await()
+            // Dependencies are almost fully described by the API payload (children), so fetch them
+            // while the community page is still downloading instead of after it. The community page
+            // only contributes a few extra required-item ids; those go out as a small follow-up
+            // batch when it actually adds anything.
+            val primaryDependencyIds = if (includeDependencyData) {
+                detail.children.mapNotNull { child -> child.publishedFileId.toULongOrNull() }.distinct()
+            } else {
+                emptyList()
+            }
+            val depsStartedAtMs = SystemClock.elapsedRealtime()
+            val primaryDependencyDetailsDeferred = if (primaryDependencyIds.isNotEmpty()) {
+                async(Dispatchers.IO) {
+                    loadDependencyDetails(appId, primaryDependencyIds).associateBy { childDetail ->
+                        childDetail.publishedFileId.toULongOrNull()
+                    }
+                }
+            } else {
+                null
+            }
             val communityDetail = localizedDetail?.await()
             val awaitDoneAtMs = SystemClock.elapsedRealtime()
             val cardSummary = fallbackSummary?.takeIf { summary ->
@@ -571,15 +609,23 @@ internal class WorkshopService(
             } else {
                 emptyList()
             }
-            val depsStartedAtMs = SystemClock.elapsedRealtime()
-            val dependencyDetailsById = if (dependencyIds.isNotEmpty()) {
-                loadDependencyDetails(appId, dependencyIds).associateBy { childDetail ->
-                    childDetail.publishedFileId.toULongOrNull()
-                }
-            } else {
-                emptyMap()
-            }
             val depsMs = SystemClock.elapsedRealtime() - depsStartedAtMs
+            val dependencyDetailsById = buildMap<ULong?, PublishedFileDetailsDto> {
+                primaryDependencyDetailsDeferred?.let { deferred -> putAll(deferred.await()) }
+                if (includeDependencyData) {
+                    communityDetail?.requiredItemIds.orEmpty()
+                        .filterNot { dependencyId -> dependencyId in primaryDependencyIds }
+                        .distinct()
+                        .takeIf { extraIds -> extraIds.isNotEmpty() }
+                        ?.let { extraIds ->
+                            loadDependencyDetails(appId, extraIds).forEach { childDetail ->
+                                childDetail.publishedFileId.toULongOrNull()?.let { dependencyId ->
+                                    putIfAbsent(dependencyId, childDetail)
+                                }
+                            }
+                        }
+                }
+            }
             val commentThreadContext = communityDetail?.commentThreadContext
                 ?: detail.toCommentThreadContext(publishedFileId)
             val commentCount = communityDetail?.commentCount
@@ -764,6 +810,7 @@ internal class WorkshopService(
     private suspend fun loadLocalizedDetailPageWithRetry(
         publishedFileId: ULong,
         languageRequestValue: String,
+        shouldRetryWithoutUsefulContent: suspend () -> Boolean,
     ): LocalizedWorkshopDetail {
         var lastError: Throwable? = null
         var lastDetail: LocalizedWorkshopDetail? = null
@@ -774,7 +821,11 @@ internal class WorkshopService(
                     languageRequestValue = languageRequestValue,
                 )
             }.onSuccess { detail ->
-                if (detail.hasUsefulContent() || attempt == COMMUNITY_DETAIL_ATTEMPTS - 1) {
+                if (
+                    detail.hasUsefulContent() ||
+                    attempt == COMMUNITY_DETAIL_ATTEMPTS - 1 ||
+                    !shouldRetryWithoutUsefulContent()
+                ) {
                     return detail
                 }
                 lastDetail = detail
@@ -796,6 +847,7 @@ internal class WorkshopService(
     private suspend fun loadLocalizedDetailPageWithCache(
         publishedFileId: ULong,
         languageRequestValue: String,
+        shouldRetryWithoutUsefulContent: suspend () -> Boolean = { true },
     ): LocalizedWorkshopDetail {
         val cacheStartedAtMs = SystemClock.elapsedRealtime()
         val key = CommunityDetailCacheKey(publishedFileId, languageRequestValue)
@@ -840,6 +892,7 @@ internal class WorkshopService(
             val detail = loadLocalizedDetailPageWithRetry(
                 publishedFileId = publishedFileId,
                 languageRequestValue = languageRequestValue,
+                shouldRetryWithoutUsefulContent = shouldRetryWithoutUsefulContent,
             )
             if (detail.hasUsefulContent()) {
                 synchronized(communityDetailCacheLock) {

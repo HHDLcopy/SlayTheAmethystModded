@@ -50,6 +50,8 @@ import io.stamethyst.backend.workshop.isRunningDownload
 import io.stamethyst.backend.workshop.mapLocaleLanguageToBaiduLanguage
 import java.io.File
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -75,9 +77,10 @@ internal class WorkshopViewModel : ViewModel() {
     private var browseRequestGeneration = 0
     private var progressListenerInstalled = false
     private var activeProgressSessionId: Long = 0L
+    private var activeDetailProgressSessionId: Long? = null
     private var refreshDownloadStateJob: Job? = null
     private val detailsCache = mutableMapOf<String, WorkshopItemDetails>()
-    private val detailLoadsInFlight = mutableSetOf<String>()
+    private val detailLoadsInFlight = ConcurrentHashMap<String, Job>()
     private val commentTranslationsInFlight = mutableSetOf<String>()
     private val translationClient = BaiduAiTextTranslationClient()
     private val downloadTaskPersistenceMutex = Mutex()
@@ -96,10 +99,21 @@ internal class WorkshopViewModel : ViewModel() {
             // Progress arrives from OkHttp/IO threads; hop to the main dispatcher because uiState is
             // Compose snapshot state owned by the UI thread.
             viewModelScope.launch(Dispatchers.Main.immediate) {
-                if (progress.sessionId != activeProgressSessionId) return@launch
-                uiState = uiState.copy(loadProgress = progress)
+                when (progress.sessionId) {
+                    activeProgressSessionId ->
+                        uiState = uiState.copy(loadProgress = progress)
+                    activeDetailProgressSessionId ->
+                        uiState = uiState.copy(detailLoadProgress = progress)
+                }
             }
         }
+    }
+
+    private fun clearDetailProgressSession(sessionId: Long) {
+        // A newer detail load may have superseded this one; only its own session may close the bar.
+        if (activeDetailProgressSessionId != sessionId) return
+        activeDetailProgressSessionId = null
+        uiState = uiState.copy(detailLoadProgress = null)
     }
 
     fun load(context: Context, initialListMode: WorkshopListMode = WorkshopListMode.Browse) {
@@ -521,17 +535,23 @@ internal class WorkshopViewModel : ViewModel() {
         publishedFileId: ULong,
         fallbackSummary: WorkshopItemSummary? = null,
         clearSelected: Boolean = false,
+        ignoreCache: Boolean = false,
     ) {
         val currentService = service ?: return
         val detailKey = detailsCacheKey(appId, publishedFileId)
-        if (detailKey in detailLoadsInFlight) return
-        if (!clearSelected) {
-            findCachedDetails(appId, publishedFileId)
-                ?.takeIf { cachedDetails -> cachedDetails.canReuseForDetailOpen(fallbackSummary) }
-                ?.let { cachedDetails ->
+        if (detailLoadsInFlight.containsKey(detailKey)) return
+        if (!clearSelected && !ignoreCache) {
+            findCachedDetails(appId, publishedFileId)?.let { cachedDetails ->
+                // Stale-while-revalidate: when the only reason the cache fails reuse is a newer
+                // card version, render it immediately and validate in the background instead of
+                // making the user wait for a full pipeline on every repeat open.
+                if (
+                    cachedDetails.hasReusableCommunityData() &&
+                    isCachedDetailStaleVersusFallback(cachedDetails.summary, fallbackSummary)
+                ) {
                     Log.i(
                         WORKSHOP_PERF_TAG,
-                        "loadDetails cacheHit publishedFileId=$publishedFileId appId=$appId",
+                        "loadDetails swrShow publishedFileId=$publishedFileId appId=$appId cachedUpdatedAt=${cachedDetails.summary.updatedAtMillis} fallbackUpdatedAt=${fallbackSummary?.updatedAtMillis}",
                     )
                     showLoadedDetails(
                         context = context,
@@ -542,20 +562,55 @@ internal class WorkshopViewModel : ViewModel() {
                             publishedFileId = publishedFileId,
                         ),
                     )
+                    revalidateStaleCachedDetail(context, appId, publishedFileId)
                     return
                 }
+                cachedDetails
+                    .takeIf { details -> details.canReuseForDetailOpen(fallbackSummary) }
+                    ?.let { reusableDetails ->
+                        Log.i(
+                            WORKSHOP_PERF_TAG,
+                            "loadDetails cacheHit publishedFileId=$publishedFileId appId=$appId",
+                        )
+                        showLoadedDetails(
+                            context = context,
+                            currentService = currentService,
+                            details = reusableDetails,
+                            refreshSubscriptionStatus = shouldRefreshCachedDetailSubscriptionStatus(
+                                currentService = currentService,
+                                publishedFileId = publishedFileId,
+                            ),
+                        )
+                        return
+                    }
+            }
         }
-        detailLoadsInFlight += detailKey
-        viewModelScope.launch {
+        // Opening another mod supersedes any in-flight detail pipeline: cancel it so its remaining
+        // requests stop consuming network and its narration cannot interleave with this one.
+        detailLoadsInFlight.values.forEach { runningJob -> runningJob.cancel() }
+        detailLoadsInFlight.clear()
+        // Narrate the detail pipeline the same way the market header does: an open progress session
+        // lets the acceleration layer's route events (node picks, failovers, official fallback) flow
+        // into the bar while getDetails talks to Steam. The reporter tracks one active session, so a
+        // detail load opening here simply supersedes an in-flight browse narration.
+        ensureProgressListener()
+        val detailProgressSessionId = WorkshopLoadProgressReporter.beginSession()
+            .also { activeDetailProgressSessionId = it }
+        currentService.beginProgressSession(detailProgressSessionId)
+        val loadJob = viewModelScope.launch {
             val loadStartedAtMs = SystemClock.elapsedRealtime()
             Log.i(
                 WORKSHOP_PERF_TAG,
-                "loadDetails start publishedFileId=$publishedFileId appId=$appId clearSelected=$clearSelected hasFallback=${fallbackSummary != null}",
+                "loadDetails start publishedFileId=$publishedFileId appId=$appId clearSelected=$clearSelected ignoreCache=$ignoreCache hasFallback=${fallbackSummary != null}",
             )
             try {
                 uiState = uiState.copy(
                     selected = if (clearSelected) null else uiState.selected,
                     detailLoadingId = publishedFileId,
+                    detailLoadProgress = WorkshopLoadProgress(
+                        sessionId = detailProgressSessionId,
+                        phase = WorkshopLoadPhase.Preparing,
+                    ),
                     errorMessage = null,
                     commentLoadingId = null,
                     commentErrorMessage = null,
@@ -575,30 +630,89 @@ internal class WorkshopViewModel : ViewModel() {
                         WorkshopDetailSubscriptionStatus.Unknown
                     },
                 )
-                runCatching {
-                    val cachedDetails = findCachedDetails(appId, publishedFileId)
-                    val summaryFallback = cachedDetails?.summary ?: fallbackSummary ?: findSummaryFallback(appId, publishedFileId)
+                val cachedDetailsBeforeLoad = findCachedDetails(appId, publishedFileId)
+                val summaryFallback = cachedDetailsBeforeLoad?.summary
+                    ?: fallbackSummary
+                    ?: findSummaryFallback(appId, publishedFileId)
+                val loadedDetails =
                     withContext(Dispatchers.IO) { currentService.getDetails(appId, publishedFileId, summaryFallback) }
-                }.onSuccess { loadedDetails ->
-                    val details = loadedDetails.mergeCachedCommunityData(findCachedDetails(appId, publishedFileId))
+                val details = loadedDetails.mergeCachedCommunityData(findCachedDetails(appId, publishedFileId))
+                Log.i(
+                    WORKSHOP_PERF_TAG,
+                    "loadDetails success publishedFileId=$publishedFileId deps=${details.dependencies.size} commentsPending=${details.shouldLoadInitialWorkshopComments()} elapsedMs=${SystemClock.elapsedRealtime() - loadStartedAtMs}",
+                )
+                WorkshopLoadProgressReporter.report(detailProgressSessionId, WorkshopLoadPhase.Completed)
+                showLoadedDetails(context, currentService, details)
+            } catch (error: CancellationException) {
+                // Superseded by a newer detail load; never surface this as a user-facing failure.
+                throw error
+            } catch (error: Throwable) {
+                Log.w(
+                    WORKSHOP_PERF_TAG,
+                    "loadDetails failed publishedFileId=$publishedFileId elapsedMs=${SystemClock.elapsedRealtime() - loadStartedAtMs} error=${error.message ?: error.javaClass.simpleName}",
+                )
+                WorkshopLoadProgressReporter.report(
+                    sessionId = detailProgressSessionId,
+                    phase = WorkshopLoadPhase.Failed,
+                    detail = error.message ?: error.javaClass.simpleName,
+                )
+                uiState = uiState.copy(
+                    detailLoadingId = null,
+                    detailSubscriptionStatus = WorkshopDetailSubscriptionStatus.Unknown,
+                    errorMessage = error.message ?: error.javaClass.simpleName,
+                )
+            } finally {
+                // Every teardown call is guarded by session-id equality, so a load that was already
+                // superseded by a newer one cannot close the newer load's narration.
+                WorkshopLoadProgressReporter.endSession(detailProgressSessionId)
+                currentService.endProgressSession(detailProgressSessionId)
+                clearDetailProgressSession(detailProgressSessionId)
+            }
+        }
+        detailLoadsInFlight[detailKey] = loadJob
+        loadJob.invokeOnCompletion {
+            detailLoadsInFlight.remove(detailKey, loadJob)
+        }
+    }
+
+    /**
+     * Validates a just-shown stale cache entry with one lightweight summaries call and upgrades to
+     * a full refresh only when Steam reports a newer published version.
+     */
+    private fun revalidateStaleCachedDetail(context: Context, appId: UInt, publishedFileId: ULong) {
+        val currentService = service ?: return
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) { currentService.getSummaries(appId, listOf(publishedFileId)) }
+            }.onSuccess { summaries ->
+                val freshSummary = summaries.firstOrNull { summary ->
+                    summary.appId == appId && summary.publishedFileId == publishedFileId
+                }
+                if (freshSummary == null || freshSummary.updatedAtMillis <= 0L) return@onSuccess
+                val stillViewingThisMod = uiState.selected?.summary?.let { selected ->
+                    selected.appId == appId && selected.publishedFileId == publishedFileId
+                } == true
+                if (!stillViewingThisMod) return@onSuccess
+                val cachedUpdatedAt =
+                    findCachedDetails(appId, publishedFileId)?.summary?.updatedAtMillis ?: 0L
+                if (freshSummary.updatedAtMillis > cachedUpdatedAt) {
                     Log.i(
                         WORKSHOP_PERF_TAG,
-                        "loadDetails success publishedFileId=$publishedFileId deps=${details.dependencies.size} commentsPending=${details.shouldLoadInitialWorkshopComments()} elapsedMs=${SystemClock.elapsedRealtime() - loadStartedAtMs}",
+                        "loadDetails swrRefresh publishedFileId=$publishedFileId cachedUpdatedAt=$cachedUpdatedAt freshUpdatedAt=${freshSummary.updatedAtMillis}",
                     )
-                    showLoadedDetails(context, currentService, details)
-                }.onFailure { error ->
-                    Log.w(
-                        WORKSHOP_PERF_TAG,
-                        "loadDetails failed publishedFileId=$publishedFileId elapsedMs=${SystemClock.elapsedRealtime() - loadStartedAtMs} error=${error.message ?: error.javaClass.simpleName}",
-                    )
-                    uiState = uiState.copy(
-                        detailLoadingId = null,
-                        detailSubscriptionStatus = WorkshopDetailSubscriptionStatus.Unknown,
-                        errorMessage = error.message ?: error.javaClass.simpleName,
+                    loadDetails(
+                        context = context,
+                        appId = appId,
+                        publishedFileId = publishedFileId,
+                        clearSelected = false,
+                        ignoreCache = true,
                     )
                 }
-            } finally {
-                detailLoadsInFlight -= detailKey
+            }.onFailure { error ->
+                Log.w(
+                    WORKSHOP_PERF_TAG,
+                    "loadDetails swrRevalidateFailed publishedFileId=$publishedFileId error=${error.message ?: error.javaClass.simpleName}",
+                )
             }
         }
     }
@@ -1824,6 +1938,7 @@ internal data class WorkshopUiState(
     val hasMorePages: Boolean = true,
     val listMode: WorkshopListMode = WorkshopListMode.Browse,
     val detailLoadingId: ULong? = null,
+    val detailLoadProgress: WorkshopLoadProgress? = null,
     val downloadInProgress: Boolean = false,
     val updateChecking: Boolean = false,
     val steamLoggedIn: Boolean = false,
@@ -1896,6 +2011,22 @@ private fun WorkshopItemDetails.canReuseForDetailOpen(fallbackSummary: WorkshopI
     return fallbackSummary.updatedAtMillis <= 0L ||
         summary.updatedAtMillis <= 0L ||
         fallbackSummary.updatedAtMillis <= summary.updatedAtMillis
+}
+
+/**
+ * True when the cached copy is reusable except that the card it was opened from reports a strictly
+ * newer published version; those opens go through stale-while-revalidate instead of a full reload.
+ */
+private fun isCachedDetailStaleVersusFallback(
+    cached: WorkshopItemSummary,
+    fallbackSummary: WorkshopItemSummary?,
+): Boolean {
+    if (fallbackSummary == null) return false
+    if (fallbackSummary.appId != cached.appId || fallbackSummary.publishedFileId != cached.publishedFileId) {
+        return false
+    }
+    if (cached.updatedAtMillis <= 0L || fallbackSummary.updatedAtMillis <= 0L) return false
+    return fallbackSummary.updatedAtMillis > cached.updatedAtMillis
 }
 
 private fun WorkshopItemDetails.hasReusableCommunityData(): Boolean =

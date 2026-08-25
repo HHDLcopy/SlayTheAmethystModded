@@ -121,18 +121,12 @@ internal fun WorkshopLoadProgressBar(
     val textScale = LocalDensity.current.fontScale.coerceIn(1f, 2f)
     val revealFraction = (revealHeight / fullHeight).coerceIn(0f, 1f)
     val phase = rendered.phase
-    val isRecovery = phase == WorkshopLoadPhase.FailingOver || phase == WorkshopLoadPhase.FallingBack
     val isFailure = phase == WorkshopLoadPhase.Failed
     val trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
-    val targetAccent = when {
-        isFailure -> MaterialTheme.colorScheme.error
-        isRecovery -> MaterialTheme.colorScheme.tertiary
-        else -> MaterialTheme.colorScheme.primary
-    }
     // Colour is animated rather than switched so a failover reads as the same continuous operation
     // changing state, not as a different widget appearing.
     val accentColor by animateColorAsState(
-        targetValue = targetAccent,
+        targetValue = workshopLoadPhaseAccentColor(phase),
         animationSpec = tween(durationMillis = 320),
         label = "workshopProgressAccent",
     )
@@ -189,7 +183,7 @@ internal fun WorkshopLoadProgressBar(
                     modifier = Modifier.weight(1f),
                 ) { animatedPhase ->
                     Text(
-                        text = animatedPhase.label(rendered),
+                        text = animatedPhase.progressLabel(rendered),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Medium,
                         color = if (isFailure) {
@@ -274,7 +268,7 @@ internal fun WorkshopLoadProgressBar(
 
 /** Breathing dot that conveys liveness without competing with the bar itself. */
 @Composable
-private fun WorkshopProgressPhasePulse(
+internal fun WorkshopProgressPhasePulse(
     color: Color,
     animating: Boolean,
 ) {
@@ -296,7 +290,19 @@ private fun WorkshopProgressPhasePulse(
     )
 }
 
-private fun WorkshopLoadPhase.completionFraction(): Float = when (this) {
+/**
+ * Accent colour for a load phase, shared by the market header bar and the detail top bar so both
+ * surfaces read recoveries and failures identically.
+ */
+@Composable
+internal fun workshopLoadPhaseAccentColor(phase: WorkshopLoadPhase): Color = when {
+    phase == WorkshopLoadPhase.Failed -> MaterialTheme.colorScheme.error
+    phase == WorkshopLoadPhase.FailingOver || phase == WorkshopLoadPhase.FallingBack ->
+        MaterialTheme.colorScheme.tertiary
+    else -> MaterialTheme.colorScheme.primary
+}
+
+internal fun WorkshopLoadPhase.completionFraction(): Float = when (this) {
     WorkshopLoadPhase.Preparing -> 0.06f
     WorkshopLoadPhase.Authenticating -> 0.18f
     WorkshopLoadPhase.ResolvingRoute -> 0.32f
@@ -313,7 +319,7 @@ private fun WorkshopLoadPhase.completionFraction(): Float = when (this) {
 }
 
 @Composable
-private fun WorkshopLoadPhase.label(progress: WorkshopLoadProgress?): String = when (this) {
+internal fun WorkshopLoadPhase.progressLabel(progress: WorkshopLoadProgress?): String = when (this) {
     WorkshopLoadPhase.Preparing -> stringResource(R.string.workshop_load_phase_preparing)
     WorkshopLoadPhase.Authenticating -> stringResource(R.string.workshop_load_phase_authenticating)
     WorkshopLoadPhase.ResolvingRoute -> stringResource(R.string.workshop_load_phase_resolving_route)

@@ -24,6 +24,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -191,6 +192,8 @@ internal fun WorkshopDetailScreen(
             )
         }
     val isLoadingChangeNotes = state.detailChangeNotesLoadingId == publishedFileId
+    val detailTopBarProgress = state.detailLoadProgress
+        ?.takeIf { state.detailLoadingId == publishedFileId }
     val canTranslateDetails = selectedDetails?.let { details ->
         details.summary.title.isNotBlank() ||
             details.summary.description.isNotBlank() ||
@@ -253,13 +256,32 @@ internal fun WorkshopDetailScreen(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
-                            Text(
-                                text = stringResource(R.string.workshop_detail_subtitle_format, publishedFileId.toString()),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
+                            // While a detail load runs, the subtitle line narrates the pipeline
+                            // step by step; once the load settles the static subtitle returns.
+                            AnimatedContent(
+                                targetState = detailTopBarProgress != null,
+                                transitionSpec = {
+                                    (fadeIn(animationSpec = tween(durationMillis = 180)) togetherWith
+                                        fadeOut(animationSpec = tween(durationMillis = 140)))
+                                        .using(SizeTransform(clip = false))
+                                },
+                                label = "workshop-detail-topbar-progress",
+                            ) { showingProgress ->
+                                if (showingProgress) {
+                                    WorkshopDetailTopBarLoadProgress(progress = detailTopBarProgress)
+                                } else {
+                                    Text(
+                                        text = stringResource(
+                                            R.string.workshop_detail_subtitle_format,
+                                            publishedFileId.toString(),
+                                        ),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
                         }
                     },
                     navigationIcon = {

@@ -82,6 +82,8 @@ internal object WorkshopLoadProgressReporter {
 
     private var activeSessionId: Long = 0L
     private var currentPhase: WorkshopLoadPhase? = null
+    /** Lowest ordinal a non-recovery phase may still narrate; advances as phases are accepted. */
+    private var narrationFloorOrdinal: Int = 0
     private var failedTargets: MutableSet<String> = linkedSetOf()
     private var listener: ((WorkshopLoadProgress) -> Unit)? = null
     private var routeListenerInstalled = false
@@ -99,6 +101,7 @@ internal object WorkshopLoadProgressReporter {
                 }
                 activeSessionId = 0L
                 currentPhase = null
+                narrationFloorOrdinal = 0
                 failedTargets = linkedSetOf()
             } else if (!routeListenerInstalled) {
                 AcceleratedRouteEvents.addListener(routeListener)
@@ -114,6 +117,7 @@ internal object WorkshopLoadProgressReporter {
         synchronized(lock) {
             activeSessionId = sessionId
             currentPhase = WorkshopLoadPhase.Preparing
+            narrationFloorOrdinal = WorkshopLoadPhase.Preparing.ordinal
             failedTargets = linkedSetOf()
             target = listener
         }
@@ -137,6 +141,22 @@ internal object WorkshopLoadProgressReporter {
             }
             if (currentPhase?.isTerminal == true && !phase.isTerminal) {
                 return
+            }
+            // One session narrates several sequential HTTP calls (a detail load runs API, community
+            // and dependency requests), and every call emits Attempt/Succeeded route events. A plain
+            // pass-through would walk the bar backwards through Connecting/Parsing on each extra
+            // request. Keep non-recovery phases monotonic instead; FailingOver/FallingBack stay
+            // exempt because a failover legitimately rewinds to Connecting for the retried node.
+            if (!phase.isTerminal) {
+                if (phase == WorkshopLoadPhase.FailingOver || phase == WorkshopLoadPhase.FallingBack) {
+                    narrationFloorOrdinal =
+                        minOf(narrationFloorOrdinal, WorkshopLoadPhase.Connecting.ordinal)
+                } else {
+                    if (phase.ordinal < narrationFloorOrdinal) {
+                        return
+                    }
+                    narrationFloorOrdinal = phase.ordinal
+                }
             }
             currentPhase = phase
             if (target != null && (phase == WorkshopLoadPhase.FailingOver || phase == WorkshopLoadPhase.FallingBack)) {
@@ -162,6 +182,7 @@ internal object WorkshopLoadProgressReporter {
             if (sessionId == activeSessionId) {
                 activeSessionId = 0L
                 currentPhase = null
+                narrationFloorOrdinal = 0
                 failedTargets = linkedSetOf()
             }
         }

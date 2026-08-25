@@ -4,6 +4,7 @@ import com.evacipated.cardcrawl.modthespire.ByteArrayMapClassPath;
 import com.evacipated.cardcrawl.modthespire.MTSClassPool;
 import com.evacipated.cardcrawl.modthespire.ModInfo;
 import com.evacipated.cardcrawl.modthespire.PackageJar;
+import com.evacipated.cardcrawl.modthespire.Patcher;
 import com.evacipated.cardcrawl.modthespire.Loader;
 import org.junit.Test;
 
@@ -32,6 +33,7 @@ public class MtsPatchCacheStoreTest {
     private static final String PROP_EXPECTED = "amethyst.mts.patch_cache.expected";
     private static final String PROP_PACKAGE_JAR_THREADS = "amethyst.mts.patch_cache.package_jar_threads";
     private static final String PROP_MIN_FREE_BYTES = "amethyst.mts.patch_cache.min_free_bytes";
+    private static final String PROP_CORE_INPUTS = "amethyst.mts.patch_cache.core_inputs";
 
     @Test
     public void store_writesMarkerWhenCacheJarAndPackageJarsExist() throws Exception {
@@ -856,6 +858,230 @@ public class MtsPatchCacheStoreTest {
         }
     }
 
+    @Test
+    public void store_reusesUnchangedArtifactsWhenOnlyAContentOnlyModChanges() throws Exception {
+        File root = Files.createTempDirectory("mts-patch-cache-reuse-").toFile();
+        try {
+            setCacheProperties(root);
+            resetStubTracking();
+            System.setProperty(PROP_CORE_INPUTS, "core-marker");
+            File modA = new File(root, "ContentModA.jar"); writeJar(modA, "contenta/Alpha.class", "alpha-v1");
+            File modB = new File(root, "ContentModB.jar"); writeJar(modB, "contentb/Beta.class", "beta-v1");
+            Loader.MODINFOS = new ModInfo[] {
+                    new ModInfo("moda", modA.toURI().toURL()),
+                    new ModInfo("modb", modB.toURI().toURL()),
+            };
+            Patcher.annotationDBMap.put(modA.toURI().toURL(), Patcher.StubAnnotationDB.withNoAnnotations());
+            Patcher.annotationDBMap.put(modB.toURI().toURL(), Patcher.StubAnnotationDB.withNoAnnotations());
+            Loader.STS_JAR = new File(root, "base.jar").getAbsolutePath();
+            writeJar(new File(root, "base.jar"), "base/Base.class", "base");
+            // Both builds run through the real fast writer, exactly like the patched
+            // MTS hook drives it on device.
+            PackageJar.onPackageJarStart = new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        PackageJar.Entries entries = fastPathEntries(PackageJar.lastClassPool, PackageJar.lastOutputPath);
+                        assertTrue(MtsPatchCacheStore.packageJarFastPath(
+                                PackageJar.lastClassPool, entries, null, PackageJar.lastOutputPath));
+                    } catch (Exception error) {
+                        throw new RuntimeException(error);
+                    }
+                }
+            };
+            PackageJar.stopAfterOnPackageJarStart = true;
+
+            // First build: nothing to reuse, every artifact written by the fast writer.
+            MtsPatchCacheStore.store(new MTSClassPool());
+            assertTrue(new File(root, ".mts_patch_cache").isFile());
+            File packageA = new File(root, "package/ContentModA-modded.jar");
+            File packageB = new File(root, "package/ContentModB-modded.jar");
+            assertTrue(packageA.isFile());
+            assertTrue(packageB.isFile());
+            byte[] firstMarker = readJarEntry(new File(root, "desktop-1.0-modded.jar"), "mod/moda/Marker.class");
+
+            // Second build: only mod A's bytes changed. A is content-only, so mod B's
+            // package jar must survive untouched while A's package and the main jar
+            // (which carries every mod's classes) are rewritten by the fast writer.
+            writeJar(modA, "contenta/Alpha.class", "alpha-v2");
+            long beforeB = packageB.lastModified();
+            Thread.sleep(5);
+
+            MtsPatchCacheStore.store(new MTSClassPool());
+
+            assertTrue(new File(root, ".mts_patch_cache").isFile());
+            assertEquals(beforeB, packageB.lastModified());
+            assertTrue(new File(root, "desktop-1.0-modded.jar.inputs").isFile());
+            assertTrue(new File(root, "package/ContentModA-modded.jar.inputs").isFile());
+            assertTrue(new File(root, "package/ContentModB-modded.jar.inputs").isFile());
+            assertFalse("mod B's reused package jar must keep its original bytes",
+                    java.util.Arrays.equals(
+                            readJarEntry(packageB, "contentb/Beta.class"),
+                            "beta-rewritten".getBytes("UTF-8")));
+            assertFalse("the rebuilt main jar must carry mod A's new marker",
+                    java.util.Arrays.equals(firstMarker, readJarEntry(new File(root, "desktop-1.0-modded.jar"), "mod/moda/Marker.class")));
+        } finally {
+            PackageJar.onPackageJarStart = null;
+            PackageJar.stopAfterOnPackageJarStart = false;
+            clearCacheProperties();
+            resetStubTracking();
+            PackageJar.writePackageJarFiles = true;
+            deleteRecursively(root);
+        }
+    }
+
+    @Test
+    public void store_rebuildsEveryArtifactWhenAPatchCarryingModChanges() throws Exception {
+        File root = Files.createTempDirectory("mts-patch-cache-reuse-patchy-").toFile();
+        try {
+            setCacheProperties(root);
+            resetStubTracking();
+            System.setProperty(PROP_CORE_INPUTS, "core-marker");
+            File modA = new File(root, "PatchedModA.jar"); writeJar(modA, "patcheda/Alpha.class", "alpha-v1");
+            File modB = new File(root, "ContentModB.jar"); writeJar(modB, "contentb/Beta.class", "beta-v1");
+            Loader.MODINFOS = new ModInfo[] {
+                    new ModInfo("moda", modA.toURI().toURL()),
+                    new ModInfo("modb", modB.toURI().toURL()),
+            };
+            Patcher.annotationDBMap.put(
+                    modA.toURI().toURL(),
+                    Patcher.StubAnnotationDB.withSpirePatchOn("patcheda/AlphaPatch")
+            );
+            Patcher.annotationDBMap.put(modB.toURI().toURL(), Patcher.StubAnnotationDB.withNoAnnotations());
+            PackageJar.writePackageJarFiles = false;
+            Loader.STS_JAR = new File(root, "base.jar").getAbsolutePath();
+            writeJar(new File(root, "base.jar"), "base/Base.class", "base");
+            PackageJar.onPackageJarStart = new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        PackageJar.Entries entries = fastPathEntries(PackageJar.lastClassPool, PackageJar.lastOutputPath);
+                        assertTrue(MtsPatchCacheStore.packageJarFastPath(
+                                PackageJar.lastClassPool, entries, null, PackageJar.lastOutputPath));
+                    } catch (Exception error) {
+                        throw new RuntimeException(error);
+                    }
+                }
+            };
+
+            MtsPatchCacheStore.store(new MTSClassPool());
+            File packageB = new File(root, "package/ContentModB-modded.jar");
+            assertTrue(packageB.isFile());
+            long firstMainJarBytes = new File(root, "desktop-1.0-modded.jar").length();
+
+            // Mod A carries a SpirePatch class, so its bytes can change the patched
+            // content of every other artifact: nothing may be reused this time.
+            // The stub writer runs normally and rewrites every artifact.
+            writeJar(modA, "patcheda/Alpha.class", "alpha-v2");
+            long beforeB = packageB.lastModified();
+            Thread.sleep(5);
+
+            MtsPatchCacheStore.store(new MTSClassPool());
+
+            assertTrue(new File(root, ".mts_patch_cache").isFile());
+            assertTrue(packageB.lastModified() != beforeB);
+            assertTrue(new File(root, "desktop-1.0-modded.jar").lastModified() >= beforeB);
+        } finally {
+            clearCacheProperties();
+            resetStubTracking();
+            PackageJar.writePackageJarFiles = true;
+            deleteRecursively(root);
+        }
+    }
+
+    @Test
+    public void store_keepsReusedMainJarBytesWhenFastPathSkipsItsRewrite() throws Exception {
+        File root = Files.createTempDirectory("mts-patch-cache-reuse-main-").toFile();
+        try {
+            setCacheProperties(root);
+            resetStubTracking();
+            System.setProperty(PROP_CORE_INPUTS, "core-marker");
+            File modA = new File(root, "ContentModA.jar"); writeJar(modA, "contenta/Alpha.class", "alpha-v1");
+            Loader.MODINFOS = new ModInfo[] {
+                    new ModInfo("moda", modA.toURI().toURL()),
+            };
+            Patcher.annotationDBMap.put(modA.toURI().toURL(), Patcher.StubAnnotationDB.withNoAnnotations());
+            PackageJar.writePackageJarFiles = true;
+            MtsPatchCacheStore.store(new MTSClassPool());
+
+            // Drive the second build through the real fast path, the way the patched
+            // MTS hook does: the writer skips the reused main jar, so its bytes must be
+            // restored from the backup instead of staying stream-truncated.
+            final java.util.Map<String, byte[]> reusedBytes = new java.util.HashMap<String, byte[]>();
+            File cachedJar = new File(root, "desktop-1.0-modded.jar");
+            byte[] firstManifest = readJarEntry(cachedJar, "META-INF/MANIFEST.MF");
+            long firstLength = cachedJar.length();
+
+            // Second build over unchanged inputs: MTS's hook opens and truncates the
+            // output before the fast writer runs, and the writer skips the reused main
+            // jar entirely, so the backup must come back byte-for-byte.
+            PackageJar.onPackageJarStart = new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        PackageJar.Entries entries = new PackageJar.Entries();
+                        entries.add(new PackageJar.Entry(
+                                "amethyst-cache-padding.bin",
+                                new byte[2 * 1024 * 1024],
+                                null
+                        ));
+                        assertTrue(MtsPatchCacheStore.packageJarFastPath(
+                                new MTSClassPool(),
+                                entries,
+                                null,
+                                cachedJar.getAbsolutePath()
+                        ));
+                    } catch (AssertionError error) {
+                        throw error;
+                    } catch (Exception error) {
+                        throw new RuntimeException(error);
+                    }
+                }
+            };
+            PackageJar.stopAfterOnPackageJarStart = true;
+
+            MtsPatchCacheStore.store(new MTSClassPool());
+
+            assertTrue(cachedJar.isFile());
+            assertEquals(firstLength, cachedJar.length());
+            assertArrayEquals(firstManifest, readJarEntry(cachedJar, "META-INF/MANIFEST.MF"));
+            assertTrue(new File(root, ".mts_patch_cache").isFile());
+        } finally {
+            PackageJar.onPackageJarStart = null;
+            PackageJar.stopAfterOnPackageJarStart = false;
+            clearCacheProperties();
+            resetStubTracking();
+            PackageJar.writePackageJarFiles = true;
+            deleteRecursively(root);
+        }
+    }
+
+
+    /** Builds fast-path entries the way the patched MTS hook hands them over: one attributed entry per mod plus base and padding. */
+    private static PackageJar.Entries fastPathEntries(MTSClassPool classPool, String outputPath) throws Exception {
+        PackageJar.Entries entries = new PackageJar.Entries();
+        entries.add(new PackageJar.Entry(
+                "com/evacipated/cardcrawl/modthespire/PackageJar$PrepackagedLauncher.class",
+                "launcher".getBytes("UTF-8"),
+                null
+        ));
+        entries.add(new PackageJar.Entry("base/Base.class", PackageJar.Type.BASEGAME));
+        entries.add(new PackageJar.Entry("amethyst-cache-padding.bin", new byte[1024 * 1024], null));
+        for (ModInfo modInfo : Loader.MODINFOS) {
+            // Salt the marker with the mod jar's current mtime so a rebuilt main jar
+            // carries visibly different bytes whenever a mod jar actually changed.
+            long modStamp = new File(modInfo.jarURL.toURI()).lastModified();
+            // locationUrl stays null on purpose: entries attributed to a mod jar are
+            // routed to that mod's package jar and excluded from the main jar.
+            entries.add(new PackageJar.Entry(
+                    "mod/" + modInfo.ID + "/Marker.class",
+                    ("marker-" + modInfo.ID + "-" + modStamp).getBytes("UTF-8"),
+                    null
+            ));
+        }
+        return entries;
+    }
+
     private static void setCacheProperties(File root) {
         System.setProperty(PROP_ENABLED, "true");
         System.setProperty(PROP_JAR, new File(root, "desktop-1.0-modded.jar").getAbsolutePath());
@@ -873,8 +1099,12 @@ public class MtsPatchCacheStoreTest {
         Loader.MODINFOS = new ModInfo[0];
         MTSClassPool.resetTracking();
         PackageJar.resetTracking();
+        Patcher.reset();
         MtsPatchCacheStore.pendingCompiledClassOverrides = null;
         MtsPatchCacheStore.lastPackageJarFastPathTookOver = false;
+        MtsPatchCacheStore.activeReusePlan = null;
+        MtsPatchCacheStore.activeReuseMainJarBackup = null;
+        System.clearProperty(PROP_CORE_INPUTS);
     }
 
     private static void clearCacheProperties() {
@@ -883,6 +1113,7 @@ public class MtsPatchCacheStoreTest {
         System.clearProperty(PROP_MARKER);
         System.clearProperty(PROP_PACKAGE_DIR);
         System.clearProperty(PROP_EXPECTED);
+        System.clearProperty(PROP_CORE_INPUTS);
     }
 
     private static byte[] readJarEntry(File jar, String name) throws Exception {

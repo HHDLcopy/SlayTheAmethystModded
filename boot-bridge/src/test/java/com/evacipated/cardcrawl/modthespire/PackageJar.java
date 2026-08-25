@@ -25,6 +25,15 @@ public final class PackageJar {
      * them absent — a store() that wrongly re-runs its serial merge makes them appear.
      */
     public static java.lang.Runnable onPackageJarStart = null;
+    /**
+     * When true, packageJar returns right after {@link #onPackageJarStart} runs,
+     * mirroring the real patched MTS hook: the inserted bytecode RETURNs as soon as
+     * Amethyst's fast writer takes over, so nothing else is written.
+     */
+    public static boolean stopAfterOnPackageJarStart = false;
+    /** Arguments the real patched MTS hook forwards to the fast writer, stashed for test runnables. */
+    public static MTSClassPool lastClassPool = null;
+    public static String lastOutputPath = null;
 
     private PackageJar() {
     }
@@ -47,16 +56,24 @@ public final class PackageJar {
         observedUserDir = null;
         forcedPackageDir = null;
         onPackageJarStart = null;
+        stopAfterOnPackageJarStart = false;
+        lastClassPool = null;
+        lastOutputPath = null;
     }
 
     public static void packageJar(MTSClassPool classPool, String outputPath) throws Exception {
         Set<String> outJarClasses = classPool.getOutJarClasses();
+        lastClassPool = classPool;
+        lastOutputPath = outputPath;
         observedOutJarWasNull = outJarClasses == null;
         observedOutJarSize = outJarClasses == null ? -1 : outJarClasses.size();
         observedPackageFlag = Loader.PACKAGE;
         observedUserDir = System.getProperty("user.dir");
         if (onPackageJarStart != null) {
             onPackageJarStart.run();
+        }
+        if (stopAfterOnPackageJarStart) {
+            return;
         }
         JarOutputStream output = new JarOutputStream(new FileOutputStream(outputPath));
         try {

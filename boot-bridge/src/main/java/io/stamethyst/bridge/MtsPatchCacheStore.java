@@ -3,6 +3,7 @@ package io.stamethyst.bridge;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.FileDescriptor;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.Closeable;
@@ -13,6 +14,8 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Collections;
@@ -20,6 +23,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Collection;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -32,6 +36,7 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.jar.Attributes;
 import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
 import java.util.jar.JarInputStream;
 import java.util.jar.JarOutputStream;
 import java.util.jar.Manifest;
@@ -58,6 +63,23 @@ public final class MtsPatchCacheStore {
     private static final long CACHE_BUILD_SIZE_FACTOR = 3L;
     private static final long MIN_CACHE_BUILD_BYTES = 256L * 1024L * 1024L;
     private static final int MAX_PACKAGE_JAR_THREADS = 4;
+    private static final String PROPERTY_CORE_INPUTS = "amethyst.mts.patch_cache.core_inputs";
+    private static final String PACKAGE_INPUTS_MARKER_SUFFIX = ".inputs";
+    private static final String INPUTS_MARKER_SCHEMA = "artifact-inputs|1";
+    private static final String SPIRE_PATCH_ANNOTATION = "com.evacipated.cardcrawl.modthespire.lib.SpirePatch";
+    private static final String SPIRE_PATCH2_ANNOTATION = "com.evacipated.cardcrawl.modthespire.lib.SpirePatch2";
+    /**
+     * Per-artifact reuse plan for the build in progress. Computed by {@code store()}
+     * before the package-jar phase and consumed by the fast writer on whatever thread
+     * MTS invokes it, mirroring {@link #pendingCompiledClassOverrides}.
+     */
+    static volatile ReusePlan activeReusePlan = null;
+    /**
+     * Byte copy of a reused main jar, taken before MTS opens its output stream. The
+     * fast writer restores it over the stream-truncated file when it skips the main
+     * -jar rewrite; {@code store()} clears it when the package-jar phase ends.
+     */
+    static volatile File activeReuseMainJarBackup = null;
     /**
      * Copy buffer for the fallback merge rewrite. The primary path folds compiled
      * classes into the first fast write, so this only runs when MTS's own package
@@ -225,6 +247,8 @@ public final class MtsPatchCacheStore {
 
         try {
             long cleanupStartNs = System.nanoTime();
+            ReusePlan reusePlan = planReuse(cachedJar, packageDir);
+            activeReusePlan = reusePlan;
             deleteIfExists(markerFile);
             deleteIfExists(diagnosticFile);
             File parent = cachedJar.getParentFile();
@@ -232,9 +256,14 @@ public final class MtsPatchCacheStore {
                 MtsPatchAnnotationDbCache.delete(parent);
                 MtsPatchMainJarSpireEnumCache.delete(parent);
             }
-            deletePackageJars(packageDir);
+            deletePackageJarsSelective(packageDir, reusePlan);
             if (!sameFile(packageDir, generatedPackageDir)) {
                 deletePackageJars(generatedPackageDir);
+            }
+            if (reusePlan != null) {
+                log("MTS patch cache reuse: mainJar=" + reusePlan.reuseMainJar
+                        + " reusedPackages=" + reusePlan.reusePackageTargets.size()
+                        + " of " + reusePlan.packageInputsMarkers.size());
             }
             if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
                 throw new IllegalStateException("Failed to create cache dir: " + parent.getAbsolutePath());
@@ -272,10 +301,26 @@ public final class MtsPatchCacheStore {
             logStep("primeOutJarClasses", primeStartNs);
             long packageStartNs = System.nanoTime();
             lastPackageJarFastPathTookOver = false;
+            // MTS opens (and truncates) the main-jar output stream before the fast-path
+            // hook runs, so a reused main jar must be restorable from a byte copy when
+            // the fast writer skips rewriting it. The backup only pays this cost on
+            // builds that actually reuse the main jar.
+            File reuseBackup = null;
+            if (reusePlan != null && reusePlan.reuseMainJar) {
+                reuseBackup = new File(cachedJar.getParentFile(), cachedJar.getName() + ".reuse-bak");
+                deleteIfExists(reuseBackup);
+                copyFile(cachedJar, reuseBackup);
+            }
+            activeReuseMainJarBackup = reuseBackup;
             try {
                 invokePackageJarInCacheRoot(packageJar, classPool, cachedJar);
             } finally {
                 pendingCompiledClassOverrides = null;
+                activeReusePlan = null;
+                activeReuseMainJarBackup = null;
+                if (reuseBackup != null) {
+                    deleteIfExists(reuseBackup);
+                }
             }
             logStep(
                     "invokePackageJar cacheBytes=" + (cachedJar.isFile() ? cachedJar.length() : 0L) +
@@ -334,6 +379,9 @@ public final class MtsPatchCacheStore {
             long markerStartNs = System.nanoTime();
             syncCacheArtifacts(cachedJar, packageDir, parent);
             logStep("syncCacheArtifacts", markerStartNs);
+            long inputsMarkerStartNs = System.nanoTime();
+            writeInputsMarkers(reusePlan, cachedJar, packageDir);
+            logStep("writeInputsMarkers", inputsMarkerStartNs);
             long markerWriteStartNs = System.nanoTime();
             writeMarker(markerFile, expectedMarker);
             logStep("writeMarker", markerWriteStartNs);
@@ -341,6 +389,7 @@ public final class MtsPatchCacheStore {
             logStep("store total", storeStartNs);
             deleteIfExists(diagnosticFile);
         } catch (Throwable error) {
+            activeReusePlan = null;
             deleteIfExists(markerFile);
             deleteIfExists(cachedJar);
             File parent = cachedJar.getParentFile();
@@ -349,12 +398,15 @@ public final class MtsPatchCacheStore {
                 MtsPatchMainJarSpireEnumCache.delete(parent);
             }
             deletePackageJars(packageDir);
+            deleteInputsMarkers(cachedJar, packageDir);
             if (!sameFile(packageDir, generatedPackageDir)) {
                 deletePackageJars(generatedPackageDir);
             }
             writeFailureDiagnostic(diagnosticFile, error);
             log("Failed to write MTS patch cache: " + error);
             error.printStackTrace(System.out);
+        } finally {
+            activeReusePlan = null;
         }
     }
 
@@ -569,9 +621,37 @@ public final class MtsPatchCacheStore {
         // reflection reads touch MTS statics, so they stay off the workers. The
         // overrides map comes from the same thread's store() call and is only read
         // inside the tasks.
-        tasks.add(mainJarTask(reflection, entries, cachedJar, compiledOverrides));
-        tasks.addAll(packageJarTasks(reflection, entries, packageDir));
-        return runCacheJarTasks(tasks);
+        ReusePlan reusePlan = activeReusePlan;
+        boolean reuseMainJar = reusePlan != null
+                && reusePlan.reuseMainJar
+                && cachedJar.isFile()
+                && cachedJar.length() >= MIN_CACHE_JAR_BYTES;
+        if (!reuseMainJar) {
+            tasks.add(mainJarTask(reflection, entries, cachedJar, compiledOverrides));
+        }
+        tasks.addAll(packageJarTasks(reflection, entries, packageDir, reusePlan));
+        int threads = runCacheJarTasks(tasks);
+        if (reuseMainJar) {
+            restoreReusedMainJar(cachedJar);
+        }
+        return threads;
+    }
+
+    /**
+     * Puts the reused main jar back in place of the stream-truncated file MTS left
+     * behind. Runs only after every write task succeeded, so a failure anywhere leaves
+     * the truncation in place for {@code store()} to clean up.
+     */
+    private static void restoreReusedMainJar(File cachedJar) throws Exception {
+        File backup = activeReuseMainJarBackup;
+        if (backup == null || !backup.isFile()) {
+            throw new IllegalStateException("Reused main jar backup is missing: " + cachedJar.getAbsolutePath());
+        }
+        deleteIfExists(cachedJar);
+        if (!backup.renameTo(cachedJar)) {
+            copyFile(backup, cachedJar);
+        }
+        log("Reused cached main jar: " + cachedJar.length() + " bytes");
     }
 
     private static int runCacheJarTasks(List<Callable<Void>> tasks) throws Exception {
@@ -735,7 +815,8 @@ public final class MtsPatchCacheStore {
     private static List<PackageJarTask> packageJarTasks(
             PackageJarReflection reflection,
             List<EntrySnapshot> entries,
-            File packageDir
+            File packageDir,
+            ReusePlan reusePlan
     ) throws Exception {
         final Map<String, EntrySnapshot> entriesByPath = mapEntriesByPath(entries);
         final List<EntrySnapshot> sharedEntries = entries;
@@ -753,6 +834,9 @@ public final class MtsPatchCacheStore {
             String modId = reflection.modId(modInfo);
             File sourceJar = new File(jarUrl.toURI());
             File targetJar = new File(packageDir, reflection.createModdedJarName(sourceJar.getName()));
+            if (reusePlan != null && reusePlan.reusePackageTargets.contains(targetJar.getAbsolutePath())) {
+                continue;
+            }
             PackageJarTask task =
                     new PackageJarTask(sharedEntries, entriesByPath, jarUrl, modId, sourceJar, targetJar);
             PackageJarTask displaced = tasksByTarget.put(targetJar.getAbsolutePath(), task);
@@ -1327,14 +1411,397 @@ public final class MtsPatchCacheStore {
     }
 
     private static void deletePackageJars(File packageDir) {
-        File[] files = packageDir.isDirectory() ? packageDir.listFiles() : null;
+        File[] files = packageDir.listFiles();
         if (files == null) {
             return;
         }
         for (File file : files) {
-            if (isJar(file)) {
-                file.delete();
+            if (file.isFile()) {
+                deleteIfExists(file);
             }
+        }
+    }
+
+    /**
+     * Decides which cache artifacts can be kept instead of rebuilt.
+     *
+     * <p>Every artifact's content is a function of its inputs, so each one carries an
+     * inputs marker — a digest over exactly the files that can change its bytes. When
+     * the global launcher marker mismatches (something changed somewhere), the inputs
+     * markers still say per artifact whether <em>that</em> artifact's bytes would come
+     * out identical, and those artifacts are reused instead of rewritten.
+     *
+     * <p>Dependency sets, conservatively:
+     * <ul>
+     *   <li>Main jar: the core files plus <em>every</em> enabled mod jar — the class
+     *       pool snapshot written into it includes all mod classes, content or not.</li>
+     *   <li>Package jar X: the core files, X's own jar, and every mod jar that carries
+     *       SpirePatch classes — those are the builds whose bytecode can be folded into
+     *       X's patched classes. Mods without any patch class cannot change X and are
+     *       excluded, so adding or updating a pure content mod reuses every other
+     *       artifact.</li>
+     * </ul>
+     *
+     * <p>Any doubt degrades to a rebuild: a missing core marker property, unreadable
+     * MODINFOS, or an annotation DB that cannot be consulted all mark the mod as
+     * patch-carrying or drop the plan entirely.
+     */
+    private static ReusePlan planReuse(File cachedJar, File packageDir) {
+        String coreInputsMarker = System.getProperty(PROPERTY_CORE_INPUTS, "").trim();
+        if (coreInputsMarker.length() == 0) {
+            return null;
+        }
+        try {
+            Map<String, File> modJars = resolveModJars();
+            if (modJars.isEmpty()) {
+                return null;
+            }
+            Set<String> patchCarrying = resolvePatchCarryingModPaths(modJars);
+            ReusePlan plan = new ReusePlan(coreInputsMarker);
+            for (Map.Entry<String, File> modEntry : modJars.entrySet()) {
+                plan.modContentDigests.put(modEntry.getKey(), contentDigest(modEntry.getValue()));
+            }
+
+            plan.mainJarInputsMarker = computeInputsMarker(
+                    plan.coreInputsMarker, "main-jar",
+                    plan.modContentDigests.values(), Collections.<String>emptySet());
+            plan.reuseMainJar = cachedJar.isFile()
+                    && cachedJar.length() >= MIN_CACHE_JAR_BYTES
+                    && readTextFileIfExists(inputsMarkerFileFor(cachedJar)).equals(plan.mainJarInputsMarker);
+
+            Set<String> patchCarryingDigests = new LinkedHashSet<String>();
+            for (String modPath : patchCarrying) {
+                String digest = plan.modContentDigests.get(modPath);
+                if (digest != null) {
+                    patchCarryingDigests.add(digest);
+                }
+            }
+            for (Map.Entry<String, File> modEntry : modJars.entrySet()) {
+                File sourceJar = modEntry.getValue();
+                String targetName = createModdedJarNameCached(sourceJar.getName());
+                File targetJar = new File(packageDir, targetName);
+                String marker = computeInputsMarker(
+                        plan.coreInputsMarker, "package",
+                        patchCarryingDigests,
+                        Collections.singleton(contentDigest(sourceJar)));
+                plan.packageInputsMarkers.put(targetJar.getAbsolutePath(), marker);
+                if (targetJar.isFile() && targetJar.length() > 0L
+                        && readTextFileIfExists(inputsMarkerFileFor(targetJar)).equals(marker)) {
+                    plan.reusePackageTargets.add(targetJar.getAbsolutePath());
+                }
+            }
+            return plan;
+        } catch (Throwable error) {
+            log("MTS patch cache reuse planning failed, rebuilding everything: " + error);
+            return null;
+        }
+    }
+
+    /**
+     * Content-only digest of a jar: SHA-256 over each central-directory entry's name,
+     * uncompressed size, and CRC, mirroring the launcher's marker fingerprints but
+     * without the path, so moving or reordering mod files does not invalidate reuse.
+     * Falls back to size and mtime for files that are not readable zips.
+     */
+    private static String contentDigest(File file) {
+        if (!file.isFile()) {
+            return "missing";
+        }
+        try {
+            JarFile jar = new JarFile(file);
+            try {
+                MessageDigest digest = MessageDigest.getInstance("SHA-256");
+                java.util.Enumeration<java.util.jar.JarEntry> entries = jar.entries();
+                while (entries.hasMoreElements()) {
+                    java.util.jar.JarEntry entry = entries.nextElement();
+                    updateDigestString(digest, entry.getName());
+                    updateDigestString(digest, Long.toString(entry.getSize()));
+                    updateDigestString(digest, Long.toString(entry.getCrc()));
+                }
+                return toHex(digest.digest());
+            } finally {
+                closeIfPossible(jar);
+            }
+        } catch (Throwable ignored) {
+            MessageDigest digest = null;
+            try {
+                digest = MessageDigest.getInstance("SHA-256");
+                updateDigestString(digest, "nozip");
+                updateDigestString(digest, Long.toString(file.length()));
+                updateDigestString(digest, Long.toString(file.lastModified()));
+                return toHex(digest.digest());
+            } catch (Throwable inner) {
+                return "undigestable";
+            }
+        }
+    }
+
+    private static String computeInputsMarker(
+            String coreInputsMarker,
+            String artifactKind,
+            Collection<String> inputDigests,
+            Collection<String> extraDigests
+    ) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        updateDigestString(digest, INPUTS_MARKER_SCHEMA);
+        updateDigestString(digest, coreInputsMarker);
+        updateDigestString(digest, artifactKind);
+        List<String> all = new ArrayList<String>(inputDigests);
+        all.addAll(extraDigests);
+        Collections.sort(all);
+        for (String input : all) {
+            updateDigestString(digest, input);
+        }
+        return toHex(digest.digest());
+    }
+
+    private static void updateDigestString(MessageDigest digest, String value) {
+        digest.update(value.getBytes(StandardCharsets.UTF_8));
+        digest.update((byte) 0);
+    }
+
+    private static String toHex(byte[] bytes) {
+        StringBuilder builder = new StringBuilder(bytes.length * 2);
+        for (byte value : bytes) {
+            builder.append(Character.forDigit((value >> 4) & 0xF, 16));
+            builder.append(Character.forDigit(value & 0xF, 16));
+        }
+        return builder.toString();
+    }
+
+    /** Enabled mod jars keyed by absolute path, read off MTS's Loader.MODINFOS. */
+    private static Map<String, File> resolveModJars() throws Exception {
+        Class<?> loaderClass = loadMtsLoaderClass(MtsPatchCacheStore.class.getClassLoader());
+        Field modInfosField = loaderClass.getDeclaredField("MODINFOS");
+        modInfosField.setAccessible(true);
+        Object[] modInfos = (Object[]) modInfosField.get(null);
+        Map<String, File> modJars = new LinkedHashMap<String, File>();
+        if (modInfos == null) {
+            return modJars;
+        }
+        for (Object modInfo : modInfos) {
+            if (modInfo == null) {
+                continue;
+            }
+            Field jarUrlField = modInfo.getClass().getField("jarURL");
+            Object jarUrl = jarUrlField.get(modInfo);
+            if (!(jarUrl instanceof URL)) {
+                continue;
+            }
+            File jarFile = new File(((URL) jarUrl).toURI());
+            modJars.put(jarFile.getAbsolutePath(), jarFile);
+        }
+        return modJars;
+    }
+
+    /**
+     * Absolute paths of mod jars whose bytecode can be folded into other artifacts,
+     * decided from the per-mod annotation DB: a jar carrying at least one class
+     * annotated with SpirePatch or SpirePatch2 contributes baked bytecode. Anything
+     * that cannot be consulted counts as carrying — a wrong "no" would reuse a stale
+     * artifact, while a wrong "yes" only costs a rebuild.
+     */
+    private static Set<String> resolvePatchCarryingModPaths(Map<String, File> modJars) {
+        Set<String> carrying = new LinkedHashSet<String>();
+        Map<String, Object> dbsByFileName = new LinkedHashMap<String, Object>();
+        try {
+            Class<?> patcherClass = Class.forName(
+                    "com.evacipated.cardcrawl.modthespire.Patcher",
+                    false,
+                    MtsPatchCacheStore.class.getClassLoader()
+            );
+            Object rawMap = patcherClass.getField("annotationDBMap").get(null);
+            if (rawMap instanceof Map) {
+                for (Map.Entry<?, ?> entry : ((Map<?, ?>) rawMap).entrySet()) {
+                    Object key = entry.getKey();
+                    String fileName = null;
+                    if (key instanceof URL) {
+                        fileName = new File(((URL) key).toURI()).getName();
+                    } else if (key instanceof File) {
+                        fileName = ((File) key).getName();
+                    }
+                    if (fileName != null) {
+                        dbsByFileName.put(fileName, entry.getValue());
+                    }
+                }
+            }
+        } catch (Throwable error) {
+            log("MTS patch cache could not read the annotation DB map: " + error);
+        }
+        for (Map.Entry<String, File> modEntry : modJars.entrySet()) {
+            boolean isCarrying = true;
+            try {
+                Object db = dbsByFileName.get(modEntry.getValue().getName());
+                if (db != null) {
+                    isCarrying = annotationDbHasPatchClasses(db);
+                }
+            } catch (Throwable error) {
+                isCarrying = true;
+            }
+            if (isCarrying) {
+                carrying.add(modEntry.getKey());
+            }
+        }
+        return carrying;
+    }
+
+    private static boolean annotationDbHasPatchClasses(Object db) throws Exception {
+        Method indexMethod = db.getClass().getMethod("getClassAnnotationIndex");
+        Object rawIndex = indexMethod.invoke(db);
+        if (!(rawIndex instanceof Map)) {
+            return true;
+        }
+        for (Object rawAnnotations : ((Map<?, ?>) rawIndex).values()) {
+            if (!(rawAnnotations instanceof Collection)) {
+                continue;
+            }
+            for (Object annotationType : (Collection<?>) rawAnnotations) {
+                if (SPIRE_PATCH_ANNOTATION.equals(annotationType)
+                        || SPIRE_PATCH2_ANNOTATION.equals(annotationType)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static File inputsMarkerFileFor(File artifact) {
+        if (PACKAGE_INPUTS_MARKER_SUFFIX.length() == 0) {
+            return new File(artifact.getParentFile(), artifact.getName() + ".inputs");
+        }
+        String name = artifact.getName();
+        return new File(artifact.getParentFile(), name + PACKAGE_INPUTS_MARKER_SUFFIX);
+    }
+
+    private static String readTextFileIfExists(File file) {
+        try {
+            if (!file.isFile()) {
+                return "";
+            }
+            byte[] bytes = Files.readAllBytes(file.toPath());
+            return new String(bytes, StandardCharsets.UTF_8).trim();
+        } catch (Throwable ignored) {
+            return "";
+        }
+    }
+
+    private static void writeInputsMarkers(ReusePlan plan, File cachedJar, File packageDir) {
+        if (plan == null) {
+            return;
+        }
+        try {
+            if (!plan.reuseMainJar) {
+                writeTextFileAtomically(inputsMarkerFileFor(cachedJar), plan.mainJarInputsMarker);
+            }
+            for (Map.Entry<String, String> entry : plan.packageInputsMarkers.entrySet()) {
+                if (plan.reusePackageTargets.contains(entry.getKey())) {
+                    continue;
+                }
+                writeTextFileAtomically(new File(entry.getKey() + PACKAGE_INPUTS_MARKER_SUFFIX), entry.getValue());
+            }
+        } catch (Throwable error) {
+            // Sub-markers are a reuse optimization only; losing them costs one full
+            // rebuild on the next launch and must never fail a completed build.
+            log("Failed to write MTS patch cache inputs markers: " + error);
+        }
+    }
+
+    private static void deleteInputsMarkers(File cachedJar, File packageDir) {
+        deleteIfExists(inputsMarkerFileFor(cachedJar));
+        File[] files = packageDir.listFiles();
+        if (files == null) {
+            return;
+        }
+        for (File file : files) {
+            if (file.isFile() && file.getName().endsWith(PACKAGE_INPUTS_MARKER_SUFFIX)) {
+                deleteIfExists(file);
+            }
+        }
+    }
+
+    private static void writeTextFileAtomically(File target, String content) throws IOException {
+        File parent = target.getParentFile();
+        if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
+            throw new IOException("Failed to create directory: " + parent.getAbsolutePath());
+        }
+        File tempFile = new File(parent, target.getName() + ".tmp");
+        FileOutputStream output = new FileOutputStream(tempFile);
+        try {
+            output.write(content.getBytes(StandardCharsets.UTF_8));
+            output.flush();
+            FileDescriptor descriptor = output.getFD();
+            descriptor.sync();
+        } finally {
+            output.close();
+        }
+        if (!tempFile.renameTo(target)) {
+            tempFile.delete();
+        }
+    }
+
+    /**
+     * Mirrors MTS's {@code PackageJar.createModdedJarName} at planning time, before the
+     * fast path's reflection wrapper exists. The fallback reproduces MTS's rule so the
+     * plan's target paths always match the writer's.
+     */
+    private static String createModdedJarNameCached(String fileName) {
+        try {
+            Class<?> packageJarClass = Class.forName(
+                    "com.evacipated.cardcrawl.modthespire.PackageJar",
+                    false,
+                    MtsPatchCacheStore.class.getClassLoader()
+            );
+            Method method = packageJarClass.getDeclaredMethod("createModdedJarName", String.class);
+            method.setAccessible(true);
+            return (String) method.invoke(null, fileName);
+        } catch (Throwable ignored) {
+            int dot = fileName.toLowerCase(Locale.ROOT).endsWith(".jar")
+                    ? fileName.length() - ".jar".length()
+                    : fileName.length();
+            return fileName.substring(0, dot) + "-modded.jar";
+        }
+    }
+
+    private static void deletePackageJarsSelective(File packageDir, ReusePlan reusePlan) {
+        if (reusePlan == null) {
+            deletePackageJars(packageDir);
+            return;
+        }
+        File[] files = packageDir.listFiles();
+        if (files == null) {
+            return;
+        }
+        for (File file : files) {
+            if (!file.isFile()) {
+                continue;
+            }
+            if (file.getName().endsWith(PACKAGE_INPUTS_MARKER_SUFFIX)) {
+                // Rewritten together with their artifact when the artifact rebuilds;
+                // kept when the artifact is reused.
+                if (!reusePlan.reusePackageTargets.contains(
+                        file.getAbsolutePath().substring(
+                                0,
+                                file.getAbsolutePath().length() - PACKAGE_INPUTS_MARKER_SUFFIX.length()))) {
+                    deleteIfExists(file);
+                }
+                continue;
+            }
+            if (!reusePlan.reusePackageTargets.contains(file.getAbsolutePath())) {
+                deleteIfExists(file);
+            }
+        }
+    }
+
+    private static final class ReusePlan {
+        final String coreInputsMarker;
+        final Map<String, String> modContentDigests = new LinkedHashMap<String, String>();
+        final Map<String, String> packageInputsMarkers = new LinkedHashMap<String, String>();
+        final Set<String> reusePackageTargets = new LinkedHashSet<String>();
+        boolean reuseMainJar;
+        String mainJarInputsMarker = "";
+
+        ReusePlan(String coreInputsMarker) {
+            this.coreInputsMarker = coreInputsMarker;
         }
     }
 

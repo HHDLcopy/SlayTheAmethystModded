@@ -204,6 +204,47 @@ Cache reads are conservative:
 - Runtime compat cache-hit patches check `amethyst.mts.patch_cache.current=true`,
   so they do not alter non-cache launches.
 
+## Per-artifact reuse on rebuild
+
+The global marker stays all-or-nothing for hit validation, but `store` no longer
+treats a marker mismatch as a mandate to rewrite everything. Before the package-jar
+phase it computes a per-artifact **inputs marker** — a digest over exactly the files
+that can change that artifact's bytes — and skips rewriting artifacts whose inputs
+marker still matches the one stored beside them:
+
+- `desktop-1.0-modded.jar.inputs` next to the cached main jar: the six core
+  fingerprints (same lines the global marker uses, including the full-content gdx
+  patch digest) plus a content digest of **every** enabled mod jar, because the main
+  jar carries all mod classes.
+- `package/<mod>-modded.jar.inputs` next to each package jar: the same core
+  fingerprints, that package's own mod jar, and only the mod jars that **carry
+  SpirePatch classes**. A mod without any patch class cannot change another artifact's
+  bytecode, so adding, updating, or toggling one reuses the main jar and every other
+  package jar.
+
+Whether a mod carries patches is decided from the per-mod annotation DB that patch
+discovery already built (`Patcher.annotationDBMap` → `getClassAnnotationIndex()`):
+any class annotated `SpirePatch` or `SpirePatch2` counts. Anything that cannot be
+consulted counts as patch-carrying, and an unreadable input set drops the plan
+entirely — a wrong "no" would reuse a stale artifact, while a wrong "yes" only costs
+a rebuild.
+
+Two mechanical details keep the reuse safe:
+
+- MTS opens (and truncates) the main-jar output stream before the fast-path hook
+  runs. When the main jar is reused, `store` takes a byte copy of it first, and the
+  fast writer restores that copy over the truncated file after all write tasks
+  succeed. A failure anywhere leaves the truncation in place for the normal
+  cleanup, and the next build starts from scratch.
+- Reused package jars are kept by the selective cleanup while everything else
+  (stale artifacts from older marker keys included) is deleted, and the inputs
+  markers are written before the global marker commits, so a crash mid-store can
+  never leave a sub-marker vouching for bytes that are not on disk.
+
+The launcher passes its core fingerprint digest to the game process via
+`amethyst.mts.patch_cache.core_inputs`; when the property is absent the reuse pass
+is skipped and `store` behaves exactly as before.
+
 ## Cache build parallelism
 
 Every jar the cache build writes is an independent read-modify-write over a distinct

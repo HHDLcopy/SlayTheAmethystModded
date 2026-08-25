@@ -427,7 +427,8 @@ class MtsPatchCacheCoordinatorTest {
             markerFile = markerFile,
             packageDir = packageDir,
             expectedMarker = "marker",
-            gameDir = gameDir
+            gameDir = gameDir,
+            coreInputsMarker = "core-marker"
         )
 
         assertEquals(
@@ -439,7 +440,8 @@ class MtsPatchCacheCoordinatorTest {
                 "-Damethyst.mts.patch_cache.marker=${markerFile.absolutePath}",
                 "-Damethyst.mts.patch_cache.package_dir=${packageDir.absolutePath}",
                 "-Damethyst.mts.patch_cache.expected=marker",
-                "-Damethyst.mts.patch_cache.game_dir=${gameDir.absolutePath}"
+                "-Damethyst.mts.patch_cache.game_dir=${gameDir.absolutePath}",
+                "-Damethyst.mts.patch_cache.core_inputs=core-marker"
             ),
             args
         )
@@ -463,7 +465,8 @@ class MtsPatchCacheCoordinatorTest {
             markerFile = markerFile,
             packageDir = packageDir,
             expectedMarker = "",
-            gameDir = gameDir
+            gameDir = gameDir,
+            coreInputsMarker = ""
         )
 
         assertEquals(
@@ -475,7 +478,8 @@ class MtsPatchCacheCoordinatorTest {
                 "-Damethyst.mts.patch_cache.marker=${markerFile.absolutePath}",
                 "-Damethyst.mts.patch_cache.package_dir=${packageDir.absolutePath}",
                 "-Damethyst.mts.patch_cache.expected=",
-                "-Damethyst.mts.patch_cache.game_dir=${gameDir.absolutePath}"
+                "-Damethyst.mts.patch_cache.game_dir=${gameDir.absolutePath}",
+                "-Damethyst.mts.patch_cache.core_inputs="
             ),
             args
         )

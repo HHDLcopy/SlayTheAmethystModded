@@ -11,7 +11,6 @@ import okhttp3.Request
 internal object SteamCloudAvatarCacheStore {
     private const val DIRECTORY_NAME = "steam-cloud-avatar-cache"
     private const val CACHE_SIZE_BYTES = 2 * 1024 * 1024
-    private const val MAX_DISK_ENTRIES = 8
     private const val CONNECT_TIMEOUT_MS = 8_000L
     private const val READ_TIMEOUT_MS = 15_000L
     private const val CALL_TIMEOUT_MS = 20_000L
@@ -98,22 +97,9 @@ internal object SteamCloudAvatarCacheStore {
                 // Never keep a file we cannot render; otherwise every later load
                 // retries the network against the same poisoned cache entry.
                 outputFile.delete()
-            } else {
-                prune(context, directory)
             }
             bitmap
         }.getOrNull()
-    }
-
-    /** Keeps the newest [MAX_DISK_ENTRIES] avatar files; Steam rotates CDN hosts for
-     *  the same image, so URL-keyed entries would otherwise grow without bound. */
-    private fun prune(context: Context, directory: File) {
-        runCatching {
-            directory.listFiles { file -> file.isFile && file.extension == "img" }
-                ?.sortedByDescending(File::lastModified)
-                ?.drop(MAX_DISK_ENTRIES)
-                ?.forEach(File::delete)
-        }
     }
 
     private fun cacheFile(context: Context, cacheKey: String): File =

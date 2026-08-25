@@ -173,6 +173,8 @@ import kotlinx.coroutines.flow.asSharedFlow
 
 private const val STEAM_CLOUD_BACKUP_DOWNLOAD_SUBDIR = "SlayTheAmethystBackup"
 
+private const val STEAM_CLOUD_PROFILE_BACKFILL_INTERVAL_MS = 6L * 60L * 60L * 1000L
+
 private enum class QuickStartSteamImportMode {
     AUTHENTICATED,
     ANONYMOUS,
@@ -555,6 +557,9 @@ class SettingsScreenViewModel : ViewModel() {
     @Volatile
     private var quickStartSteamImportGeneration: Int = 0
 
+    @Volatile
+    private var lastSteamCloudProfileBackfillAtMs: Long = 0L
+
     private val automaticallyPromptedUpdateVersions = LinkedHashSet<String>()
 
     var uiState by mutableStateOf(UiState())
@@ -583,8 +588,32 @@ class SettingsScreenViewModel : ViewModel() {
         }.getOrNull()?.let { snapshot ->
             applySnapshot(activity, snapshot)
         }
+        seedSteamCloudIdentityFromStore(activity)
         refreshStatus(activity, clearBusy = false)
         refreshArthasResourceState(activity)
+    }
+
+    /**
+     * Publishes the stored Steam Cloud credentials to the UI synchronously so the
+     * screen renders signed-in (with any cached avatar) on its first frame instead
+     * of flashing "not signed in" until the async refresh or a CM logon completes.
+     * A single unlocked attempt keeps this off the critical path; failures fall
+     * back to the normal async refresh.
+     */
+    private fun seedSteamCloudIdentityFromStore(host: Activity) {
+        val snapshot = runCatching {
+            SteamCloudAuthStore.readSnapshotWithStatus(host, attempts = 1)
+        }.getOrNull()?.takeIf { !it.readFailed }?.snapshot ?: return
+        if (!snapshot.isComplete) {
+            return
+        }
+        uiState = uiState.copy(
+            steamCloudAccountName = snapshot.accountName,
+            steamCloudRefreshTokenConfigured = true,
+            steamCloudGuardDataConfigured = snapshot.guardDataConfigured,
+            steamCloudPersonaName = snapshot.personaName,
+            steamCloudAvatarUrl = snapshot.avatarUrl,
+        )
     }
 
     fun startGameReturnAutoUpdateCheck(host: Activity) {
@@ -1285,7 +1314,8 @@ class SettingsScreenViewModel : ViewModel() {
                         readFailed = true,
                     )
                 }
-                val steamCloudAuthSnapshot = steamCloudAuthRead.snapshot
+                val steamCloudAuthSnapshot =
+                    maybeBackfillSteamCloudProfile(host, steamCloudAuthRead.snapshot)
                 // A failed auth-state read (e.g. KeyStore contention while the
                 // :steamcloud process syncs) is not proof of being logged out;
                 // keep the last known signed-in display instead of flashing it away.
@@ -1448,6 +1478,41 @@ class SettingsScreenViewModel : ViewModel() {
                 }
             }
         }
+    }
+
+    /**
+     * Sessions logged in before persona/avatar capture (or whose profile fetch
+     * failed at login) hold valid credentials without an avatar URL. Backfill
+     * them at most once per interval so the avatar caches permanently instead
+     * of staying blank; a failed lookup just waits for the next interval.
+     */
+    private fun maybeBackfillSteamCloudProfile(
+        host: Activity,
+        snapshot: SteamCloudAuthStore.AuthSnapshot,
+    ): SteamCloudAuthStore.AuthSnapshot {
+        if (!snapshot.isComplete || snapshot.avatarUrl.isNotBlank()) {
+            return snapshot
+        }
+        val now = System.currentTimeMillis()
+        if (now - lastSteamCloudProfileBackfillAtMs < STEAM_CLOUD_PROFILE_BACKFILL_INTERVAL_MS) {
+            return snapshot
+        }
+        lastSteamCloudProfileBackfillAtMs = now
+        val profile = runCatching {
+            SteamCloudProfileService.fetchProfile(host, snapshot.steamId64)
+        }.getOrNull() ?: return snapshot
+        runCatching {
+            SteamCloudAuthStore.recordProfile(
+                context = host,
+                steamId64 = snapshot.steamId64,
+                personaName = profile.personaName,
+                avatarUrl = profile.avatarUrl,
+            )
+        }
+        return snapshot.copy(
+            personaName = profile.personaName.ifBlank { snapshot.personaName },
+            avatarUrl = profile.avatarUrl,
+        )
     }
 
     private fun startAutomaticUpdateCheck(host: Activity) {

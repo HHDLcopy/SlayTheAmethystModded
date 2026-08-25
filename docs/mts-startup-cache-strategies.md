@@ -347,13 +347,37 @@ rebuilt whenever the marker changes, so the disk they cost is cheap and temporar
 while every class the JVM loads from them on a hit would otherwise pay inflater time.
 The main jar carries the whole base game, so it dominates that cost.
 
-`mergeCompiledClasses` runs after `writeFastMainJar` whenever Javassist produced patched
-base-game classes, and it rewrites every entry of the main jar into a fresh temporary jar
-before renaming it over the original. It was creating that `ZipOutputStream` without
-setting a level, so it silently re-deflated the entire main jar at the default level and
-undid the choice made a moment earlier — the uncompressed main jar only survived when the
-merge pass happened not to run. The merge writer now sets the same level as the other two.
+## Compiled-class merging
 
-`store_keepsMergedCacheJarUncompressed` locks this in. Note that `NO_COMPRESSION` still
-emits `DEFLATED` entries, just with stored blocks, so the entry method is not a usable
-signal; the test asserts on compressed size using a highly compressible payload instead.
+When Javassist produces patched base-game classes, those bytes must end up in the
+cached main jar ahead of every original copy of the class. Two paths provide that,
+with identical content and precedence:
+
+- Primary: `store()` collects the compiled classes before invoking MTS's
+  `packageJar`, and the fast main-jar writer substitutes them inline wherever a
+  matching entry appears while it writes, appending classes no source jar contains.
+  No second pass over the archive happens. This matters because the merge rewrite
+  used to re-read, inflate, and re-write the entire base-game-sized jar just to
+  replace a handful of class entries.
+- Fallback: when MTS's own package writer produced the jar instead (fast path
+  unavailable or failed), the serial `mergeCompiledClasses` rewrite still runs over
+  the finished jar. It remains stream-based on purpose: a raw zip-record-level
+  rewrite would avoid inflating every entry but means hand-parsing local headers
+  and rebuilding the central directory on the durability-critical artifact, a risk
+  not worth taking for a path that now almost never runs.
+
+In both paths the compiled-classpath bytes win over the OUTJAR snapshot bytes and
+over every source jar copy; the two must never coexist in the output. When the fast
+writer took over, `store()` reports `mergeCompiledClasses skipped, folded into fast
+write` in its step log instead of paying the rewrite again;
+`store_skipsMergeRewriteWhenFastPathTookOver` locks the skip in, and
+`store_mergesCompiledBaseGameClassesIntoCacheJar` plus
+`packageJarFastPath_foldsCompiledClassOverridesIntoMainJar` lock the content rules.
+
+Historical note: the fallback rewrite once created its `ZipOutputStream` without
+setting a level, silently re-deflating the entire main jar at the default level. It
+now sets the same `NO_COMPRESSION` level as both fast writers, and
+`store_keepsMergedCacheJarUncompressed` locks that in. Note that `NO_COMPRESSION`
+still emits `DEFLATED` entries, just with stored blocks, so the entry method is not
+a usable signal; the test asserts on compressed size using a highly compressible
+payload instead.

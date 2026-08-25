@@ -24,7 +24,6 @@ internal object MtsPatchCacheCoordinator {
     private const val PROPERTY_PACKAGE_DIR = "amethyst.mts.patch_cache.package_dir"
     private const val PROPERTY_EXPECTED = "amethyst.mts.patch_cache.expected"
     private const val PROPERTY_GAME_DIR = "amethyst.mts.patch_cache.game_dir"
-    private const val PROPERTY_CORE_INPUTS = "amethyst.mts.patch_cache.core_inputs"
     private const val FINGERPRINT_POOL_CAP = 4
 
     @JvmStatic
@@ -66,34 +65,7 @@ internal object MtsPatchCacheCoordinator {
 
     @Throws(IOException::class)
     fun appendRuntimeProperties(context: Context, args: MutableList<String>, enabled: Boolean) {
-        val gdxPatchDigestCache = RuntimePaths.mtsPatchCacheGdxPatchDigestCache(context)
-        val coreLines = if (enabled) {
-            coreFingerprintLines(
-                desktopJar = RuntimePaths.importedStsJar(context),
-                mtsJar = RuntimePaths.importedMtsJar(context),
-                baseModJar = RuntimePaths.importedBaseModJar(context),
-                stsLibJar = RuntimePaths.importedStsLibJar(context),
-                bootBridgeJar = RuntimePaths.bootBridgeJar(context),
-                gdxPatchJar = RuntimePaths.gdxPatchJar(context),
-                gdxPatchDigestCache = gdxPatchDigestCache
-            )
-        } else {
-            null
-        }
-        val expectedMarker = if (coreLines != null) {
-            sha256(
-                (listOf("schema|9") + coreLines + modFingerprintLines(
-                    RuntimePaths.mtsModFileList(context),
-                    listOf(
-                        RuntimePaths.importedAmethystRuntimeCompatJar(context),
-                        RuntimePaths.importedAmethystFloatingToolsJar(context),
-                        RuntimePaths.importedRamSaverJar(context)
-                    )
-                )).joinToString(separator = "\n")
-            )
-        } else {
-            ""
-        }
+        val expectedMarker = if (enabled) expectedMarker(context) else ""
         appendRuntimeProperties(
             args = args,
             enabled = enabled,
@@ -108,12 +80,7 @@ internal object MtsPatchCacheCoordinator {
             markerFile = RuntimePaths.mtsPatchCacheMarker(context),
             packageDir = RuntimePaths.mtsPatchCachePackageDir(context),
             expectedMarker = expectedMarker,
-            gameDir = RuntimePaths.stsRoot(context),
-            coreInputsMarker = if (coreLines != null) {
-                sha256(coreLines.joinToString(separator = "\n"))
-            } else {
-                ""
-            }
+            gameDir = RuntimePaths.stsRoot(context)
         )
     }
 
@@ -126,8 +93,7 @@ internal object MtsPatchCacheCoordinator {
         markerFile: File,
         packageDir: File,
         expectedMarker: String,
-        gameDir: File,
-        coreInputsMarker: String
+        gameDir: File
     ) {
         args.add("-D$PROPERTY_ENABLED=$enabled")
         args.add("-D$PROPERTY_CURRENT=$cacheCurrent")
@@ -137,7 +103,6 @@ internal object MtsPatchCacheCoordinator {
         args.add("-D$PROPERTY_PACKAGE_DIR=${packageDir.absolutePath}")
         args.add("-D$PROPERTY_EXPECTED=$expectedMarker")
         args.add("-D$PROPERTY_GAME_DIR=${gameDir.absolutePath}")
-        args.add("-D$PROPERTY_CORE_INPUTS=$coreInputsMarker")
     }
 
     internal fun isCacheCurrent(
@@ -193,45 +158,23 @@ internal object MtsPatchCacheCoordinator {
         bundledMods: List<File> = emptyList(),
         gdxPatchDigestCache: File? = null
     ): String {
-        val coreLines = listOf("schema|9") + coreFingerprintLines(
-            desktopJar, mtsJar, baseModJar, stsLibJar, bootBridgeJar, gdxPatchJar, gdxPatchDigestCache
+        val coreLines = listOf(
+            "schema|9",
+            jarFingerprint("desktop", desktopJar),
+            jarFingerprint("modthespire", mtsJar),
+            jarFingerprint("basemod", baseModJar),
+            jarFingerprint("stslib", stsLibJar),
+            jarFingerprint("bootbridge", bootBridgeJar),
+            persistedFileFingerprint("gdxpatch", gdxPatchJar, gdxPatchDigestCache),
+            textFileFingerprint("mod_file_list", modFileList)
         )
-        val modLines = modFingerprintLines(modFileList, bundledMods)
-        return sha256((coreLines + modLines).joinToString(separator = "\n"))
-    }
-
-    /**
-     * The six core fingerprint lines shared by the global marker and the per-artifact
-     * inputs markers used by the store-side reuse pass. The gdx patch line keeps the
-     * full-content digest (it is merged into the cached main jar, so archive-level
-     * shortcuts would miss metadata-only changes).
-     */
-    private fun coreFingerprintLines(
-        desktopJar: File,
-        mtsJar: File,
-        baseModJar: File,
-        stsLibJar: File,
-        bootBridgeJar: File,
-        gdxPatchJar: File,
-        gdxPatchDigestCache: File?
-    ): List<String> = listOf(
-        jarFingerprint("desktop", desktopJar),
-        jarFingerprint("modthespire", mtsJar),
-        jarFingerprint("basemod", baseModJar),
-        jarFingerprint("stslib", stsLibJar),
-        jarFingerprint("bootbridge", bootBridgeJar),
-        persistedFileFingerprint("gdxpatch", gdxPatchJar, gdxPatchDigestCache)
-    )
-
-    /** Labelled fingerprint lines for every enabled mod jar plus the bundled mods. */
-    private fun modFingerprintLines(modFileList: File, bundledMods: List<File>): List<String> {
-        val textLine = textFileFingerprint("mod_file_list", modFileList)
         val labelledModFiles = readModFiles(modFileList).mapIndexed { index, modFile ->
             "mod[$index]" to modFile
         } + bundledMods.mapIndexed { index, modFile ->
             "bundled[$index]" to modFile
         }
-        return listOf(textLine) + fingerprintInParallel(labelledModFiles)
+        val modFingerprints = fingerprintInParallel(labelledModFiles)
+        return sha256((coreLines + modFingerprints).joinToString(separator = "\n"))
     }
 
     /**

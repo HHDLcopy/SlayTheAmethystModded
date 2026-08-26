@@ -415,25 +415,13 @@ object StsLaunchSpec {
             args.add("-Dorg.lwjgl.util.DebugFunctions=true")
         }
         val appNativeLibraryDir = context.applicationInfo.nativeLibraryDir
-        val lwjglLibraryFile = NativeLibraryPathResolver.resolveLibraryFile(
-            context = context,
-            libraryName = "liblwjgl.so",
-            appNativeLibraryDir = appNativeLibraryDir
-        ) ?: File(appNativeLibraryDir, "liblwjgl.so")
-        val openalLibraryFile = NativeLibraryPathResolver.resolveLibraryFile(
-            context = context,
-            libraryName = "libopenal.so",
-            appNativeLibraryDir = appNativeLibraryDir
-        ) ?: File(appNativeLibraryDir, "libopenal.so")
+        val lwjglLibraryFile = File(appNativeLibraryDir, "liblwjgl.so")
+        val openalLibraryFile = File(appNativeLibraryDir, "libopenal.so")
         val lwjglLibraryDir = lwjglLibraryFile.parentFile ?: File(appNativeLibraryDir)
-        // LWJGL searches org.lwjgl.librarypath entries in order. Put external resource
-        // directories first so a bundled (APK) library never shadows the external copy
-        // when both exist; the APK dir stays as a fallback for LWJGL natives that are
-        // never externalized (liblwjgl.so, libopenal.so, ...).
-        val lwjglLibraryPath = (
-            NativeLibraryPathResolver.collectAdditionalSearchDirectories(context)
-                .map { it.absolutePath } + lwjglLibraryDir.absolutePath
-            ).distinct().joinToString(File.pathSeparator)
+        // Do not expose resource-pack, patch, or market directories to LWJGL's global
+        // resolver. Those directories may hold another LWJGL generation; GDX receives its
+        // external native directory separately through amethyst.gdx.native_dir below.
+        val lwjglLibraryPath = lwjglLibraryDir.absolutePath
         args.add("-Dorg.lwjgl.vulkan.libname=libvulkan.so")
         args.add("-Dorg.lwjgl.libname=${lwjglLibraryFile.absolutePath}")
         args.add("-Dorg.lwjgl.openal.libname=${openalLibraryFile.absolutePath}")

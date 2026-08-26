@@ -84,17 +84,15 @@ public final class JREUtils {
             appendUniquePathEntry(pathEntries, "/vendor/lib");
             appendUniquePathEntry(pathEntries, "/vendor/lib/hw");
         }
-        // External resource directories take priority over the APK lib dir. Full builds
-        // bundle the same native libraries into the APK and those can drift out of sync
-        // with the downloaded resource pack; resolving the external copy first keeps
-        // every library (libmobileglues.so, libgdx.so, ...) on a single version. The APK
-        // dir remains a fallback for LWJGL natives that are never externalized.
+        // Keep APK libraries ahead of optional resource-pack, patch, and market libraries.
+        // Core LWJGL binaries must be resolved from the same APK generation as their Java
+        // classes; GDX explicitly loads its external runtime libraries when needed.
+        appendUniquePathEntry(pathEntries, nativeLibDir);
         if (extraLibDirs != null) {
             for (String extraLibDir : extraLibDirs) {
                 appendUniquePathEntry(pathEntries, extraLibDir);
             }
         }
-        appendUniquePathEntry(pathEntries, nativeLibDir);
         LD_LIBRARY_PATH = joinPathEntries(pathEntries);
 
         try {

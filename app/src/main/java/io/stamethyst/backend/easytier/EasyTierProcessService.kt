@@ -748,14 +748,10 @@ class EasyTierProcessService : Service() {
                 return@onSuccess
             }
 
-            val nextStatus = when (normalizedSessionState) {
-                "issued", "connected" -> if (current.status == EasyTierConnectionStatus.CONNECTED) {
-                    EasyTierConnectionStatus.CONNECTED
-                } else {
-                    EasyTierConnectionStatus.SESSION_READY
-                }
-                else -> EasyTierConnectionStatus.RECONNECTING
-            }
+            val nextStatus = resolveEasyTierPollSuccessStatus(
+                sessionState = normalizedSessionState,
+                current = current,
+            )
             val roomInfo = fetchRoomInfoOrNull(current.roomId.ifBlank { sessionStatus.roomId })
             val updatedSnapshot = EasyTierSessionController.persistSnapshot(
                 context = applicationContext,
@@ -1150,6 +1146,51 @@ class EasyTierProcessService : Service() {
     private fun buildStablePlayerId(context: Context): String {
         return io.stamethyst.backend.presence.GamePresenceClient.resolveIdentityPayload(context).deviceId
     }
+}
+
+/**
+ * True when this session's VPN tunnel is up, so a healthy poll may report it as connected.
+ *
+ * The status poll cannot establish a tunnel, so it must not be the thing that decides a session is
+ * connected from scratch — that stays [StsEasyTierVpnService]'s job. What it does need to do is
+ * recognise an existing tunnel, because the poll rewrites the status on every iteration and the
+ * previous rule only preserved [EasyTierConnectionStatus.CONNECTED] when the status already was
+ * `CONNECTED`. That rule is self-referential: after any dip into
+ * [EasyTierConnectionStatus.FAILED] the session could never be reported as connected again, since
+ * the only other writer of `CONNECTED` is the VPN service and it is skipped while the routes are
+ * unchanged. A session that had merely timed out once therefore recovered every part of its state
+ * except its status, and stayed permanently stuck on [EasyTierConnectionStatus.SESSION_READY].
+ *
+ * That was not only cosmetic. `CONNECTED` gates the Together in Spire launch properties, the in-game
+ * room state reports and the mod inventory reports, so the downgrade silently withheld the host
+ * address from the game and stopped the server hearing about this member.
+ *
+ * Both fields are required. [EasyTierConnectionSnapshot.connectedAtMs] proves the tunnel was
+ * established at some point, and a non-blank [EasyTierConnectionSnapshot.assignedIpv4Cidr] proves it
+ * still holds an address — the revoke and disconnect paths clear the address precisely so that a
+ * torn-down tunnel cannot be mistaken for a live one here.
+ */
+internal fun hasEasyTierEstablishedTunnel(
+    snapshot: EasyTierConnectionSnapshot,
+): Boolean = snapshot.connectedAtMs != null && snapshot.assignedIpv4Cidr.isNotBlank()
+
+/**
+ * Maps a non-terminal server session state onto the status a successful poll should publish.
+ *
+ * Terminal states are handled before this is reached, so only the live states are mapped here. An
+ * unrecognised state is treated as [EasyTierConnectionStatus.RECONNECTING] rather than connected,
+ * because the server is reporting something this client does not model.
+ */
+internal fun resolveEasyTierPollSuccessStatus(
+    sessionState: String,
+    current: EasyTierConnectionSnapshot,
+): EasyTierConnectionStatus = when (sessionState) {
+    "issued", "connected" -> if (hasEasyTierEstablishedTunnel(current)) {
+        EasyTierConnectionStatus.CONNECTED
+    } else {
+        EasyTierConnectionStatus.SESSION_READY
+    }
+    else -> EasyTierConnectionStatus.RECONNECTING
 }
 
 /**

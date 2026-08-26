@@ -138,6 +138,12 @@ object StsLaunchSpec {
         if (!stsHome.exists()) {
             stsHome.mkdirs()
         }
+        if (isMtsLaunchMode(launchMode)) {
+            // MTS boots the LWJGL3 desktop backend when its config has imgui=true, and that
+            // path crashes in Amethyst's incomplete GLFW bridge. Force-clear the flag before
+            // the game JVM starts; the runtime guard in MtsLoaderCrashPatcher backs this up.
+            MtsImguiGuard.disableImguiIfEnabled(context)
+        }
         val forceInterpreterFlag = File(stsRoot, "compat_xint.flag")
         val classTraceFlag = File(stsRoot, "classload_trace.flag")
         val is64BitRuntime = is64BitRuntime(javaHome)
@@ -420,10 +426,18 @@ object StsLaunchSpec {
             appNativeLibraryDir = appNativeLibraryDir
         ) ?: File(appNativeLibraryDir, "libopenal.so")
         val lwjglLibraryDir = lwjglLibraryFile.parentFile ?: File(appNativeLibraryDir)
+        // LWJGL searches org.lwjgl.librarypath entries in order. Put external resource
+        // directories first so a bundled (APK) library never shadows the external copy
+        // when both exist; the APK dir stays as a fallback for LWJGL natives that are
+        // never externalized (liblwjgl.so, libopenal.so, ...).
+        val lwjglLibraryPath = (
+            NativeLibraryPathResolver.collectAdditionalSearchDirectories(context)
+                .map { it.absolutePath } + lwjglLibraryDir.absolutePath
+            ).distinct().joinToString(File.pathSeparator)
         args.add("-Dorg.lwjgl.vulkan.libname=libvulkan.so")
         args.add("-Dorg.lwjgl.libname=${lwjglLibraryFile.absolutePath}")
         args.add("-Dorg.lwjgl.openal.libname=${openalLibraryFile.absolutePath}")
-        args.add("-Dorg.lwjgl.librarypath=${lwjglLibraryDir.absolutePath}")
+        args.add("-Dorg.lwjgl.librarypath=$lwjglLibraryPath")
         args.add("-Dorg.lwjgl.system.SharedLibraryExtractPath=${lwjglLibraryDir.absolutePath}")
         args.add("-Dorg.lwjgl.system.EmulateSystemLoadLibrary=true")
         args.add("-Damethyst.renderer.selection_mode=${rendererDecision.selectionMode.persistedValue}")

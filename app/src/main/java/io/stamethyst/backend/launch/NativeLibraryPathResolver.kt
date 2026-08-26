@@ -28,10 +28,14 @@ internal object NativeLibraryPathResolver {
     ): String {
         val directories = LinkedHashSet<String>()
         addRuntimeLibraryDirectories(directories, javaHome)
-        addDirectory(directories, File(appNativeLibraryDir))
+        // External resources (resource pack / native market) take priority over APK
+        // bundled copies. Full builds bundle the same libraries into the APK, and those
+        // can drift out of sync with the downloaded resource pack; using the external
+        // copy whenever present keeps every native library on a single version.
         collectAdditionalSearchDirectories(context).forEach { directory ->
             addDirectory(directories, directory)
         }
+        addDirectory(directories, File(appNativeLibraryDir))
         return directories.joinToString(File.pathSeparator)
     }
 
@@ -40,15 +44,17 @@ internal object NativeLibraryPathResolver {
         libraryName: String,
         appNativeLibraryDir: String
     ): File? {
-        val appLibrary = File(appNativeLibraryDir, libraryName)
-        if (appLibrary.isFile) {
-            return appLibrary
-        }
+        // Prefer the external resource copy so a bundled APK library never shadows a
+        // newer/consistent external one (see buildJavaLibraryPath).
         collectAdditionalSearchDirectories(context).forEach { directory ->
             val candidate = File(directory, libraryName)
             if (candidate.isFile) {
                 return candidate
             }
+        }
+        val appLibrary = File(appNativeLibraryDir, libraryName)
+        if (appLibrary.isFile) {
+            return appLibrary
         }
         return null
     }

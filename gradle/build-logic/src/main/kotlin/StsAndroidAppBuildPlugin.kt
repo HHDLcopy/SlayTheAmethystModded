@@ -428,26 +428,12 @@ private fun Project.registerRuntimeAssetTasks(
         classpath = files()
     }
 
-    val patchedLwjglBridgeBaseJar = layout.buildDirectory.file("generated/callbackBridgeBaseJarPatched/lwjgl-glfw-classes-base-patched.jar")
-    val patchLwjglBridgeBaseJar = tasks.register<DefaultTask>("patchLwjglBridgeBaseJar") {
-        val output = patchedLwjglBridgeBaseJar
-        inputs.file(callbackBridgeBaseJar)
-        inputs.property("glfwBufferPutFixContract", "1")
-        outputs.file(output)
-        doLast {
-            val outFile = output.get().asFile
-            outFile.parentFile.mkdirs()
-            GlfwBufferPutFixer.fixJar(callbackBridgeBaseJar.asFile, outFile)
-        }
-    }
-
     val packageLwjglCallbackBridgeJar = tasks.register<Zip>("packageLwjglCallbackBridgeJar") {
         dependsOn(compileJvmCallbackBridge)
-        dependsOn(patchLwjglBridgeBaseJar)
         // Keep the generated bridge ahead of the base runtime's stale class.
         duplicatesStrategy = DuplicatesStrategy.EXCLUDE
         from(generatedJvmCallbackBridgeClassesDir)
-        from(zipTree(patchedLwjglBridgeBaseJar))
+        from(zipTree(callbackBridgeBaseJar))
         destinationDirectory.set(packagedLwjglBridgeJarDir)
         archiveFileName.set("lwjgl-glfw-classes.jar")
         archiveExtension.set("jar")
@@ -456,11 +442,10 @@ private fun Project.registerRuntimeAssetTasks(
     }
 
     val generateLwjglBridgeVersion = tasks.register<DefaultTask>("generateLwjglBridgeVersion") {
-        dependsOn(patchLwjglBridgeBaseJar)
         val androidTemplate = callbackBridgeTemplatesDir.file("android/CallbackBridge.java.tmpl")
         val jvmTemplate = callbackBridgeTemplatesDir.file("jvm/CallbackBridge.java.tmpl")
         val outputFile = generatedLwjglBridgeVersionDir.map { it.file("version") }
-        inputs.file(patchedLwjglBridgeBaseJar)
+        inputs.file(callbackBridgeBaseJar)
         inputs.file(androidTemplate)
         inputs.file(jvmTemplate)
         inputs.property("callbackBridgeContractHash", CallbackBridgeCodegen.contractHash)
@@ -473,8 +458,8 @@ private fun Project.registerRuntimeAssetTasks(
                     CallbackBridgeCodegen.contractHash,
                     androidTemplate.asFile.readText(StandardCharsets.UTF_8),
                     jvmTemplate.asFile.readText(StandardCharsets.UTF_8),
-                    patchedLwjglBridgeBaseJar.get().asFile.length().toString(),
-                    patchedLwjglBridgeBaseJar.get().asFile.lastModified().toString()
+                    callbackBridgeBaseJar.asFile.length().toString(),
+                    callbackBridgeBaseJar.asFile.lastModified().toString()
                 ),
                 StandardCharsets.UTF_8
             )

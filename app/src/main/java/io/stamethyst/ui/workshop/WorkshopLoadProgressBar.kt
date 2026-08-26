@@ -313,7 +313,6 @@ internal fun WorkshopLoadPhase.completionFraction(): Float = when (this) {
     WorkshopLoadPhase.FailingOver -> 0.62f
     WorkshopLoadPhase.FallingBack -> 0.66f
     WorkshopLoadPhase.Parsing -> 0.82f
-    WorkshopLoadPhase.Enriching -> 0.93f
     WorkshopLoadPhase.Completed -> 1f
     WorkshopLoadPhase.Failed -> 1f
 }
@@ -331,7 +330,6 @@ internal fun WorkshopLoadPhase.progressLabel(progress: WorkshopLoadProgress?): S
     )
     WorkshopLoadPhase.FallingBack -> stringResource(R.string.workshop_load_phase_falling_back)
     WorkshopLoadPhase.Parsing -> stringResource(R.string.workshop_load_phase_parsing)
-    WorkshopLoadPhase.Enriching -> stringResource(R.string.workshop_load_phase_enriching)
     WorkshopLoadPhase.Completed -> stringResource(R.string.workshop_load_phase_completed)
     WorkshopLoadPhase.Failed -> stringResource(R.string.workshop_load_phase_failed)
 }

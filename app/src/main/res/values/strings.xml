@@ -2459,7 +2459,6 @@ Patch rule: keep Ori full-resolution glow/bloom rendering, but replace the blur 
     <string name="workshop_load_phase_failing_over">Switching node (%1$d failed)</string>
     <string name="workshop_load_phase_falling_back">Falling back to official route</string>
     <string name="workshop_load_phase_parsing">Reading entries</string>
-    <string name="workshop_load_phase_enriching">Loading details</string>
     <string name="workshop_load_phase_completed">Done</string>
     <string name="workshop_load_phase_failed">Loading failed</string>
     <string name="workshop_load_progress_node">Node %1$s</string>

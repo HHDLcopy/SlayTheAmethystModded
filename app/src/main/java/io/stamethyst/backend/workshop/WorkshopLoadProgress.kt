@@ -37,9 +37,6 @@ internal enum class WorkshopLoadPhase {
     /** Response received, extracting entries. */
     Parsing,
 
-    /** Filling in sizes and download counts. */
-    Enriching,
-
     /** Terminal success. */
     Completed,
 

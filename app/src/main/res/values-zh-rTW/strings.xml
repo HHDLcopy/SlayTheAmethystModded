@@ -2453,7 +2453,6 @@
     <string name="workshop_load_phase_failing_over">正在切換節點（已失敗 %1$d 個）</string>
     <string name="workshop_load_phase_falling_back">正在退避到官方線路</string>
     <string name="workshop_load_phase_parsing">正在解析項目</string>
-    <string name="workshop_load_phase_enriching">正在補全詳情</string>
     <string name="workshop_load_phase_completed">載入完成</string>
     <string name="workshop_load_phase_failed">載入失敗</string>
     <string name="workshop_load_progress_node">節點 %1$s</string>

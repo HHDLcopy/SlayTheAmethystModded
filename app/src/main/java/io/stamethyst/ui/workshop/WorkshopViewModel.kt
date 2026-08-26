@@ -422,6 +422,7 @@ internal class WorkshopViewModel : ViewModel() {
                     hasMorePages = result.hasNextPage,
                     errorMessage = if (merged.isEmpty()) context.getString(R.string.workshop_error_no_entries_found) else null,
                 )
+                enrichBrowseItemsInBackground(currentService, requestGeneration, merged)
                 Log.i(
                     WORKSHOP_PERF_TAG,
                     "loadBrowsePage success gen=$requestGeneration page=$page items=${merged.size} hasNext=${result.hasNextPage} elapsedMs=${SystemClock.elapsedRealtime() - browseStartedAtMs}",
@@ -455,6 +456,33 @@ internal class WorkshopViewModel : ViewModel() {
                     "loadBrowsePage failure gen=$requestGeneration page=$page elapsedMs=${SystemClock.elapsedRealtime() - browseStartedAtMs} error=${error.message ?: error.javaClass.simpleName}",
                 )
             }
+        }
+    }
+
+    /**
+     * Backfills file size / download counts for cards already on screen. Only replaces ids still
+     * present in the current list, so a late patch can never resurrect items a newer query removed;
+     * the generation check just avoids redundant API calls racing when filters change quickly.
+     */
+    private fun enrichBrowseItemsInBackground(
+        service: WorkshopService,
+        requestGeneration: Int,
+        items: List<WorkshopItemSummary>,
+    ) {
+        if (items.none { item -> item.fileSizeBytes <= 0L || item.downloadCount <= 0L }) return
+        viewModelScope.launch {
+            val enrichedItems = runCatching {
+                withContext(Dispatchers.IO) { service.loadBrowseItemMetadata(items) }
+            }.getOrNull() ?: return@launch
+            if (requestGeneration != browseRequestGeneration || activeListMode != WorkshopListMode.Browse) {
+                return@launch
+            }
+            val enrichedById = enrichedItems.associateBy { item -> item.publishedFileId }
+            uiState = uiState.copy(
+                items = uiState.items.map { item ->
+                    enrichedById[item.publishedFileId]?.takeIf { enriched -> enriched != item } ?: item
+                },
+            )
         }
     }
 

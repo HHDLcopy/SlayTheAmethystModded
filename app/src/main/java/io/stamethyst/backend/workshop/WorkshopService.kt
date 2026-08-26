@@ -149,19 +149,21 @@ internal class WorkshopService(
         }
     }
 
+    /**
+     * Fetches one browse page. Card metadata (file size, download count) is intentionally not
+     * backfilled here: the parsed page already carries everything a card needs to render, so the
+     * caller shows it immediately and calls [loadBrowseItemMetadata] afterwards. On the legacy
+     * HTML path that backfill is an extra API round trip, and making the whole list wait for it
+     * was the slowest non-network part of a browse.
+     */
     suspend fun browse(query: WorkshopBrowseQuery): WorkshopBrowseResult = withContext(Dispatchers.IO) {
         val browseStartedAtMs = SystemClock.elapsedRealtime()
         val page = searchWorkshop(query)
         val searchMs = SystemClock.elapsedRealtime() - browseStartedAtMs
-        val enrichStartedAtMs = SystemClock.elapsedRealtime()
-        progressSessionId?.let { sessionId ->
-            WorkshopLoadProgressReporter.report(sessionId, WorkshopLoadPhase.Enriching)
-        }
-        val items = enrichBrowseMetadata(page.items).take(query.pageSize)
-        val enrichMs = SystemClock.elapsedRealtime() - enrichStartedAtMs
+        val items = page.items.take(query.pageSize)
         Log.i(
             TAG,
-            "perf browse totalMs=${SystemClock.elapsedRealtime() - browseStartedAtMs} searchMs=$searchMs enrichMs=$enrichMs page=${query.page} pageSize=${query.pageSize} rawItems=${page.items.size} items=${items.size} queryLen=${query.searchText.length} sort=${query.sort} time=${query.timeFilter} category=${query.category}",
+            "perf browse totalMs=${SystemClock.elapsedRealtime() - browseStartedAtMs} searchMs=$searchMs page=${query.page} pageSize=${query.pageSize} rawItems=${page.items.size} items=${items.size} queryLen=${query.searchText.length} sort=${query.sort} time=${query.timeFilter} category=${query.category}",
         )
         WorkshopBrowseResult(
             items = items,
@@ -171,6 +173,13 @@ internal class WorkshopService(
             hasNextPage = page.hasNextPage,
         )
     }
+
+    /**
+     * Backfills missing card metadata (file size, subscription count) for items already on
+     * screen. Items the parsed page described completely pass through unchanged.
+     */
+    suspend fun loadBrowseItemMetadata(items: List<WorkshopItemSummary>): List<WorkshopItemSummary> =
+        withContext(Dispatchers.IO) { enrichBrowseMetadata(items) }
 
     suspend fun browseSubscriptions(
         appId: UInt = 646570u,
@@ -566,6 +575,20 @@ internal class WorkshopService(
             }
             val communityDetail = localizedDetail?.await()
             val awaitDoneAtMs = SystemClock.elapsedRealtime()
+            // The community page can contribute dependency ids the API payload lacks. Fire that
+            // small follow-up batch now so it overlaps with the primary dependency batch instead
+            // of serializing behind its await.
+            val extraDependencyDetailsDeferred = if (includeDependencyData) {
+                communityDetail?.requiredItemIds.orEmpty()
+                    .filterNot { dependencyId -> dependencyId in primaryDependencyIds }
+                    .distinct()
+                    .takeIf { extraIds -> extraIds.isNotEmpty() }
+                    ?.let { extraIds ->
+                        async(Dispatchers.IO) { loadDependencyDetails(appId, extraIds) }
+                    }
+            } else {
+                null
+            }
             val cardSummary = fallbackSummary?.takeIf { summary ->
                 summary.appId == appId && summary.publishedFileId == publishedFileId
             }
@@ -612,18 +635,12 @@ internal class WorkshopService(
             val depsMs = SystemClock.elapsedRealtime() - depsStartedAtMs
             val dependencyDetailsById = buildMap<ULong?, PublishedFileDetailsDto> {
                 primaryDependencyDetailsDeferred?.let { deferred -> putAll(deferred.await()) }
-                if (includeDependencyData) {
-                    communityDetail?.requiredItemIds.orEmpty()
-                        .filterNot { dependencyId -> dependencyId in primaryDependencyIds }
-                        .distinct()
-                        .takeIf { extraIds -> extraIds.isNotEmpty() }
-                        ?.let { extraIds ->
-                            loadDependencyDetails(appId, extraIds).forEach { childDetail ->
-                                childDetail.publishedFileId.toULongOrNull()?.let { dependencyId ->
-                                    putIfAbsent(dependencyId, childDetail)
-                                }
-                            }
+                extraDependencyDetailsDeferred?.let { deferred ->
+                    deferred.await().forEach { childDetail ->
+                        childDetail.publishedFileId.toULongOrNull()?.let { dependencyId ->
+                            putIfAbsent(dependencyId, childDetail)
                         }
+                    }
                 }
             }
             val commentThreadContext = communityDetail?.commentThreadContext

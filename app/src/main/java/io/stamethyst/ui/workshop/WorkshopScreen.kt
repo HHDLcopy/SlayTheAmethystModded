@@ -290,151 +290,16 @@ internal fun WorkshopScreen(
                 .then(if (useFloatingHeader) Modifier.hazeSource(state = headerHazeState) else Modifier)
                 .padding(start = 16.dp, top = if (useFloatingHeader) 18.dp else 0.dp, end = 16.dp),
         ) {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 132.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                if (useFloatingHeader) {
-                    item {
-                        Spacer(modifier = Modifier.height(headerContentTopInset))
-                    }
-                }
-                if (!state.steamLoggedIn) {
-                    item(key = "workshop-status-header") {
-                        WorkshopStatusHeader(
-                            listMode = state.listMode,
-                            onOpenSteamLogin = onOpenSteamLogin,
-                        )
-                    }
-                }
-
-                if (!useFloatingHeader && state.listMode == WorkshopListMode.Browse) {
-                    item(key = "workshop-search-panel") {
-                        SearchPanel(
-                            query = query,
-                            loading = state.browseLoading,
-                            sort = sort,
-                            timeFilter = timeFilter,
-                            category = category,
-                            onQueryChange = { query = it },
-                            onSearch = ::searchWithPopularAllTime,
-                            onOpenDetailsById = { publishedFileId ->
-                                onOpenDetails(publishedFileId.toWorkshopItemSummary(context))
-                            },
-                            onSortChange = { selectedSort ->
-                                sort = selectedSort
-                                viewModel.search(context.applicationContext, query, selectedSort, timeFilter, category)
-                            },
-                            onTimeFilterChange = { selectedTimeFilter ->
-                                timeFilter = selectedTimeFilter
-                                viewModel.search(context.applicationContext, query, sort, selectedTimeFilter, category)
-                            },
-                            onCategoryChange = { selectedCategory ->
-                                category = selectedCategory
-                                viewModel.search(context.applicationContext, query, sort, timeFilter, selectedCategory)
-                            },
-                        )
-                    }
-                }
-
-                if (state.errorMessage != null) {
-                    item(key = "workshop-error") {
-                        ErrorPanel(
-                            modifier = workshopListPlacementAnimation(enabled = !useFloatingHeader),
-                            message = state.errorMessage,
-                            onRetry = {
-                                when (state.listMode) {
-                                    WorkshopListMode.Browse -> viewModel.search(context.applicationContext, query, sort, timeFilter, category)
-                                    WorkshopListMode.Subscriptions -> viewModel.showSubscribedWorkshopMods(context.applicationContext)
-                                }
-                            },
-                        )
-                    }
-                }
-
-                item(key = "workshop-section-title") {
-                    SectionTitle(
-                        title = when (state.listMode) {
-                            WorkshopListMode.Browse -> stringResource(R.string.workshop_section_browse)
-                            WorkshopListMode.Subscriptions -> stringResource(R.string.workshop_subscriptions_title)
-                        },
-                        subtitle = when {
-                            state.items.isEmpty() && state.browseLoading -> ""
-                            state.items.isEmpty() -> stringResource(R.string.workshop_section_no_results)
-                            else -> stringResource(R.string.workshop_section_item_count, state.items.size)
-                        },
-                    )
-                }
-
-                when {
-                    state.browseLoading && state.items.isEmpty() -> {
-                        items(
-                            count = WorkshopListSkeletonItemCount,
-                            key = { index -> "workshop-loading-skeleton-$index" },
-                        ) { index ->
-                            WorkshopListSkeletonCard(
-                                modifier = Modifier.fillMaxWidth(),
-                                variant = index,
-                            )
-                        }
-                    }
-                    state.items.isEmpty() && state.errorMessage == null -> {
-                        item(key = "workshop-empty") {
-                            EmptyPanel(
-                                modifier = workshopListPlacementAnimation(enabled = !useFloatingHeader),
-                                title = when (state.listMode) {
-                                    WorkshopListMode.Browse -> stringResource(R.string.workshop_empty_title)
-                                    WorkshopListMode.Subscriptions -> stringResource(R.string.workshop_empty_subscriptions_title)
-                                },
-                                description = when (state.listMode) {
-                                    WorkshopListMode.Browse -> stringResource(R.string.workshop_empty_description)
-                                    WorkshopListMode.Subscriptions -> stringResource(R.string.workshop_empty_subscriptions_description)
-                                },
-                                actionLabel = when (state.listMode) {
-                                    WorkshopListMode.Browse -> stringResource(R.string.common_action_refresh)
-                                    WorkshopListMode.Subscriptions -> stringResource(R.string.workshop_action_refresh_subscriptions)
-                                },
-                                onRetry = {
-                                    when (state.listMode) {
-                                        WorkshopListMode.Browse -> viewModel.search(context.applicationContext, query, sort, timeFilter, category)
-                                        WorkshopListMode.Subscriptions -> viewModel.showSubscribedWorkshopMods(context.applicationContext)
-                                    }
-                                },
-                            )
-                        }
-                    }
-                    else -> {
-                        items(state.items, key = { it.publishedFileId.toString() }) { item ->
-                            val downloadState = resolveWorkshopModDownloadState(
-                                item = item,
-                                installedMods = state.installedMods,
-                                downloadTaskStatuses = downloadTaskStatuses,
-                                preparingDownloadIds = state.preparingDownloadIds,
-                            )
-                            WorkshopItemCard(
-                                modifier = workshopListPlacementAnimation(enabled = !useFloatingHeader),
-                                item = item,
-                                downloadState = downloadState,
-                                onClick = { onOpenDetails(item) },
-                                onDownload = {
-                                    requestNotificationPermissionIfNeeded()
-                                    viewModel.download(context.applicationContext, item)
-                                },
-                            )
-                        }
-                        item(key = "workshop-pagination-footer") {
-                            BrowsePaginationFooter(
-                                modifier = workshopListPlacementAnimation(enabled = !useFloatingHeader),
-                                loading = state.loadingMore,
-                                hasMorePages = state.hasMorePages,
-                                itemCount = state.items.size,
-                            )
-                        }
-                    }
-                }
+            AndroidView(
+        factory = { context ->
+            android.webkit.WebView(context).apply {
+                settings.javaScriptEnabled = true
+                webViewClient = android.webkit.WebViewClient()
+                loadUrl("https://workshop.apricityx.top/")
             }
+        },
+        modifier = Modifier.fillMaxSize()
+    )
         }
 
         if (useFloatingHeader) {

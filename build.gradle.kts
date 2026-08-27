@@ -6,11 +6,3 @@ plugins {
     alias(libs.plugins.kotlin.serialization) apply false
     alias(libs.plugins.protobuf) apply false
 }
-allprojects {
-    repositories {
-    google()
-    mavenCentral()
-    maven { setUrl("https://oss.sonatype.org/content/repositories/snapshots/") }
-    maven { setUrl("https://libgdx.badlogicgames.com/maven/") }
-}
-}
